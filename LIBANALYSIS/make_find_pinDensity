@@ -1,0 +1,197 @@
+
+sub find_pinDensity {
+my @PinCount = ();
+my $dbu = $GLOBAL->dbfGlobalGetDBU;
+$DBSCALEFACTOR = $DEF_DATABASE_UNIT;
+if ( exists $DIE_ALREADY{dieArea} ) {
+  $guiDiellx = $DIE_ALREADY{dieArea}[0];
+  $guiDielly = $DIE_ALREADY{dieArea}[1];
+  $guiDieurx = $DIE_ALREADY{dieArea}[2];
+  $guiDieury = $DIE_ALREADY{dieArea}[3];
+  $guiMuDiellx = $guiDiellx/$dbu;
+  $guiMuDielly = $guiDielly/$dbu;
+  $guiMuDieurx = $guiDieurx/$dbu;
+  $guiMuDieury = $guiDieury/$dbu;
+  if ( $guiDiellx == 0 && $guiDielly == 0 ) {
+    $dieIsCentre = 0;
+  } elsif ( $guiDiellx+$guiDieurx == 0 && $guiDieury+$guiDielly == 0 ) { 
+    $dieIsCentre = 1
+  } else { 
+    $dieIsCentre = 2
+  }
+}
+#------------------ find size of Gcells -------------------#
+$guiWidth = abs($guiMuDieurx - $guiMuDiellx) ;
+$guiHeight = abs($guiMuDieury - $guiMuDielly) ;
+my $dieHMultFact  = 499/$guiHeight;
+my $dieWMultFact  = 499/$guiWidth;
+#my $dieHMultFact  = 500/$guiHeight;
+#my $dieWMultFact  = 500/$guiWidth;
+if ( $dieHMultFact < $dieWMultFact ) { 
+  $MICRONFACTOR = $dieHMultFact; 
+} else {
+  $MICRONFACTOR =  $dieWMultFact;
+}
+#print "multiplication factor is : $MICRONFACTOR\n";
+$GLOBAL->dbGlobalSetMicronFactor($MICRONFACTOR);
+my $GcellFactor = $GLOBAL->dbGlobalGetMicronFactor;
+my $GcellSize = 1/$GcellFactor;
+print "INFO-LIBLYIS-FND_PN_DNSTY : 001 : Gcell size is $GcellSize \n";
+my $maxYbox = int($GcellFactor*$guiHeight + 1);
+my $maxXbox = int($GcellFactor*$guiWidth + 1);
+#my $maxYbox = $GcellFactor*$guiHeight;
+#my $maxXbox = $GcellFactor*$guiWidth ;
+print "INFO-LIBLYIS-FND_PN_DNSTY : 002 : grid $maxXbox $maxYbox\n";
+
+foreach $InstanceName ( keys %COMP_ALREADY ) {
+#print "Instance are $InstanceName\n"; 
+#my @pinRect = ();
+  @location = $CADB{$InstanceName}->dbCadbGetLoc;
+  $orient =   $CADB{$InstanceName}->dbCadbGetOrient;
+  $cellref =  $CADB{$InstanceName}->dbCadbGetCellref;
+  $status =  $CADB{$InstanceName}->dbCadbGetStatus;
+
+  $xorigin = $location[0]/$DBSCALEFACTOR;
+  $yorigin = $location[1]/$DBSCALEFACTOR;
+
+  $xorigin = $xorigin*$MICRONFACTOR;
+  $yorigin = $yorigin*$MICRONFACTOR;
+
+  if ( exists $MACROS_ATTRIBUTE_ALREADY{$cellref} ) {
+    $size = $MACROS_ATTRIBUTE_ALREADY{$cellref}{size};
+    ($width,$height)=(split(/\s+/,$size))[0,1];
+    $width = $width*$MICRONFACTOR;
+    $height = $height*$MICRONFACTOR;
+  }
+  else { 
+    print "WARN-LIBLYIS-FND_PN_DNSTY : 003 : $InstanceName : $cellref at $location size not found\n"; 
+    next ;
+  }
+
+  if( $orient eq "N") {
+    $llx = $xorigin; 
+    $lly = $yorigin; 
+    $urx = $xorigin+$width;  
+    $ury = $yorigin+$height;
+  }
+  elsif( $orient eq "FN") {
+    $llx = $xorigin; 
+    $lly = $yorigin+$height; 
+    $urx = $xorigin+$width;  
+    $ury = $yorigin; 
+  }
+  elsif( $orient eq "FS") {
+    $llx = $xorigin;
+    $lly = $yorigin;
+    $urx = $xorigin+$width;
+    $ury = $yorigin+$height;
+  }
+  elsif( $orient eq "S") {
+    $llx = $xorigin;
+    $lly = $yorigin;
+    $urx = $xorigin+$width;
+    $ury = $yorigin+$height;
+  }
+  elsif( $orient eq "W") {
+    $llx = $xorigin;
+    $lly = $yorigin;
+    $urx = $xorigin+$height;
+    $ury = $yorigin+$width;
+  }
+  elsif( $orient eq "FW") {
+    $llx = $xorigin;
+    $lly = $yorigin;
+    $urx = $xorigin+$height;
+    $ury = $yorigin+$width;
+  }
+  elsif( $orient eq "E") {
+    $llx = $xorigin;
+    $lly = $yorigin;
+    $urx = $xorigin+$height;
+    $ury = $yorigin+$width;
+  }
+  elsif( $orient eq "FE") {
+    $llx = $xorigin;
+    $lly = $yorigin;
+    $urx = $xorigin+$height;
+    $ury = $yorigin+$width;
+  }
+  else {
+    print "MSG-LIBLYIS-FND_PN_DNSTY : 004 : Illegal orientation $orient of $InstanceName\n";
+  }
+  
+  if( $dieIsCentre == 1) {
+    $lly = 270-$lly; 
+    $ury = 270-$ury; 
+    $llx = $llx + 270; 
+    $urx = $urx + 270; 
+  }
+  else {
+    $lly = 520-$lly; 
+    $ury = 520-$ury; 
+    $llx = $llx + 20; 
+    $urx = $urx + 20; 
+  }
+
+##############################   pins for each instance  ################################
+my @cellOrigin = $PLDB{$cellref}->dbMdbGetOrigin;
+my @cellSize = $PLDB{$cellref}->dbMdbGetSize;
+my @pins = $PLDB{$cellref}->dbMdbGetPins;
+foreach $pinName ( @pins ) {
+  my @indexStatus = ();
+  #print "pins are $pinName\n";
+  my $pinDire = $PLDB{$cellref}->dbMdbGetPinDir($pinName);
+  my @RECTS = $PLDB{$cellref}->dbMdbGetPinRect($pinName);
+  foreach $rectLine ( @RECTS ) {
+    my ($layer, $rllx1, $rlly1, $rurx1, $rury1)=(split(/\s+/,$rectLine))[0,2,3,4,5];
+    #my $color = $PTDB{$layer}->dbTechGetLayerColor;
+
+###################### changing the orientation of Pin Rectangles according to Instance orientation ######################## 
+
+    my @PinRect = &xformCellPinToInstPin($location[0],$location[1],$cellOrigin[0], $cellOrigin[1],$orient,$cellSize[0],$cellSize[1],$rllx1,$rlly1,$rurx1,$rury1);
+    my ($llx1,$lly1) = dbGuidatabase2Gui($PinRect[0],$PinRect[1]);  # Multiplying with database#  
+    my ($urx1,$ury1) = dbGuidatabase2Gui($PinRect[2],$PinRect[3]);  # multiplication Factor    #
+    #my $midX = ($llx1+$urx1)/2;
+    #my $midY = ($lly1+$ury1)/2;
+    my $x1Gcell = $llx1/$GcellSize;
+    my $y1Gcell = $lly1/$GcellSize;
+    my $x2Gcell = $urx1/$GcellSize;
+    my $y2Gcell = $ury1/$GcellSize;
+    if($x1Gcell > int $x1Gcell){$x1Gcell = int $x1Gcell + 1;}
+    if($y1Gcell > int $y1Gcell){$y1Gcell = int $y1Gcell + 1;}
+    if($x2Gcell > int $x2Gcell){$x2Gcell = int $x2Gcell + 1;}
+    if($y2Gcell > int $y2Gcell){$y2Gcell = int $y2Gcell + 1;}
+    
+    for(my $i = $x1Gcell; $i<= $x2Gcell; $i++){
+      for (my $j = $y2Gcell; $j <= $y1Gcell; $j++){
+           my $index = $j + $i*$maxXbox; 
+           if($indexStatus[$index] == 0){   
+                                        $PinCount[$index] += 1 ;
+                                        $indexStatus[$index] = 1;}
+                                                    }#for columns
+                                                }#for rows
+
+                                                     
+
+
+    #print " X $x1Gcell :: Y $y1Gcell\n, X2 $x2Gcell, Y2 $y2Gcell\n";
+    #if ( ($llx1 >= $Sel_llx) && ($lly1 >= $Sel_lly) && ($urx1<=$Sel_urx) &&($ury1<=$Sel_ury) ) {}
+    #print "inst $InstanceName, pin $pinName\n";
+    #push (@pinRect, $pinName);
+    #last;
+    #print "ARR is @pinRect\n";  
+      #{}
+  } 
+                                                  
+}
+#    last;
+}
+my $count = 0;
+foreach (@PinCount){
+print "INFI-LIBLYIS-FND_PN_DNSTY : 005 : count $count, $PinCount[$count]\n";
+$count++;
+}
+}#sub find_pinDensity
+
+1;
+

@@ -1,0 +1,549 @@
+#sub setNot_OASYS {
+#$GLOBAL->dbGlobalSetQA_notOASYS(1);
+#}#sub setNot_OASYS
+
+sub write_excel {
+
+#****f* /write_excel
+# NAME
+#     write_excel 
+# FUNCTION
+#         read the information from database and write down in xls file 
+# SYNOPSIS
+#          write_excel <output filename>  
+# INPUTS
+#      options :
+#
+# OUTPUTS
+#         xls file is generated
+#****
+my $noOfArg = @_;
+if ($noOfArg < 1 || $_[0] eq '-h') {
+      print "usage:            write_excel <output filename>\n";
+                                 }
+else {
+my $fileName = $_[0];
+  #use strict;
+  use Spreadsheet::WriteExcel;
+
+  ###### Create a new Excel workbook called perl.xls #####
+
+  my $workbook = Spreadsheet::WriteExcel->new($fileName);
+  my @fields = $GLOBAL->dbGlobalGetKbfo;
+  push (@fields, "toolVer", "execDate", "toolBuildDate" );
+  #unshift (@fields, "toolVer", "execDate");  
+  my $n = @fields;
+
+  my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","qaadmin","qaadmin" ) || die "Cannot connect: $DBI::errstr";
+  my $sth = $dbh->prepare( "SELECT TestName FROM designStat WHERE RID=0");
+  $sth->execute();
+  while ( my $tests = $sth->fetchrow_array() ) {
+    my $sheet = $workbook->add_worksheet($tests);
+    $sheet->activate($tests);
+
+    for ( my $i = 0; $i <$n; $i++ ) {
+      my $header = $fields[$i];
+      $sheet->write(0, $i, $header);
+      my $sth1 = $dbh->prepare( "SELECT $header FROM designStat WHERE TestName = '$tests' ORDER BY RID");
+      $sth1->execute();
+      my $j = 1;
+        while ( my @value = $sth1->fetchrow_array() ) {
+          if ($header eq 'ID' ) {
+          $sheet->write_string($j, $i, $value[0]);
+          } else {
+          $sheet->write($j, $i, $value[0]);
+          } 
+          $j = $j+1;
+        }#while
+    }#for
+  }
+ }#else
+}#sub write_excel
+
+sub call_write_excel {
+my $fileName =$_;
+my @types = (["Config Files", '.xls'],
+             ["All Files", "*"]);
+
+$fileName = $top->getSaveFile(-filetypes =>\@types,
+                              -defaultextension => '.xls'); 
+          
+&write_excel($fileName);
+
+}#sub call_write_excel
+
+
+
+sub write_html1 {
+
+
+############# connect to MySQL, retrieve data, write HTML output ################
+
+use Fcntl;
+use DBI; 
+use CGI;
+my $q = new CGI; #defining
+my (@ary); 
+my ($dbh, $sth);
+my @fields = $GLOBAL->dbGlobalGetKbfo;
+my @columns = ();
+ 
+############ establish connection to database ######################## 
+
+$dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","qaadmin","qaadmin" ) || die "Cannot connect: $DBI::errstr";
+
+############ select column names in database #############
+
+$sth1 = $dbh->prepare ("SHOW COLUMNS FROM designStat"); 
+$sth1->execute (); 
+while (($ary1, $t) = $sth1->fetchrow_array ()) { 
+  #print "$ary1, $t\n";
+  push (@columns, $ary1);}
+
+############ MySQL database query ##############
+
+$sth = $dbh->prepare ("SELECT * FROM designStat"); 
+$sth->execute (); 
+
+############ generate HTML page with query results #############
+
+sysopen (HTML,'my1.html', O_RDWR|O_EXCL|O_CREAT, 0755);
+printf HTML "<html>\n";
+  printf HTML "<table border=1
+                bgcolor=yellow>\n"; 
+
+    printf HTML "  <tr>\n"; 
+      foreach(@columns) {
+        printf HTML "    <td><strong>$_</strong></td>\n"; 
+      }
+    printf HTML "  </tr>\n"; 
+
+########## read results of query to html page ############ 
+
+while (@ary = $sth->fetchrow_array ()) { 
+  printf HTML "  <tr>\n"; 
+  foreach(@ary) {
+    if($_ eq ""){
+      $_ = "-";
+      printf HTML "    <td>$_</td>\n"; 
+    } else {
+      printf HTML "    <td>$_</td>\n"; 
+           }
+  } 
+  printf HTML "  </tr>\n"; 
+} 
+  printf HTML "</table>\n";
+
+printf HTML "</html>\n";
+close (HTML);
+
+}#write_html1
+
+
+sub write_html {
+  #****f* /write_html
+  # NAME
+  #     write_html  
+  # FUNCTION
+  #         writes a html file for for each testcase data in database
+  # SYNOPSIS
+  #         write_html <output html file>
+  # INPUTS
+  #      options :
+  #
+  # OUTPUTS
+  #        html file for database information
+  #****
+  my $noOfArg = @_;
+  my @fieldTop = ();
+  my @fields = ();
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE",qaadmin,qaadmin ) || die "Cannot connect: $DBI::errstr";
+my $sth = $dbh->prepare( "SELECT toolName FROM designStat WHERE ID = 1.0");
+$sth->execute();
+my ($tn) = $sth->fetchrow_array();
+if($tn eq "realTime"){
+   @fieldTop = ("ID", "TestName", "toolBuildDate", "Status", "execDate", "slack", "tns", "area", "utime", "wtime", "vmem", "dmem", "pmem", "TestPath");
+   @fields = ("ID", "TestName", "toolBuildDate", "Status", "execDate", "00slack/10slack/01slack/11slack", "00tns/10tns/01tns/11tns", "00area/10area/01area/11area", "00utime/10utime/01utime/11utime", "00wtime/10wtime/01wtime/11wtime", "00vmem/10vmem/01vmem/11vmem", "00dmem/10dmem/01dmem/11dmem", "00pmem/10pmem/01pmem/11pmem","TestPath");
+} else {
+   @fieldTop = $GLOBAL->dbGlobalGetKbfo;
+   @fields = $GLOBAL->dbGlobalGetKbfo;
+}
+  my $fileName;
+  if ($noOfArg < 1 || $_[0] eq '-h') {
+    print "usage: write_html       <output filename>\n";
+    print "                  --arg <name of fields to be displayed>\n";
+  } else {
+    my $input_fields = 0 ;
+    for ($i = 0; $i < $noOfArg; $i++) {
+      $fileName = $_[0];
+      if ($_[$i] eq "--arg") {
+        $input_fields = 1 ;
+        @fieldTop = ();
+        @fields = ();
+        @fieldTop = ( "ID", "TestName");
+        @fields = ( "ID", "TestName");
+      } else {
+        if($input_fields == 1) {
+          my $fiel = $_[$i];
+          push( @fieldTop, $fiel);
+          if ( $fiel eq "slack" || $fiel eq "tns" || $fiel eq "area" || $fiel eq "utime" || $fiel eq "wtime" || $fiel eq "vmem" || $fiel eq "dmem" || $fiel eq "pmem" ) {
+            push ( @fields, "00".$fiel."/10".$fiel."/01".$fiel."/11".$fiel ); 
+          } else {
+            push ( @fields, $fiel );
+          }
+        }
+      }
+      #{}
+    }        
+    ############# connect to MySQL, retrieve data, write HTML output ################
+    use Fcntl;
+    use DBI; 
+    use CGI;
+    my $q = new CGI; #defining
+    #my (@ary); 
+    my ($dbh, $sth, $sth1, $sth2, $sth3, $sth4, $sth5);
+    my @testname = ();
+    my @testid = ();
+    my @ary = ();
+    my $ary_old;
+    my $ary;
+    my $ary1;
+    my $ary4;
+    my $ary5;
+    my $tname;
+    my @columns = ();
+    my @Rid = ();
+    $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","qaadmin","qaadmin" ) || die "Cannot connect: $DBI::errstr";
+    $sth2 = $dbh->prepare ("SELECT TestName, ID FROM designStat WHERE RID=0 ORDER BY ID"); 
+    $sth2->execute (); 
+    while ( ($tname, $id) = $sth2->fetchrow_array () ) {
+      $TESTNAMERID{$id} = $tname;
+      push (@testid, $id);
+    }
+    @testid = sort {$a<=>$b} @testid;
+    foreach (@testid){ 
+      my $testName = $TESTNAMERID{$_};
+      push (@testname, $testName); 
+    }    
+    ############ generate HTML page with query results #############
+    sysopen (HTML,$fileName, O_RDWR|O_EXCL|O_CREAT, 0755);
+    printf HTML "<html>\n";
+    printf HTML "<table border=1
+    bgcolor=cornsilk>\n"; 
+    
+    foreach $t(@testname) {
+      printf HTML "  <tr>\n"; 
+      foreach(@fieldTop) {
+        printf HTML "    <td align=centre><strong>$_</strong></td>\n"; 
+      }
+      printf HTML "  </tr>\n"; 
+      printf HTML "  <tr>\n"; 
+      foreach(@fields) {
+        if ($_ =~ m/^[0-9]+[a-z]*/) {
+          printf HTML "    <td><strong>00/10/01/11</strong></td>\n";
+        } else {
+          printf HTML "    <td><strong>-</strong></td>\n"; 
+        }
+      }
+      printf HTML "  </tr>\n";
+      my @tests = ();
+      my $sth3 = $dbh->prepare( "SELECT RID FROM designStat WHERE TestName = '$t'");
+      $sth3->execute();
+      while ( @Rid = $sth3->fetchrow_array ) {
+        push(@tests,$Rid[0]); 
+      }
+      @tests = sort{$a<=>$b}@tests;
+      my $len = @tests;
+      my @maxr = ();
+      if ($len > 3) {   
+        my $max0 = $tests[0];
+        my $max1 = $tests[-1];
+        my $max2 = $tests[-2];
+        my $max3 = $tests[-3];
+        @maxr = ("$max0", "$max1", "$max2", "$max3" );
+      } else {
+        my $end = $#tests;
+        my $start = $tests[0];
+        @maxr = ($start..$end);
+      } 
+      foreach $rd(@maxr) {
+        printf HTML "  </tr>\n";
+        foreach $temp_field (@fields) {
+          my $field;
+          if ($temp_field =~ m/^[0-9]+[a-z]*/) {
+            my @sfields1 = split(/\//, $temp_field);
+            $field = join(",", @sfields1);
+          } else {
+            $field = $temp_field;
+          }
+          my $len1 = @maxr;  
+          if ( $rd == $maxr[0]) {
+            $sth4 = $dbh->prepare ("SELECT $field FROM designStat WHERE TestName='$t' AND RID='$rd'"); 
+            $sth4->execute (); 
+            my @ac = $sth4->fetchrow_array (); 
+            my $ary4;
+            if ($field =~ m/^[0-9]+[a-z]*/) {
+              $ary4 = $ac[0]."/".$ac[1]."/".$ac[2]."/".$ac[3];
+            } else{
+              $ary4 = $ac[0];
+            }
+            if($ary4 eq ""){
+              $ary4 = "-";
+              printf HTML "<td 
+              <font color=darkgoldenrod size=3.5>$ary4</font></td>";
+            } else {
+              if ($field eq 'TestName') {
+                printf HTML "<td>
+                <a href= 'GUI_SCREENSHOTS/$ary4'>$ary4</a></td>";
+              } else { 
+                  if ($field =~ m/^[0-9]+[a-z]*/) {
+                    my ($var1, $var2, $var3, $var4) = split(/\//, $ary4);
+                    printf HTML "<td> 
+                    <font color=darkgoldenrod size=3.5>$var1<BR>$var2<BR>$var3<BR>$var4</font></td>";
+
+                  } else {
+                    printf HTML "<td> 
+                    <font color=darkgoldenrod size=3.5>$ary4</font></td>";
+                  }
+              }
+            }
+          } else {                 
+            my $rd_2last1 = $maxr[0];
+            $sth5 = $dbh->prepare ("SELECT $field FROM designStat WHERE TestName='$t' AND RID='$rd_2last1'"); 
+            $sth5->execute (); 
+            @ary5 = $sth5->fetchrow_array ();  
+            $sth = $dbh->prepare ("SELECT $field FROM designStat WHERE TestName='$t' AND RID='$rd'"); 
+            $sth->execute (); 
+            my @ab = $sth->fetchrow_array ();
+            my $ary;
+            if($field =~ m/^[0-9]+[a-z]*/) { 
+              $ary = $ab[0]."/".$ab[1]."/".$ab[2]."/".$ab[3]; 
+            } else { 
+              $ary = $ab[0];
+            }
+            if($ary eq ""){
+              $ary = "-";
+              printf HTML "    <td>$ary</td>"; 
+            } else {
+              if ($field =~ m/^[0-9]+[a-z]*/) {
+                printf HTML "<td>";
+                my $i = 0;    
+                foreach $ary (@ab){
+                  my $ary_old1 = $ary5[$i];
+                  if (($ary <0) && ($ary_old1 <0)) {
+#---------------------------------------------------------------------------------------#
+                   if($field =~ m/^[0-9]+slack/) {
+                     if ( (($ary_old1*0.95) >= $ary)  && ($ary >= ($ary_old1*1.05) )) {
+                      printf HTML " 
+                      <font color=Green size=3.5>$ary</font><BR>";
+                    } elsif ( ($ary_old1*1.05)>$ary ) {
+                      printf HTML " 
+                      <font color=Red size=3.5>$ary</font><BR>";
+                    } elsif ( $ary>($ary_old1*0.95) ) {
+                      printf HTML " 
+                      <font color=Blue size=3.5>$ary</font><BR>";
+                    } else {
+                      printf HTML "    $ary<BR>"; 
+                    }
+                              
+                                                                      }#if slack
+                   elsif(($field =~ m/^[0-9]+utime/) || ($field =~ m/^[0-9]+wtime/)){
+                          my @pVal = split(/\:/,$ary);
+                          my @cVal = split(/\:/,$ary_old1);
+                       my $ary1 = 3600*$pVal[-3] + 60*$pVal[-2] + $pVal[-1];   
+                          $ary_old1 = 3600*$cVal[-3] + 60*$cVal[-2] + $cVal[-1];   
+                    if ( (($ary_old1*0.95) >= $ary1)  && ($ary1 >= ($ary_old1*1.05) )) {
+                      printf HTML " 
+                      <font color=Green size=3.5>$ary</font><BR>";
+                    } elsif ( ($ary_old1*1.05)>$ary1 ) {
+                      printf HTML " 
+                      <font color=Blue size=3.5>$ary</font><BR>";
+                    } elsif ( $ary1>($ary_old1*0.95) ) {
+                      printf HTML " 
+                      <font color=Red size=3.5>$ary</font><BR>";
+                    } else {
+                      printf HTML "    $ary<BR>"; 
+                    }
+                                                   }#if utime,wtime
+                   else{
+                    if ( (($ary_old1*0.95) >= $ary)  && ($ary >= ($ary_old1*1.05) )) {
+                      printf HTML " 
+                      <font color=Green size=3.5>$ary</font><BR>";
+                    } elsif ( ($ary_old1*1.05)>$ary ) {
+                      printf HTML " 
+                      <font color=Blue size=3.5>$ary</font><BR>";
+                    } elsif ( $ary>($ary_old1*0.95) ) {
+                      printf HTML " 
+                      <font color=Red size=3.5>$ary</font><BR>";
+                    } else {
+                      printf HTML "    $ary<BR>"; 
+                    }
+                                                   }#if not slack,utime,wtime
+                  } else {
+#----------------------------------------------------------------------------------------#
+                   if($field =~ m/^[0-9]+slack/) {
+
+                     if ( (($ary_old1*0.95) <= $ary)  && ($ary <= ($ary_old1*1.05) )) {
+                      printf HTML " 
+                      <font color=Green size=3.5>$ary</font><BR>";
+                    } elsif ( ($ary_old1*1.05)<$ary ) {
+                      printf HTML " 
+                      <font color=Blue size=3.5>$ary</font><BR>";
+                    } elsif ( $ary<($ary_old1*0.95) ) {
+                      printf HTML " 
+                      <font color=Red size=3.5>$ary</font><BR>";
+                    } else {
+                      printf HTML "    $ary<BR>"; 
+                    }
+
+                                                                      }#if slack
+                   elsif(($field =~ m/^[0-9]+utime/) || ($field =~ m/^[0-9]+wtime/)){
+                          my @pVal = split(/\:/,$ary);
+                          my @cVal = split(/\:/,$ary_old1);
+                       my $ary1 = 3600*$pVal[-3] + 60*$pVal[-2] + $pVal[-1];   
+                          $ary_old1 = 3600*$cVal[-3] + 60*$cVal[-2] + $cVal[-1];   
+                    if ( (($ary_old1*0.95) <= $ary1)  && ($ary1 <= ($ary_old1*1.05) )) {
+                      printf HTML " 
+                      <font color=Green size=3.5>$ary</font><BR>";
+                    } elsif ( ($ary_old1*1.05)<$ary1 ) {
+                      printf HTML " 
+                      <font color=Red size=3.5>$ary</font><BR>";
+                    } elsif ( $ary1<($ary_old1*0.95) ) {
+                      printf HTML " 
+                      <font color=Blue size=3.5>$ary</font><BR>";
+                    } else {
+                      printf HTML "    $ary<BR>"; 
+                    }
+                                                 }#if utime,wtime
+                   else {
+                    if ( (($ary_old1*0.95) <= $ary)  && ($ary <= ($ary_old1*1.05) )) {
+                      printf HTML " 
+                      <font color=Green size=3.5>$ary</font><BR>";
+                    } elsif ( ($ary_old1*1.05)<$ary ) {
+                      printf HTML " 
+                      <font color=Red size=3.5>$ary</font><BR>";
+                    } elsif ( $ary<($ary_old1*0.95) ) {
+                      printf HTML " 
+                      <font color=Blue size=3.5>$ary</font><BR>";
+                    } else {
+                      printf HTML "    $ary<BR>"; 
+                    }
+                  }
+                                                 }#if not slack,utime,wtime
+#----------------------------------------------------------------------------------------#
+                  $i++;
+                }#foreach
+                printf HTMLL "</td>";
+              } else { 
+                if ($field eq "Status" && $ary == 99 ) {
+                  printf HTML "    <td>FAILED</td>"; 
+                } else {
+                  printf HTML "    <td>$ary</td>"; 
+                }
+              }
+            }
+          }
+        }#foreach fields(column name) 
+        printf HTML "  </tr>\n";
+      }#foreach RID
+    }#foreach testname
+    printf HTML "</table>\n";
+    printf HTML "</html>\n";
+    close (HTML);
+  }#else
+}#write_html
+
+sub call_write_html {
+my $fileName =$_;
+my @types = (["Config Files", '.html'],
+             ["All Files", "*"]);
+
+$fileName = $top->getSaveFile(-filetypes =>\@types,
+                              -defaultextension => '.html'); 
+          
+&write_html($fileName);
+
+}#sub call_write_html
+
+
+sub read_xls {
+
+#****f* /read_xls
+# NAME
+#     read_xls
+# FUNCTION
+#         read the data fom xls and update the corresponding database (incase database crash down)
+# SYNOPSIS
+#         read_xls <xls filename>
+# INPUTS
+#      options :
+#
+# OUTPUTS
+#        database gets populated
+#****
+if ($_[0] < 1 || $_[0] eq '-h') {
+      print "usage:            read_xls <input filename>\n";
+                                 }
+else {
+my $fileName = $_[0];
+  use Spreadsheet::ParseExcel;
+  use DBI;
+  my $oExcel = new Spreadsheet::ParseExcel;
+  my $ref;
+  #die "You must provide a filename to $0 to be parsed as an Excel file" unless @ARGV;
+  my $dbh = DBI->connect( "dbi:mysql:DB;aditya.lnx4.com","qaadmin","qaadmin" ) || die "Cannot connect: $DBI::errstr";
+  #my $oBook = $oExcel->Parse('/home/shobhitp/new.xls');
+  #my $oBook = $oExcel->Parse('debug1.xls');
+  my $oBook = $oExcel->Parse($fileName);
+  my($iR, $iC, $oWkS, $oWkC);
+  print "INFO-KNLBSE-READ_XLS : 001 : FILE  :", $oBook->{File} , "\n";
+  print "INFO-KNLBSE-READ_XLS : 002 : COUNT :", $oBook->{SheetCount} , "\n";
+
+  #print "AUTHOR:", $oBook->{Author} , "\n"
+  #if defined $oBook->{Author};
+
+  for(my $iSheet=0; $iSheet < $oBook->{SheetCount} ; $iSheet++) {
+    $oWkS = $oBook->{Worksheet}[$iSheet];
+    print "--------- SHEET:", $oWkS->{Name}, "\n";
+    my @fields = ();
+
+    for(my $iR = $oWkS->{MinRow} ;defined $oWkS->{MaxRow} && $iR <= $oWkS->{MaxRow} ;$iR++){
+      #my $i =0;
+      for(my $iC = $oWkS->{MinCol} ; defined $oWkS->{MaxCol} && $iC <= $oWkS->{MaxCol} ;$iC++) {
+        $oWkC = $oWkS->{Cells}[$iR][$iC];
+
+          if ($iR == 0){
+            if(check_header_exist($oWkC->Value) == 0) {
+              addCustomFields($oWkC->Value, "VARCHAR(255)") ;
+            }
+            push(@fields,$oWkC->Value); 
+          }
+          else {
+            my $HeaderName = $fields[$iC];
+            my $ColValue;
+            if (defined $oWkC) { 
+              $ColValue = $oWkC->Value ;            }
+            else { 
+             $ColValue = "NULL"; 
+            }
+            if ($iC == 0) {
+              $dbh->do( "INSERT INTO designStat ($HeaderName) VALUES ('$ColValue')");
+             $ref = $HeaderName;
+             $refval = $ColValue;
+            }
+            else {
+              $dbh->do( "UPDATE designStat SET $HeaderName = '$ColValue' WHERE $ref = '$refval'");
+            }
+            $i++;
+print "( $iR , $iC ) =>", $oWkC->Value, "\n" if($oWkC);
+}
+  }
+ }
+}
+ }#else
+}#sub read_xls
+
+1;
+
+
+

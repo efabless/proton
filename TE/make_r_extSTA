@@ -1,0 +1,627 @@
+
+sub clear_gui_tfline {
+
+$design_canvas->delete("tfline");
+
+}#sub clear_gui_tfline
+
+
+
+
+sub display_data_flow_l1 {
+
+my $noOfArguments = @_;
+
+if ( $noOfArguments < 1 ) {
+print "Usage : display_data_flow_l1 -inst < instance name > \n";
+print "                             -level  < fileName > \n";
+                          }#if incorrect arguments
+else {
+                                                                                                                             
+for ( my $x = 0 ; $x < $noOfArguments ; $x++ ) {
+if( $_[$x] =~ /-inst/ ) {  $INSTANCENAME = $_[$x+1]; }
+if( $_[$x] =~ /-level/ ) {  $LEVEL = $_[$x+1]; }
+                                               }#for
+
+if ( $LEVEL == 1 ) {
+print "INFO-TE : 001 : displaying level $LEVEL paths for $INSTANCENAME\n";
+&display_data_flow_from_inst($INSTANCENAME,"blue");
+            } 
+elsif( $LEVEL == 2) {
+print "INFO-TE : 002 : displaying level $LEVEL paths for $INSTANCENAME\n";
+&display_data_flow_from_inst($INSTANCENAME,"blue");
+&display_data_flow_to_inst($INSTANCENAME,"green");
+print "INFO-TE : 003 : Finished\n";
+                   }# if level
+                                                   }#if correct arguments
+}#display_data_flow_l1
+
+
+sub display_data_flow_to_inst {
+
+my $INSTANCENAME = $_[0];
+my $COLOR = $_[1];
+
+print "INFO-TE : 001 : displaying to paths \n";
+if ( exists $COMP_ALREADY{$INSTANCENAME} ) { my $eploc = $COMP_ALREADY{$INSTANCENAME}{location};
+        my  ($urx,$ury)=(split(/\s+/, $eploc))[0,1];
+
+         $urx = ($urx/$DBSCALEFACTOR)*$MICRONFACTOR ;
+         $ury = ($ury/$DBSCALEFACTOR)*$MICRONFACTOR ;
+
+       if( $dieIsCentre == 0 ) {
+        $ury = 520-$ury;
+        $urx = $urx + 20;
+                                                 }
+        else {
+        $ury = 270-$ury;
+        $urx = $urx + 270;
+             } 
+ 
+foreach $pathNum ( keys %FE_STA_PATHS_STATS ){
+        my $beginPoint = $FE_STA_PATHS_STATS{$pathNum}{begin};
+        my $endPoint   = $FE_STA_PATHS_STATS{$pathNum}{end};
+
+        if ( $endPoint eq $INSTANCENAME ) { my $bploc = $COMP_ALREADY{$beginPoint}{location};
+       my  ($llx,$lly)=(split(/\s+/, $bploc))[0,1];
+         $llx = ($llx/$DBSCALEFACTOR)*$MICRONFACTOR ;
+         $lly = ($lly/$DBSCALEFACTOR)*$MICRONFACTOR ;
+        if( $dieIsCentre == 0 ) {
+        $lly = 520-$lly;
+        $llx = $llx + 20;
+                                                 }
+        else {
+        $lly = 270-$lly;
+        $llx = $llx + 270;
+             }
+$design_canvas->createLine($llx,$lly,$urx,$ury, -fill=>$COLOR);
+                                              }# if the instance name is the same as one querried
+
+                          }#foreach
+
+} else { print "WARN-TE : 002 : instance $beginPoint not  found\n"; }
+}#sub display_data_flow_to_inst
+
+sub display_data_flow_from_inst {
+print "INFO-TE : 001 : displaying from paths \n";
+my $INSTANCENAME = $_[0];
+my $COLOR = $_[1];
+
+my ($llx, $lly, $urx, $ury, $bploc, $eploc) = 0;
+my $beginPoint = "";
+my $endPoint = "";
+
+
+if ( exists $COMP_ALREADY{$INSTANCENAME} ) { 
+        $bploc = $COMP_ALREADY{$INSTANCENAME}{location};
+        ($llx,$lly)=(split(/\s+/, $bploc))[0,1];
+        $llx = ($llx/$DBSCALEFACTOR)*$MICRONFACTOR ;
+        $lly = ($lly/$DBSCALEFACTOR)*$MICRONFACTOR ;
+        if( $dieIsCentre == 0 ) {
+        $lly = 520-$lly;
+        $llx = $llx + 20;
+                                                 }
+        else {
+        $lly = 270-$lly;
+        $llx = $llx + 270;
+             }
+
+foreach $pathNum ( keys %FE_STA_PATHS_STATS ){
+         $beginPoint = $FE_STA_PATHS_STATS{$pathNum}{begin};
+         $endPoint   = $FE_STA_PATHS_STATS{$pathNum}{end};
+
+        if ( $beginPoint eq $INSTANCENAME ) {
+        if ( exists $COMP_ALREADY{$endPoint} ) { $eploc = $COMP_ALREADY{$endPoint}{location};
+                                               } else { print "WARN-TE : 002 : instance $endPoint not  found\n"; }
+                                                                                                                              
+        ($urx,$ury)=(split(/\s+/, $eploc))[0,1];
+                                                                                                                              
+         $urx = ($urx/$DBSCALEFACTOR)*$MICRONFACTOR ;
+         $ury = ($ury/$DBSCALEFACTOR)*$MICRONFACTOR ;
+
+       if( $dieIsCentre == 0 ) {
+        $ury = 520-$ury;
+        $urx = $urx + 20;
+                                                 }
+        else {
+        $ury = 270-$ury;
+        $urx = $urx + 270;
+             }
+$design_canvas->createLine($llx,$lly,$urx,$ury, -fill=>$COLOR, -arrow => "last", -arrowshape => [5,5,5], -tag => "tfline" );
+
+                                              }# if the instance name is the same as one querried
+
+                          }#foreach
+
+} else { print "WARN-TE : 003 : instance $beginPoint not  found\n"; }
+}#sub display_data_flow_from_inst
+
+
+
+
+sub display_data_flow {
+
+
+foreach $pathNum ( keys %FE_STA_PATHS_STATS ){
+        $beginPoint = $FE_STA_PATHS_STATS{$pathNum}{begin};
+        $endPoint   = $FE_STA_PATHS_STATS{$pathNum}{end};
+        if ( exists $COMP_ALREADY{$beginPoint} ) { $bploc = $COMP_ALREADY{$beginPoint}{location};
+                                                # print "INFO : instance $beginPoint found\n";
+                                                 } else { print "WARN-TE : 001 : instance $beginPoint not  found\n"; }
+        if ( exists $COMP_ALREADY{$endPoint} ) { $eploc = $COMP_ALREADY{$endPoint}{location};
+                                                # print "INFO : instance $endPoint found\n";
+                                               } else { print "WARN-TE : 002 : instance $endPoint not  found\n"; }
+                                                                                                                              
+        #print "$bploc $eploc\n";
+        ($llx,$lly)=(split(/\s+/, $bploc))[0,1];
+        ($urx,$ury)=(split(/\s+/, $eploc))[0,1];
+                                                                                                                              
+         $llx = ($llx/$DBSCALEFACTOR)*$MICRONFACTOR ;
+         $lly = ($lly/$DBSCALEFACTOR)*$MICRONFACTOR ;
+         $urx = ($urx/$DBSCALEFACTOR)*$MICRONFACTOR ;
+         $ury = ($ury/$DBSCALEFACTOR)*$MICRONFACTOR ;
+                                                                                                                              
+       if( $dieIsCentre == 0 ) {
+        $lly = 520-$lly;
+        $ury = 520-$ury;
+        $llx = $llx + 20;
+        $urx = $urx + 20;
+                                                 }
+        else {
+        $lly = 270-$lly;
+        $ury = 270-$ury;
+        $llx = $llx + 270;
+        $urx = $urx + 270;
+             }
+#        print "Line $llx $lly $urx $ury\n";
+$design_canvas->createLine($llx,$lly,$urx,$ury, -fill=>'yellow', -fill=>$COLOR, -arrow => "last", -arrowshape => [5,5,5], -tag => "tfline");
+                                                                                                                              
+                                            }#foreach
+
+}# sub display_data_flow
+
+sub generate_fe_selectInst {
+
+my $noOfArguments = @_;
+
+if ( $noOfArguments < 1 || $_[0] eq '-h') {
+print "Usage : generate_fe_selectInst -inst < instance name > \n";
+print "                               -outfile  < fileName > \n";
+                          }#if incorrect arguments
+else {
+
+for ( my $x = 0 ; $x < $noOfArguments ; $x++ ) {
+if( $_[$x] =~ /-inst/ ) {  $INSTANCENAME = $_[$x+1]; }
+if( $_[$x] =~ /-outfile/ ) {  $REPORT_OUTPUT = $_[$x+1]; }
+                                               }#for
+open (WRITE,">$REPORT_OUTPUT");
+
+foreach $pathNum ( keys %FE_STA_PATHS_STATS ){
+        if ( $FE_STA_PATHS_STATS{$pathNum}{begin} eq $INSTANCENAME ) {
+                 print WRITE "selectInst $FE_STA_PATHS_STATS{$pathNum}{end}\n";                                
+                                                                     }#if
+                                            }#foreach
+close(WRITE);
+    }#if correct no of arguments
+
+}# sub generate_fe_selectInst
+
+sub read_sta_report {
+my $noOfArguments = @_;
+my $INPUTREPORTFILE = "";
+my $OUTPUTREPORTFILE ="";
+my $REPORTYESNO = "false";
+my $FILEFORMAT = "SOCE";
+
+if ( $noOfArguments < 1 || $_[0] eq '-h') {
+print "Usage : read_sta_report -f < timing report file > \n";
+print "                        -t  < PT / BG / FE / SOCE > \n";
+print "                        -reportCritNet  < false / true > \n";
+print "                        -outfile  < fileName > \n";
+                          }#if incorrect arguments
+else {
+
+for ( my $x = 0 ; $x < $noOfArguments ; $x++ ) {
+if( $_[$x] =~ /-f/ ) {  $INPUTREPORTFILE = $_[$x+1]; }
+if( $_[$x] =~ /-t/ ) {  $FILEFORMAT = $_[$x+1]; }
+if( $_[$x] =~ /-reportCritNet/ ) {  $REPORTYESNO = $_[$x+1]; }
+if( $_[$x] =~ /-outfile/ ) {  $OUTPUTREPORTFILE = $_[$x+1]; }
+                                               }#for
+
+if ( $FILEFORMAT eq "PT" ) {
+&read_prime_time_report($INPUTREPORTFILE);
+print "INFO-TE-RD_STA_RPT : 001 : finsihed loading the primetime timing report\n";
+&highlightP2P_tclProc
+                           }
+elsif ( $FILEFORMAT eq "FE" ) {
+&read_fe_report($INPUTREPORTFILE,$OUTPUTREPORTFILE,$REPORTYESNO);
+print "INFO-TE-RD_STA_RPT : 002 : finished reading the fe timing report\n";
+                              }
+elsif ( $FILEFORMAT eq "SOCE" ) {
+print "INFO-TE-RD_STA_RPT : 003 : ........ reading the soce timing report file $INPUTREPORTFILE\n";
+&read_soce_report($INPUTREPORTFILE);
+print "INFO-TE-RD_STA_RPT : 003 : finished reading the soce timing report file $INPUTREPORTFILE\n";
+                              }
+
+foreach $path ( keys %PATH_TABLE ) {
+        print "INFO-TE-RD_STA_RPT : 004 : path is $path\n";
+        foreach $points ( @{$PATH_TABLE{$path}} ) {
+        print "INFO-TE-RD_STA_RPT : 005 : $points\n";
+                                                       }
+                                   }
+     } # if correct arguments
+
+
+}#sub read_sta_report
+
+
+sub read_soce_report {
+my $inputReportFile =$_[0];
+if( -e "$inputReportFile" ) {
+open (READ,"$inputReportFile");
+while(<READ>) {
+chomp();
+if ($_ =~ /^PATH\b/ ) { $pathNum = (split(/\s+/, $_))[1]; }
+elsif ($_ =~ /^\s*ENDPT\b/ ) { $_ =~ s/^\s+//; $_ =~ s/\{/ /g; $_ =~ s/\}/ /g; ($pathEndInst,$pathEndInstPin) = (split(/\s+/, $_))[1,2]; }
+elsif ($_ =~ /^\s*BEGINPT\b/ ) { $_ =~ s/^\s+//; $_ =~ s/\{/ /g; $_ =~ s/\}/ /g; print "INFO-TE : 001 : $_\n"; ($pathBeginInst,$pathBeginInstPin) = (split(/\s+/, $_))[1,2]; }
+elsif ($_ =~ /^\s*SLK\b/ ) { $_ =~ s/^\s+//; $pathSlack = (split(/\s+/, $_))[1]; }
+elsif ($_ =~ /^END_PATH\s+$pathNum/ ) { print "INFO-TE : 002 : $pathNum : $pathEndInst : $pathBeginInst : $pathSlack\n"; 
+                                        my $col_num = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByNameCol($pathBeginInst);
+                                        my $row_num = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByNameRow($pathEndInst);
+                                        $PLACE{$TOP_MODULE}->dbPlaceSetSlackVal($row_num,$col_num,$pathSlack); 
+                                      }
+else { next; }
+              }#while
+                            }#if the report file exists
+
+
+}#sub read_soce_report
+
+
+
+sub read_fe_report {
+my $inputReportFile =$_[0];
+my $outputReportFile =$_[1];
+my $reportyesno =$_[2];
+
+%FE_STA_PATHS = ();
+%FE_STA_PATHS_STATS = ();
+
+if( -e "$inputReportFile" ) {
+open (READ,"$inputReportFile");
+open (WRITE,">$outputReportFile");
+
+while (<READ>) {
+chomp();
+if($_ =~ /^Path #/ ) { ($pathNum)=(split(/\s+/,$_))[2]; 
+                        $pathStats = "FESTA".$pathNum;
+                        %{$pathStats} =();
+                       @{$pathNum}=();
+                       $FE_STA_PATHS{$pathNum}=\@{$pathNum};
+                       $FE_STA_PATHS_STATS{$pathNum} = \%{$pathStats};
+                     }
+elsif($_ =~ /->/ ) { ($instanceName,$arc,$cellref)=(split(/\s+/,$_))[0,1,2]; 
+                  push(@{$pathNum},$instanceName);
+                  if ( $reportyesno eq "true" ) {
+                  ($inputPinName,$outputPinName)=(split(/\-\>/,$arc))[0,1];
+                  $temp = $instanceName."/".$outputPinName;
+                  print WRITE "specifyNetWeight \[ dbNetName \[ dbTermNet \[ dbGetTermByInstTermName $temp \] \] \] 20\n";
+                                                }# if report crit net option is used
+                }
+elsif($_ =~ /\^\^/ ) { ($instanceName,$arc,$cellref)=(split(/\s+/,$_))[0,1,2]; 
+                  push(@{$pathNum},$instanceName);
+                  if ( $reportyesno eq "true" ) {
+                  ($inputPinName,$outputPinName)=(split(/\^\^/,$arc))[0,1];
+                  $temp = $instanceName."/".$outputPinName;
+                  print WRITE "specifyNetWeight \[ dbNetName \[ dbTermNet \[ dbGetTermByInstTermName $temp \] \] \] 20\n";
+                                                }# if report crit net option is used
+                }
+elsif( $_ =~ /^Slack\:\s+/ ) { $slack = (split(/\s+/,$_))[1]; 
+                         $FE_STA_PATHS_STATS{$pathNum}{slack} = $slack;
+                             }
+
+
+               }#while
+&dbgReportStaPath();
+                     }#if file exists
+else {
+     print "WARN-TE : 001 : The timing report does not exist .. please check the pathname or filename\n";
+     }
+
+
+}#sub read_fe_report
+
+
+sub dbgReportStaPath {
+
+my $temp = keys %FE_STA_PATHS;
+my $numberOfComponents = 0;
+
+print "INFO-TE : 001 : Timing report summary on $temp paths ... \n";
+foreach $pathNum ( keys %FE_STA_PATHS ) {
+        $numberOfComponents = @{$FE_STA_PATHS{$pathNum}};
+        $beginPoint = ${$FE_STA_PATHS{$pathNum}}[0];
+        #print "BeginPoint : $beginPoint\n";
+        if ( exists $COMP_ALREADY{$beginPoint} ) { $bploc = $COMP_ALREADY{$beginPoint}{location};
+                                               $bpfound=1;
+                                               }
+        $endPoint =  ${$FE_STA_PATHS{$pathNum}}[$numberOfComponents-1];
+        #print "EndPoint : $endPoint\n";
+        if ( exists $COMP_ALREADY{$endPoint} ) { $eploc = $COMP_ALREADY{$endPoint}{location};
+                                                 $epfound = 1;
+                                             }
+       if ( $bpfound == 1 && $epfound == 1 ) {
+
+       ($bpx,$bpy)=(split(/\s+/,$bploc))[0,1];
+       ($epx,$epy)=(split(/\s+/,$eploc))[0,1];
+       $length = sqrt( ($epx -$bpx)*($epx -$bpx) + ($epy -$bpy)*($epy -$bpy) );
+                           }# if the begin and end points are found
+
+
+       my $numberOfComponentsCombo = $numberOfComponents - 2;
+if( exists $FE_STA_PATHS_STATS{$pathNum} ) {
+           $FE_STA_PATHS_STATS{$pathNum}{begin} = $beginPoint;
+           $FE_STA_PATHS_STATS{$pathNum}{end}   = $endPoint;
+           $FE_STA_PATHS_STATS{$pathNum}{compoNum}   = $numberOfComponentsCombo;
+           $FE_STA_PATHS_STATS{$pathNum}{length}   = $length;
+                                     }# if path exists in STATS hash
+                                       }# foreach
+open (WRITE,">summary");
+foreach $pathNum ( keys %FE_STA_PATHS_STATS ) {
+           print WRITE "Path # $pathNum\n";
+           print WRITE "BeginPoint: $FE_STA_PATHS_STATS{$pathNum}{begin}\n";
+           print WRITE "EndPoint: $FE_STA_PATHS_STATS{$pathNum}{end}\n";
+           print WRITE "Slack = $FE_STA_PATHS_STATS{$pathNum}{slack} Combi components = $FE_STA_PATHS_STATS{$pathNum}{compoNum} reg2reg distance = $FE_STA_PATHS_STATS{$pathNum}{length}\n\n";
+                                              }#foreach
+
+close(WRITE);
+open(WRITE,">stats");
+&dbgReportStaPathStats();
+close(WRITE);
+
+}#sub dbgReportStaPath 
+
+
+
+sub dbgReportStaPathStats {
+
+my %TABLE_TEMP = ();
+my $noOfPaths = keys %FE_STA_PATHS_STATS;
+        print "INFO-TE : 001 : generating status of $noOfPaths paths\n";
+
+for ( my $xx = 1; $xx <= $noOfPaths; $xx++ ) {
+        $pathNum = $xx;
+        $begin = $FE_STA_PATHS_STATS{$pathNum}{begin};
+        if( exists $TABLE_TEMP{$begin} ) {
+                                         }
+        else {
+        $TABLE_TEMP{$begin} = 1;
+        $end = $FE_STA_PATHS_STATS{$pathNum}{end};
+$maxSlack = $FE_STA_PATHS_STATS{$pathNum}{slack}; $minSlack = $FE_STA_PATHS_STATS{$pathNum}{slack};
+$noOfSameBeginPaths = 0; $noOfCombiComponents = 0;
+        foreach $temp ( keys %FE_STA_PATHS_STATS ) {
+             if( $begin eq $FE_STA_PATHS_STATS{$temp}{begin} ) {
+                            $noOfSameBeginPaths++;
+                            $noOfCombiComponents = $noOfCombiComponents + $FE_STA_PATHS_STATS{$temp}{compoNum};
+            if( $FE_STA_PATHS_STATS{$temp}{slack} > $maxSlack ){ $maxSlack = $FE_STA_PATHS_STATS{$temp}{slack}; }
+            if( $FE_STA_PATHS_STATS{$temp}{slack} < $minSlack ){ $minSlack = $FE_STA_PATHS_STATS{$temp}{slack}; }
+                                                                  }
+                                                      }#foreach
+            print WRITE "Path # $pathNum\n";
+            print WRITE "BeginPoint: $begin\n";
+            print WRITE "#sameBegin = $noOfSameBeginPaths  slack Range = $minSlack - $maxSlack  #combiComp = $noOfCombiComponents\n";
+             }
+                                              }# foreach
+
+
+
+}#sub dbgReportStaPathStats
+
+
+
+sub hilite_sta_path {
+my $noOfArguments = @_;
+
+if ( $noOfArguments < 1 || $_[0] eq '-h') {
+print "Usage : hilite_sta_path -p < path number > \n";
+                          }#if incorrect arguments
+else {
+print "INFO-TE-HLTE_STA_PTH : 001 : display path $noOfArguments ... \n";
+for ( my $x = 0 ; $x < $noOfArguments ; $x++ ) {
+if( $_[$x] =~ /\-p/ ) {  $pathNum = $_[$x+1]; }
+                                               }#for
+
+    if ( exists $FE_STA_PATHS{$pathNum} ) {
+        $numberOfComponents = @{$FE_STA_PATHS{$pathNum}};
+        for ( my $xx = 0; $xx < $numberOfComponents - 1 ; $xx++ ) {
+        $beginPoint = ${$FE_STA_PATHS{$pathNum}}[$xx];
+        $endPoint   = ${$FE_STA_PATHS{$pathNum}}[$xx+1];
+        if ( exists $COMP_ALREADY{$beginPoint} ) { $bploc = $COMP_ALREADY{$beginPoint}{location};
+                                                 # print "INFO : instance $beginPoint found\n";
+                                                 } else { print "WARN-TE-HLTE_STA_PTH : 002 : instance $beginPoint not  found\n"; }
+        if ( exists $COMP_ALREADY{$endPoint} ) { $eploc = $COMP_ALREADY{$endPoint}{location};
+                                                 # print "INFO : instance $endPoint found\n";
+                                               } else { print "WARN-TE-HLTE_STA_PTH : 003 : instance $endPoint not  found\n"; }
+
+        #print "$bploc $eploc\n";
+        ($llx,$lly)=(split(/\s+/, $bploc))[0,1];
+        ($urx,$ury)=(split(/\s+/, $eploc))[0,1];
+
+         $llx = ($llx/$DBSCALEFACTOR)*$MICRONFACTOR ;
+         $lly = ($lly/$DBSCALEFACTOR)*$MICRONFACTOR ;
+         $urx = ($urx/$DBSCALEFACTOR)*$MICRONFACTOR ;
+         $ury = ($ury/$DBSCALEFACTOR)*$MICRONFACTOR ;
+
+       if( $dieIsCentre == 0 ) {
+	$lly = 520-$lly;
+	$ury = 520-$ury;
+	$llx = $llx + 20;
+	$urx = $urx + 20;
+	                                         }
+	else {
+	$lly = 270-$lly;
+	$ury = 270-$ury;
+	$llx = $llx + 270;
+	$urx = $urx + 270;
+	     }
+$design_canvas->createLine($llx,$lly,$urx,$ury, -fill=>'yellow', -tag => "tpline" );
+
+                                                               }#for
+                                          }#if path exists
+    }# if correct # arguments
+
+}#sub hilite_sta_path
+
+
+
+sub read_prime_time_report {
+my $INPUTREPORTFILE = $_[0];
+open ( READ, "$INPUTREPORTFILE");
+
+%PATH_TABLE = ();
+my $pathNumber = 0;
+my $instanceNumber = 0;
+
+while(<READ>) {
+chomp();
+$_ =~ s/^\s+//;
+
+if ($_ =~ /^\-+$/ ) { }
+elsif ( $_ =~ /^\s+$/ ) { }
+elsif(/^Point\s+/ ... /^data arrival time/ ) {
+if ($_ =~ /^Point\s+/ ) {
+                        $pathNumber++;
+                        $instanceNumber = 0;
+                        $pathName = "Path".$pathNumber;
+                        $PATH_TABLE{$pathName} = \@{$pathName};
+                        @{$pathName} = ();
+                        }
+($point, $pointType, $fanout, $incr, $cumlative)=(split (/\s+/, $_ ))[0,1,2,3,4];
+
+if ( $pointType =~ /\(.*\)/ ) {
+
+    $pointType =~ s/\(//;
+    $pointType =~ s/\)//;
+
+   if ( exists $MACROS_ALREADY{$pointType} ) {
+        push(@{$pathName}, $point);
+                                             }
+elsif ( $pointType eq "in"  ) { 
+        push(@{$pathName}, $point);
+                              }
+elsif ( $pointType eq "out" ) { 
+        push(@{$pathName}, $point);
+                              }
+else  { 
+      }
+                                } # if contains any () in the report
+else {} 
+                                }#if between point and data arrival time ie one path
+     
+
+              }#while
+
+}#sub read_prime_time_report
+
+
+
+
+sub highlightP2P_tclProc {
+
+open (WRITE, ">feHighlight.scr");
+my ($start, $stop, $i) ;
+
+foreach $path ( keys %PATH_TABLE ) {
+        $i=0;
+        print WRITE "#$path\n";
+        $procName = showPT.$path;
+        print WRITE "proc $procName \{\} \{\n";
+        print WRITE "deselectAll\n";
+        foreach ( @{$PATH_TABLE{$path}} ) {
+                  $start = @{$PATH_TABLE{$path}}[$i]; 
+                  $stop = @{$PATH_TABLE{$path}}[$i+1]; 
+                 # print "START $start\n";
+                 # print "STOP $stop\n";
+                  @start = split(/\//,$start);
+                  @stop = split(/\//,$stop);
+
+                 $start_len = @start;
+                 #print "START_LEN $start_len\n";
+                 $stop_len = @stop ;
+        #         print "STOP_LEN $stop_len\n";
+                 if ( $start_len == 0 || $stop_len == 0 ) {} 
+                 elsif( $start_len == $stop_len ) {
+                     $match = 0;
+                     for ( $x=0 ;  $x < $start_len -1 ; $x++ ) {
+                      #   print "HI $start[$x] and $stop[$x]\n";
+                         if ( $start[$x] eq $stop[$x] ) {
+                         $match = $match + 0;
+                                                        }
+                         else {                         
+                         $match = $match + 1;
+                               }
+                                                         }# for
+
+                     if( $match > 0 ) {
+                 #print WRITE "$start to $stop\n";
+
+                 ($instanceName,$pinName) = getInstanceAndPin(@start);
+                               if( $pinName =~ /\[[0-9]+\]/ ) { $pinName =~ s/\[/\\\[/; $pinName =~ s/\]/\\\]/;
+                                                              } else { }
+                 print WRITE "set fromInst \[dbGetInstByName $instanceName\]\n";
+                 print WRITE "set fromTerm \[dbGetTermByName \$fromInst $pinName\]\n";
+                
+                 ($instanceName,$pinName) = getInstanceAndPin(@stop);
+                 print WRITE "set toInst  \[dbGetInstByName $instanceName\]\n";
+                 print WRITE "set toTerm \[dbGetTermByName \$toInst $pinName\]\n";
+
+                 print WRITE "selectNetP2P \$fromTerm \$toTerm\n";
+                                      }else {}
+                                               }
+                 else {
+                 #print WRITE "$start to $stop\n";
+                               if( $pinName =~ /\[[0-9]+\]/ ) { $pinName =~ s/\[/\\\[/; $pinName =~ s/\]/\\\]/;
+                                                              } else { }
+
+                 ($instanceName,$pinName) = getInstanceAndPin(@start);
+                 print WRITE "set fromInst \[dbGetInstByName $instanceName\]\n";
+                 print WRITE "set fromTerm \[dbGetTermByName \$fromInst $pinName\]\n";
+                
+                 ($instanceName,$pinName) = getInstanceAndPin(@stop);
+                 print WRITE "set toInst  \[dbGetInstByName $instanceName\]\n";
+                 print WRITE "set toTerm \[dbGetTermByName \$toInst $pinName\]\n";
+
+                 print WRITE "selectNetP2P \$fromTerm \$toTerm\n";
+                                         }
+                  $i++;
+                                          }#foreach
+                 print WRITE "zoomSelected\n";
+                 print WRITE "\}\n";
+
+                                   }#foreach
+
+
+
+
+}#sub highlightP2P_tclProc
+
+
+sub getInstanceAndPin {
+my @array = @_;
+my ($instance, $pin) ;
+
+$array_len = @array ;
+$instance = $array[0];
+$pin = "";
+
+for ( $x=1 ;  $x < $array_len -1 ; $x++ ) {
+$instance = $instance."/".$array[$x] ;
+                                          }
+$pin = $array[$x];
+
+return ($instance,$pin);
+
+}#sub getInstanceAndPin
+
+
+1;

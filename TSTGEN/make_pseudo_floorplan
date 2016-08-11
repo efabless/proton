@@ -1,0 +1,415 @@
+
+sub write_hier_floorplan {
+  use Benchmark;
+  my $t0 = new Benchmark;
+
+  my (@args) = @_;
+  $help = 0;
+my $moduleName = $TOP_MODULE;
+ $OUTFILE =  $moduleName.".fpdef";
+  &write_hier_floorplan_readArgs(@args);
+  if ($help) {
+        &write_hier_floorplan_usage();
+  } else {
+
+if ( exists $FLOORPLAN_LOOKUP{"$moduleName/_self_"} ) {
+         print "INFO-TST-WR_HR_FLP : 001 : writing floorplan for module \"$moduleName\" ... in $OUTFILE file\n";
+         open(WRITE,">$OUTFILE");
+
+     my $fpPntr = $FLOORPLAN_LOOKUP{"$moduleName/_self_"} ;
+     if ( exists $FLOORPLAN_ALREADY{$fpPntr} ) {
+         print WRITE "DESIGN $moduleName \;\n";
+
+         my $fpUnit = $FLOORPLAN_ALREADY{$fpPntr}->dbFlplanGetDBUnit;
+         my $gDBU = $GLOBAL->dbfGlobalGetDBU;
+         print WRITE "UNITS DISTANCE MICRONS $gDBU \;\n";
+         my $mulFactor = $gDBU / $fpUnit ;
+         my @bBox = $FLOORPLAN_ALREADY{$fpPntr}->dbFlplanGetSize;
+         my $llx = $bBox[0]*$mulFactor; 
+         my $lly = $bBox[1]*$mulFactor; 
+         my $urx = $bBox[2]*$mulFactor; 
+         my $ury = $bBox[3]*$mulFactor; 
+         print WRITE "DIEAREA ( $llx $lly ) ( $urx $ury ) \;\n\n";
+
+        print WRITE "COMPONENTS\n";
+        #---------------------- soft modules -----------------------------------#
+         my @hInsts = $FLOORPLAN_ALREADY{$fpPntr}->dbFlplanGetHierInstList;
+         foreach my $hinst ( @hInsts ) {
+                 my @rBox = $FLOORPLAN_ALREADY{$fpPntr}->dbFlplanGetHierInstBbox($hinst);
+         my $llx = $rBox[0]*$mulFactor; 
+         my $lly = $rBox[1]*$mulFactor; 
+         my $urx = $rBox[2]*$mulFactor; 
+         my $ury = $rBox[3]*$mulFactor; 
+                 print WRITE "$hinst ( $llx $lly ) ( $urx $ury ) \;\n";
+                                       }#foreach hinst
+        #---------------------- blocks -----------------------------------#
+         my @lInsts = $FLOORPLAN_ALREADY{$fpPntr}->dbFlplanGetLeafInstList;
+         foreach my $linst ( @lInsts ) {
+                 my $cellref = $MODULE_ALREADY{$moduleName}->dbVNOMGetLeafInstCell($linst);
+                 if ( exists $PLDB{$cellref} ) {
+                    my $class = $PLDB{$cellref}->dbMdbGetClass;
+                    print "DBG-WR_HR_FLP : 002 : $linst : $cellref : $class\n" if ($DEBUG >=1);
+                    next if ($class eq "CORE");
+                 my @rBox = $FLOORPLAN_ALREADY{$fpPntr}->dbFlplanGetLeafInstBbox($linst);
+         my $llx = $rBox[0]*$mulFactor; 
+         my $lly = $rBox[1]*$mulFactor; 
+         my $urx = $rBox[2]*$mulFactor; 
+         my $ury = $rBox[3]*$mulFactor; 
+                 my $orientation = $PSEUDO_VINST_ALREADY{$moduleName}{$linst}->dbPimDBGetInstOrient;
+                 print WRITE "$linst $cellref + PLACED ( $llx $lly ) ( $urx $ury )  $orientation \;\n";
+                 #print WRITE "- $linst $cellref + PLACED ( $llx $lly ) $orientation \;\n";
+                                               }# if the leaf cell exists 
+                                       }#foreach linst
+
+        #---------------------- std cells -----------------------------------#
+        print WRITE "END COMPONENTS\n\n";
+        print WRITE "CONSTRAINTS\n";
+        #----------------------------- generating constrainsts for hard macros -----------------------------#
+        # right now we will only have restriction of 2 possible orientation
+         my @lInsts = $FLOORPLAN_ALREADY{$fpPntr}->dbFlplanGetLeafInstList;
+         foreach my $linst ( @lInsts ) {
+                 my $cellref = $MODULE_ALREADY{$moduleName}->dbVNOMGetLeafInstCell($linst);
+                 if ( exists $PLDB{$cellref} ) {
+                    my $class = $PLDB{$cellref}->dbMdbGetClass;
+                    print "DBG-WR_HR_FLP : 002 : $linst : $cellref : $class\n" if ($DEBUG >=1);
+                    next if ($class eq "CORE");
+                    my @rBox = $FLOORPLAN_ALREADY{$fpPntr}->dbFlplanGetLeafInstBbox($linst);
+                    my $height = $rBox[3] - $rBox[1];
+                    my $width  = $rBox[2] - $rBox[0];
+                    if ( $height >= $width ) {
+                      print WRITE "$linst ($height $width ) ($height $height ) ($width $height ) \;\n";
+                    }
+                    else {
+                      print WRITE "$linst ($height $width ) ($width $width ) ($width $height ) \;\n";
+                    }
+                 }# if the leaf cell exists 
+          }#foreach linst
+        #----------------------------- generating constrainsts for soft modules -----------------------------#
+        print WRITE "END CONSTRAINTS\n\n";
+        #----------------------------- Pins -----------------------------#
+        print WRITE "PINS \n";
+        my @pinList = $FLOORPLAN_ALREADY{$fpPntr}->dbFlplanGetPinList;
+  foreach my $pin (@pinList) {
+       my $status = $FLOORPLAN_ALREADY{$fpPntr}->dbFlplanGetPinStatus($pin);
+       my @shapes = $FLOORPLAN_ALREADY{$fpPntr}->dbFlplanGetPinRect($pin);
+       my @shapes_info = split(/\s+/, $shapes[0]);
+       my $pinHeight = sprintf("%.3f",($shapes_info[4] - $shapes_info[2]));
+       my $pinWidth = $shapes_info[3] - $shapes_info[1];
+       my $x = $pinWidth/2 ;
+       print WRITE "- $pin \+ NET $pin \+ DIRECTION INPUT \+ USE SIGNAL\n";
+       if ( $shapes_info[1] == $bBox[0] ) {
+       $x = $x*$mulFactor;
+       $pinHeight = $pinHeight*$mulFactor;
+       print WRITE "  \+ LAYER $shapes_info[0] ( \-$x 0 ) ( $x $pinHeight )\n";
+       my $y = ($shapes_info[4] + $shapes_info[2])/2;
+       $y = $y*$mulFactor;
+       $x = $shapes_info[1]*$mulFactor;
+       print WRITE "  \+ FIXED ( $x $y ) E \;\n";
+                                          } # pin is on left edge
+       elsif ( $shapes_info[2] == $bBox[1] ) {
+                                          } # pin is on bottom edge
+       elsif ( $shapes_info[3] == $bBox[2] ) {
+                                          } # pin is on right edge
+       elsif ( $shapes_info[4] == $bBox[3] ) {
+                                          } # pin is on top edge
+       
+                                                                        } #for each pin in the floorplan DB
+
+        print WRITE "END PINS \n";
+        #----------------------------- Pins -----------------------------#
+
+        print WRITE "END DESIGN\n";
+        close(WRITE);
+                                               }# if the floorplan entry exists
+                                             } else {
+         print "WARN-WR_HR_FLP : 003 : the floorplan for module \"$moduleName\" does not exist ....\n";
+                                                    }
+
+  } #if...else
+
+  $t1 = new Benchmark;
+  my $td = timediff($t1, $t0);
+  print "write_hier_floorplan took:",timestr($td),"\n";
+
+########################################################################
+sub write_hier_floorplan_readArgs {
+  my (@args) =  @_;
+  $args = join(' ',@args);
+  if (!defined($args)) {
+        $args = "";
+  }
+  my $parseResult = Getopt::Long::GetOptionsFromString($args ,
+                                                                                                           # read args here
+                                                                                                           "h"          => \$help,
+                                                                                                           "help"       => \$help,
+                                                                                                           "debug"      => \$debug,
+                                                                                                           "verbose"    => \$verbose,
+                                                                                                           "output=s"   => \$OUTFILE,
+                                                                                                          );
+} #sub write_hier_floorplan_readArgs
+
+
+} #sub write_hier_floorplan
+
+#sub write_hier_floorplan {
+#
+#my $moduleName = $TOP_MODULE;
+#
+#print "$moduleName\n";
+#if ( exists $FLOORPLAN_LOOKUP{"$moduleName/_self_"} ) {
+#     my $fpPntr = $FLOORPLAN_LOOKUP{"$moduleName/_self_"} ;
+#     if ( exists $FLOORPLAN_ALREADY{$fpPntr} ) {
+#         print "DESIGN $moduleName \;\n";
+#
+#         my @bBox = $FLOORPLAN_ALREADY{$fpPntr}->dbFlplanGetSize;
+##         print "DIEAREA ( $bBox[0] $bBox[1] $bBox[2] $bBox[3] ) \;\n";
+#
+#         my @hInsts = $FLOORPLAN_ALREADY{$fpPntr}->dbFlplanGetHierInstList;
+#         foreach my $hinst ( @hInsts ) {
+#                 my @rBox = $FLOORPLAN_ALREADY{$fpPntr}->dbFlplanGetHierInstBbox($hinst);
+#                 print "$hinst ( $rBox[0] $rBox[1] ) ( $rBox[2] $rBox[3] ) \;\n";
+#                                       }#foreach hinst
+#         print "END DESIGN\n";
+#                                               }# if the floorplan entry exists
+#                                             }
+#
+#
+#}#sub write_hier_floorplan
+
+
+
+
+sub movePseudoInst {
+$noOfArguments = @_;
+if($_[0] eq '-h') {
+print "usage : movePseudoInst -inst <instName> \n";
+print "                  -status {FIXED/FIRM/UNPLACED/PLACED}\n";
+print "                  -toLoc {X,Y}\n";
+                       } else {
+######## defaults #####################
+my $instName = "";
+my $status = "";
+my $parent = $TOP_MODULE;
+my @loc = ();
+
+for(my $i = 0 ; $i < $noOfArguments ;  $i++){
+if($_[$i] eq "-inst"){  $instName = $_[$i+1];}
+elsif($_[$i] eq "-status"){  $status = $_[$i+1];}
+elsif($_[$i] eq "-toLoc"){  $loc_str = $_[$i+1];
+                            $loc_str =~ s/{//;
+                            $loc_str =~ s/}//;
+                           @loc = split(/\,/,$loc_str);
+                         }
+                              }# for no of arguments
+if ( exists $PSEUDO_VINST_ALREADY{$parent}{$instName} ) { 
+my @bBox = $PSEUDO_VINST_ALREADY{$parent}{$instName}->dbPimDBGetInstRelBbox;
+my $H = $bBox[3] - $bBox[1];
+my $W = $bBox[2] - $bBox[0];
+#---- use casey's code to calculate box --------#
+# given H , W , loc and Orient
+my ($llx, $lly, $urx, $ury) = &utilLocToBbox($loc[0],$loc[1],"N",$W,$H);
+print "INFO-TST : 001 : moved $instName from @bBox to $llx, $lly, $urx, $ury\n";
+$PSEUDO_VINST_ALREADY{$parent}{$instName}->dbPimDBSetInstRelBbox($llx,$lly,$urx,$ury);
+$PSEUDO_VINST_ALREADY{$parent}{$instName}-> dbPimDBSetInstStatus($status);
+&create_RedoUndo_array($instName,$bBox[0],$bBox[1],$bBox[2],$bBox[3],$llx,$lly,$urx,$ury);
+                                                            }
+                             }#if correct arguments
+}# sub movePseudoInst
+
+
+sub movePseudoHierInst {
+$noOfArguments = @_;
+if($_[0] eq '-h') {
+   print "usage : movePseudoHierInst -inst <instName> \n";
+   print "                  -status {FIXED/FIRM/UNPLACED/PLACED}\n";
+   print "                  -coords {array of coords}\n";
+} else {
+   ######## defaults #####################
+   my $instName = "";
+   my $status = "";
+   my $parent = $TOP_MODULE;
+   my @loc = ();
+   
+   for(my $i = 0 ; $i < $noOfArguments ;  $i++){
+       if($_[$i] eq "-inst"){  $instName = $_[$i+1];}
+       if($_[$i] eq "-status"){  $status = $_[$i+1];}
+       if($_[$i] eq "-coords"){  $loc_str = $_[$i+1];
+                                $loc_str =~ s/{//;
+                                $loc_str =~ s/}//;
+                                @loc = split(/\s+/,$loc_str);
+                              }
+   }# for no of arguments
+   if (exists $PSEUDO_VINST_ALREADY{$parent}{$instName} ) { 
+       my @bBox = $PSEUDO_VINST_ALREADY{$parent}{$instName}->dbPimDBGetInstRelBbox;
+       print "INFO-TST : 001 : moved $instName from @bBox to @loc\n";
+       $PSEUDO_VINST_ALREADY{$parent}{$instName}->dbPimDBSetInstRelBbox(@loc);
+       $PSEUDO_VINST_ALREADY{$parent}{$instName}->dbPimDBSetInstStatus($status);
+       ### need some changes due to change of polygon in place of rectangel ######   
+       #&create_RedoUndo_array($instName,$bBox[0],$bBox[1],$bBox[2],$bBox[3],$llx,$lly,$urx,$ury);
+   }
+}#if correct arguments
+}# sub movePseudoHierInst
+
+
+sub setPseudoInstBox {
+$noOfArguments = @_;
+if($_[0] eq '-h') {
+print "usage : setPseudoInstBox -inst <instName> \n";
+print "                  -status {FIXED/FIRM/UNPLACED/PLACED}\n";
+print "                  -bBox {X,Y}\n";
+                       } else {
+######## defaults #####################
+my $instName = "";
+my $status = "";
+my $parent = $TOP_MODULE;
+my @bBox = ();
+
+for(my $i = 0 ; $i < $noOfArguments ;  $i++){
+if($_[$i] eq "-inst"){  $instName = $_[$i+1];}
+elsif($_[$i] eq "-status"){  $status = $_[$i+1];}
+elsif($_[$i] eq "-bBox"){  $boxStr = $_[$i+1];
+                            $boxStr =~ s/{//;
+                            $boxStr =~ s/}//;
+                           @bBox = split(/\,/,$boxStr);
+                        }
+                              }# for no of arguments
+if ( exists $PSEUDO_VINST_ALREADY{$parent}{$instName} ) {
+my @bBox_old = $PSEUDO_VINST_ALREADY{$parent}{$instName}->dbPimDBGetInstRelBbox;
+$PSEUDO_VINST_ALREADY{$parent}{$instName}->dbPimDBSetInstRelBbox(@bBox);
+$PSEUDO_VINST_ALREADY{$parent}{$instName}->dbPimDBSetInstStatus($status);
+
+#----------------------------------------------------------------------------------#
+my $topModule = $GLOBAL->dbfGlobalGetTOP;
+my $floorplan = &get_floorPlan_name($topModule,$parent,$instName,$topModule); 
+my $cellref = $PSEUDO_VINST_ALREADY{$parent}{$instName}->dbPimDBGetInstCellref;
+#&editModule("-module",$cellref,"-floorplan",$floorplan); #we have already edited TOP_MODULE
+my $width = $bBox[2] -$bBox[0]; 
+my $height = $bBox[3] -$bBox[1]; 
+&setPseudoFloorplan("-module",$cellref,"-floorplan", $floorplan,"-bbox", "{0, 0, $width, $height}");
+&commitModuleLocOnly("-module",$cellref,"-floorplan", $floorplan);
+$TOP_MODULE = $parent;
+#-----------------------------------------------------------------------------------#
+### need some changes due to change of polygon in place of rectangel ######   
+#&create_RedoUndo_array($instName,$bBox_old[0],$bBox_old[1],$bBox_old[2],$bBox_old[3],$bBox[0],$bBox[1],$bBox[2],$bBox[3]);
+print "INFO-WR_HR_FLP : 001 : Setting new bbox of $instName to @bBox\n";
+                                                            }
+                               }# if correct arguments
+
+}# sub setPseudoInstBox
+#---------------------------------------------------------------------------------------------------------------------#
+sub read_hier_floorplan {
+
+$noOfArguments = @_;
+if($_[0] eq '-h') {
+print "usage : read_hier_floorplan -fpdef <file name> \n";
+} else {
+  my $fpdef = ""; 
+  my $parent = "";
+  my $instName = "";
+  my $readComps = 0;
+  my $dbu = 2000;
+  for(my $i = 0 ; $i < $noOfArguments ;  $i++){
+    if($_[$i] eq "-fpdef"){
+      $fpdef = $_[$i+1];
+    }
+  }
+  if (-e $fpdef ){
+    open(FPDEF, $fpdef);
+    my $line = <FPDEF>;
+    my $lineCount = 0;
+    while ($line) {
+    chomp $line;
+    if($line =~ /^\s*DESIGN/){$parent = (split(/\s+/,$line))[1];}
+    if($line =~ /^\s*UNITS DISTANCE MICRONS/){$dbu = (split(/\s+/,$line))[3];}
+    if ($line =~ /^\s*DIEAREA\s*\(\s*(.*)\s*\)\s*;/ ) {
+    print "INFO-TST-RD_HR_FLP : 001 : Found $1\n";
+    my @DIEAREA = split(/\s+/,$1);
+                    } 
+    elsif ($line =~ /^\s*COMPONENTS/ ) {
+      $readComps = 1;
+      while ($readComps) {
+      $line = <FPDEF>; $lineCount++; 
+        if ($line =~ /^\s*([A-Za-z]\w*)\s+\(\s*(.*)\s*\)\s*\(\s*(.*)\s*\)\s*;/ ) {
+            my  $instName = $1;
+            my  @lower_coords = split/\s+/,$2;
+            my  @upper_coords = split/\s+/,$3;
+            my  $llx = $lower_coords[0]/$dbu;
+            my  $lly = $lower_coords[1]/$dbu;
+            my  $urx = $upper_coords[0]/$dbu;
+            my  $ury = $upper_coords[1]/$dbu;
+         #print "parent \"$parent\", inst  \"$instName\", loc \"$llx,$lly,$urx,$ury\"\n";
+         #$PSEUDO_VINST_ALREADY{$parent}{$instName}->dbPimDBSetInstRelBbox($llx,$lly,$urx,$ury);
+        }#if 
+        elsif ($line =~ /^\s*END COMPONENTS/ ) {
+           $readComps = 0;
+    	}#elsif
+        } #while readComps
+       } #elsif components
+         $line = <FPDEF>; $lineCount++; 
+      } #while
+    close(FPDEF);
+  }else{
+    print "File $fpdef does not exists\n";
+  }
+}
+}#sub read_hier_floorplan
+
+#----------------------------------------------------------------------------------------------------------------#
+sub write_hier_floorplan_usage {
+    print "Usage : write_hier_floorplan\n"; 
+    print "        -output <filename, default filename is TOP_MODULE.fpdef>\n"; 
+}#sub write_hier_floorplan_usage
+#-----------------------------------------------------------------------------------------------------------------#
+
+sub reshape_hier_inst {
+  my $noOfArguments = @_;
+  my $height = 1;
+  #my $width = 1;
+  my $inst = "";  
+  my $fixedArea = 0;
+  if ($noOfArguments < 1 || $_[0] eq "-h"){
+    print "Usage : reshape_hier_inst\n";
+    print "      : -inst\n";
+    print "      : -height\n"; 
+    print "      : --fixedArea\n";
+  }else{
+     for (my $i = 0; $i<$noOfArguments; $i++){
+          if($_[$i] eq "-inst")      {$inst = $_[$i+1];}     
+          if($_[$i] eq "-height")    {$height = $_[$i+1];}
+          if($_[$i] eq "--fixedArea"){$fixedArea = 1;}
+     }#for 
+     if($fixedArea == 0 && $inst eq ""){
+       print"Please give option --fixedArea and provide instance name for resizing with -inst option\n";
+       return;
+     }else{
+       if ( exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$inst} ) {
+         my @loc = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$inst}->dbPimDBGetInstRelBbox;
+         my $inst_ht = $loc[3] - $loc[1];
+         my $inst_wd = $loc[2] - $loc[0]; 
+         if($inst_ht ==0 || $inst_wd == 0){
+           print "WARN: location for $inst not found\n";
+           return;
+         }
+         my $new_wd = ($inst_ht*$inst_wd)/($inst_ht*$height);
+         my $x1 = $loc[0];
+         my $y1 = $loc[1];
+         my $x2 = $loc[0]+$new_wd;
+         my $y2 = $loc[1]+($inst_ht*$height);
+         $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$inst}->dbPimDBSetInstRelBbox($x1,$y1,$x2,$y2);
+         #----------------------------------------------------------------------------------#
+         my $topModule = $GLOBAL->dbfGlobalGetTOP;
+         my $floorplan = &get_floorPlan_name($topModule,$TOP_MODULE,$inst,$topModule); 
+         my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$inst}->dbPimDBGetInstCellref;
+         my $width_new = $x2 - $x1; 
+         my $height_new = $y2 - $y1; 
+         &setPseudoFloorplan("-module",$cellref,"-floorplan", $floorplan,"-bbox", "{0, 0, $width_new, $height_new}");
+         &commitModuleLocOnly("-module",$cellref,"-floorplan", $floorplan);
+         #-----------------------------------------------------------------------------------#
+       }
+     }
+       #@loc1 = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$inst}->dbPimDBGetInstRelBbox;
+       #my $inst_ht1 = $loc1[3] - $loc1[1];
+       #my $inst_wd1 = $loc1[2] - $loc1[0]; 
+ }#if correct no of arg's
+}#sub reshape_hier_inst --fixedArea -inst kjif -height 2
+1;

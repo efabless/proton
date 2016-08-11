@@ -1,0 +1,561 @@
+
+
+
+sub read_timing_constraints {
+
+my $noOfArguments = @_;
+
+if ( $noOfAgruments < 2 || $_[0] eq '-h') { print "Usage : read_timing_constraints -sdc < pt / dc >\n";
+                            print "                                -pks < bg / pks >\n";
+                            print "                                -g2c < rc >\n";
+                          } else {
+
+ for ( my $x = 0 ; $x < $noOfArguments ; $x++ ) {
+     if( $_[$x] =~ /-pks/ ) { $PKS_CONS_FILE = $_[$x+1]; }
+     elsif( $_[$x] =~ /-g2c/ ) { $G2C_CONS_FILE = $_[$x+1]; }
+     elsif( $_[$x] =~ /-pks/ ) { $PT_CONS_FILE = $_[$x+1]; }
+                                                } # for
+
+
+open ( READ, "$PKS_CONS_FILE" );
+
+while (<READ>) {
+
+chomp();
+$_ =~ s/^\s+//;
+
+if ( $_ =~ /^set_input_delay/ ) {
+   # set input delay syntax found
+                                }
+if ( $_ =~ /^set_output_delay/ ) {
+   # set output delay syntax found
+                                }
+
+
+}#while reading constraints file 
+                                 }# if correct Arguments
+
+
+
+
+}# sub read_timing_constraints
+
+
+sub dbgSpiceSetDefaults {
+
+$SPICE_SUPPLY_VOLTAGE = 1.8;
+$SPICE_GND_VOLTAGE = 0.0;
+$SPICE_RISETIME = "100ps";
+$SPICE_FALLTIME = "100ps";
+$SPICE_OUTPUT_LOAD = "0.05pF";
+$SPICE_INPUT_DELAY = "1ns";
+$SPICE_CLOCK_INPUT_DELAY = "1ns";
+$SPICE_MAX_DELAY = "100ns";
+$SPICE_WIDTH_DELAY = "50ns";
+$SPICE_SIM_TIME = "40ns";
+$SPICE_VIL = 0.0;
+$SPICE_VIH =1.8;
+$SPICE_VOH_DLY_MEAS_THRESH_RATIO = 0.5;
+$SPICE_VOL_DLY_MEAS_THRESH_RATIO = 0.5;
+$SPICE_VOH_TRAN_MEAS_THRESH_RATIO = 0.9;
+$SPICE_VOL_TRAN_MEAS_THRESH_RATIO = 0.1;
+@SPICE_FILE_POINTERS=();
+$SPICE_MODELS_POINTERS = "";
+$SPICE_MODELS_COND_POINTERS = "";
+$SPICE_CLOCK_PERIOD = "";
+$SPICE_CLOCK_UPTIME = "";
+%SPICE_RESULT_DATA = ();
+
+
+}# sub dbgSpiceSetDefaults
+
+
+sub simulate {
+&dbgSpiceHspiceTestBench("top",$SPICE_VIH,$SPICE_VIL);
+&dbgSpiceHspiceMeasure("top");
+
+}# sub simulate
+
+sub dbgSpiceHspiceTestBench {
+
+my $topModule = $_[0];
+my $portName = "";
+my $inputCounter = 0;
+my $outputCounter = 0;
+my $VIH = $_[1];
+my $VIL = $_[2];
+
+print WRITE "Vsupply VDD 0 DC $SPICE_SUPPLY_VOLTAGE\n";
+print WRITE "Vgnd GND 0 DC $SPICE_GND_VOLTAGE\n";
+
+foreach $portName ( keys %{$PORTS_ALREADY{$topModule}} ) {
+        if( $PORTS_ALREADY{$topModule}{$portName}{direction} eq "input" ) {
+        $inputCounter++;
+        my $inputTag = Vstim.$inputCounter;
+        print WRITE "$inputTag $portName 0 pulse $VIL $VIH $SPICE_INPUT_DELAY $SPICE_RISETIME $SPICE_FALLTIME $SPICE_WIDTH_DELAY $SPICE_MAX_DELAY\n";
+                                                                          }# if port is type input 
+        else { 
+        $outputCounter++;
+        my $outputLoadTag = "C_load_".$outputCounter;
+        print WRITE "$outputLoadTag $portName GND $SPICE_OUTPUT_LOAD\n";
+             }# if port is type output
+                                                       }#foreach port of module
+print WRITE "\.TRAN 1ps $SPICE_SIM_TIME\n";
+
+}#sub dbgSpiceHspiceTestBench
+
+sub dbgSpiceHspiceMeasure {
+
+my $outputPinName = "";
+my $outputNetName = "";
+my $delayName = "";
+my $inputNetName = "";
+my $cellref = "";
+my $delayUMeasureVolt = $SPICE_SUPPLY_VOLTAGE*$SPICE_VOH_DLY_MEAS_THRESH_RATIO;
+my $delayLMeasureVolt = $SPICE_SUPPLY_VOLTAGE*$SPICE_VOL_DLY_MEAS_THRESH_RATIO;
+my $tranUMeasureVolt = $SPICE_SUPPLY_VOLTAGE*$SPICE_VOH_TRAN_MEAS_THRESH_RATIO;
+my $tranLMeasureVolt = $SPICE_SUPPLY_VOLTAGE*$SPICE_VOL_TRAN_MEAS_THRESH_RATIO;
+my $currentModule = $_[0];
+
+foreach my $instance ( keys %COMP_ALREADY ) {
+        $cellref = $COMP_ATTRIBUTE_ALREADY{$instance}{cellref};
+        foreach my $macroPin ( keys %{$MACROS_ALREADY{$cellref}} ) {
+             if ( $macroPin eq "area" ) { } else {
+             if ( $MACROS_ALREADY{$cellref}{$macroPin}{direction} eq "output" ) {
+                $outputPinName = $macroPin;
+                                                                                   }# find the output pin
+                                                 }# if not a pin
+                                                           } # forach pin of the macro
+        $outputNetName = $COMP_ALREADY{$instance}{$outputPinName}; 
+                $outputNetName =~ s/$currentModule\///;
+        foreach my $pin ( keys %{$COMP_ALREADY{$instance}} ) {
+             if ( $pin eq "master" || $pin eq "cellref" ) { }
+             elsif ( $MACROS_ALREADY{$cellref}{$pin}{direction} eq "input" ) {
+                $inputNetName = $COMP_ALREADY{$instance}{$pin};
+                $inputNetName =~ s/$currentModule\///;
+                $delayName1 = $instance."_".$pin."_".$outputPinName."_".Unate_Rise;
+                $delayName1 =~ s/$currentModule\///;
+                $delayName2 = $instance."_".$pin."_".$outputPinName."_".NonUnate_Rise;
+                $delayName2 =~ s/$currentModule\///;
+        print WRITE "\.MEAS TRAN $delayName1 TRIG V($inputNetName) val=$delayLMeasureVolt rise=1\n";
+        print WRITE "\+                      TARG V($outputNetName) val=$delayUMeasureVolt rise=1\n";
+        print WRITE "\.MEAS TRAN $delayName2 TRIG V($inputNetName) val=$delayLMeasureVolt rise=1\n";
+        print WRITE "\+                      TARG V($outputNetName) val=$delayUMeasureVolt fall=1\n";
+                $delayName1 = $instance."_".$pin."_".$outputPinName."_".Unate_Fall;
+                $delayName1 =~ s/$currentModule\///;
+                $delayName2 = $instance."_".$pin."_".$outputPinName."_".NonUnate_Fall;
+                $delayName2 =~ s/$currentModule\///;
+        print WRITE "\.MEAS TRAN $delayName1 TRIG V($inputNetName) val=$delayLMeasureVolt fall=1\n";
+        print WRITE "\+                      TARG V($outputNetName) val=$delayUMeasureVolt fall=1\n";
+        print WRITE "\.MEAS TRAN $delayName2 TRIG V($inputNetName) val=$delayLMeasureVolt fall=1\n";
+        print WRITE "\+                      TARG V($outputNetName) val=$delayUMeasureVolt rise=1\n";
+                $tranName1 = $instance."_".$pin."_".$outputPinName."_".riseTran;
+                $tranName1 =~ s/$currentModule\///;
+                $tranName2 = $instance."_".$pin."_".$outputPinName."_".fallTran;
+                $tranName2 =~ s/$currentModule\///;
+        print WRITE "\.MEAS TRAN $tranName1 TRIG V($outputNetName) val=$tranLMeasureVolt rise=1\n";
+        print WRITE "\+                      TARG V($outputNetName) val=$tranUMeasureVolt rise=1\n";
+        print WRITE "\.MEAS TRAN $tranName2 TRIG V($outputNetName) val=$tranUMeasureVolt fall=1\n";
+        print WRITE "\+                      TARG V($outputNetName) val=$tranLMeasureVolt fall=1\n";
+                                                                          }# if pin is input
+                                                        }# foreach pin of instance
+                                       }# foreach instance in design
+
+
+}#sub dbgSpiceHspiceMeasure
+
+
+sub dbgSpiceHspiceRun {
+my $simulatorName = $_[0];
+my $spiceSimFile = $_[1];
+my $outputListingFile = $_[2];
+
+system("$simulatorName $spiceSimFile > $outputListingFile");
+
+}#sub dbgSpiceHspiceRun
+
+
+sub dbgSpiceHspiceGetResult {
+
+my $hspiceResultFile = $_[0];
+my $tag = "";
+my $data = 0;
+
+
+print "INFO-TE : 001 : Reading the $hspiceResultFile\n";
+
+open (READ, "$hspiceResultFile");
+
+while (<READ>) {
+
+chomp();
+
+if( /\*  transient analysis/ ... /\* job concluded/ ) {
+$_ =~ s/^\s+//;
+if( $_ =~ /^$/ ) { # skip
+                 }
+elsif( $_ =~/^\*/ ){ # skip
+                }
+elsif( $_ =~ /\= failed/ ) { # skip the arc which is not found
+                        }
+else {
+#print "$_\n";
+($tag,$data)=(split(/\s+/,$_))[0,1];
+$tag =~ s/\=//;
+my ($instance,$inPin,$outPin,$arctype,$inputSig) = (split(/_/, $tag ))[0,1,2,3,4];
+
+$instance =~ s/u/U/;
+ 
+$hashData = "timing_spice".$instance;
+$COMP_TIMING_SPICE_ALREADY{$instance} = \%{$hashData};
+${$hashData}{delay} = $data;
+${$hashData}{type} = $tag;
+#print "$instance RR $inPin RR $outPin RR $arctype RR $inputSig RR $data RR\n";
+  print "INFO-TE : 002 : $tag $data\n";
+     }
+                                                             }
+}#while reading the result file
+
+print "INFO-TE : 003 : Finished reading the $hspiceResultFile\n";
+
+}#sub dbgspiceHspiceGetResult
+
+
+sub dbgSpiceHspiceReport {
+
+my @instances = @_;
+my $arrival = 0;
+   
+foreach my $instance ( @instances ) {
+     my $tag = $COMP_TIMING_SPICE_ALREADY{$instance}{type};
+     print "INFO-TE : 001 : $tag\n"; 
+     my ($inPin,$outPin,$arctype,$inputSig) = (split(/_/, $tag ))[1,2,3,4];
+
+     if ( $inputSig eq "rise" && $arctype eq "unate" ){ $arc = "$inPin \^ \-\> $outPin \^"; }
+     elsif ( $inputSig eq "rise" && $arctype eq "nonunate" ){ $arc = "$inPin \^ \-\> $outPin v"; }
+     elsif ( $inputSig eq "fall" && $arctype eq "unate" ){ $arc = "$inPin v \-\> $outPin v"; }
+     elsif ( $inputSig eq "fall" && $arctype eq "nonunate" ){ $arc = "$inPin v \-\> $outPin \^"; }
+     else { $arc = "Arc not found"; }
+
+     my $hierInstance = $CURRENT_MODULE."/".$instance;
+     my $cellref = $COMP_ATTRIBUTE_ALREADY{$hierInstance}{cellref};
+     my $delay = $COMP_TIMING_SPICE_ALREADY{$instance}{delay};
+     print "INFO-TE : 002 : Instance $instance Arc $arc Cell $cellref Delay $delay $arrival\n";
+     $arrival = $arrival + $delay;
+                                    }
+
+}#sub dbgSpiceHspiceReport
+
+
+
+
+
+
+sub write_hspice_deck {
+
+
+my $noOfArguments = @_;
+my $hformat =  "false";
+
+if ( $noOfArguments < 2 || $_[0] eq '-h') { print "Usage : write_hspice_deck  -output < file Name >\n";
+                            print "                           -hier < false / true >\n";
+                          } else {
+
+  for ( my $x = 0 ; $x < $noOfArguments ; $x++) {
+        if ( $_[$x] =~ /output/ ) { $OUTPUT_SPICE_FILE = $_[$x+1]; }
+        if ( $_[$x] =~ /hier/ ) { $hformat = $_[$x+1]; }
+                                                   }# for no of arguments
+
+print "INFO-TE-WTE_HSPCE_DCK : 001 : Begin writing the spice file\n";
+open ( WRITE, ">$OUTPUT_SPICE_FILE");
+print WRITE "#SPICE FILE written from proton verion-$TOOL_VERSION\n"; 
+print WRITE "* spice subckt\n";
+
+
+########## print the .lib statements      ##########
+
+print WRITE "\.lib \"$SPICE_MODELS_POINTERS\" $SPICE_MODELS_COND_POINTERS\n";
+
+########## print the .include statements  ##########
+
+foreach my $pointer ( @SPICE_FILE_POINTERS ) {
+print WRITE "\.include \"$pointer\"\n";
+                                             }# all the spice files read 
+
+print WRITE "\.global 0 GND VDD VSS\n";
+
+print WRITE "\n";
+print WRITE "\n";
+print WRITE "\n";
+
+
+####### print the top level ports   ########
+
+print WRITE "\*\.subckt $CURRENT_MODULE ";
+foreach my $portname ( keys %{$PORTS_ALREADY{$CURRENT_MODULE}}){
+           print WRITE "$portname ";
+                                                                }# for port of module
+print WRITE "\n";
+
+
+####### print the flat component connectivity ######
+foreach $instance ( keys %COMP_ALREADY ) {
+
+$master  = $COMP_ALREADY{$instance}{master};
+$spiceInstance = $instance;
+$spiceInstance =~ s/$master\//X/;
+print WRITE "$spiceInstance ";
+
+my $cellref = $COMP_ATTRIBUTE_ALREADY{$instance}{cellref};
+
+if( exists $MACRO_SPICE{$cellref} ){
+my @pinList = split(/\s+/, $MACRO_SPICE{$cellref}{pinList});
+     while ( defined ( $pin = shift @pinList)) {
+     $netName = $COMP_ALREADY{$instance}{$pin};
+     $netName =~ s/$master\///;
+     print WRITE "$netName ";
+                                               }#while
+                                   }# if cell exists in the spice subckt
+else {  
+     print "WARN-TE-WTE_HSPCE_DCK : 002 : spice subckt for $cellref not found\n";
+        foreach $pin ( keys %{$COMP_ALREADY{$instance}} ) {
+        if( $pin eq "master" || $pin eq "cellref" ) {} else {
+        print WRITE "$pin $COMP_ALREADY{$instance}{$pin} ";
+                                                           }# if only pin
+                                                          }
+     }# if spice does not exist
+
+print WRITE " $COMP_ATTRIBUTE_ALREADY{$instance}{cellref}\n";
+
+                                    }# foreach components
+print WRITE "\*\.ends\n";
+
+########## add the deck ########
+&simulate;
+
+print WRITE "\.end\n";
+close(WRITE);
+print "INFO-TE-WTE_HSPCE_DCK : 003 : End writing the spice file\n";
+
+
+                          }# if correct no of arguments
+}# sub write_hspice_deck
+
+
+
+
+
+sub write_spice3_deck {
+
+my $noOfArguments = @_;
+my $hformat =  "false";
+
+if ( $noOfArguments < 2 || $_[0] eq '-h') { print "Usage : write_spice3_deck  -output < file Name >\n";
+                            print "                           -hier < false / true >\n";
+                          } else {
+
+  for ( my $x = 0 ; $x < $noOfArguments ; $x++) {
+        if ( $_[$x] =~ /output/ ) { $OUTPUT_SPICE_FILE = $_[$x+1]; }
+        if ( $_[$x] =~ /hier/ ) { $hformat = $_[$x+1]; }
+                                                   }# for no of arguments
+
+print "INFO-TE-WTE_SPCE3_DCK : 001 : Begin writing the spice file\n";
+open ( WRITE, ">$OUTPUT_SPICE_FILE");
+print WRITE "#SPICE FILE written from proton verion-$TOOL_VERSION\n";
+print WRITE "* spice subckt\n";
+
+
+########## print the .lib statements      ##########
+
+print WRITE "\.lib $SPICE_MODELS_COND_POINTERS\n";
+print WRITE "\.include $SPICE_MODELS_POINTERS\n";
+
+########## print the .include statements  ##########
+
+foreach my $pointer ( @SPICE_FILE_POINTERS ) {
+print WRITE "\.include $pointer\n";
+                                             }# all the spice files read 
+
+#print WRITE "\.global 0 GND VDD VSS\n";
+
+print WRITE "\n";
+&spice3Out;
+&dbgSpiceSpice3TestBench("top",$SPICE_VIH,$SPICE_VIL);
+close(WRITE);
+print "INFO-TE-WTE_SPCE3_DCK : 002 : End writing the spice3 file\n";
+                          }# if correct no of arguments
+
+}#sub write_spice3_deck
+
+sub run_spice3_sim {
+
+print "INFO-TE-RN_SPCE3_SIM : 001 : Running Spice3 ... \n";
+
+system("spice3 -b test1.cir > spice3.log");
+
+print "INFO-TE-RN_SPCE3_SIM : 002 : Finished spice3 simulation\n";
+
+}# sub run_spice3_sim
+
+sub run_hspice_sim {
+
+my $fileName = $_[0];
+my $outputList = "hsp_lis".$fileName;
+
+print "INFO-TE : 001 : Runing hspice on the file $fileName\n";
+&dbgSpiceHspiceRun("hspice",$fileName,$outputList);
+print "INFO-TE : 002 : Hspice job on $fileName Finished\n";
+
+
+}#sub run_hspice_sim
+
+sub dbgSpiceSpice3TestBench {
+
+my $topModule = $_[0];
+my $portName = "";
+my $inputCounter = 0;
+my $outputCounter = 0;
+my $VIH = $_[1];
+my $VIL = $_[2];
+
+print WRITE "Vsupply VDD 0 DC $SPICE_SUPPLY_VOLTAGE\n";
+print WRITE "Vgnd GND 0 DC $SPICE_GND_VOLTAGE\n";
+
+foreach $portName ( keys %{$PORTS_ALREADY{$topModule}} ) {
+        if( $PORTS_ALREADY{$topModule}{$portName}{direction} eq "input" ) {
+        $inputCounter++;
+        print "INFO-TE : 001 : generating situmul for $portName\n";
+        my $inputTag = Vstim.$inputCounter;
+        print WRITE "$inputTag $portName 0 pulse $VIL $VIH $SPICE_INPUT_DELAY $SPICE_RISETIME $SPICE_FALLTIME $SPICE_WIDTH_DELAY $SPICE_MAX_DELAY\n";
+                                                                          }# if port is type input 
+        else { 
+        $outputCounter++;
+        my $outputLoadTag = "C_load_".$outputCounter;
+        print WRITE "$outputLoadTag $portName GND $SPICE_OUTPUT_LOAD\n";
+             }# if port is type output
+                                                       }#foreach port of module
+print WRITE "\.control\n";
+print WRITE "set nobreak\n";
+print WRITE "tran 1ps $SPICE_SIM_TIME\n";
+#print WRITE "print ";
+foreach my $netName ( keys %ReturnNetNames ) { print WRITE "print v\($netName\) >> dataFile\n"; }
+#print WRITE " > dataFile\n";
+
+print WRITE "\.endc\n";
+print WRITE "\.end\n";
+}# sub dbgSpiceSpice3TestBench
+
+
+
+sub dbgSpiceGetNodeVrefTime {
+my $nodeName = $_[0];
+($bcoeff, $acoeff) = dbgSpiceGetBestLine($nodeName);
+
+#my $temp = $SPICE_VOH_DLY_MEAS_THRESH_RATIO*$SPICE_SUPPLY_VOLTAGE;
+#print "Measure voltage is $temp\n";
+
+my $measTime = ( $SPICE_VOH_DLY_MEAS_THRESH_RATIO*$SPICE_SUPPLY_VOLTAGE - $acoeff)/$bcoeff ;
+return($measTime);
+}#sub dbgSpiceGetNodeVrefTime
+
+sub dbgSpiceGetBestLine {
+my $nodeName = $_[0];
+my ( $volt, $time, $product, $sum1, $sum2, $sum1_squares, $a, $b, $xx);
+foreach $volt ( keys %{$SPICE_RESULT_DATA{$nodeName}} ) {
+        $time = $SPICE_RESULT_DATA{$nodeName}{$volt};
+        $product      += $volt*$time;
+        $sum1         += $time;
+        $sum1_squares += $time**2;   
+        $sum2         += $volt;
+                                                        }
+
+        $xx = keys ( %{$SPICE_RESULT_DATA{$nodeName}} );
+        $b = (( $xx*$product) -($sum1*$sum2))/(($xx*$sum1_squares)-($sum1**2));
+        $a = ($sum2 -$b*$sum1)/$xx;
+ return($b, $a);
+}#sub dbgSpiceGetBestLine
+
+
+
+sub dbgSpiceReadSimOutputData_New {
+
+my $nodeName = "";
+my $voltage = 0;
+my $time = 0;
+my $GND_MARGIN = (1.05*$SPICE_GND_VOLTAGE)*1000;
+my $VDD_MARGIN = (0.95*$SPICE_SUPPLY_VOLTAGE)*1000;
+my $delayMeasThresh = $SPICE_SUPPLY_VOLTAGE*$SPICE_VOH_DLY_MEAS_THRESH_RATIO/1.000e-3;
+my $measStartTime = $SPICE_CLOCK_INPUT_DELAY;
+   $measStartTime =~ s/ns/e-9/;
+
+print "INFO-TE : 001 : gnd margin = $GND_MARGIN  vdd margin = $VDD_MARGIN\n";
+
+open ( READ, "dataFile" );
+while(<READ>) {
+chomp();
+if( $_ =~ /^\-+/ ) { }
+elsif( $_ =~ /^\s+/ ) { }
+elsif( $_ =~ /Index/ ) {
+     $nodeName = (split(/\s+/,$_))[2];
+     $nodeName =~ s/v\(//;
+     $nodeName =~ s/\)//;
+     $node_hash = SPICE_RESULT_DATA._.$nodeName;
+     $SPICE_RESULT_DATA{$nodeName} = \%{$node_hash};
+
+#     print "$nodeName\n";
+                    }# if is the header get the node name
+### Algorithm ###
+# check if the VDD/2 lies between current voltage level and previous voltage level
+else {
+     ($time,$voltage)=(split(/\s+/,$_))[1,2];
+
+if( $voltage eq "nan" ) { print "WARN-TE : 002 : Since spice did not run clean... stopping Analysis\n"; 
+                          return(STOP); 
+                        }
+
+     $currentTimeReading = $time/1.000e-12;
+             if ( $time < $measStartTime ){ }
+             elsif ( $time == $measStartTime ){ 
+                    $previousVoltReading = $voltage/1.000e-3; $previousTimeReading = $currentTimeReading; 
+#                    print "Starting Calculation\n";
+                                            }
+             else {
+     $currentVoltReading = $voltage/1.000e-3;
+ if ( $currentVoltReading <= $delayMeasThresh && $delayMeasThresh <= $previousVoltReading ) { 
+#          print "falling $currentVoltReading $delayMeasThresh $previousVoltReading\n";
+$dlyAt = dbgSpiceGetThresholdTime($currentTimeReading,$currentVoltReading,$previousTimeReading,$previousVoltReading,$delayMeasThresh);
+#print "falling at $dlyAt \n";
+$SPICE_RESULT_DATA{$nodeName}{dlyAt} = $dlyAt;
+                                                                                            }#if falling signal
+ elsif ( $delayMeasThresh <= $currentVoltReading && $delayMeasThresh >= $previousVoltReading ) {
+#          print "rising $currentVoltReading $delayMeasThresh $previousVoltReading\n";
+$dlyAt = dbgSpiceGetThresholdTime($previousTimeReading,$previousVoltReading,$currentTimeReading,$currentVoltReading,$delayMeasThresh);
+#print "rising at $dlyAt \n";
+$SPICE_RESULT_DATA{$nodeName}{dlyAt} = $dlyAt;
+                                                                                               }
+ else { }
+                  
+                  $previousVoltReading = $currentVoltReading;
+                  $previousTimeReading = $currentTimeReading;
+                  }
+     
+     }
+
+}#while
+close(READ);
+
+}#sub dbgSpiceReadSimOutputData_New
+
+sub dbgSpiceGetThresholdTime {
+my $x1 = $_[0];
+my $y1 = $_[1];
+my $x2 = $_[2];
+my $y2 = $_[3];
+my $Y  = $_[4];
+
+my $C =  ($x2*$y1 - $y2*$x1)/($x2-$x1);
+my $X =  (($Y - $C)*($x2 - $x1)) / ($y2 - $y1);
+return ($X);
+}#sub dbgSpiceGetThresholdTime
+
+1;

@@ -1,0 +1,330 @@
+############################## Activate the Main Analysis tab ################################
+sub activate_AnalysisTab{
+    my $active_tab = $GLOBAL->dbGlobalGetActiveAnalysisTab;
+    if($active_tab eq "Analysis"){
+       my $raise_name = $tab7_V->cget(-raised_name);
+       if($raise_name eq "Data Flow"){
+         $GLOBAL->dbGlobalSetActiveCanvas("analysis_view1");
+         $analysis_canvas1->CanvasFocus;
+       }elsif($raise_name eq "Timing"){
+         $GLOBAL->dbGlobalSetActiveCanvas("analysis_view2");
+         $analysis_canvas2->CanvasFocus;
+       }elsif($raise_name eq "3D"){
+         $GLOBAL->dbGlobalSetActiveCanvas("analysis_view3");
+         $analysis_canvas3->CanvasFocus;
+       }elsif($raise_name eq "hier_conn"){
+         $GLOBAL->dbGlobalSetActiveCanvas("analysis_view4");
+         $analysis_canvas4->CanvasFocus;
+       }
+    }elsif($active_tab eq "gCell"){
+       $GLOBAL->dbGlobalSetActiveCanvas("gcell_view");
+       $gcell_canvas->CanvasFocus;
+    }elsif($active_tab eq "hierArea"){
+       $GLOBAL->dbGlobalSetActiveCanvas("hierArea_view");
+       $hierAreaCanv->CanvasFocus;
+    }else{}
+}#sub activate_AnalysisTab
+
+############################## Activate the sub tabs of Analysis tab ################################
+sub activate_analysis_Tab{
+    $GLOBAL->dbGlobalSetActiveAnalysisTab("Analysis");
+    my $raise_name = $tab7_V->cget(-raised_name);
+    if($raise_name eq "Data Flow"){
+      $GLOBAL->dbGlobalSetActiveCanvas("analysis_view1");
+      $analysis_canvas1->CanvasFocus;
+    }elsif($raise_name eq "Timing"){
+      $GLOBAL->dbGlobalSetActiveCanvas("analysis_view2");
+      $analysis_canvas2->CanvasFocus;
+    }elsif($raise_name eq "3D"){
+      $GLOBAL->dbGlobalSetActiveCanvas("analysis_view3");
+      $analysis_canvas3->CanvasFocus;
+    }elsif($raise_name eq "hier_conn"){
+      $GLOBAL->dbGlobalSetActiveCanvas("analysis_view4");
+      $analysis_canvas4->CanvasFocus;
+    }
+}#sub activate_analysis_Tab
+
+############################## Activate the sub tabs of DynaTab in analysis #############################
+sub active_dynaTab{
+my $raise_name = $tab7_V->cget(-raised_name);
+    if($raise_name eq "Data Flow"){
+      $GLOBAL->dbGlobalSetActiveCanvas("analysis_view1");
+      $analysis_canvas1->CanvasFocus if($analysis_canvas1);
+    }elsif($raise_name eq "Timing"){
+      $GLOBAL->dbGlobalSetActiveCanvas("analysis_view2");
+      $analysis_canvas2->CanvasFocus if($analysis_canvas2);
+    }elsif($raise_name eq "3D"){
+      $GLOBAL->dbGlobalSetActiveCanvas("analysis_view3");
+      $analysis_canvas3->CanvasFocus if($analysis_canvas3);
+    }elsif($raise_name eq "hier_conn"){
+      $GLOBAL->dbGlobalSetActiveCanvas("analysis_view4");
+      $analysis_canvas4->CanvasFocus if($analysis_canvas4);
+    }
+}#sub active_dynaTab
+#############################################################################################
+
+sub dbfPlacementDataFlowGui_query {
+    my $xl = $_[0];
+print "DBG-DES : 001 : Query mode ON\n" if ($DEBUG > 20);
+    my $dx   = 0;
+    my $dy   = 0;
+    my $mode = 0;
+    $analysis_canvas1->CanvasBind('<1>' , sub {
+                    my @xy = $analysis_canvas1->eventLocation();
+                    my $x = $xy[0];
+                    my $y = $xy[1];
+                    my @id      = $analysis_canvas1->find(qw/withtag current/);
+                    my @coords  = $analysis_canvas1->coords($id[0]);
+                    my @tagList  = $analysis_canvas1->gettags($id[0]);
+                    if($tagList[0] eq "FLOPANLS"){
+                       my $width   = $coords[2] - $coords[0];
+                       my $height  = $coords[3] - $coords[1];
+                       my $scale = $GLOBAL->dbGlobalGetAnlsScale;
+                       my $dbx = int($x/$scale) ;
+                       my $dby = int(($xl-$y)/$scale) ;
+                       my $endP = $PLACE{$TOP_MODULE}->dbPlaceGetNameByNumberRow($dby);
+                       my $beginP = $PLACE{$TOP_MODULE}->dbPlaceGetNameByNumberCol($dbx);
+                       $analysis_canvas1->createText($x,$y, -text=>$beginP."->".$endP,-fill=>"black",-tags=>"TEMPANLS",-anchor=>'s'); 
+                       #print "$beginP -\> $endP\n";
+                    }
+    $analysis_canvas1->CanvasBind('<ButtonRelease-1>' , sub {$analysis_canvas1->delete("TEMPANLS");});
+
+                                             });
+
+}#sub dbfPlacementDataFlowGui_query
+
+
+sub dbfPlacementDataFlowGui {
+$analysis_canvas1->delete("all");
+my %COLOR = (
+            0=>'white',
+            1=>'violet',3=>'cyan',5=>'blue',7=>'green',9=>'orange',11=>'yellow',
+            2=>'violet',4=>'cyan',6=>'blue',8=>'green',10=>'orange',12=>'yellow'
+            );
+print "INFO-DES : 001 : plotting the placement analysis gui\n";
+if ( exists $PLACE{$TOP_MODULE} ) {
+     my $maxRow = $PLACE{$TOP_MODULE}->dbPlaceGetMaxRow;
+     my $maxCol = $PLACE{$TOP_MODULE}->dbPlaceGetMaxCol;
+     my $ffs = $PLACE{$TOP_MODULE}->dbPlaceGetFlopCount;
+     my $ins = $PLACE{$TOP_MODULE}->dbPlaceGetInputCount;
+     my $outs = $PLACE{$TOP_MODULE}->dbPlaceGetOutputCount;
+my $scaling = 400/($ffs+$ins);
+$GLOBAL->dbGlobalSetAnlsScale($scaling);
+#print "I am scaling : $scaling\n";
+$ffs = ($ffs+1)*$scaling;
+my $xl = ($maxRow+1)*$scaling;
+my $yl = ($maxCol+1)*$scaling;
+
+# bounding box
+$analysis_canvas1->createRectangle($scaling-20,$xl-($scaling-20),$yl+20,$xl-($xl+20), -outline=>'white');
+$analysis_canvas1->createRectangle($scaling,$xl-$scaling,$yl,$xl-$xl, -outline=>'green');
+
+#vertical ff and Input separation line
+$analysis_canvas1->createLine($ffs,$xl-$scaling,$ffs,$xl-$xl+1, -fill=>'black');
+#horizontal ff and output separation line
+$analysis_canvas1->createLine($scaling,$xl-$ffs,$yl+1,$xl-$ffs, -fill=>'black');
+
+     for ( my $yy = 1; $yy <= $maxRow ; $yy++ ) {
+           my @fanins = $PLACE{$TOP_MODULE}->dbPlaceGetFanIns($yy);
+        foreach $xx ( @fanins ) {
+#        print "$xx, $yy\n";
+        my $val =  $PLACE{$TOP_MODULE}->dbPlaceGetTpathVal($yy,$xx);
+        if (exists $COLOR{$val} ) {$color = $COLOR{$val}; } else { $color = 'black'; }
+#        print "$val , $color\n";
+#-----------------------------------------------------------------------------#
+$x1 = $xx*$scaling;
+$y1 = $xl-$yy*$scaling;
+$x2 = ($xx+0.9)*$scaling;
+$y2 = $xl-($yy+0.9)*$scaling;
+$analysis_canvas1->createRectangle($x1,$y1,$x2,$y2, -outline=>$color, -fill=>$color, -stipple => "gray12",-tags=>"FLOPANLS" );
+                                 }#foreach fanin
+                                               }# for all the rows in placement database
+
+&dbfPlacementDataFlowGui_query($xl);
+                                  }#if the placement database is created
+$analysis_canvas1->viewAll;
+my @box_org = $analysis_canvas1->getView();
+&design_ZoomIn_ZoomOut($analysis_canvas1,\@box_org);
+&activate_analysis_Tab;
+}# sub dbfPlacementDataFlowGui
+
+
+
+
+
+sub dbfPlacementDBGui {
+$analysis_canvas2->delete("all");
+my $optLen = 53920*(1 + $FilterOptLen);
+my %COLOR = (
+            0=>'white',
+            1=>'violet',3=>'cyan',5=>'blue',7=>'green',9=>'orange',11=>'yellow',
+            2=>'violet',4=>'cyan',6=>'blue',8=>'green',10=>'orange',12=>'yellow'
+            );
+print "INFO-DES : 001 : plotting the placement analysis gui\n";
+if ( exists $PLACE{$TOP_MODULE} ) {
+     my $maxRow = $PLACE{$TOP_MODULE}->dbPlaceGetMaxRow;
+     my $maxCol = $PLACE{$TOP_MODULE}->dbPlaceGetMaxCol;
+     my $ffs = $PLACE{$TOP_MODULE}->dbPlaceGetFlopCount;
+     my $ins = $PLACE{$TOP_MODULE}->dbPlaceGetInputCount;
+     my $outs = $PLACE{$TOP_MODULE}->dbPlaceGetOutputCount;
+my $scaling = 500/($ffs+$ins);
+print "MSG-DES : 002 : I am scaling : $scaling\n";
+$ffs = $ffs*$scaling;
+my $xl = $maxRow*$scaling;
+my $yl = $maxCol*$scaling;
+$analysis_canvas2->createLine($ffs,0,$ffs,$xl+1, -fill=>'black');
+$analysis_canvas2->createLine(0,$ffs,$yl+1,$ffs, -fill=>'black');
+     for ( my $yy = 1; $yy < $maxRow ; $yy++ ) {
+           my @fanins = $PLACE{$TOP_MODULE}->dbPlaceGetFanIns($yy);
+#           print "$yy -> ";
+#           print join ",", @fanins ; print "\n";
+my @yyloc = $PLACE{$TOP_MODULE}->dbPlaceGetLocByRowNum($yy);
+#print "yy location is $yyloc[0],$yyloc[1]\n";
+foreach $xx ( @fanins ) {
+        my $val =  $PLACE{$TOP_MODULE}->dbPlaceGetTpathVal($yy,$xx);
+#        print "$val , $color\n";
+my @xxloc = $PLACE{$TOP_MODULE}->dbPlaceGetLocByColNum($xx);
+#print "\t xx location is $xxloc[0],$xxloc[1]\n";
+my $manhLen = abs($xxloc[0] - $yyloc[0]) + abs($xxloc[1] - $yyloc[1]);
+#print "\tmanH \= $manhLen\n";
+if ( $optLen < $manhLen ) {
+                          my $fact = ($manhLen - $optLen )/$optLen;
+                          $val = int($fact*10);
+#                          print "\tlocation is sub-optimal $fact $val\n";
+        if (exists $COLOR{$val} ) {$color = $COLOR{$val}; } else { $color = 'black'; }
+#-----------------------------------------------------------------------------#
+# Find the current location of element
+# Find the current location of fanIn
+# find the scale of optLen vs actual length
+#-----------------------------------------------------------------------------#
+$x1 = $xx*$scaling;
+$y1 = $yy*$scaling;
+$x2 = ($xx+1)*$scaling;
+$y2 = ($yy+1)*$scaling;
+#print "$x1,$y1,$x2,$y2 : $val\n";
+$analysis_canvas2->createRectangle($x1,$y1,$x2,$y2, -outline=>$color, -fill=>$color, -stipple => "gray12" );
+                          }
+                       }
+
+                                               }# for all the rows in placement database
+
+                                  }#if the placement database is created
+}# sub dbfPlacementDBGui
+
+sub dbfPlacementDB {
+my $optLen = 353920;
+print "INFO-DES : 001 : plotting the placement analysis gui\n";
+if ( exists $PLACE{$TOP_MODULE} ) {
+     my $maxRow = $PLACE{$TOP_MODULE}->dbPlaceGetMaxRow;
+     my $maxCol = $PLACE{$TOP_MODULE}->dbPlaceGetMaxCol;
+     my $ffs = $PLACE{$TOP_MODULE}->dbPlaceGetFlopCount;
+     my $ins = $PLACE{$TOP_MODULE}->dbPlaceGetInputCount;
+     my $outs = $PLACE{$TOP_MODULE}->dbPlaceGetOutputCount;
+     for ( my $yy = 1; $yy < $maxRow ; $yy++ ) {
+           my @fanins = $PLACE{$TOP_MODULE}->dbPlaceGetFanIns($yy);
+#           print "$yy -> ";
+#           print join ",", @fanins ; print "\n";
+my @yyloc = $PLACE{$TOP_MODULE}->dbPlaceGetLocByRowNum($yy);
+print "INFO-DES : 002 : yy location is $yyloc[0],$yyloc[1]\n";
+foreach $xx ( @fanins ) {
+        my $val =  $PLACE{$TOP_MODULE}->dbPlaceGetTpathVal($yy,$xx);
+my @xxloc = $PLACE{$TOP_MODULE}->dbPlaceGetLocByColNum($xx);
+print "\tINFO-DES : 003 : xx location is $xxloc[0],$xxloc[1]\n";
+my $manhLen = abs($xxloc[0] - $yyloc[0]) + abs($xxloc[1] - $yyloc[1]);
+print "\tINFO-DES : 004 : manH \= $manhLen\n";
+if ( $optLen < $manhLen ) {
+                          my $fact = ($manhLen - $optLen )/$optLen;
+                          $val = int($fact*10);
+                          print "\tINFO-DES : 005 : location is sub-optimal $val\n";
+                          }
+#-----------------------------------------------------------------------------#
+# Find the current location of element
+# Find the current location of fanIn
+# find the scale of optLen vs actual length
+#-----------------------------------------------------------------------------#
+                       }
+                                               }# for all the rows in placement database
+                                  }#if the placement database is created
+}# sub dbfPlacementDB
+
+#####################################################################################
+########################## display s-matrix using gnuplot ###########################
+#####################################################################################
+sub generate_dataFile{
+$|++;
+my $pid = open3( \*IN, \*OUT, \*ERR, "gnuplot" ) || die;
+my $output_txt_file = "test.txt";
+
+open (WRITE, ">$output_txt_file");
+    if (!( -w $output_txt_file )){
+      print "ERR-DES : 006 : Permission denied to write to $output_txt_file\n";
+      return;
+    }
+    my $maxRow = $PLACE{$TOP_MODULE}->dbPlaceGetMaxRow;
+    for ( my $yy = 1; $yy <= $maxRow ; $yy++ ) {
+      my @fanins = $PLACE{$TOP_MODULE}->dbPlaceGetFanIns($yy);
+      sort{$a<=>$b}@fanins;
+      foreach $xx ( @fanins ) {
+        my $val =  $PLACE{$TOP_MODULE}->dbPlaceGetTpathVal($yy,$xx);
+        print WRITE "$xx  $yy  $val \n";
+      }
+    }
+close(WRITE);
+system "sort -g +0 -1 +1 -2 +2 -3 $output_txt_file >  test.dat" ;
+}#sub generate_dataFile
+
+sub generate_3d_plot_file{
+&generate_dataFile;
+print IN "set term tkcanvas perltk interactive\n";
+print IN "set output \'plot.pl\'\n";
+print IN "set contour base\n";
+print IN "set autoscale\n";
+print IN "set xlabel \"Flop From\"\n";
+print IN "set ylabel \"Flop To \"\n";
+print IN "set zlabel \"Cell Val\"\n";
+print IN "set title \"proton : Analysis Graph\"\n";
+print IN "set pm3d scansbackward\n";
+#print IN "splot 'test.dat' notitle with dots 2\n";
+print IN "splot 'test.dat' notitle with points 5\n";
+print IN "pause -1\n";
+}#sub generate_3d_plot_file
+
+sub smatrix_3d_display{
+&generate_3d_plot_file;
+my $mw = MainWindow->new;
+   $mw->title("Analysis Graph");
+my $gnuplot = do("plot.pl");
+   $gnuplot->($analysis_canvas3);
+$mw->destroy;
+system ("rm test.txt test.dat plot.pl");
+
+}#sub smatrix_3d_display
+
+
+sub generate_2d_plot_file{
+$analysis_canvas3->delete('all');
+&generate_dataFile;
+print IN "set term tkcanvas perltk interactive\n";
+print IN "set output \'plot.pl\'\n";
+print IN "set autoscale\n";
+print IN "set xlabel \"Flop From\"\n";
+print IN "set ylabel \"Flop To \"\n";
+print IN "set title \"proton : Analysis Graph\"\n";
+print IN "plot 'test.dat' using 1:2 notitle with points 5\n";
+}#sub generate_2d_plot_file
+
+sub smatrix_2d_display{
+$analysis_canvas3->delete('all');
+&generate_2d_plot_file;
+my $mw = MainWindow->new;
+   $mw->title("Analysis Graph");
+my $gnuplot = do("plot.pl");
+   $gnuplot->($analysis_canvas3);
+$mw->destroy;
+system ("rm test.txt test.dat plot.pl");
+
+}#sub smatrix_2d_display
+####################################################################
+
+
+1;

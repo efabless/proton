@@ -1,0 +1,868 @@
+
+sub write_graph_smatrix_old{
+#my $debug = 1;
+%TEMP_hash = ();
+%TEMP = ();
+print "INFO-PL_DATAPRP_SMTRX_PL : 001 : Writing the graph file of the design in $TOP_MODULE\.txt\n";
+open(WRITE,">$TOP_MODULE.txt");
+print WRITE "#GRAPH FILE written from proton verion-$TOOL_VERSION\n";
+
+#$PLACE{$TOP_MODULE}->dbgPlaceGetTpath ;
+
+my @flops = $PLACE{$TOP_MODULE}->dbPlaceGetFlopList;
+my @in_port = $PLACE{$TOP_MODULE}->dbPlaceGetInPortList;
+my @out_port = $PLACE{$TOP_MODULE}->dbPlaceGetOutPortList;
+my $no_flops = @flops;
+my $no_inp = @in_port;
+my $no_out = @out_port;
+
+print "DBG-PL_DATAPRP_SMTRX_PL : 002 : Flops are:@flops Number of flops are:$no_flops\n" if ($debug);
+print "DBG-PL_DATAPRP_SMTRX_PL : 003 : Input ports are:@in_port Number of inputs are:$no_inp\n" if ($debug);
+print "DBG-PL_DATAPRP_SMTRX_PL : 004 : Output ports are:@out_port Number of outputs are:$no_out\n" if ($debug);
+
+for( $f1 = 0; $f1 < $no_flops; $f1++) {
+	$flop1 = $flops[$f1];
+	$address1 = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByName($flop1);
+	@fanIn1 = $PLACE{$TOP_MODULE}->dbPlaceGetFanIns($address1);
+	$no_fanIn1 = @fanIn1;
+	$TEMP_hash{$address1} = $flop1; 
+	$TEMP{$flop1}= $address1 ;
+	print "DBG-PL_DATAPRP_SMTRX_PL : 005 : Address:$address1 Flop1:$flop1 Fanin1:$no_fanIn1 Fanins are:@fanIn1 \n" if ($debug) ;
+	if($no_fanIn1 == 1) {
+		#$fanIn_address = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByName($fanIn1[0]);
+		print WRITE "$address1 $fanIn1[0] \n";
+	}
+	elsif($no_fanIn1 > 1) {
+		my $no_conn = $no_fanIn1 + 1;
+		foreach (@fanIn1) {
+		if ($_ == $address1) { $no_conn = $no_conn -1 ; }
+		}
+		print WRITE "$no_conn -1\n";
+		print WRITE "		$address1\n";	
+		foreach (@fanIn1) {
+			#$fanIn_address = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByName($_);
+		 	if ($_ != $address1) {	
+				print WRITE "		$_ \n";
+			}
+		}	
+	}
+}
+
+for( $i1 = 0; $i1 < $no_inp; $i1++) {
+	$in1 = $in_port[$i1];
+	$address1 = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByName($in1) ;	
+	$TEMP_hash{$address1} = $in1;
+	$TEMP{$in1}= $address1 ;
+}
+
+$out_no = $no_flops+$no_inp;
+for( $o1 = 0; $o1 < $no_out; $o1++) {
+	$out1 = $out_port[$o1];
+	$out_no += 1;
+	$TEMP_hash{$out_no} = $out1;
+	$TEMP{$out1} = $out_no;
+	$address1 = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByName($out1) ; 
+	@fanIn1 = $PLACE{$TOP_MODULE}->dbPlaceGetFanIns($address1);
+	$no_fanIn1 = @fanIn1;
+	print "DBG-PL_DATAPRP_SMTRX_PL : 006 : Address:$address1 Output:$out1 Fanin:$no_fanIn1 Fanins are:@fanIn1 \n" if($debug)  ;
+	if($no_fanIn1 == 1) {
+		#$fanIn_address = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByName($fanIn1[0]);
+		print WRITE "$out_no $fanIn1[0] \n";
+	}
+	elsif($no_fanIn1 > 1) {
+		my $no_conn = $no_fanIn1 + 1;
+		foreach (@fanIn1) {
+		if ($_ == $address1) { $no_conn = $no_conn -1 ; }
+		}
+		print WRITE "$no_conn -1\n";
+		print WRITE "		$address1\n";	
+		foreach (@fanIn1) {
+			#$fanIn_address = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByName($_);
+		 	if ($_ != $address1) {	
+				print WRITE "		$_ \n";
+			}
+		}	
+	}
+
+
+}
+
+################
+my %cells = (); 
+my $cellcnt = 1;
+open(WRITE_NODE,">nodefile");
+my @size = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetSize ;
+my $dbu = $GLOBAL->dbfGlobalGetDBU;
+#print "$size[0] , $size[1], $size[2], $size[3]\n";
+my $x = $size[0]/$dbu;
+my $y = $size[1]/$dbu;
+my $z = $size[2]/$dbu;
+my $p = $size[3]/$dbu;
+print WRITE_NODE "$x  $y\n"; 
+print WRITE_NODE "$z  $p\n"; 
+
+for( $f1 = 0; $f1 < $no_flops; $f1++) {
+	$flop1 = $flops[$f1];
+	my $addr = $TEMP{$flop1} ;
+        my $cellref = $CADB{$flop1}->dbCadbGetCellref;
+        if ( exists $cells{$cellref} ) {
+             my $num = $cells{$cellref};
+             print WRITE_NODE "$addr \ $num\n";
+                                       }
+        else { 
+             $cells{$cellref} = $cellcnt; 
+             print WRITE_NODE "$addr \ $cellcnt\n";
+             $cellcnt++;
+             }
+}      
+close(WRITE_NODE);
+#######################
+
+#---------------- write the library file-------------------#
+open(WRITE_LIB,">libfile");
+foreach my $cellName ( keys %cells ) {
+        if ( exists $PLDB{$cellName} ) {
+                    my @box = $PLDB{$cellName}->dbMdbGetSize;
+                    print WRITE_LIB "$cells{$cellName} $box[0] $box[1]\n";
+                                       }
+                                     }#foreach
+close(WRITE_LIB);
+############################################################
+
+
+close(WRITE);
+}#sub write_graph_smatrix_old
+
+################################################################################################
+########################## code to write graph file by using smatrix ###########################
+################################################################################################
+sub write_graph_smatrix_original {
+use POSIX qw(ceil floor);
+
+my $noOfArguments = @_;
+
+if( $_[0] eq '-h') { print "Usage : write_graph_smatrix \n";
+                     print "       -max_connection <max no of connection>\n";
+                         }
+else { 
+  my $max_connection = 0;
+  %TEMPR = ();
+  %TEMP = ();
+  for(my $i = 0; $i < $noOfArguments; $i++){
+      if($_[$i] eq "-max_connection"){ 
+         $max_connection = $_[$i+1];
+      }
+  } # for
+
+
+$PLACE{$TOP_MODULE}->dbPlaceConstructFanInFanOutHash();
+
+use Benchmark;
+my $t0 = new Benchmark;
+
+################################# writing the graph file ###############################
+print "INFO-PL_DATAPRP_SMTRX_PL-WR_GRPH_SMTRX : 001 : Writing the graph file of the design in $TOP_MODULE\.txt\n";
+open(WRITE,">$TOP_MODULE.txt");
+
+my @flops = $PLACE{$TOP_MODULE}->dbPlaceGetFlopList;
+my @in_port = $PLACE{$TOP_MODULE}->dbPlaceGetInPortList;
+my @out_port = $PLACE{$TOP_MODULE}->dbPlaceGetOutPortList;
+my @fillers = ();
+
+my $count = $#flops + $#in_port + $#out_port + 3;
+
+for(my $i = 0; $i <= $#flops; $i++) {
+    my $flop = $flops[$i];
+    my $address = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByName($flop);
+    my @fanIn = $PLACE{$TOP_MODULE}->dbPlaceGetFanIns($address);
+    my $noFanIn = @fanIn;
+#--- next 2 lines are needed for nodeMap.txt file to be written out
+    $TEMPR{$address} = $flop; 
+    $TEMP{$flop}= $address ;
+#----- Added by Rajeev on Mar-02-2010 to support unconnected nodes appear in the graph file : refer bug number 28 ------#
+    if ( $noFanIn == 0 ) {print "WARN-PL_DATAPRP_SMTRX_PL-WR_GRPH_SMTRX : 002 : found $flop : $address to have no fanIn\n";
+                          print WRITE "$address $address 0 0\n"; }
+
+    if(($max_connection==0) || ($noFanIn <= $max_connection)){ 
+       foreach (@fanIn) {
+         print WRITE "$address $_ 0 0\n";  ####
+       }
+    }else{
+       my $noOfFillerCells = ceil($noFanIn/$max_connection);
+       for(my $j=0; $j<$noOfFillerCells; $j++){
+           $count++;
+           $TEMPR{$count} = "FILLER_".$count; 
+           $TEMP{"FILLER_".$count}= $count;
+           push(@fillers,"FILLER_".$count);
+           print WRITE "$address $count 0 0\n"; ####
+           for(my $k=0; $k<$max_connection; $k++){
+               my $index= $max_connection*$j+$k;
+               if($index>=$noFanIn){last;}
+               my $fanIn_address = $fanIn[$index];
+             print WRITE "$count $fanIn_address 0 0\n";  ####
+           }
+       }
+    }
+}#for each flop
+for(my $j = 0; $j <= $#in_port; $j++){
+    my $in = $in_port[$j];
+    my $address = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByName($in) ;	
+    $TEMPR{$address} = $in;
+    $TEMP{$in}= $address ;
+}#for input ports
+
+my $out_no = $#flops+$#in_port+2;
+for(my $k = 0; $k <= $#out_port; $k++) {
+    my $out = $out_port[$k];
+    $out_no += 1;
+    $TEMPR{$out_no} = $out;
+    $TEMP{$out} = $out_no;
+    my $address = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByName($out) ; 
+    my @fanIn = $PLACE{$TOP_MODULE}->dbPlaceGetFanIns($address);
+#----- Added by Rajeev on Mar-02-2010 to support unconnected nodes appear in the graph file : refer bug number 28 ------#
+    my $noFanIn = @fanIn;
+    if ( $noFanIn == 0 ) { print "WARN-PL_DATAPRP_SMTRX_PL-WR_GRPH_SMTRX : 003 : found $out : $out_no to have no fanIn\n"; 
+                           print WRITE "$out_no $out_no 0 0\n"; 
+                         }
+    foreach (@fanIn) {
+       print WRITE "$out_no $_ 0 0\n";
+    }
+}#for output ports
+#-------------------------------- write the desinfofile ------------------------------#
+&write_design_info_file;
+
+################################# writing the node file ###############################
+my %cells = (); 
+my $cellcnt = 3;
+open(WRITE_NODE,">nodefile");
+my @size = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetSize ;
+my @rows = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetRows;
+my $max_row = @rows;
+#my $max_row = $PLACE{$TOP_MODULE}->dbPlaceGetMaxRow;
+my $dbu = $GLOBAL->dbfGlobalGetDBU;
+my $x = $size[0]/$dbu;
+my $y = $size[1]/$dbu;
+my $z = $size[2]/$dbu;
+my $p = $size[3]/$dbu;
+print WRITE_NODE "$max_row\n"; 
+print WRITE_NODE "$x  $y\n"; 
+print WRITE_NODE "$z  $p\n"; 
+
+for(my $i = 0; $i <= $#flops; $i++) {
+    my $flop = $flops[$i];
+    my $addr = $TEMP{$flop} ;
+    my $cellref = $CADB{$flop}->dbCadbGetCellref;
+    if (exists $cells{$cellref} ) {
+        my $num = $cells{$cellref};
+#---Added by Rajeev on Feb-25-2010 to support for plan_5
+        my @level = $PLACE{$TOP_MODULE}->dbPlaceGetFlopLevel($flop);
+        print WRITE_NODE "$addr \ $num @level\n";
+    }else { 
+        $cells{$cellref} = $cellcnt; 
+#---Added by Rajeev on Feb-25-2010 to support for plan_5
+        my @level = $PLACE{$TOP_MODULE}->dbPlaceGetFlopLevel($flop);
+        print WRITE_NODE "$addr \ $cellcnt @level\n";
+        $cellcnt++;
+    }
+} 
+
+if($#fillers>=0){$cells{"FILLER"} = $cellcnt};
+foreach (@fillers){
+  my $addr = $TEMP{$_};
+  print WRITE_NODE "$addr \ $cellcnt\n";
+}
+
+my $portCellID = 2;
+my @ports = (@in_port, @out_port);
+if($#ports>=0){$cells{"PORT"} = $portCellID;}
+foreach my $port ( @ports){
+    my $addr = $TEMP{$port};          
+    my $port_status = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetStatus() ;
+    if($port_status == 3) {
+#---Added by Rajeev on Mar-01-2010 to support for plan_5
+      print WRITE_NODE "$addr \ -$portCellID 0 0\n";
+      my @port_loc = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetLoc;
+      my $portloc_X = $port_loc[0]/$dbu;
+      my $portloc_Y = $port_loc[1]/$dbu;
+      print WRITE_NODE "$portloc_X \ $portloc_Y\n";
+    }else {
+#---Added by Rajeev on Mar-01-2010 to support for plan_5
+      print WRITE_NODE "$addr \ $portCellID 0 0\n";
+    }
+}
+
+close(WRITE_NODE);
+################################# writing the nodeMap file ###############################
+open(WRITE_NODEMAP,">nodeMap.txt");
+  foreach my $inst (keys %TEMP){
+    my $n = $TEMP{$inst};
+    print WRITE_NODEMAP "$n $inst\n";
+  }
+close(WRITE_NODEMAP);
+
+################################# writing the library file ###############################
+open(WRITE_LIB,">libfile");
+foreach my $cellName ( keys %cells ) {
+        if ( exists $PLDB{$cellName} ) {
+             my @pins = $PLDB{$cellName}->dbMdbGetPins;
+             my $pin_cnt = @pins;            
+             my @box = $PLDB{$cellName}->dbMdbGetSize;
+             print WRITE_LIB "$cells{$cellName} $box[0] $box[1] $pin_cnt\n";
+             foreach my $pinName ( @pins ) {
+                my @RECTS = $PLDB{$cellName}->dbMdbGetPinRect($pinName);
+                my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$RECTS[0]))[0,2,3,4,5];
+                my $mid_x = ($llx + $urx)/2;
+                my $mid_y = ($lly + $ury)/2;
+              print WRITE_LIB "\t$mid_x $mid_y\n";
+             }
+        }elsif($cellName eq "PORT"){
+            print WRITE_LIB "$cells{$cellName} 0 0 1\n";
+            print WRITE_LIB "\t0.0 0.0\n";
+        }elsif($cellName eq "FILLER"){
+            my $cellref_firstflop = $CADB{$flops[0]}->dbCadbGetCellref;
+            my @box = $PLDB{$cellref_firstflop}->dbMdbGetSize;
+            print WRITE_LIB "$cells{$cellName} $box[0] $box[1] 1\n";
+            print WRITE_LIB "\t0.0 0.0\n";
+        }else{}
+     
+}#foreach
+close(WRITE_LIB);
+
+close(WRITE);
+#$PLACE{$TOP_MODULE}->dbgPlaceGetTpath;
+
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "Graph files from SMatrix written in ", timestr($td), "\n";
+
+$PLACE{$TOP_MODULE}->dbPlaceDestroyFanInFanOutHash();
+
+}#if correct no of arguments
+}#sub write_graph_smatrix_original
+
+##----------------------------------------------------------------------------------------------------------##
+sub write_graph_smatrix {
+use POSIX qw(ceil floor);
+
+my $noOfArguments = @_;
+
+if( $_[0] eq '-h') { print "Usage : write_graph_smatrix \n";
+                     print "       -max_connection <max no of connection>\n";
+                         }
+else { 
+  my $max_connection = 0;
+  my $portsize = 0;
+  %TEMPR = ();
+  %TEMP = ();
+  for(my $i = 0; $i < $noOfArguments; $i++){
+      if($_[$i] eq "-max_connection"){ 
+         $max_connection = $_[$i+1];
+      }
+      if($_[$i] eq "--portsize"){ 
+         $portsize = 1;
+      }
+  } # for
+
+
+$PLACE{$TOP_MODULE}->dbPlaceConstructFanInFanOutHash();
+
+use Benchmark;
+my $t0 = new Benchmark;
+
+################################# writing the graph file ###############################
+print "INFO-PL_DATAPRP_SMTRX_PL-WR_GRPH_SMTRX : 001 : Writing the graph file of the design in $TOP_MODULE\.txt\n";
+open(WRITE,">$TOP_MODULE.txt");
+
+my @flops = $PLACE{$TOP_MODULE}->dbPlaceGetFlopList;
+my @in_port = $PLACE{$TOP_MODULE}->dbPlaceGetInPortList;
+my @out_port = $PLACE{$TOP_MODULE}->dbPlaceGetOutPortList;
+my @fillers = ();
+
+my $count = $#flops + $#in_port + $#out_port + 3;
+
+for(my $i = 0; $i <= $#flops; $i++) {
+    my $flop = $flops[$i];
+    my $address = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByName($flop);
+    my @fanOut1 = $PLACE{$TOP_MODULE}->dbPlaceGetFanOuts($address);
+    my $noFanOut1 = @fanOut1;
+    my @fanOut = ();
+#--- next 2 lines are needed for nodeMap.txt file to be written out
+    $TEMPR{$address} = $flop; 
+    $TEMP{$flop}= $address ;
+    foreach(@fanOut1){
+      push(@fanOut,$_)if($_ != $address);
+    }
+    my $noFanOut = @fanOut;
+    if ($noFanOut == 0){
+       print "WARN-PL_DATAPRP_SMTRX_PL-WR_GRPH_SMTRX : 002 : found $flop : $address to have no fanIn\n";
+    }else{
+       if(($max_connection==0) || ($noFanOut <= $max_connection)){ 
+          if($noFanOut > 1){
+            my $count_out = $noFanOut+1;
+            print WRITE "$count_out -1\n";
+            print WRITE "\t$address\n";
+            foreach (@fanOut) {
+              print WRITE "\t$_\n";  ####
+            }
+          }
+          elsif($noFanOut == 1){
+            print WRITE "$address $fanOut[0]\n"; 
+          }
+       }else{
+          my $noOfFillerCells = ceil($noFanOut/$max_connection);
+          if($noOfFillerCells > 1){
+             my $conn_count = $noOfFillerCells + 1;
+             print WRITE "$conn_count -1\n";
+             print WRITE "\t$address\n";
+             for(my $j=0; $j<$noOfFillerCells; $j++){
+                $count++;
+                $TEMPR{$count} = "FILLER_".$count; 
+                $TEMP{"FILLER_".$count}= $count;
+                push(@fillers,"FILLER_".$count);
+                print WRITE "\t$count\n";
+             }#foreach filler cell
+          }elsif($noOfFillerCells == 1){
+             $count++;
+             print WRITE "$address $count\n";
+          }
+          my $lastFillerCell = 0;
+          for(my $j=0; $j<=$#fillers; $j++){
+              my $address = $TEMP{$fillers[$j]};
+              if($j == $#fillers){  
+                 my $noFanOut_for_lastFiller = @fillers - (($noOfFillerCells-1)*$max_connection);
+                 if($noFanOut_for_lastFiller <= 1){$lastFillerCell = 1;}#if last filler has single fanout
+              }#for last filler
+              if(($max_connection > 1) && ($lastFillerCell == 0)){
+                my $conn_count = $max_connection + 1;
+                print WRITE "$conn_count -1\n";
+                print WRITE "\t$address\n";
+                for(my $k=0; $k<$max_connection; $k++){
+                    my $index= $max_connection*$j+$k;
+                    if($index>=$noFanOut){last;}
+                    my $fanOut_address = $fanOut[$index];
+                  print WRITE "\t$fanOut_address\n";  ####
+                }#
+              }elsif($max_connection == 1 || $lastFillerCell == 1){
+                for(my $k=0; $k<$max_connection; $k++){
+                    my $index= $max_connection*$j+$k;
+                    if($index>=$noFanOut){last;}
+                    my $fanOut_address = $fanOut[$index];
+                  print WRITE "$address $fanOut_address\n";  ####
+                }
+              }   
+          }#for each filler cell 
+       }#if added filler cell
+    }#if found fanout
+}#for each flop
+
+for(my $j = 0; $j <= $#in_port; $j++){
+    my $in = $in_port[$j];
+    my $address = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByName($in) ;	
+    my @fanOut = $PLACE{$TOP_MODULE}->dbPlaceGetFanOuts($address);
+    my $noFanOut = @fanOut;
+    $TEMPR{$address} = $in;
+    $TEMP{$in}= $address ;
+
+    if($noFanOut > 1){
+      my $count_out = $noFanOut+1;
+      print WRITE "$count_out -1\n";
+      print WRITE "\t$address\n";
+      foreach (@fanOut) {
+        print WRITE "\t$_\n";  ####
+      }
+    }elsif($noFanOut == 1){
+      print WRITE "$address $fanOut[0]\n"; 
+    }else{print "WARN-PL_DATAPRP_SMTRX_PL-WR_GRPH_SMTRX : 003 : found $out : $out_no to have no fanOut\n";} 
+}#for input ports
+
+my $out_no = $#flops+$#in_port+2;
+for(my $k = 0; $k <= $#out_port; $k++) {
+    my $out = $out_port[$k];
+    $out_no += 1;
+    $TEMPR{$out_no} = $out;
+    $TEMP{$out} = $out_no;
+}#for output ports
+#-------------------------------- write the desinfofile ------------------------------#
+&write_design_info_file;
+
+################################# writing the node file ###############################
+my %cells = (); 
+my $cellcnt = 3;
+open(WRITE_NODE,">nodefile");
+open(WRITE_LEVEl,">levelfile");
+my @size = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetSize ;
+my @rows = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetRows;
+my $max_row = @rows;
+#my $max_row = $PLACE{$TOP_MODULE}->dbPlaceGetMaxRow;
+my $dbu = $GLOBAL->dbfGlobalGetDBU;
+my $x = $size[0]/$dbu;
+my $y = $size[1]/$dbu;
+my $z = $size[2]/$dbu;
+my $p = $size[3]/$dbu;
+print WRITE_NODE "$max_row\n"; 
+print WRITE_NODE "$x  $y\n"; 
+print WRITE_NODE "$z  $p\n"; 
+
+for(my $i = 0; $i <= $#flops; $i++) {
+    my $flop = $flops[$i];
+    my $addr = $TEMP{$flop} ;
+    my $cellref = $CADB{$flop}->dbCadbGetCellref;
+    if (exists $cells{$cellref} ) {
+        my $num = $cells{$cellref};
+#---Added by Rajeev on Feb-25-2010 to support for plan_5
+        my @level = $PLACE{$TOP_MODULE}->dbPlaceGetFlopLevel($flop);
+        print WRITE_NODE "$addr \ $num\n";
+        print WRITE_LEVEl "$addr \ @level\n";
+    }else { 
+        $cells{$cellref} = $cellcnt; 
+#---Added by Rajeev on Feb-25-2010 to support for plan_5
+        my @level = $PLACE{$TOP_MODULE}->dbPlaceGetFlopLevel($flop);
+        print WRITE_NODE "$addr \ $cellcnt\n";
+        print WRITE_LEVEl "$addr \ @level\n";
+        $cellcnt++;
+    }
+} 
+
+if($#fillers>=0){$cells{"FILLER"} = $cellcnt};
+foreach (@fillers){
+  my $addr = $TEMP{$_};
+  print WRITE_NODE "$addr \ $cellcnt\n";
+}
+
+my $portCellID = 2;
+my @ports = (@in_port, @out_port);
+if($#ports>=0){$cells{"PORT"} = $portCellID;}
+foreach my $port ( @ports){
+    my $addr = $TEMP{$port};          
+    my $port_status = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetStatus() ;
+    if($port_status == 3) {
+#---Added by Rajeev on Mar-01-2010 to support for plan_5
+      print WRITE_NODE "$addr \ -$portCellID 0 0\n";
+      my @port_loc = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetLoc;
+      my $portloc_X = $port_loc[0]/$dbu;
+      my $portloc_Y = $port_loc[1]/$dbu;
+      print WRITE_NODE "$portloc_X \ $portloc_Y\n";
+    }else {
+#---Added by Rajeev on Mar-01-2010 to support for plan_5
+      print WRITE_NODE "$addr \ $portCellID 0 0\n";
+    }
+}
+
+close(WRITE_LEVEl);
+close(WRITE_NODE);
+################################# writing the nodeMap file ###############################
+open(WRITE_NODEMAP,">nodeMap.txt");
+  foreach my $inst (keys %TEMP){
+    my $n = $TEMP{$inst};
+    print WRITE_NODEMAP "$n $inst\n";
+  }
+close(WRITE_NODEMAP);
+
+################################# writing the library file ###############################
+my $min_width = 0;
+if($portsize == 1){
+  foreach $l(keys %PTDB){
+  my $ln = $PTDB{$l}->dbTechGetLayerNum;
+   $LHASH_TEMP{$l}= $ln;
+  }
+  my @layers = sort PTDB_asAscendingValue(keys (%LHASH_TEMP));
+  my $min_name = $PTDB{$layers[0]}->dbTechGetLayerName;
+  $min_width = $PTDB{$layers[0]}->dbTechGetLayerWidth;
+  my @ports = (@in_port, @out_port);
+  foreach my $port ( @ports){
+    my $port_layer = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetLayer();
+    if($port_layer != 0){
+      my $name = $PTDB{$port_layer}->dbTechGetLayerName;
+      my $portlayer_width = $PTDB{$port_layer}->dbTechGetLayerWidth;
+      if($portlayer_width < $min_width){
+        $min_width = $width;
+      }
+    }
+  }
+}
+open(WRITE_LIB,">libfile");
+foreach my $cellName ( keys %cells ) {
+        if ( exists $PLDB{$cellName} ) {
+             my @pins = $PLDB{$cellName}->dbMdbGetPins;
+             my $pin_cnt = @pins;            
+             my @box = $PLDB{$cellName}->dbMdbGetSize;
+             print WRITE_LIB "$cells{$cellName} $box[0] $box[1] $pin_cnt\n";
+             foreach my $pinName ( @pins ) {
+                my @RECTS = $PLDB{$cellName}->dbMdbGetPinRect($pinName);
+                my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$RECTS[0]))[0,2,3,4,5];
+                my $mid_x = ($llx + $urx)/2;
+                my $mid_y = ($lly + $ury)/2;
+                if ($#RECTS < 0){
+                  @RECTS = $PLDB{$cellName}->dbMdbGetPinPolygon($pinName);
+                  ($layer,$mid_x,$mid_y) = (split(/\s+/,$RECTS[0])) [0,2,3];
+                } 
+                print WRITE_LIB "\t$mid_x $mid_y\n";
+             }
+        }elsif($cellName eq "PORT"){
+          if($portsize == 1){
+            print WRITE_LIB "$cells{$cellName} $min_width $min_width 1\n";
+          }else{
+            print WRITE_LIB "$cells{$cellName} 0 0 1\n";
+          }
+            print WRITE_LIB "\t0.0 0.0\n";
+        }elsif($cellName eq "FILLER"){
+            my $cellref_firstflop = $CADB{$flops[0]}->dbCadbGetCellref;
+            my @box = $PLDB{$cellref_firstflop}->dbMdbGetSize;
+            print WRITE_LIB "$cells{$cellName} $box[0] $box[1] 1\n";
+            print WRITE_LIB "\t0.0 0.0\n";
+        }else{}
+     
+}#foreach
+close(WRITE_LIB);
+
+close(WRITE);
+#$PLACE{$TOP_MODULE}->dbgPlaceGetTpath;
+
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "Graph files from SMatrix written in ", timestr($td), "\n";
+
+$PLACE{$TOP_MODULE}->dbPlaceDestroyFanInFanOutHash();
+
+}#if correct no of arguments
+}#sub write_graph_smatrix
+##----------------------------------------------------------------------------------------------------------##
+
+sub write_spark_smatrix {
+use POSIX qw(ceil floor);
+
+my $noOfArguments = @_;
+
+if( $_[0] eq '-h') { print "Usage : write_spark_smatrix \n";
+                     print "       -max_connection <max no of connection>\n";
+                         }
+else { 
+  my $max_connection = 0;
+  my $portsize = 0;
+  %TEMPR = ();
+  %TEMP = ();
+  for(my $i = 0; $i < $noOfArguments; $i++){
+      if($_[$i] eq "-max_connection"){ 
+         $max_connection = $_[$i+1];
+      }
+      if($_[$i] eq "--portsize"){ 
+         $portsize = 1;
+      }
+  } # for
+
+
+$PLACE{$TOP_MODULE}->dbPlaceConstructFanInFanOutHash();
+
+use Benchmark;
+my $t0 = new Benchmark;
+
+################################# writing the spark file ###############################
+print "INFO-PL_DATAPRP_SMTRX_PL-WR_GRPH_SMTRX : 001 : Writing the spark file of the design in $TOP_MODULE\.txt\n";
+open(WRITE,">$TOP_MODULE.txt");
+
+my @flops = $PLACE{$TOP_MODULE}->dbPlaceGetFlopList;
+my @in_port = $PLACE{$TOP_MODULE}->dbPlaceGetInPortList;
+my @out_port = $PLACE{$TOP_MODULE}->dbPlaceGetOutPortList;
+my @fillers = ();
+
+my $count = $#flops + $#in_port + $#out_port + 3;
+
+for(my $i = 0; $i <= $#flops; $i++) {
+    my $flop = $flops[$i];
+    my $address = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByName($flop);
+    my @fanOut1 = $PLACE{$TOP_MODULE}->dbPlaceGetFanOuts($address);
+    my $noFanOut1 = @fanOut1;
+    my @fanOut = ();
+#--- next 2 lines are needed for nodeMap.txt file to be written out
+    $TEMPR{$address} = $flop; 
+    $TEMP{$flop}= $address ;
+    foreach(@fanOut1){
+      push(@fanOut,$_)if($_ != $address);
+    }
+    my $noFanOut = @fanOut;
+    if ($noFanOut == 0){
+       print "WARN-PL_DATAPRP_SMTRX_PL-WR_GRPH_SMTRX : 002 : found $flop : $address to have no fanIn\n";
+    }else{
+       if(($max_connection==0) || ($noFanOut <= $max_connection)){ 
+          if($noFanOut > 1){
+            print WRITE "$address ";
+              print WRITE join ("\,", @fanOut), "\n"; 
+          }
+          elsif($noFanOut == 1){
+            print WRITE "$address $fanOut[0]\n"; 
+          }
+       }else{ }
+    }#if found fanout
+}#for each flop
+
+for(my $j = 0; $j <= $#in_port; $j++){
+    my $in = $in_port[$j];
+    my $address = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByName($in) ;	
+    my @fanOut = $PLACE{$TOP_MODULE}->dbPlaceGetFanOuts($address);
+    my $noFanOut = @fanOut;
+    $TEMPR{$address} = $in;
+    $TEMP{$in}= $address ;
+
+    if($noFanOut > 1){
+      my $count_out = $noFanOut+1;
+      print WRITE "$address ";
+              print WRITE join ("\,", @fanOut), "\n";  ####
+    }elsif($noFanOut == 1){
+      print WRITE "$address $fanOut[0]\n"; 
+    }else{print "WARN-PL_DATAPRP_SMTRX_PL-WR_GRPH_SMTRX : 003 : found $out : $out_no to have no fanOut\n";} 
+}#for input ports
+
+my $out_no = $#flops+$#in_port+2;
+for(my $k = 0; $k <= $#out_port; $k++) {
+    my $out = $out_port[$k];
+    $out_no += 1;
+    $TEMPR{$out_no} = $out;
+    $TEMP{$out} = $out_no;
+}#for output ports
+#-------------------------------- write the desinfofile ------------------------------#
+&write_design_info_file;
+
+################################# writing the node file ###############################
+my %cells = (); 
+my $cellcnt = 3;
+open(WRITE_NODE,">nodefile");
+open(WRITE_LEVEl,">levelfile");
+my @size = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetSize ;
+my @rows = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetRows;
+my $max_row = @rows;
+#my $max_row = $PLACE{$TOP_MODULE}->dbPlaceGetMaxRow;
+my $dbu = $GLOBAL->dbfGlobalGetDBU;
+my $x = $size[0]/$dbu;
+my $y = $size[1]/$dbu;
+my $z = $size[2]/$dbu;
+my $p = $size[3]/$dbu;
+print WRITE_NODE "$max_row\n"; 
+print WRITE_NODE "$x  $y\n"; 
+print WRITE_NODE "$z  $p\n"; 
+
+for(my $i = 0; $i <= $#flops; $i++) {
+    my $flop = $flops[$i];
+    my $addr = $TEMP{$flop} ;
+    my $cellref = $CADB{$flop}->dbCadbGetCellref;
+    if (exists $cells{$cellref} ) {
+        my $num = $cells{$cellref};
+#---Added by Rajeev on Feb-25-2010 to support for plan_5
+        my @level = $PLACE{$TOP_MODULE}->dbPlaceGetFlopLevel($flop);
+        print WRITE_NODE "$addr \ $num\n";
+        print WRITE_LEVEl "$addr \ @level\n";
+    }else { 
+        $cells{$cellref} = $cellcnt; 
+#---Added by Rajeev on Feb-25-2010 to support for plan_5
+        my @level = $PLACE{$TOP_MODULE}->dbPlaceGetFlopLevel($flop);
+        print WRITE_NODE "$addr \ $cellcnt\n";
+        print WRITE_LEVEl "$addr \ @level\n";
+        $cellcnt++;
+    }
+} 
+
+if($#fillers>=0){$cells{"FILLER"} = $cellcnt};
+foreach (@fillers){
+  my $addr = $TEMP{$_};
+  print WRITE_NODE "$addr \ $cellcnt\n";
+}
+
+my $portCellID = 2;
+my @ports = (@in_port, @out_port);
+if($#ports>=0){$cells{"PORT"} = $portCellID;}
+foreach my $port ( @ports){
+    my $addr = $TEMP{$port};          
+    my $port_status = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetStatus() ;
+    if($port_status == 3) {
+#---Added by Rajeev on Mar-01-2010 to support for plan_5
+      print WRITE_NODE "$addr \ -$portCellID 0 0\n";
+      my @port_loc = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetLoc;
+      my $portloc_X = $port_loc[0]/$dbu;
+      my $portloc_Y = $port_loc[1]/$dbu;
+      print WRITE_NODE "$portloc_X \ $portloc_Y\n";
+    }else {
+#---Added by Rajeev on Mar-01-2010 to support for plan_5
+      print WRITE_NODE "$addr \ $portCellID 0 0\n";
+    }
+}
+
+close(WRITE_LEVEl);
+close(WRITE_NODE);
+################################# writing the nodeMap file ###############################
+open(WRITE_NODEMAP,">nodeMap.txt");
+  foreach my $inst (keys %TEMP){
+    my $n = $TEMP{$inst};
+    print WRITE_NODEMAP "$n $inst\n";
+  }
+close(WRITE_NODEMAP);
+
+################################# writing the library file ###############################
+my $min_width = 0;
+if($portsize == 1){
+  foreach $l(keys %PTDB){
+  my $ln = $PTDB{$l}->dbTechGetLayerNum;
+   $LHASH_TEMP{$l}= $ln;
+  }
+  my @layers = sort PTDB_asAscendingValue(keys (%LHASH_TEMP));
+  my $min_name = $PTDB{$layers[0]}->dbTechGetLayerName;
+  $min_width = $PTDB{$layers[0]}->dbTechGetLayerWidth;
+  my @ports = (@in_port, @out_port);
+  foreach my $port ( @ports){
+    my $port_layer = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetLayer();
+    if($port_layer != 0){
+      my $name = $PTDB{$port_layer}->dbTechGetLayerName;
+      my $portlayer_width = $PTDB{$port_layer}->dbTechGetLayerWidth;
+      if($portlayer_width < $min_width){
+        $min_width = $width;
+      }
+    }
+  }
+}
+open(WRITE_LIB,">libfile");
+foreach my $cellName ( keys %cells ) {
+        if ( exists $PLDB{$cellName} ) {
+             my @pins = $PLDB{$cellName}->dbMdbGetPins;
+             my $pin_cnt = @pins;            
+             my @box = $PLDB{$cellName}->dbMdbGetSize;
+             print WRITE_LIB "$cells{$cellName} $box[0] $box[1] $pin_cnt\n";
+             foreach my $pinName ( @pins ) {
+                my @RECTS = $PLDB{$cellName}->dbMdbGetPinRect($pinName);
+                my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$RECTS[0]))[0,2,3,4,5];
+                my $mid_x = ($llx + $urx)/2;
+                my $mid_y = ($lly + $ury)/2;
+                if ($#RECTS < 0){
+                  @RECTS = $PLDB{$cellName}->dbMdbGetPinPolygon($pinName);
+                  ($layer,$mid_x,$mid_y) = (split(/\s+/,$RECTS[0])) [0,2,3];
+                } 
+                print WRITE_LIB "\t$mid_x $mid_y\n";
+             }
+        }elsif($cellName eq "PORT"){
+          if($portsize == 1){
+            print WRITE_LIB "$cells{$cellName} $min_width $min_width 1\n";
+          }else{
+            print WRITE_LIB "$cells{$cellName} 0 0 1\n";
+          }
+            print WRITE_LIB "\t0.0 0.0\n";
+        }elsif($cellName eq "FILLER"){
+            my $cellref_firstflop = $CADB{$flops[0]}->dbCadbGetCellref;
+            my @box = $PLDB{$cellref_firstflop}->dbMdbGetSize;
+            print WRITE_LIB "$cells{$cellName} $box[0] $box[1] 1\n";
+            print WRITE_LIB "\t0.0 0.0\n";
+        }else{}
+     
+}#foreach
+close(WRITE_LIB);
+
+close(WRITE);
+#$PLACE{$TOP_MODULE}->dbgPlaceGetTpath;
+
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "Graph files from SMatrix written in ", timestr($td), "\n";
+
+$PLACE{$TOP_MODULE}->dbPlaceDestroyFanInFanOutHash();
+
+}#if correct no of arguments
+}#sub write_spark_smatrix
+
+1;
+

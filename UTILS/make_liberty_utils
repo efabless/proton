@@ -1,0 +1,133 @@
+my ($help, $debug, $verbose) = (0,0,0);
+my ($libfile, $fpfile);
+
+use strict;
+use Getopt::Long;
+
+
+########################################################################
+sub gen_footprint {
+
+  ($help, $debug, $verbose) = (0,0,0);
+  my (@args) =  @_;
+  my $args = join(' ',@args);
+  my $parseResult = Getopt::Long::GetOptionsFromString
+    ($args , 
+     # read args here
+     "lib=s"      => \$libfile,
+     "fp=s"       => \$fpfile,  #footprint file
+     "h"          => \$help,
+     "help"       => \$help,
+     "HELP"       => \$help,
+     "debug"      => \$debug,
+     "verbose"    => \$verbose,
+    );
+
+  $verbose = 1 if ($debug);
+  if ($help) {
+    &gen_footprint_usage;
+    return(1);
+  }
+  open(LIBFILE," $libfile") or die( "$! : $libfile",__LINE__);
+  open(FPFILE, "> $fpfile") or die( "$! : $fpfile" ,__LINE__);
+
+  my ($linecount) = (0);
+  my %lib;
+  my ($cell, $pin, %pin);
+
+  while (my $line = <LIBFILE>) {
+    $linecount++;
+    if ($line =~ /^cell\s*\((\w+)/) { #starting a new cell
+      $cell = $1;
+      $lib{$cell}{'type'}='comb';
+    }
+    if ($line =~ /^\s*pin\s*\((\w+)/) { #starting a new pin
+      $pin = $1;
+    }
+    if ($line =~ /^\s*direction\s*:\s*(\w+)\s*;/) { #get direction
+      $lib{$cell}{'pin'}{$pin}{'dir'} = $1;
+    }
+    if ($line =~ /^\s*clock\s*:\s*true/) { #get clocks
+      $lib{$cell}{'type'}='seq';
+      push(@{$lib{$cell}{'clk'}},$pin);
+    }
+    if ($line =~ /^\s*timing\s*:\s*true/) { #comb or seq
+      $lib{$cell}{'type'}='seq';
+    }
+    if ($line =~ /^\s*ff\s*\((.*)\s*,.*\)/) { #get seq type and outputs
+      $lib{$cell}{'subtype'}='reg';
+      $lib{$cell}{'po'}=$1;
+    }
+    if ($line =~ /^\s*latch\s*\((.*)\s*,.*\)/) { #get seq type and outputs
+      $lib{$cell}{'subtype'}='latch';
+      $lib{$cell}{'po'}=$1;
+    }
+    if ($line =~ /^\s*function\s*:\W*(\w+)\W*;/) { #get primary output name
+      $lib{$cell}{'func'}{$1}=$pin;
+    }
+    if ($line =~ /^\s*timing_type\s*:\s*setup/) { #primary input
+      if ($lib{$cell}{'pin'}{$pin}{'dir'} =~ /in/) {
+	if (($pin ne "E") and ($pin ne "SE") and ($pin ne "SI") and ($pin ne "RN")) {
+	  $lib{$cell}{'pi'}{$pin} = 1;
+	}
+      }
+    }
+    if ($line =~ /^\s*timing_type\s*:\s*hold/) { #primary input
+      if ($lib{$cell}{'pin'}{$pin}{'dir'} =~ /in/) {
+	if (($pin ne "E") and ($pin ne "SE") and ($pin ne "SI")) {
+	  $lib{$cell}{'pi'}{$pin} = 1;
+	}
+      }
+    }
+  }
+
+  my ($type, $subtype, $clk, $pi);
+  foreach $cell (sort keys %lib) {
+    $type = $lib{$cell}{type};
+    if ($type eq "comb") {
+      $subtype = "UNK";
+      if    ($cell =~ /INV/)  {$subtype = 'inv';}
+      elsif ($cell =~ /BUF/)  {$subtype = 'buf';}
+      elsif ($cell =~ /MUX/)  {$subtype = 'mux';}
+      elsif ($cell =~ /MX/)   {$subtype = 'mux';}
+      elsif ($cell =~ /NAND/) {$subtype = 'nand';}
+      elsif ($cell =~ /XNOR/) {$subtype = 'xnor';}
+      elsif ($cell =~ /NOR/)  {$subtype = 'nor';}
+      elsif ($cell =~ /XOR/)  {$subtype = 'xor';}
+      elsif ($cell =~ /AND/)  {$subtype = 'and';}
+      elsif ($cell =~ /ADD/)  {$subtype = 'add';}
+      elsif ($cell =~ /AOI/)  {$subtype = 'aoi';}
+      elsif ($cell =~ /OAI/)  {$subtype = 'oai';}
+      elsif ($cell =~ /OR/)   {$subtype = 'or';}
+      printf FPFILE ("%-10s; %-6s; %-6s;\n",$cell,$subtype,$type);
+    } elsif ($type eq "seq") {
+      $subtype = $lib{$cell}{subtype};
+      $clk = join(',',@{$lib{$cell}{'clk'}});
+      my $po = $lib{$cell}{'func'}{$lib{$cell}{'po'}};
+      if ($subtype eq "reg") {
+	if (defined($lib{$cell}{'pi'}{RN})) {
+	  delete $lib{$cell}{'pi'}{RN};
+	}
+      }
+      my @pi = sort keys %{$lib{$cell}{'pi'}};
+      my $pi = join(',',@pi);
+      printf FPFILE ("%-10s; %-6s; %-6s; %-6s; %-6s; %-6s;\n", 
+		     $cell,$subtype,$type,$pi,$po,$clk);
+    }
+  }
+  close(LIBFILE);
+  close(FPFILE);
+  print "gen_footprint: Finished generating footprint file $fpfile";
+}
+
+sub gen_footprint_usage {
+  print qq^
+gen_footprint  -lib=libfile         # input library file
+	       -fp=fpfile           # output footprint file
+               -help                # help, print this message
+               -debug               # debug mode
+               -verbose             # verbose mode
+^;
+}
+
+1;

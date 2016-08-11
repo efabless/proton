@@ -1,0 +1,199 @@
+sub dbaReportNetWithNPins{
+
+#****f* / dbaReportNetWithNPins
+# NAME
+#   dbaReportNetWithNPins
+# FUNCTION
+#   report generates when user gives a no of pins || summary of nets when give <--summary> 
+# Assumptions
+#   works for all nets
+# SYNOPSIS
+#   dbaReportNetWithNPins -output<fileName> -pins<no of pins> --summary
+# INPUTS
+#   options:
+#   -output<fileName> -pins <no of pins> or --summary
+# OUTPUTS
+#    report file generate
+# ****
+
+my $noOfArguments =@_;
+if($noOfArguments < 1 || $_[0] eq "-h"){print "Usage : dbaReportNetWithNPins -output <fileName>\n";
+                                        print "      : -pins <no of pins>\n";
+                                        print "      : --summary\n";
+                                        print "      : --print_summary\n";
+                                        }#if
+else {
+      $pins_given = 0;
+      $DEFAULT = 1;
+      $summary = 0;
+      $print_summary = 0;
+      for(my $i =0; $i < $noOfArguments;$i++){
+          if($_[$i] eq "-output"){$rpt_file = $_[$i+1];}
+          if($_[$i] eq "-pins" ){$pins = $_[$i+1];$pins_given = 1;$DEFAULT = 0;} 
+          if($_[$i] eq "--summary"){$summary = 1;}
+          if($_[$i] eq "--print_summary"){$print_summary = 1;}
+                                             }#for
+open(WRITE,">$rpt_file");
+if($pins_given == 1 && $DEFAULT == 0){
+foreach my $nets (keys %NETS_ALREADY){
+        my $noOfComponentsConnected = keys %{$NETS_ALREADY{$nets}};
+        if($noOfComponentsConnected == $pins){
+        print WRITE "$nets \n";
+                                             }#if comp conn 
+                                      }#foreach nets
+                                     }#if pins given
+#---------------------------------------------------Summary no of nets-----------------------------------------------------#
+if($summary == 1){
+my %NET_HASH=();
+foreach my $nets (keys %NETS_ALREADY){
+        my $noOfComponentsConnected = keys %{$NETS_ALREADY{$nets}};
+           $NET_HASH{$noOfComponentsConnected} += 1; 
+                                              }#foreach nets
+@sorted = sort {$a <=> $b} keys %NET_HASH;
+foreach my $pins (@sorted){
+        print "INFO-LIBLYIS-RPT_NT_PN : 001 : $pins pin net : Total no of nets $NET_HASH{$pins}\n"if($print_summary ==1);
+}#foreach 
+return(%NET_HASH);
+}#if default
+}#else
+}#sub dbaReportNetWithNPins 
+#--------------------------------------------------------------------------------------------------------------------------------#
+sub dbaQueryInst{
+#****f* /dbaQueryInst
+# NAME
+#  dbaQueryInst
+# FUNCTION
+#     dbaQuerInst  
+# Assumptions
+#
+# SYNOPSIS
+#     dbaQueryInst -inst
+# INPUTS
+#      options :
+#           -inst
+# OUTPUTS
+#     no of pins,clock domain,power domain,no of nets,clock net,
+#     number of connected nets that are high fanout for given instance
+#*********
+my $noOfArguments = @_;
+if($noOfArguments < 1 || $_[0] eq "-h"){print "Usage : dbaQueryInst \n"; 
+                                        print "      : -inst \n";}
+else {
+my @nets = ();
+my @nets_clock =();
+$total_fanout = 0;
+$total_power_domain = 0;
+$total_clock_domain = 0;
+$moduleName = $TOP_MODULE;
+for (my $i =0; $i < $noOfArguments; $i++){
+     if($_[$i] eq "-inst"){$instance = $_[$i+1];}
+                                            }#for
+if(exists $COMP_ALREADY{$instance}){
+  my $cellref = $CADB{$instance}->dbCadbGetCellref;
+  if(exists $PLDB{$cellref}){ 
+    my @pins = $PLDB{$cellref}->dbMdbGetPins;
+    my $no_of_pins = @pins;
+    foreach $p (@pins){
+      my $pintype = $PLDB{$cellref}->dbMdbGetPinType($p);
+      if(($pintype != 1) && ($pintype != 2)){
+        my $netName = $COMP_ALREADY{$instance}{$p};
+        if(exists $COMP_ALREADY{$instance}{$p}){ 
+          if ( !defined $SNETS_ALREADY{$netName}){
+            if(exists $NETS_ALREADY{$netName}){
+              push(@nets,$netName);
+              my $netType = $NETS_ROUTING_ALREADY{$netName}->dbRegularNetGetType;
+              if($netType eq "CLOCK"){push(@nets_clock,$netName);}
+              }#if exists
+            }#if not defined in special net section
+          }#if net name exists in comp
+        }#if pintype is signal or clock  
+#-----------------------------------------------------------------------------------------------------------------------------------------#
+        if($pintype == 1){$netName = $COMP_ALREADY{$instance}{$p};
+          $power_domain = &get_powerdomain($netName);
+          $total_power_domain = $total_power_domain + $power_domain;
+        }#if pin type power
+        if($pintype == 3){$netName = $COMP_ALREADY{$instance}{$p};
+          $clock_domain = &get_clockdomain($netName);
+          $total_clock_domain = $total_clock_domain + $clock_domain;
+        }#if pin type clock
+        $fan_out = &get_fanout_for_given_instance_given_pin($instance,$p);
+        $total_fanout = $total_fanout + $fan_out;
+        }#foreach pins
+my $net = @nets;
+my $no_of_clock_nets = @nets_clock;
+print "INFO-LIBLYIS-QRY_INST : 001 : Total pins $no_of_pins\n";
+print "INFO-LIBLYIS-QRY_INST : 002 : No of nets connected $net\n";
+print "INFO-LIBLYIS-QRY_INST : 003 : No of clock nets $no_of_clock_nets\n";
+print "INFO-LIBLYIS-QRY_INST : 004 : clock domain nets $total_clock_domain\n";
+print "INFO-LIBLYIS-QRY_INST : 005 : power domain nets $total_power_domain\n";
+print "INFO-LIBLYIS-QRY_INST : 006 : No of connected nets that are high fanout $total_fanout\n";
+                                     }#if exists cellref
+                           }#if exists instance
+}#else
+}#sub dbaQueryInst
+#-----------------------------------------------------------------------------------------------------------------------------------------#
+sub get_fanout_for_given_instance_given_pin {
+$inst = $_[0];
+$pin = $_[1];
+@fan_out = ();
+if(exists $COMP_ALREADY{$inst}{$pin}){
+   my $cellref = $CADB{$inst}->dbCadbGetCellref;
+  if(exists $PLDB{$cellref}){
+     my $dir = $PLDB{$cellref}->dbMdbGetPinDir($pin);
+    if($dir == 1){$pinDir = "OUTPUT";
+       my $net_Name = $COMP_ALREADY{$inst}{$pin};
+      foreach my $instance (keys %{$NETS_ALREADY{$net_Name}}){
+        if($instance ne $inst){
+          if(exists $COMP_ALREADY{$instance}){
+                my $cell = $CADB{$instance}->dbCadbGetCellref;
+                my $p = $NETS_ALREADY{$net_Name}{$instance};
+            if(exists $PLDB{$cell}){
+                my $direction = $PLDB{$cell}->dbMdbGetPinDir($p);
+                if($direction == 0){$pin_Dir = "INPUT";
+                                    push(@fan_out,$p);
+                }#if direction
+            }#if exists 
+          }#if exists instance
+          elsif ($instance eq "PIN"){
+                 my $portName = $NETS_ALREADY{$net_Name}{$instance};
+                 my $portdir =  $PORTS_ALREADY{$moduleName}{$portName}->dbPortGetDir;
+                    if(($portdir eq "OUTPUT")|| ($portdir eq "output")){push(@fan_out,$portName);} 
+          }#elsif instance eq PIN 
+         }#if instance ne inst
+       }#foreach instance
+     }#if dir output 
+   }#if exists cellref
+ }#if exists
+$no_of_fanout = @fan_out;
+#print "$no_of_fanout\n";
+return($no_of_fanout);
+}#sub get_fanout_for_given_instance_given_pin
+#-----------------------------------------------------------------------------------------------------------------------------------------#
+sub get_clockdomain {
+my $net = $_[0];
+@clockDomain = ();
+foreach $inst (keys %{$NETS_ALREADY{$net}}){
+    if($inst eq "PIN"){
+       my $portName = $NETS_ALREADY{$net}{$inst};
+       my $portType = $PORTS_ALREADY{$moduleName}{$net}->dbPortGetSignal;
+          if($portType eq "CLOCK"){push(@clockDomain,$net);}
+                                                 }#if inst eq PIN
+                                               }#foreach inst
+$net_clock = @clockDomain;
+return($net_clock);
+}#sub get_clockdomain
+#-----------------------------------------------------------------------------------------------------------------------------------------#
+sub get_powerdomain {
+my $net = $_[0];
+@powerDomain = ();
+foreach $inst (keys %{$NETS_ALREADY{$net}}){
+    if($inst eq "PIN"){
+       my $portName = $NETS_ALREADY{$net}{$inst};
+       my $portType = $PORTS_ALREADY{$moduleName}{$net}->dbPortGetSignal;
+          if($portType eq "POWER"){push(@powerDomain,$net);}
+                                                  }#if inst eq PIN
+                                                 }#foreach inst
+$net_power = @powerDomain;
+return($net_power);
+}#sub get_powerdomain;
+1;

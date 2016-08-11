@@ -1,0 +1,104 @@
+sub analyse_library {
+print "INFO-LIBLYIS-ANALZE_LIBRY : 001 : Finding the cells function and type\n";
+#------------- for all cells from LEF -------#
+foreach my $macroName ( keys %PLDB ) {
+        my @pins = $PLDB{$macroName}->dbMdbGetPins;
+        foreach my $pinName ( @pins ) {
+                 my $pinType = $PLDB{$macroName}->dbMdbGetPinType($pinName);
+# if the pin is a clock pin to the cell and timing delay depends on the trigger at this pin
+                         print "INFO-LIBLYIS-ANALZE_LIBRY : 002 : Setting $macroName has $pinName is of type $pinType\n"; #if ($DEBUG == 1001);
+                    if ($pinType == 3 ) {
+                         my $function = 'flop';
+                         my $type = 'seq';
+                         print "INFO-LIBLYIS-ANALZE_LIBRY : 003 : Setting $macroName as $type because $pinName is of type $pinType\n";# if ($DEBUG == 1001);
+                        # $PLDB{$macroName}->dbMdbSetFunction($function);
+                         $PLDB{$macroName}->dbMdbSetType($type);
+                                        }
+
+                                       }#foreach pin of the macro
+                                  }# all cells in PLDB
+
+
+
+
+
+}#sub analyse_library
+
+
+sub create_chipbuilder_library {
+
+%category = (
+            "core"=>"core",
+            "CORE"=>"core",
+            "PAD" =>"iopad",
+            "PAD INPUT"=>"input-pads",
+            "PAD OUTPUT"=>"output-pads",
+            "PAD INOUT"=>"bidi-pads",
+            "PAD POWER"=>"power-pads",
+            "PAD GROUND"=>"ground-pads",
+            "PAD SPACER"=>"filler-pads",
+            "BLOCK"=>"ip-blocks",
+            );
+
+open(WRITE,">xh035a.json");
+open(WRITE2,">xfab_xh035a.txt");
+
+print WRITE "{\n";
+print WRITE " \"library\": \"xg035a\"\,\n";
+        print WRITE " \"cells\": \[\n";
+foreach my $macroName ( keys %PLDB ) {
+        print WRITE "        \{\n";
+        print WRITE "    \"cellName\": \"$macroName\",\n";
+        print WRITE2 "$macroName ";
+        my @size = $PLDB{$macroName}->dbMdbGetSize ;
+        my $class = $PLDB{$macroName}->dbMdbGetClass ;
+        print WRITE "    \"cellType\": \"$class\",\n";
+        print WRITE2 "$macroName ";
+        print WRITE "    \"cellSize\": \"@size\"\,\n";
+        print WRITE2 "(";
+        print WRITE2 join (",", @size);
+        print WRITE2 ") ";
+        my @pins = $PLDB{$macroName}->dbMdbGetPins;
+        my $numPins = @pins ; 
+        #print WRITE "@pins" ;
+        #print WRITE " $l " ;
+        my @inputs = ();
+        my @outputs = ();
+        my @bidi = ();
+        print WRITE "        \"pins\": \[\n";
+        foreach my $pinName ( @pins ) {
+        $numPins-- ;
+        print WRITE "          \{\n";
+        print WRITE "          \"pinName\": \"$pinName\"\,\n";
+                 my $pinType = $PLDB{$macroName}->dbMdbGetPinType($pinName);
+                 my $pinDir = $PLDB{$macroName}->dbMdbGetPinDir($pinName);
+                 my @pinRect = $PLDB{$macroName}->dbMdbGetPinRect($pinName);
+                 my $pinRectLine = shift @pinRect ;
+                 my ($pinX, $pinY) = (split(/\s+/,$pinRectLine))[2,3];
+        print WRITE "          \"pinType\": \"$pinType\"\,\n";
+        print WRITE "          \"pinDir\": \"$pinDir\"\n";
+                 if ( $pinDir == 0 ) { push (@inputs,${pinName}."(".${pinX}.",".${pinY}.")" );  }
+                 if ( $pinDir == 1 ) { push (@outputs,${pinName}."(".${pinX}.",".${pinY}.")" ); }
+                 if ( $pinDir == 2 ) { push (@bidi,${pinName}."(".${pinX}.",".${pinY}.")" ); }
+        if ( $numPins > 0 ) {print WRITE "          \}\,\n";} else { print WRITE "          \}\n";}
+                                      }#foreach pin of the macro
+       print WRITE "                  \]\n";
+        print WRITE2 " INPUT= ";
+        print WRITE2 join (",", @inputs ) ;
+        my $l = @inputs ;
+        print WRITE2 " $l ";
+        print WRITE2 " OUTPUT=";
+        print WRITE2 join (",", @outputs ) ;
+        my $l = @outputs ;
+        print WRITE2 " $l ";
+        print WRITE2 " $category{$class}";
+        print WRITE2 "\n";
+print WRITE "         \}\n";
+                                     }# all cells in PLDB
+print WRITE "       \]\n";
+print WRITE "\}\n";
+close(WRITE);
+close(WRITE2);
+}# sub create_chipbuilder_library
+
+1;

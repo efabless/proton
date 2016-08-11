@@ -1,0 +1,3085 @@
+sub dbTstGUIInstantiateHardMacro {
+&dbfGuiResetCanvasBind;
+        print "Adding and instance of $TSTDL \n";
+        $design_canvas->CanvasBind('<Motion>', sub {
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+            $design_canvas->delete(YELLOWBOX);
+            my $cellref = $TSTDL;
+            unless (exists $PLDB{$cellref} ) { }
+            else {
+              my @size = $PLDB{$cellref}->dbMdbGetSize;
+              my $llx = $x; 
+              my $lly = $y; 
+              my $urx = $x+$size[0]*$MICRONFACTOR; 
+              my $ury = $y-$size[1]*$MICRONFACTOR; 
+              $design_canvas->createRectangle($llx,$lly,$urx,$ury, -outline=>"yellow", -tags=>"YELLOWBOX");
+            }
+        });
+        $design_canvas->CanvasBind('<1>' => sub {
+            $design_canvas->delete(YELLOWBOX);
+            #$design_canvas->CanvasBind('<Motion>' =>"");
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+
+            my @InstCoords = ($x, $y);
+            my @instLoc = &dbfGuiGui2Micron(@InstCoords);
+            print "DBG-INFO : $instLoc[0],$instLoc[1]\n";
+            my $cellref = $TSTDL;
+            unless ( exists $PLDB{$cellref} ) { }
+            else {
+              my @size = $PLDB{$cellref}->dbMdbGetSize;
+              my @tmpRect = (0,0,$size[0],$size[1]); 
+              $tmpRect[0] = $tmpRect[0]*$MICRONFACTOR;
+              $tmpRect[1] = $tmpRect[1]*$MICRONFACTOR;
+              $tmpRect[2] = $tmpRect[2]*$MICRONFACTOR;
+              $tmpRect[3] = $tmpRect[3]*$MICRONFACTOR;
+             # @tmpRect = ($tmpRect[0]+$x,$tmpRect[1]+$y,$tmpRect[2]+$x,$tmpRect[3]+$y,);
+              @tmpRect = ($tmpRect[0]+$x,$y-$tmpRect[1],$tmpRect[2]+$x,$y-$tmpRect[3],);
+              my $Inst = $design_canvas->createRectangle(
+                                               @tmpRect,
+                                               -outline => 'green',
+                                               -fill => 'green',
+                                               -stipple => 'gray12',
+                                               );
+              print "#<CMD> createPseudoInstance -parent $TOP_MODULE -cell $cellref -loc {$instLoc[0],$instLoc[1]} -orient N\n";
+              my $InstName = &createPseudoInstance("-parent", $TOP_MODULE, "-cell", $cellref, "-loc", "{$instLoc[0],$instLoc[1]}", "-orient", "N");
+              $design_canvas->itemconfigure($Inst, -tags =>'TST_MODULE' );
+              $design_canvas->addtag($InstName , "withtag", $Inst);
+
+#-------------------------- Pin Display -------------------------------------#
+              my @cellOrigin = $PLDB{$cellref}->dbMdbGetOrigin;
+              my @pins = $PLDB{$cellref}->dbMdbGetPins;
+              foreach my $pinName ( @pins ) {
+                my @RECTS = $PLDB{$cellref}->dbMdbGetPinRect($pinName);
+                my @POLY = $PLDB{$cellref}->dbMdbGetPinPolygon($pinName);
+                foreach my $rect_line (@RECTS){
+                  my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$rect_line))[0,2,3,4,5];
+                  my $color = $PTDB{$layer}->dbTechGetLayerColor;
+                  $llx = $x + (($llx+$cellOrigin[0])*$MICRONFACTOR);
+                  $lly = $y - (($lly+$cellOrigin[1])*$MICRONFACTOR);
+                  $urx = $x + (($urx+$cellOrigin[0])*$MICRONFACTOR);
+                  $ury = $y - (($ury+$cellOrigin[1])*$MICRONFACTOR);
+                  $design_canvas->createRectangle($llx,$lly,$urx,$ury,-tags,"TST_PIN",-outline,$color,-fill,$color,-stipple,"gray12");
+                  #my $pinRect = $design_canvas->createRectangle($llx,$lly,$urx,$ury,-outline,$color,-fill,$color,-stipple,"gray12");
+                  #$design_canvas->itemconfigure($pinRect, -tags =>'TST_PIN' );
+                  #$design_canvas->addtag($InstName , "withtag", $Inst); 
+                  #$design_canvas->createText(($llx+$urx)/2,($lly+$ury)/2, -text=>$pinName, -fill=>"yellow", -anchor=>"sw");
+                }
+                foreach my $poly_line (@POLY){
+                  my @polygon = split(/\s+/,$poly_line);
+                  my $layer = $polygon[0];
+                  my $color = $PTDB{$layer}->dbTechGetLayerColor;
+                  my @coords = ();
+                  for(my $i=2; $i<=$#polygon; $i=$i+2){
+                      my $llx = $x + (($polygon[$i]+$cellOrigin[0])*$MICRONFACTOR);
+                      my $lly = $y - (($polygon[$i+1]+$cellOrigin[1])*$MICRONFACTOR);
+                      push(@coords, $llx,$lly);
+                  }
+                  $design_canvas->createPolygon(@coords,-tags,"TST_PIN",-outline,$color,-fill,$color,-stipple,"gray12");
+                  #$design_canvas->itemconfigure($pinRect, -tags =>'TST_PIN' );
+                  #$design_canvas->addtag($InstName , "withtag", $Inst); 
+                  #$design_canvas->createText(($llx+$urx)/2,($lly+$ury)/2, -text=>$pinName, -fill=>"yellow", -anchor=>"sw");
+                }
+              }
+#-------------------------------------------------------------------------------#
+            }#if cell exists in PLDB
+        });
+}#sub dbTstGUIInstantiateHardMacro
+
+
+sub dbTstGUIInstantiateStdCell {
+&dbfGuiResetCanvasBind;
+        print "Adding and instance of $TSTDL \n";
+        $design_canvas->CanvasBind('<Motion>', sub {
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+            $design_canvas->delete(YELLOWBOX);
+            my $cellref = $TSTDL;
+            unless (exists $PLDB{$cellref} ) { }
+            else {
+              my @size = $PLDB{$cellref}->dbMdbGetSize;
+              my $llx = $x; 
+              my $lly = $y; 
+              my $urx = $x+$size[0]*$MICRONFACTOR; 
+              my $ury = $y-$size[1]*$MICRONFACTOR; 
+              $design_canvas->createRectangle($llx,$lly,$urx,$ury, -outline=>"yellow", -tags=>"YELLOWBOX");
+            }
+        });
+        $design_canvas->CanvasBind('<1>' => sub {
+            $design_canvas->delete(YELLOWBOX);
+            #$design_canvas->CanvasBind('<Motion>' =>"");
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+
+            my @InstCoords = ($x, $y);
+            my @instLoc = &dbfGuiGui2Micron(@InstCoords);
+            print "DBG-INFO : $instLoc[0],$instLoc[1]\n";
+            my $cellref = $TSTDL;
+            unless ( exists $PLDB{$cellref} ) { }
+            else {
+              my @size = $PLDB{$cellref}->dbMdbGetSize;
+              my @tmpRect = (0,0,$size[0],$size[1]); 
+              $tmpRect[0] = $tmpRect[0]*$MICRONFACTOR;
+              $tmpRect[1] = $tmpRect[1]*$MICRONFACTOR;
+              $tmpRect[2] = $tmpRect[2]*$MICRONFACTOR;
+              $tmpRect[3] = $tmpRect[3]*$MICRONFACTOR;
+             # @tmpRect = ($tmpRect[0]+$x,$tmpRect[1]+$y,$tmpRect[2]+$x,$tmpRect[3]+$y,);
+              @tmpRect = ($tmpRect[0]+$x,$y-$tmpRect[1],$tmpRect[2]+$x,$y-$tmpRect[3],);
+              my $Inst = $design_canvas->createRectangle(
+                                               @tmpRect,
+                                               -outline => 'green',
+                                               -fill => 'green',
+                                               -stipple => 'gray12',
+                                               );
+              print "#<CMD> createPseudoInstance -parent $TOP_MODULE -cell $cellref -loc {$instLoc[0],$instLoc[1]} -orient N\n";
+              my $InstName = &createPseudoInstance("-parent", $TOP_MODULE, "-cell", $cellref, "-loc", "{$instLoc[0],$instLoc[1]}", "-orient", "N");
+              $design_canvas->itemconfigure($Inst, -tags =>'TST_MODULE' );
+              $design_canvas->addtag($InstName , "withtag", $Inst);
+
+#-------------------------- Pin Display -------------------------------------#
+              my @cellOrigin = $PLDB{$cellref}->dbMdbGetOrigin;
+              my @pins = $PLDB{$cellref}->dbMdbGetPins;
+              foreach my $pinName ( @pins ) {
+                my @RECTS = $PLDB{$cellref}->dbMdbGetPinRect($pinName);
+                my @POLY = $PLDB{$cellref}->dbMdbGetPinPolygon($pinName);
+                foreach my $rect_line (@RECTS){
+                  my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$rect_line))[0,2,3,4,5];
+                  my $color = $PTDB{$layer}->dbTechGetLayerColor;
+                  $llx = $x + (($llx+$cellOrigin[0])*$MICRONFACTOR);
+                  $lly = $y - (($lly+$cellOrigin[1])*$MICRONFACTOR);
+                  $urx = $x + (($urx+$cellOrigin[0])*$MICRONFACTOR);
+                  $ury = $y - (($ury+$cellOrigin[1])*$MICRONFACTOR);
+                  $design_canvas->createRectangle($llx,$lly,$urx,$ury,-tags,"TST_PIN",-outline,$color,-fill,$color,-stipple,"gray12");
+                  #my $pinRect = $design_canvas->createRectangle($llx,$lly,$urx,$ury,-outline,$color,-fill,$color,-stipple,"gray12");
+                  #$design_canvas->itemconfigure($pinRect, -tags =>'TST_PIN' );
+                  #$design_canvas->addtag($InstName , "withtag", $Inst); 
+                  #$design_canvas->createText(($llx+$urx)/2,($lly+$ury)/2, -text=>$pinName, -fill=>"yellow", -anchor=>"sw");
+                }
+                foreach my $poly_line (@POLY){
+                  my @polygon = split(/\s+/,$poly_line);
+                  my $layer = $polygon[0];
+                  my $color = $PTDB{$layer}->dbTechGetLayerColor;
+                  my @coords = ();
+                  for(my $i=2; $i<=$#polygon; $i=$i+2){
+                      my $llx = $x + (($polygon[$i]+$cellOrigin[0])*$MICRONFACTOR);
+                      my $lly = $y - (($polygon[$i+1]+$cellOrigin[1])*$MICRONFACTOR);
+                      push(@coords, $llx,$lly);
+                  }
+                  $design_canvas->createPolygon(@coords,-tags,"TST_PIN",-outline,$color,-fill,$color,-stipple,"gray12");
+                  #$design_canvas->itemconfigure($pinRect, -tags =>'TST_PIN' );
+                  #$design_canvas->addtag($InstName , "withtag", $Inst); 
+                  #$design_canvas->createText(($llx+$urx)/2,($lly+$ury)/2, -text=>$pinName, -fill=>"yellow", -anchor=>"sw");
+                }
+              }
+#-------------------------------------------------------------------------------#
+            }#if cell exists in PLDB
+        });
+}#sub dbTstGUIInstantiateStdCell
+
+sub dbTstGUICreateModuleInst {
+&dbfGuiResetCanvasBind;
+my $instName = $_[0];
+my $notcreate = 0;
+my @moduleRectCoords = ();
+my $moduleInst;
+        $design_canvas->CanvasBind('<1>' => sub {
+            $notcreate = 0;
+            if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$instName}){
+               print "WARN: instance $instName already exists in database\n";
+               $notcreate = 1; 
+               return; 
+            }
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+
+            @moduleRectCoords = ($x, $y, $x, $y);
+
+            $moduleInst = $design_canvas->createRectangle(
+                                            @moduleRectCoords,
+                                            -outline => 'red',
+                                            -fill => 'red',
+                                            -stipple => 'gray12',
+                                            );
+        });
+                $design_canvas->CanvasBind('<B1-Motion>' => sub {
+            if($notcreate == 1){return;}
+            @moduleRectCoords[2,3] = ($design_canvas->canvasx($Tk::event->x),
+                                    $design_canvas->canvasy($Tk::event->y));
+
+            $design_canvas->coords($moduleInst => @moduleRectCoords);
+        });
+            $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+            if($notcreate == 1){return;}
+            my @ll = dbfGuiGui2Micron($moduleRectCoords[0],$moduleRectCoords[1]);
+            my @ur = dbfGuiGui2Micron($moduleRectCoords[2],$moduleRectCoords[3]);
+            my $moduleName = $TSTDL;
+            if(exists $MODULE_ALREADY{$TSTDL}){  
+            }else{
+               if(exists $PSEUDO_MODULE_ALREADY{$moduleName}){
+               }else{
+                 #print "#<CMD> createPseudoModule -parent $TOP_MODULE -module $TSTDL -bbox {$ll[0],$ur[1],$ur[0],$ll[1]}\n";
+                 print "#<CMD> createPseudoModule -parent $TOP_MODULE -bbox {$ll[0],$ur[1],$ur[0],$ll[1]} -module $TSTDL \n";
+                 $moduleName = &createPseudoModule("-parent", "$TOP_MODULE", "-module", $TSTDL, "-bbox", "{$ll[0],$ur[1],$ur[0],$ll[1]}");
+               }
+            }
+            print "#<CMD> createPseudoHierModuleInst -parent $TOP_MODULE -bbox {$ll[0],$ur[1],$ur[0],$ll[1]} -cellref $moduleName -inst $instName\n";
+            my $moduleInstName = &createPseudoHierModuleInst("-parent", "$TOP_MODULE", "-bbox", "{$ll[0],$ur[1],$ur[0],$ll[1]}","-cellref", "$moduleName", "-inst", "$instName");
+            print "$moduleInstName  created \n";
+            $design_canvas->itemconfigure($moduleInst, -tags =>'TST_MODULE' );
+            $design_canvas->addtag($moduleInstName , "withtag", $moduleInst);
+        });
+}#sub dbTstGUICreateModuleInst
+
+
+
+
+
+sub dbTstGUICreateModule {
+        $design_canvas->CanvasBind('<1>' => sub {
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+
+            @moduleRectCoords = ($x, $y, $x, $y);
+
+            $moduleInst = $design_canvas->createRectangle(
+                                            @moduleRectCoords,
+                                            -outline => 'red',
+                                            -fill => 'red',
+                                            -stipple => 'gray12',
+                                            );
+        });
+                $design_canvas->CanvasBind('<B1-Motion>' => sub {
+            @moduleRectCoords[2,3] = ($design_canvas->canvasx($Tk::event->x),
+                                    $design_canvas->canvasy($Tk::event->y));
+
+            $design_canvas->coords($moduleInst => @moduleRectCoords);
+        });
+            $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+            my @ll = dbfGuiGui2Micron($moduleRectCoords[0],$moduleRectCoords[1]);
+            my @ur = dbfGuiGui2Micron($moduleRectCoords[2],$moduleRectCoords[3]);
+            my $moduleName = &createPseudoModule("-top", "$TOP_MODULE", "-bbox", "{$ll[0],$ur[1],$ur[0],$ll[1]}");
+            my $moduleInstName = &createPseudoHierModuleInst("-parent", "$TOP_MODULE", "-bbox", "{$ll[0],$ur[1],$ur[0],$ll[1]}","-cellref", "$moduleName" );
+            $design_canvas->itemconfigure($moduleInst, -tags =>'TST_MODULE' );
+            $design_canvas->addtag($moduleInstName , "withtag", $moduleInst);
+        });
+}#sub dbTstGUICreateModule
+
+
+sub dbTstGUICreateGlueConn {
+        $design_canvas->CanvasBind('<1>' => sub {
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+
+            @moduleRectCoords = ($x, $y, $x, $y);
+
+            $moduleRect = $design_canvas->createLine(
+                                            @moduleRectCoords,
+                                            -fill => 'green',
+                                            -arrow => 'last',
+                                            -width => 10,
+                                            );
+        });
+                $design_canvas->CanvasBind('<B1-Motion>' => sub {
+            @moduleRectCoords[2,3] = ($design_canvas->canvasx($Tk::event->x),
+                                    $design_canvas->canvasy($Tk::event->y));
+
+            $design_canvas->coords($moduleRect => @moduleRectCoords);
+        });
+            $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+            &dbfTstgenCreateGlueNet();
+        });
+
+}#sub dbTstGUICreateGlueConn
+
+
+sub dbTstGUICreateClock {
+        $design_canvas->CanvasBind('<1>' => sub {
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+
+            @moduleRectCoords = ($x, $y, $x, $y);
+
+            $moduleRect = $design_canvas->createLine(
+                                            @moduleRectCoords,
+                                            -fill => 'white',
+                                            -arrow => 'last',
+                                            -width => 1,
+                                            );
+        });
+                $design_canvas->CanvasBind('<B1-Motion>' => sub {
+            @moduleRectCoords[2,3] = ($design_canvas->canvasx($Tk::event->x),
+                                    $design_canvas->canvasy($Tk::event->y));
+
+            $design_canvas->coords($moduleRect => @moduleRectCoords);
+        });
+            $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+            &dbfTstgenCreateClock;
+        });
+
+}#sub dbTstGUICreateClock
+
+############################ Subroutine to create  pin2pin click and drag cnnection ###############################
+sub create_pin2pin_connection{
+&dbfGuiResetCanvasBind;
+my $instConn = 0;
+my ($x1,$y1) = ("","");
+my @wireRectCoords = ();
+my $wireTemp = "";
+my $srcMod = "";
+my $sinkMod = "";
+
+$design_canvas->CanvasBind('<1>' => sub {
+     my $x = $design_canvas->canvasx($Tk::event->x);
+     my $y = $design_canvas->canvasy($Tk::event->y);
+     my @id      = $design_canvas->find("overlapping", $x, $y, $x, $y);
+     my $pin_found = 0; 
+     $instConn = 0;
+     $x1 = "", $y1 = ""; 
+     $srcMod = "";
+     foreach(my $i=-1; $i >= -$#id; $i--){
+       my @tagList = $design_canvas->gettags($id[$i]);
+       if($tagList[0] eq "TST_PIN" && $pin_found == 0){
+           $x1 = $x; $y1 = $y;
+           $pin_found = 1;
+       }elsif($tagList[0] eq "TST_MODULE" && $pin_found == 1){
+           if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}){
+              my @loc = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstRelBbox;
+              my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstCellref;
+              if(exists $PLDB{$cellref}) {
+                  $srcMod = $tagList[1];
+                  $instConn = 1; 
+                  @wireRectCoords = ($x, $y, $x, $y);
+                  $wireTemp = $design_canvas->createLine(
+                                                    @wireRectCoords,
+                                                    -fill => 'yellow',
+                                                    -arrow => 'last',
+                                                    -width => 3,
+                                                    );
+              }#if exists in PLDB
+           };#if exists in PSEUDO DB  
+           last;  
+       }
+     }#foreach id
+     if($pin_found == 0 || $instConn == 0){print "WARN: no source pin found\n";return;}
+});
+$design_canvas->CanvasBind('<B1-Motion>' => sub {
+     if($instConn == 1){
+        @wireRectCoords[2,3] = ($design_canvas->canvasx($Tk::event->x),
+                                $design_canvas->canvasy($Tk::event->y));
+        $design_canvas->coords($wireTemp => @wireRectCoords);
+     }else{return;} 
+});
+$design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+     if($instConn == 1){
+        my $x = $design_canvas->canvasx($Tk::event->x),
+        my $y = $design_canvas->canvasy($Tk::event->y);
+        my @id      = $design_canvas->find("overlapping", $x, $y, $x, $y);
+        my $pin_found = 0; 
+        my $x2 = ""; my $y2 = "";
+        $sinkMod = "";
+        foreach(my $i=-1; $i >= -$#id; $i--){
+          my @tagList = $design_canvas->gettags($id[$i]);
+          if($tagList[0] eq "TST_PIN" && $pin_found == 0){
+             $x2 = $x; $y2 = $y;
+             $pin_found = 1;
+          }elsif($tagList[0] eq "TST_MODULE" && $pin_found == 1){
+             if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}){
+                my @loc = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstRelBbox;
+                my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstCellref;
+                if(exists $PLDB{$cellref}) {
+                    $sinkMod = $tagList[1];
+                    $design_canvas->delete($wireTemp);
+                    $design_canvas->createLine($x1,$y1,$x2,$y2, -fill=>"yellow",-arrow =>'last',-width => 3);
+                }else{$design_canvas->delete($wireTemp);}
+                last; 
+             }else{$design_canvas->delete($wireTemp);}
+             last;
+          }
+        }#foreach id
+        if($pin_found == 0){
+           $design_canvas->delete($wireTemp);
+           print "WARN: no sink pin found\n";
+        }else{
+           print "connection from $srcMod to $sinkMod\n";
+        }
+     }#if connection possible
+});
+
+}#sub create_pin2pin_connection
+
+#######################################--subroutines to create straight, Z and Routing wires--########################################
+sub dbTstGUICreateStraightWires {
+&dbfGuiResetCanvasBind;
+my $netPrefix = $_[0];
+my $netWidth = $_[1];
+my $wireType = $_[2];
+
+my $srcMod = "";
+my $sinkMod = "";
+my $wireName = "";
+my @wireRectCoords = ();
+my $wireInstTemp;
+my ($wire_llx, $wire_lly,$wire_urx,$wire_ury) = (0,0,0,0);
+my ($wireConn,$instConn,$topConn) = (0,0,0);
+
+#$design_canvas->focusForce;
+$design_canvas->CanvasBind('<Shift-Button-1>' => sub {
+     my $x = $design_canvas->canvasx($Tk::event->x);
+     my $y = $design_canvas->canvasy($Tk::event->y);
+     my @id      = $design_canvas->find(qw/withtag current/);
+     my @tagList = $design_canvas->gettags($id[0]);
+     my @topCoords = $design_canvas->coords("TOP_MODULE"); 
+     if($x>$topCoords[0] && $x<$topCoords[2] && $y >$topCoords[1] && $y<$topCoords[3] && $tagList[0] eq "TOP_MODULE"){}
+     else{&popup_selectSrcPin_forWire($x, $y, \@id,$wireType);}   
+   });
+$design_canvas->CanvasBind('<Control-Button-1>' => sub {
+     my $x = $design_canvas->canvasx($Tk::event->x);
+     my $y = $design_canvas->canvasy($Tk::event->y);
+     my @id      = $design_canvas->find(qw/withtag current/);
+     my @tagList = $design_canvas->gettags($id[0]);
+     my @topCoords = $design_canvas->coords("TOP_MODULE"); 
+     if($x>$topCoords[0] && $x<$topCoords[2] && $y >$topCoords[1] && $y<$topCoords[3] && $tagList[0] eq "TOP_MODULE"){}
+     else{&popup_selectSinkPin_forWire($x, $y, \@id,$netPrefix,$netWidth,$wireType);}   
+   });
+$design_canvas->CanvasBind('<1>' => sub {
+     my $x = $design_canvas->canvasx($Tk::event->x);
+     my $y = $design_canvas->canvasy($Tk::event->y);
+     my @id      = $design_canvas->find(qw/withtag current/);
+     my @tagList = $design_canvas->gettags($id[0]);
+     my @topCoords = $design_canvas->coords("TOP_MODULE"); 
+     $wireConn = 0;
+     $instConn = 0;
+     $topConn = 0;
+     $wire_llx = 0; $wire_lly = 0;
+     if(($x <= $topCoords[0]) || ($x >= $topCoords[2]) || ($y <= $topCoords[1]) || ($y >= $topCoords[3])){
+       my $mod_llx = $topCoords[0];
+       my $mod_lly = $topCoords[1];
+       my $mod_urx = $topCoords[2];
+       my $mod_ury = $topCoords[3];   
+       if    ($x <= $mod_llx){$wire_llx = $mod_llx; $wire_lly = $y; 
+       }elsif($x >= $mod_urx){$wire_llx = $mod_urx; $wire_lly = $y; 
+       }elsif($y <= $mod_lly){$wire_llx = $x; $wire_lly = $mod_lly; 
+       }elsif($y >= $mod_ury){$wire_llx = $x; $wire_lly = $mod_ury; 
+       }
+       @wireRectCoords = ($x, $y, $x, $y);
+       $wireInstTemp = $design_canvas->createLine(
+                                                  @wireRectCoords,
+                                                  -fill => 'yellow',
+                                                  -arrow => 'last',
+                                                  -width => 3,
+                                                   );
+       $srcMod = "PIN";  ### $srcMod = $TOP_MODULE; ###
+       $topConn = 1;
+     }else {
+        if(($tagList[0] ne "TOP_MODULE") && ($tagList[0] ne "TST_WIRE")){
+          my @coords  = $design_canvas->coords($id[0]);
+          my @coords1 = ();
+          if($tagList[0] eq "FLOP"){
+             $coords1[0] = $coords[0];
+             $coords1[1] = $coords[1];
+             $coords1[2] = $coords[4];
+             $coords1[3] = $coords[7];   
+          }elsif($tagList[0] eq "MUX"){
+             $coords1[1] = $coords[1];
+             $coords1[3] = $coords[7]; 
+             if($coords[0] < $coords[4]){ 
+                $coords1[0] = $coords[0];
+                $coords1[2] = $coords[4];
+             }else {
+                $coords1[0] = $coords[4];
+                $coords1[2] = $coords[0];
+             }
+          }else{
+             $coords1[0] = $coords[0];
+             $coords1[1] = $coords[1];
+             $coords1[2] = $coords[2];
+             $coords1[3] = $coords[3];   
+          }
+             my $width   = $coords1[2] - $coords1[0];
+             my $height  = $coords1[3] - $coords1[1];
+             if    ($x <= $coords1[0] + 0.3 * $width){$wire_llx = $coords1[0]; $wire_lly = $y;
+             }elsif($x >= $coords1[2] - 0.3 * $width){$wire_llx = $coords1[2]; $wire_lly = $y;
+             }elsif($y <= $coords1[1] + 0.3 * $height){$wire_llx = $x; $wire_lly = $coords1[1];
+             }elsif($y >= $coords1[3] - 0.3 * $height){$wire_llx = $x; $wire_lly = $coords1[3];
+             }else{}
+          @wireRectCoords = ($x, $y, $x, $y);
+          $wireInstTemp = $design_canvas->createLine(
+                                                @wireRectCoords,
+                                                -fill => 'yellow',
+                                                -arrow => 'last',
+                                                -width => 3,
+                                                 );
+          $srcMod = $tagList[1];
+          $instConn = 1;
+        }elsif($tagList[0] eq "TST_WIRE"){
+          my @wire_coords  = $design_canvas->coords($id[0]);
+             #$wire_llx = $x, $wire_lly = $y;
+             $wire_llx = $x, $wire_lly = $wire_coords[1] + ($wire_coords[3]- $wire_coords[1])*($x - $wire_coords[0])/($wire_coords[2]-$wire_coords[0]);
+          @wireRectCoords = ($x, $y, $x, $y);
+          $wireInstTemp = $design_canvas->createLine(
+                                                    @wireRectCoords,
+                                                    -fill => 'yellow',
+                                                    -arrow => 'last',
+                                                    -width => 3,
+                                                     );
+          $wireConn = 1;
+          $wireName = $tagList[1]; ## if connection from a net   
+       }else { }
+    }#else
+   });
+$design_canvas->CanvasBind('<B1-Motion>' => sub {
+     @wireRectCoords[2,3] = ($design_canvas->canvasx($Tk::event->x),
+                             $design_canvas->canvasy($Tk::event->y));
+     $design_canvas->coords($wireInstTemp => @wireRectCoords);
+   });
+$design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+     my $x = $design_canvas->canvasx($Tk::event->x),
+     my $y = $design_canvas->canvasy($Tk::event->y);
+     my $overlapllx = $x - 1 ;
+     my $overlaplly = $y - 1 ;
+     my $overlapurx = $x + 1 ;
+     my $overlapury = $y + 1 ;
+     my @topCoords = $design_canvas->coords("TOP_MODULE"); 
+     $wire_urx = 0; $wire_ury = 0;
+     my @wireCoordInMicron = ();
+     if(($instConn == 1) && (($x <=$topCoords[0]) || ($x >= $topCoords[2]) || ($y <= $topCoords[1]) || ($y >= $topCoords[3]))){
+         my $mod_llx2 = $topCoords[0];
+         my $mod_lly2 = $topCoords[1];
+         my $mod_urx2 = $topCoords[2];
+         my $mod_ury2 = $topCoords[3];
+         $sinkMod = "PIN";  ### $sinkMod = $TOP_MODULE; ###
+         $design_canvas->delete($wireInstTemp);
+          if    ($x <= $mod_llx2){$wire_urx = $mod_llx2; $wire_ury = $y;
+          }elsif($x >= $mod_urx2){$wire_urx = $mod_urx2; $wire_ury = $y;
+          }elsif($y <= $mod_lly2){$wire_urx = $x; $wire_ury = $mod_lly2;
+          }elsif($y >= $mod_ury2){$wire_urx = $x; $wire_ury = $mod_ury2;
+          }
+         @wireRectCoords = ($wire_llx,$wire_lly,$wire_urx,$wire_ury); 
+         for(my $i=0; $i<=$#wireRectCoords; $i=$i+2){
+             my @coord_mic = dbfGuiGui2Micron($wireRectCoords[$i],$wireRectCoords[$i+1]);
+             push(@wireCoordInMicron,@coord_mic);
+         }
+         my $wireCoords_str = join ",", @wireCoordInMicron;
+         if($wire_llx == 0 || $wire_lly == 0 || $wire_urx == 0 || $wire_ury == 0){return;}
+         my $wireInst = $design_canvas->createLine(
+                                                @wireRectCoords,
+                                                -fill => 'yellow',
+                                                -arrow => 'last',
+                                                -width => 3,
+                                                 );
+         if($netPrefix eq "" && $netWidth ne ""){
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod -sink $sinkMod -wireWidth $netWidth -netCoords $wireCoords_str\n";
+         }elsif($netWidth eq "" && $netPrefix ne ""){
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod -sink $sinkMod -prefix $netPrefix -netCoords $wireCoords_str\n";
+         }elsif($netWidth eq "" && $netPrefix eq ""){
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod -sink $sinkMod -netCoords $wireCoords_str\n";
+         }else{
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod -sink $sinkMod -prefix $netPrefix -wireWidth $netWidth -netCoords $wireCoords_str\n";
+         }
+         my $netName = &createPseudoNet("-parentModule","$TOP_MODULE","-type","wire","-source","$srcMod","-sink","$sinkMod", "-prefix", $netPrefix, "-wireWidth", $netWidth,"-netCoords",$wireCoords_str);
+            $design_canvas->itemconfigure($wireInst, -tags =>'TST_WIRE' );
+            $design_canvas->addtag($netName , "withtag", $wireInst);
+     }else {
+         my @id = $design_canvas->find("overlapping", $overlapllx, $overlaplly, $overlapurx, $overlapury);
+         my @tagList = $design_canvas->gettags($id[1]);
+            if (($tagList[0] ne "TOP_MODULE") && ($tagList[0] ne "") && ($tagList[0] ne "current") && ($tagList[1] ne $srcMod) && ($tagList[0] ne "TST_WIRE"))  { 
+                $sinkMod = $tagList[1];
+                my @coords  = $design_canvas->coords($tagList[1]);
+                my @coords1 = ();
+                if($tagList[0] eq "FLOP"){
+                   $coords1[0] = $coords[0];
+                   $coords1[1] = $coords[1];
+                   $coords1[2] = $coords[4];
+                   $coords1[3] = $coords[7];
+                }elsif($tagList[0] eq "MUX"){
+                   $coords1[1] = $coords[1];
+                   $coords1[3] = $coords[7];
+                    if($coords1[0] < $coords[4]){ 
+                       $coords1[0] = $coords[0];
+                       $coords1[2] = $coords[4];
+                    }else {
+                       $coords1[0] = $coords[4];
+                       $coords1[2] = $coords[0];
+                    }
+                }else{  
+                   $coords1[0] = $coords[0];
+                   $coords1[1] = $coords[1];
+                   $coords1[2] = $coords[2];
+                   $coords1[3] = $coords[3];
+                       }
+                $design_canvas->delete($wireInstTemp);
+                my $width   = $coords1[2] - $coords1[0];
+                my $height  = $coords1[3] - $coords1[1];
+                if($wireConn == 1){ 
+                   if    ($x <= $coords1[0] + 0.3 * $width){$wire_urx = $coords1[0];$wire_ury = $y;
+                   }elsif($x >= $coords1[2] - 0.3 * $width){$wire_urx = $coords1[2];$wire_ury = $y;
+                   }elsif($y <= $coords1[1] + 0.3 * $height){$wire_urx = $x; $wire_ury = $coords1[1]; 
+                   }elsif($y >= $coords1[3] - 0.3 * $height){$wire_urx = $x; $wire_ury = $coords1[3];
+                   }   
+                @wireRectCoords = ($wire_llx, $wire_lly, $wire_urx, $wire_ury);
+                for(my $i=0; $i<=$#wireRectCoords; $i=$i+2){
+                    my @coord_mic = dbfGuiGui2Micron($wireRectCoords[$i],$wireRectCoords[$i+1]);
+                    push(@wireCoordInMicron,@coord_mic);
+                }
+                my $wireCoords_str = join ",", @wireCoordInMicron;
+                if($wire_llx == 0 || $wire_lly == 0 || $wire_urx == 0 || $wire_ury == 0){return;}
+                my $wireInst = $design_canvas->createLine(
+                                                      @wireRectCoords,
+                                                      -fill => 'yellow',
+                                                      -arrow => 'last',
+                                                      -width => 3,
+                                                      );
+                $design_canvas->itemconfigure($wireInst, -tags =>'TST_WIRE' );
+                $design_canvas->addtag($wireName , "withtag", $wireInst);
+                   &updatePseudoNet("-net",$wireName,"-sink",$sinkMod,"-netCoords",$wireCoords_str); 
+                   print"#<CMD> updatePseudoNet -net $wireName -sink $sinkMod -netCoords $wireCoords_str\n";
+                }elsif($instConn == 1 || $topConn == 1){
+                   if    ($x <= $coords1[0] + 0.3 * $width){$wire_urx = $coords1[0];$wire_ury = $y;
+                   }elsif($x >= $coords1[2] - 0.3 * $width){$wire_urx = $coords1[2];$wire_ury = $y;
+                   }elsif($y <= $coords1[1] + 0.3 * $height){$wire_urx = $x; $wire_ury = $coords1[1]; 
+                   }elsif($y >= $coords1[3] - 0.3 * $height){$wire_urx = $x; $wire_ury = $coords1[3];
+                   }   
+                @wireRectCoords = ($wire_llx, $wire_lly, $wire_urx, $wire_ury);
+                for(my $i=0; $i<=$#wireRectCoords; $i=$i+2){
+                    my @coord_mic = dbfGuiGui2Micron($wireRectCoords[$i],$wireRectCoords[$i+1]);
+                    push(@wireCoordInMicron,@coord_mic);
+                }
+                my $wireCoords_str = join ",", @wireCoordInMicron;
+                if($wire_llx == 0 || $wire_lly == 0 || $wire_urx == 0 || $wire_ury == 0){return;}
+                my $wireInst = $design_canvas->createLine(
+                                                @wireRectCoords,
+                                                -fill => 'yellow',
+                                                -arrow => 'last',
+                                                -width => 3,
+                                                );
+                if($netPrefix eq "" && $netWidth ne ""){
+                   print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod -sink $sinkMod -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                }elsif($netWidth eq "" && $netPrefix ne ""){
+                   print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod -sink $sinkMod -prefix $netPrefix -netCoords $wireCoords_str\n";
+                }elsif($netWidth eq "" && $netPrefix eq ""){
+                   print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod -sink $sinkMod -netCoords $wireCoords_str\n";
+                }else{
+                   print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod -sink $sinkMod -prefix $netPrefix -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                }
+                my $netName = &createPseudoNet("-parentModule","$TOP_MODULE","-type","wire","-source","$srcMod","-sink","$sinkMod", "-prefix", $netPrefix, "-wireWidth", $netWidth,"-netCoords",$wireCoords_str);
+                $design_canvas->itemconfigure($wireInst, -tags =>'TST_WIRE' );
+                $design_canvas->addtag($netName , "withtag", $wireInst);
+
+                }else {$design_canvas->delete($wireInstTemp);}
+            }else {$design_canvas->delete($wireInstTemp);}
+($topConn, $instConn,$wireConn) = (0, 0, 0);
+                            }});
+}#sub dbTstGUICreateStraightWires
+
+sub dbTstGUICreateZWires {
+&dbfGuiResetCanvasBind;
+my $netPrefix = $_[0];
+my $netWidth = $_[1];
+my $wireType = $_[2];
+
+my $srcMod = "";
+my $sinkMod = "";
+my $wireName = "";
+my @wireRectCoords = ();
+my ($canx1,$cany1,$wireConn, $instConn,$topConn,$dx,$dy) = (0,0,0,0,0,0,0);
+my ($mod_llx1,$mod_ury1,$mod_urx1,$mod_ury1) = (0,0,0,0);
+#$design_canvas->focusForce;
+#$design_canvas->grab;
+#$top->bind('<Any-Enter>' => sub { $design_canvas->Tk::focus });
+   $design_canvas->CanvasBind('<Shift-Button-1>' => sub {
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+            my @id      = $design_canvas->find(qw/withtag current/);
+            my @tagList = $design_canvas->gettags($id[0]);
+            my @topCoords = $design_canvas->coords("TOP_MODULE"); 
+            if($x>$topCoords[0] && $x<$topCoords[2] && $y >$topCoords[1] && $y<$topCoords[3] && $tagList[0] eq "TOP_MODULE"){}
+               else{&popup_selectSrcPin_forWire($x, $y, \@id,$wireType);}   
+   });
+   $design_canvas->CanvasBind('<Control-Button-1>' => sub {
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+            my @id      = $design_canvas->find(qw/withtag current/);
+            my @tagList = $design_canvas->gettags($id[0]);
+            my @topCoords = $design_canvas->coords("TOP_MODULE"); 
+               if($x>$topCoords[0] && $x<$topCoords[2] && $y >$topCoords[1] && $y<$topCoords[3] && $tagList[0] eq "TOP_MODULE"){}
+               else{&popup_selectSinkPin_forWire($x, $y, \@id,$netPrefix,$netWidth,$wireType);}   
+   });
+   $design_canvas->CanvasBind('<1>' => sub {
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+            my @id      = $design_canvas->find(qw/withtag current/);
+            my @tagList = $design_canvas->gettags($id[0]);
+            my @topCoords = $design_canvas->coords("TOP_MODULE"); 
+               $wireConn = 0;
+               $instConn = 0;
+               $topConn = 0;
+               $dx = 0; $dy = 0;
+               $canx1 = 0; $cany1 = 0;
+               $mod_llx1 = 0; $mod_ury1 = 0;
+               $mod_urx1 = 0; $mod_ury1 = 0;
+   if(($x <= $topCoords[0]) || ($x >= $topCoords[2]) || ($y <= $topCoords[1]) || ($y >= $topCoords[3])){
+               $mod_llx1 = $topCoords[0];
+               $mod_lly1 = $topCoords[1];
+               $mod_urx1 = $topCoords[2];
+               $mod_ury1 = $topCoords[3];   
+               $canx1 = $x;$cany1 = $y;
+                    if($canx1 <= $mod_llx1){$dx = 1;}
+                 elsif($canx1 >= $mod_urx1){$dx = -1;}
+                 elsif($cany1 <= $mod_lly1){$dy = 1;}
+                 elsif($cany1 >= $mod_ury1){$dy = -1;}
+                    @wireRectCoords = ($x, $y, $x, $y);
+                    $wireInstTemp = $design_canvas->createLine(
+                                                        @wireRectCoords,
+                                                         -fill => 'yellow',
+                                                         -arrow => 'last',
+                                                         -width => 3,
+                                                          );
+                    $srcMod = "PIN";  ### $srcMod = $TOP_MODULE; ###
+                    $topConn = 1;
+    }#if top Module 
+   else {
+            if(($tagList[0] ne "TOP_MODULE") && ($tagList[0] ne "TST_WIRE")){
+                    my @coords  = $design_canvas->coords($id[0]);
+                    if($tagList[0] eq "FLOP"){
+                       $mod_llx1 = $coords[0];
+                       $mod_lly1 = $coords[1];
+                       $mod_urx1 = $coords[4];
+                       $mod_ury1 = $coords[7];   
+                    }elsif($tagList[0] eq "MUX"){
+                       $mod_lly1 = $coords[1];
+                       $mod_ury1 = $coords[7]; 
+                        if($coords[0] < $coords[4]){ 
+                           $mod_llx1 = $coords[0];
+                           $mod_urx1 = $coords[4];
+                        }else {
+                           $mod_llx1 = $coords[4];
+                           $mod_urx1 = $coords[0];
+                        }
+                    }else{
+                       $mod_llx1 = $coords[0];
+                       $mod_lly1 = $coords[1];
+                       $mod_urx1 = $coords[2];
+                       $mod_ury1 = $coords[3];   
+                          }
+                       $canx1 = $x;
+                       $cany1 = $y;
+                    @wireRectCoords = ($x, $y, $x, $y);
+                    $wireInstTemp = $design_canvas->createLine(
+                                                        @wireRectCoords,
+                                                         -fill => 'yellow',
+                                                         -arrow => 'last',
+                                                         -width => 3,
+                                                          );
+                    $srcMod = $tagList[1];
+                    $instConn = 1;
+            }elsif($tagList[0] eq "TST_WIRE"){
+                      my @wire_coords  = $design_canvas->coords($id[0]);
+                      for(my $i=0; $i<= $#wire_coords; $i= $i+2){
+                          if    ($wire_coords[$i] == $wire_coords[$i+2]){
+                                 if(((($y>=$wire_coords[$i+1]) && ($y<=$wire_coords[$i+3])) || (($y<=$wire_coords[$i+1])&& ($y>=$wire_coords[$i+3]))) && (($x>= ($wire_coords[$i]-1.5)) && ($x <= ($wire_coords[$i]+1.5)))){$canx1 = $wire_coords[$i]; $cany1 = $y;last;}
+                          }elsif($wire_coords[$i+1] == $wire_coords[$i+3]){
+                                 if(((($x>$wire_coords[$i]) && ($x<$wire_coords[$i+2])) || (($x<$wire_coords[$i]) && ($x>$wire_coords[$i+2]))) && (($y> ($wire_coords[$i+1]-1.5)) && ($y < ($wire_coords[$i+1]+1.5)))){$canx1 = $x; $cany1 = $wire_coords[$i+1];last;}
+                          }
+                                                                 }#foreach
+                   @wireRectCoords = ($x, $y, $x, $y);
+                   $wireInstTemp = $design_canvas->createLine(
+                                                        @wireRectCoords,
+                                                        -fill => 'yellow',
+                                                        -arrow => 'last',
+                                                        -width => 3,
+                                                        );
+                   $wireConn = 1;
+                   if($canx1 == 0 || $cany1 == 0){$wireConn = 0;}
+                   $wireName = $tagList[1]; ## if connection from a net   
+            }else {$mod_llx1 = ""; $mod_lly1 = "";$mod_urx1 = ""; $mod_ury1 = ""; $canx1 = ""; $cany1 = "";}
+        }});
+   $design_canvas->CanvasBind('<B1-Motion>' => sub {
+            @wireRectCoords[2,3] = ($design_canvas->canvasx($Tk::event->x),
+                                    $design_canvas->canvasy($Tk::event->y));
+            $design_canvas->coords($wireInstTemp => @wireRectCoords);
+        });
+   $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+            my $x = $design_canvas->canvasx($Tk::event->x),
+            my $y = $design_canvas->canvasy($Tk::event->y);
+            my $overlapllx = $x - 1 ;
+            my $overlaplly = $y - 1 ;
+            my $overlapurx = $x + 1 ;
+            my $overlapury = $y + 1 ;
+            my @topCoords = $design_canvas->coords("TOP_MODULE"); 
+            my @wireCoordInMicron = ();
+            my ($canx2,$cany2,$mod_llx2,$mod_lly2,$mod_urx2,$mod_ury2) = (0,0,0,0,0,0);
+ if(($instConn == 1) && (($x <=$topCoords[0]) || ($x >= $topCoords[2]) || ($y <= $topCoords[1]) || ($y >= $topCoords[3]))){
+     $mod_llx2 = $topCoords[0];
+     $mod_lly2 = $topCoords[1];
+     $mod_urx2 = $topCoords[2];
+     $mod_ury2 = $topCoords[3];
+     $canx2 = $x;$cany2 = $y;                      
+     $sinkMod = "PIN";  ### $sinkMod = $TOP_MODULE; ###
+     $design_canvas->delete($wireInstTemp);
+            if($x <= $mod_llx2){
+               my $bend = rand($mod_llx1 - $mod_llx2)+$mod_llx2; 
+               @wireRectCoords = ($mod_llx1, $cany1,$bend,$cany1,$bend,$cany2,$mod_llx2,$cany2);
+        }elsif($x >= $mod_urx2){
+               my $bend = rand($mod_urx2 - $mod_urx1)+$mod_urx1; 
+               @wireRectCoords = ($mod_urx1, $cany1, $bend,$cany1,$bend,$cany2,$mod_urx2,$cany2);
+        }elsif($y <= $mod_lly2){
+               my $bend = rand($mod_lly1 - $mod_lly2)+$mod_lly2; 
+               @wireRectCoords = ($canx1, $mod_lly1, $canx1,$bend,$canx2,$bend,$canx2,$mod_lly2);
+        }elsif($y >= $mod_ury2){
+               my $bend = rand($mod_ury2 - $mod_ury1)+$mod_ury1; 
+               @wireRectCoords = ($canx1, $mod_ury1, $canx1,$bend,$canx2,$bend,$canx2,$mod_ury2);
+        }
+                for(my $i=0; $i<=$#wireRectCoords; $i=$i+2){
+                    my @coord_mic = dbfGuiGui2Micron($wireRectCoords[$i],$wireRectCoords[$i+1]);
+                    push(@wireCoordInMicron,@coord_mic);
+                }
+                my $wireCoords_str = join ",", @wireCoordInMicron;
+                $wireInst = $design_canvas->createLine(
+                                                @wireRectCoords,
+                                                -fill => 'yellow',
+                                                -arrow => 'last',
+                                                -width => 3,
+                                                );
+         if($netPrefix eq "" && $netWidth ne ""){
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod -sink $sinkMod -wireWidth $netWidth -netCoords $wireCoords_str\n";
+         }elsif($netWidth eq "" && $netPrefix ne ""){
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod -sink $sinkMod -prefix $netPrefix -netCoords $wireCoords_str\n";
+         }elsif($netWidth eq "" && $netPrefix eq ""){
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod -sink $sinkMod -netCoords $wireCoords_str\n";
+         }else{
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod -sink $sinkMod -prefix $netPrefix -wireWidth $netWidth -netCoords $wireCoords_str\n";
+         }
+my $netName = &createPseudoNet("-parentModule","$TOP_MODULE","-type","wire","-source","$srcMod","-sink","$sinkMod", "-prefix", $netPrefix, "-wireWidth", $netWidth,"-netCoords",$wireCoords_str);
+            $design_canvas->itemconfigure($wireInst, -tags =>'TST_WIRE' );
+            $design_canvas->addtag($netName , "withtag", $wireInst);
+ }
+else {
+            my @ids = $design_canvas->find("overlapping", $overlapllx, $overlaplly, $overlapurx, $overlapury);
+        foreach $id ( @ids ) {
+            my @tagList = $design_canvas->gettags($id);
+            if (($tagList[0] ne "TOP_MODULE") && ($tagList[0] ne "") && ($tagList[0] ne "current") && ($tagList[1] ne $srcMod) && ($tagList[0] ne "TST_WIRE"))  { 
+                   $sinkMod = $tagList[1];
+                my @coords1  = $design_canvas->coords($id);
+                if($tagList[0] eq "FLOP"){
+                   $mod_llx2 = $coords1[0];
+                   $mod_lly2 = $coords1[1];
+                   $mod_urx2 = $coords1[4];
+                   $mod_ury2 = $coords1[7];
+                }elsif($tagList[0] eq "MUX"){
+                   $mod_lly2 = $coords1[1];
+                   $mod_ury2 = $coords1[7];
+                    if($coords1[0] < $coords1[4]){ 
+                       $mod_llx2 = $coords1[0];
+                       $mod_urx2 = $coords1[4];
+                    }else {
+                       $mod_llx2 = $coords1[4];
+                       $mod_urx2 = $coords1[0];
+                    }
+                }else{  
+                   $mod_llx2 = $coords1[0];
+                   $mod_lly2 = $coords1[1];
+                   $mod_urx2 = $coords1[2];
+                   $mod_ury2 = $coords1[3];
+                       }
+                   $canx2 = $x;                      
+                   $cany2 = $y;                      
+                $design_canvas->delete($wireInstTemp);
+                if($wireConn == 1){ 
+                   if($canx1 < $mod_llx2){
+                      my $bend = rand($mod_llx2 - $canx1)+$canx1; 
+                      @wireRectCoords = ($canx1, $cany1, $bend, $cany1,$bend, $cany2, $mod_llx2,$cany2);
+                   }elsif($canx1 > $mod_urx2) {
+                      my $bend = rand($canx1 - $mod_urx2)+$mod_urx2; 
+                      @wireRectCoords = ($canx1, $cany1, $bend, $cany1, $bend, $cany2, $mod_urx2,$cany2);
+                   }elsif($cany1 > $mod_ury2){
+                      my $bend = rand($cany1 - $mod_ury2)+$mod_ury2; 
+                      @wireRectCoords = ($canx1, $cany1, $canx1, $bend, $canx2, $bend, $canx2, $mod_ury2);
+                   }elsif($cany1 < $mod_lly2){
+                      my $bend = rand($mod_lly2 - $cany1)+$cany1; 
+                      @wireRectCoords = ($canx1, $cany1, $canx1, $bend, $canx2, $bend, $canx2, $mod_lly2);
+                   }   
+                   for(my $i=0; $i<=$#wireRectCoords; $i=$i+2){
+                       my @coord_mic = dbfGuiGui2Micron($wireRectCoords[$i],$wireRectCoords[$i+1]);
+                       push(@wireCoordInMicron,@coord_mic);
+                   }
+                   my $wireCoords_str = join ",", @wireCoordInMicron;
+                   $wireInst = $design_canvas->createLine(
+                                                      @wireRectCoords,
+                                                      -fill => 'yellow',
+                                                      -arrow => 'last',
+                                                      -width => 3,
+                                                      );
+                   $design_canvas->itemconfigure($wireInst, -tags =>'TST_WIRE' );
+                   $design_canvas->addtag($wireName , "withtag", $wireInst);
+                   &updatePseudoNet("-net",$wireName,"-sink",$sinkMod,"-netCoords",$wireCoords_str); 
+                   print"#<CMD> updatePseudoNet -net $wireName -sink $sinkMod -netCoords $wireCoords_str\n";
+              }elsif($instConn == 1){
+                   if($mod_urx1 < $mod_llx2){
+                      my $bend = rand($mod_llx2-$mod_urx1)+$mod_urx1; 
+                      @wireRectCoords = ($mod_urx1, $cany1,$bend,$cany1,$bend,$cany2,$mod_llx2,$cany2);
+                   }elsif($mod_llx1 > $mod_urx2) {
+                      my $bend = rand($mod_llx1-$mod_urx2)+$mod_urx2; 
+                      @wireRectCoords = ($mod_llx1, $cany1,$bend , $cany1,$bend,$cany2,$mod_urx2,$cany2);
+                   }elsif($mod_lly1 > $mod_ury2){
+                      my $bend = rand($mod_lly1-$mod_ury2)+$mod_ury2; 
+                      @wireRectCoords = ($canx1, $mod_lly1, $canx1,$bend,$canx2,$bend,$canx2,$mod_ury2);
+                   }elsif($mod_ury1 < $mod_lly2){
+                      my $bend = rand($mod_lly2-$mod_ury1)+$mod_ury1; 
+                      @wireRectCoords = ($canx1, $mod_ury1, $canx1,$bend,$canx2,$bend,$canx2,$mod_lly2);
+                   }
+                for(my $i=0; $i<=$#wireRectCoords; $i=$i+2){
+                    my @coord_mic = dbfGuiGui2Micron($wireRectCoords[$i],$wireRectCoords[$i+1]);
+                    push(@wireCoordInMicron,@coord_mic);
+                }
+                my $wireCoords_str = join ",", @wireCoordInMicron;
+                $wireInst = $design_canvas->createLine(
+                                                @wireRectCoords,
+                                                -fill => 'yellow',
+                                                -arrow => 'last',
+                                                -width => 3,
+                                                );
+                if($netPrefix eq "" && $netWidth ne ""){
+                   print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod -sink $sinkMod -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                }elsif($netWidth eq "" && $netPrefix ne ""){
+                   print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod -sink $sinkMod -prefix $netPrefix -netCoords $wireCoords_str\n";
+                }elsif($netWidth eq "" && $netPrefix eq ""){
+                   print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod -sink $sinkMod -netCoords $wireCoords_str\n";
+                }else{
+                   print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod -sink $sinkMod -prefix $netPrefix -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                }
+            my $netName = &createPseudoNet("-parentModule","$TOP_MODULE","-type","wire","-source","$srcMod","-sink","$sinkMod", "-prefix", $netPrefix, "-wireWidth", $netWidth,"-netCoords", $wireCoords_str);
+            $design_canvas->itemconfigure($wireInst, -tags =>'TST_WIRE' );
+            $design_canvas->addtag($netName , "withtag", $wireInst);
+
+            }elsif($topConn == 1){
+                   if($dx == 1){
+                      my $bend = rand($mod_llx2-$mod_llx1)+$mod_llx1; 
+                      @wireRectCoords = ($mod_llx1, $cany1, $bend, $cany1, $bend, $cany2, $mod_llx2, $cany2);
+                  }elsif($dx == -1){
+                      my $bend = rand($mod_urx1-$mod_urx2)+$mod_urx2; 
+                      @wireRectCoords = ($mod_urx1, $cany1, $bend, $cany1, $bend, $cany2, $mod_urx2, $cany2);
+                  }elsif($dy == 1){
+                      my $bend = rand($mod_lly2-$mod_lly1)+$mod_lly1; 
+                      @wireRectCoords = ($canx1, $mod_lly1, $canx1, $bend, $canx2, $bend, $canx2, $mod_lly2);
+                  }elsif($dy == -1){
+                      my $bend = rand($mod_ury1-$mod_ury2)+$mod_ury2; 
+                      @wireRectCoords = ($canx1, $mod_ury1, $canx1, $bend, $canx2, $bend, $canx2, $mod_ury2);
+                  }
+                for(my $i=0; $i<=$#wireRectCoords; $i=$i+2){
+                    my @coord_mic = dbfGuiGui2Micron($wireRectCoords[$i],$wireRectCoords[$i+1]);
+                    push(@wireCoordInMicron,@coord_mic);
+                }
+                my $wireCoords_str = join ",", @wireCoordInMicron;
+                $wireInst = $design_canvas->createLine(
+                                                @wireRectCoords,
+                                                -fill => 'yellow',
+                                                -arrow => 'last',
+                                                -width => 3,
+                                                );
+                if($netPrefix eq "" && $netWidth ne ""){
+                   print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod -sink $sinkMod -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                }elsif($netWidth eq "" && $netPrefix ne ""){
+                   print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod -sink $sinkMod -prefix $netPrefix -netCoords $wireCoords_str\n";
+                }elsif($netWidth eq "" && $netPrefix eq ""){
+                   print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod -sink $sinkMod -netCoords $wireCoords_str\n";
+                }else{
+                   print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod -sink $sinkMod -prefix $netPrefix -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                } 
+            my $netName = &createPseudoNet("-parentModule","$TOP_MODULE","-type","wire","-source","$srcMod","-sink","$sinkMod", "-prefix", $netPrefix, "-wireWidth", $netWidth,"-netCoords", $wireCoords_str);
+            $design_canvas->itemconfigure($wireInst, -tags =>'TST_WIRE' );
+            $design_canvas->addtag($netName , "withtag", $wireInst);
+
+              }else {$design_canvas->delete($wireInstTemp);}
+           }else {$design_canvas->delete($wireInstTemp);}
+                                  }#foreach id
+($topConn, $instConn,$wireConn) = (0, 0, 0);
+                            }});
+}#sub dbTstGUICreateZWires
+
+sub dbTstGUICreateRoutingWires {
+&dbfGuiResetCanvasBind;
+my $netPrefix = $_[0];
+my $netWidth = $_[1];
+my $wireType = $_[2];
+
+$design_canvas->CanvasBind('<Shift-Button-1>' => sub {
+   my $x = $design_canvas->canvasx($Tk::event->x);
+   my $y = $design_canvas->canvasy($Tk::event->y);
+   my @id      = $design_canvas->find(qw/withtag current/);
+   my @tagList = $design_canvas->gettags($id[0]);
+   my @topCoords = $design_canvas->coords("TOP_MODULE"); 
+   if($x>$topCoords[0] && $x<$topCoords[2] && $y >$topCoords[1] && $y<$topCoords[3] && $tagList[0] eq "TOP_MODULE"){}
+   else{&popup_selectSrcPin_forWire($x, $y, \@id,$wireType);}   
+ });
+$design_canvas->CanvasBind('<1>' => sub {
+   my $x = $design_canvas->canvasx($Tk::event->x);
+   my $y = $design_canvas->canvasy($Tk::event->y);
+   my @netCoords = @{$ROUTWIRE_SOURCE_CONN[5]};
+   if($ROUTWIRE_SOURCE_CONN[3] == 1){                               
+      if(abs($x -$netCoords[-2]) > abs($y - $netCoords[-1])){
+         push(@{$ROUTWIRE_SOURCE_CONN[5]}, $x, $netCoords[-1]);
+      }else {
+         push(@{$ROUTWIRE_SOURCE_CONN[5]}, $netCoords[-2], $y);
+      }#else
+   $design_canvas->createLine(
+                              @{$ROUTWIRE_SOURCE_CONN[5]},
+                              -fill => 'yellow',
+                              -width => 3,
+                              -tags => "WIRETEMP",
+                               );
+   }#if wire is connected with source module
+ });
+$design_canvas->CanvasBind('<Control-Button-1>' => sub {
+   my $x = $design_canvas->canvasx($Tk::event->x),
+   my $y = $design_canvas->canvasy($Tk::event->y);
+   my @id      = $design_canvas->find(qw/withtag current/);
+   my @tagList = $design_canvas->gettags($id[0]);
+   my @topCoords = $design_canvas->coords("TOP_MODULE"); 
+   if($x>$topCoords[0] && $x<$topCoords[2] && $y >$topCoords[1] && $y<$topCoords[3] && $tagList[0] eq "TOP_MODULE"){}
+   else{&popup_selectSinkPin_forWire($x, $y, \@id,$netPrefix,$netWidth,$wireType);}   
+   
+});
+}#sub dbTstGUICreateRoutingWires
+
+#######################################--subroutines to create straight, Z and Routing Bus--########################################
+sub dbTstGUICreateStraightBus {
+&dbfGuiResetCanvasBind;
+my $netPrefix = $_[0];
+my $netWidth = $_[1];
+my $busType = $_[2];
+
+my $srcMod = "";
+my $sinkMod = "";
+my $wireName = "";
+my @wireRectCoords = ();
+my ($wire_llx, $wire_lly,$wire_urx,$wire_ury) = (0,0,0,0);
+my ($wireConn,$instConn,$topConn) = (0,0,0);
+
+#$design_canvas->focusForce;
+$design_canvas->CanvasBind('<Shift-Button-1>' => sub {
+     my $x = $design_canvas->canvasx($Tk::event->x);
+     my $y = $design_canvas->canvasy($Tk::event->y);
+     my @id      = $design_canvas->find(qw/withtag current/);
+     my @tagList = $design_canvas->gettags($id[0]);
+     my @topCoords = $design_canvas->coords("TOP_MODULE"); 
+     if($x>$topCoords[0] && $x<$topCoords[2] && $y >$topCoords[1] && $y<$topCoords[3] && $tagList[0] eq "TOP_MODULE"){}
+     else{&popup_selectSrcPin_forBus($x, $y, \@id,$busType);}
+                  
+   });
+$design_canvas->CanvasBind('<Control-Button-1>' => sub {
+     my $x = $design_canvas->canvasx($Tk::event->x);
+     my $y = $design_canvas->canvasy($Tk::event->y);
+     my @id      = $design_canvas->find(qw/withtag current/);
+     my @tagList = $design_canvas->gettags($id[0]);
+     my @topCoords = $design_canvas->coords("TOP_MODULE"); 
+     if($x>$topCoords[0] && $x<$topCoords[2] && $y >$topCoords[1] && $y<$topCoords[3] && $tagList[0] eq "TOP_MODULE"){}
+     else{&popup_selectSinkPin_forBus($x, $y, \@id,$netPrefix,$netWidth,$busType);}   
+   });
+$design_canvas->CanvasBind('<1>' => sub {
+     my $x = $design_canvas->canvasx($Tk::event->x);
+     my $y = $design_canvas->canvasy($Tk::event->y);
+     my @id      = $design_canvas->find(qw/withtag current/);
+     my @tagList = $design_canvas->gettags($id[0]);
+     my @topCoords = $design_canvas->coords("TOP_MODULE"); 
+     $wireConn = 0;
+     $instConn = 0;
+     $topConn = 0;
+     $wire_llx = 0; $wire_lly = 0;
+     if(($x <= $topCoords[0]) || ($x >= $topCoords[2]) || ($y <= $topCoords[1]) || ($y >= $topCoords[3])){
+       my $mod_llx = $topCoords[0];
+       my $mod_lly = $topCoords[1];
+       my $mod_urx = $topCoords[2];
+       my $mod_ury = $topCoords[3];   
+       if    ($x <= $mod_llx){$wire_llx = $mod_llx; $wire_lly = $y; 
+       }elsif($x >= $mod_urx){$wire_llx = $mod_urx; $wire_lly = $y; 
+       }elsif($y <= $mod_lly){$wire_llx = $x; $wire_lly = $mod_lly; 
+       }elsif($y >= $mod_ury){$wire_llx = $x; $wire_lly = $mod_ury; 
+       }
+       @wireRectCoords = ($x, $y, $x, $y);
+       $wireInstTemp = $design_canvas->createLine(
+                                                  @wireRectCoords,
+                                                  -fill => 'blue',
+                                                  -arrow => 'last',
+                                                  -width => 5,
+                                                   );
+       $srcMod = "PIN";  ### $srcMod = $TOP_MODULE; ###
+       $topConn = 1;
+     }else {
+        if(($tagList[0] ne "TOP_MODULE") && ($tagList[0] ne "TST_BUS")){
+          my @coords  = $design_canvas->coords($id[0]);
+          my @coords1 = ();
+          if($tagList[0] eq "FLOP"){
+             $coords1[0] = $coords[0];
+             $coords1[1] = $coords[1];
+             $coords1[2] = $coords[4];
+             $coords1[3] = $coords[7];   
+          }elsif($tagList[0] eq "MUX"){
+             $coords1[1] = $coords[1];
+             $coords1[3] = $coords[7]; 
+             if($coords[0] < $coords[4]){ 
+                $coords1[0] = $coords[0];
+                $coords1[2] = $coords[4];
+             }else {
+                $coords1[0] = $coords[4];
+                $coords1[2] = $coords[0];
+             }
+          }else{
+             $coords1[0] = $coords[0];
+             $coords1[1] = $coords[1];
+             $coords1[2] = $coords[2];
+             $coords1[3] = $coords[3];   
+          }
+             my $width   = $coords1[2] - $coords1[0];
+             my $height  = $coords1[3] - $coords1[1];
+             if    ($x <= $coords1[0] + 0.3 * $width){$wire_llx = $coords1[0]; $wire_lly = $y;
+             }elsif($x >= $coords1[2] - 0.3 * $width){$wire_llx = $coords1[2]; $wire_lly = $y;
+             }elsif($y <= $coords1[1] + 0.3 * $height){$wire_llx = $x; $wire_lly = $coords1[1];
+             }elsif($y >= $coords1[3] - 0.3 * $height){$wire_llx = $x; $wire_lly = $coords1[3];
+             }else{}
+          @wireRectCoords = ($x, $y, $x, $y);
+          $wireInstTemp = $design_canvas->createLine(
+                                                @wireRectCoords,
+                                                -fill => 'blue',
+                                                -arrow => 'last',
+                                                -width => 5,
+                                                 );
+          $srcMod = $tagList[1];
+          $instConn = 1;
+        }elsif($tagList[0] eq "TST_BUS"){
+          my @wire_coords  = $design_canvas->coords($id[0]);
+             #$wire_llx = $x, $wire_lly = $y;
+             $wire_llx = $x, $wire_lly = $wire_coords[1] + ($wire_coords[3]- $wire_coords[1])*($x - $wire_coords[0])/($wire_coords[2]-$wire_coords[0]);
+;
+          @wireRectCoords = ($x, $y, $x, $y);
+          $wireInstTemp = $design_canvas->createLine(
+                                                    @wireRectCoords,
+                                                    -fill => 'blue',
+                                                    -arrow => 'last',
+                                                    -width => 5,
+                                                     );
+          $wireConn = 1;
+          #my ($count) = (split(/BD0_net/,$tagList[1]))[1]; 
+          #$wireName = "BD0_netB".$count; ## if connection from a net   
+          $wireName = $tagList[1];   
+       }else { }
+    }#else
+   });
+$design_canvas->CanvasBind('<B1-Motion>' => sub {
+     @wireRectCoords[2,3] = ($design_canvas->canvasx($Tk::event->x),
+                             $design_canvas->canvasy($Tk::event->y));
+     $design_canvas->coords($wireInstTemp => @wireRectCoords);
+   });
+$design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+     my $x = $design_canvas->canvasx($Tk::event->x),
+     my $y = $design_canvas->canvasy($Tk::event->y);
+     my $overlapllx = $x - 1 ;
+     my $overlaplly = $y - 1 ;
+     my $overlapurx = $x + 1 ;
+     my $overlapury = $y + 1 ;
+     my @topCoords = $design_canvas->coords("TOP_MODULE"); 
+     $wire_urx = 0; $wire_ury = 0;
+     my @wireCoordInMicron = ();
+     if(($instConn == 1) && (($x <=$topCoords[0]) || ($x >= $topCoords[2]) || ($y <= $topCoords[1]) || ($y >= $topCoords[3]))){
+         my $mod_llx2 = $topCoords[0];
+         my $mod_lly2 = $topCoords[1];
+         my $mod_urx2 = $topCoords[2];
+         my $mod_ury2 = $topCoords[3];
+         $sinkMod = "PIN";  ### $sinkMod = $TOP_MODULE; ###
+         $design_canvas->delete($wireInstTemp);
+          if    ($x <= $mod_llx2){$wire_urx = $mod_llx2; $wire_ury = $y;
+          }elsif($x >= $mod_urx2){$wire_urx = $mod_urx2; $wire_ury = $y;
+          }elsif($y <= $mod_lly2){$wire_urx = $x; $wire_ury = $mod_lly2;
+          }elsif($y >= $mod_ury2){$wire_urx = $x; $wire_ury = $mod_ury2;
+          }
+         @wireRectCoords = ($wire_llx,$wire_lly,$wire_urx,$wire_ury); 
+         for(my $i=0; $i<=$#wireRectCoords; $i=$i+2){
+             my @coord_mic = dbfGuiGui2Micron($wireRectCoords[$i],$wireRectCoords[$i+1]);
+             push(@wireCoordInMicron,@coord_mic);
+         }
+         my $wireCoords_str = join ",", @wireCoordInMicron;
+         if($wire_llx == 0 || $wire_lly == 0 || $wire_urx == 0 || $wire_ury == 0){return;}
+         $wireInst = $design_canvas->createLine(
+                                                @wireRectCoords,
+                                                -fill => 'blue',
+                                                -arrow => 'last',
+                                                -width => 5,
+                                                 );
+         if($netPrefix eq "" && $netWidth ne ""){
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod -sink $sinkMod -wireWidth $netWidth -netCoords $wireCoords_str\n";
+         }elsif($netWidth eq "" && $netPrefix ne ""){
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod -sink $sinkMod -prefix $netPrefix -netCoords $wireCoords_str\n";
+         }elsif($netWidth eq "" && $netPrefix eq ""){
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod -sink $sinkMod -netCoords $wireCoords_str\n";
+         }else{
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod -sink $sinkMod -prefix $netPrefix -wireWidth $netWidth -netCoords $wireCoords_str\n";
+         } 
+         my $netName = &createPseudoNet("-parentModule","$TOP_MODULE","-type","bus","-source","$srcMod","-sink","$sinkMod", "-prefix", $netPrefix, "-wireWidth", $netWidth,"-netCoords", $wireCoords_str);
+            $design_canvas->itemconfigure($wireInst, -tags =>'TST_BUS' );
+            $design_canvas->addtag($netName , "withtag", $wireInst);
+     }else {
+         my @id = $design_canvas->find("overlapping", $overlapllx, $overlaplly, $overlapurx, $overlapury);
+         my @tagList = $design_canvas->gettags($id[1]);
+            if (($tagList[0] ne "TOP_MODULE") && ($tagList[0] ne "") && ($tagList[0] ne "current") && ($tagList[1] ne $srcMod) && ($tagList[0] ne "TST_BUS"))  { 
+                $sinkMod = $tagList[1];
+                my @coords  = $design_canvas->coords($tagList[1]);
+                my @coords1 = ();
+                if($tagList[0] eq "FLOP"){
+                   $coords1[0] = $coords[0];
+                   $coords1[1] = $coords[1];
+                   $coords1[2] = $coords[4];
+                   $coords1[3] = $coords[7];
+                }elsif($tagList[0] eq "MUX"){
+                   $coords1[1] = $coords[1];
+                   $coords1[3] = $coords[7];
+                    if($coords1[0] < $coords[4]){ 
+                       $coords1[0] = $coords[0];
+                       $coords1[2] = $coords[4];
+                    }else {
+                       $coords1[0] = $coords[4];
+                       $coords1[2] = $coords[0];
+                    }
+                }else{  
+                   $coords1[0] = $coords[0];
+                   $coords1[1] = $coords[1];
+                   $coords1[2] = $coords[2];
+                   $coords1[3] = $coords[3];
+                       }
+                $design_canvas->delete($wireInstTemp);
+                my $width   = $coords1[2] - $coords1[0];
+                my $height  = $coords1[3] - $coords1[1];
+                if($wireConn == 1){ 
+                   if    ($x <= $coords1[0] + 0.3 * $width){$wire_urx = $coords1[0];$wire_ury = $y;
+                   }elsif($x >= $coords1[2] - 0.3 * $width){$wire_urx = $coords1[2];$wire_ury = $y;
+                   }elsif($y <= $coords1[1] + 0.3 * $height){$wire_urx = $x; $wire_ury = $coords1[1]; 
+                   }elsif($y >= $coords1[3] - 0.3 * $height){$wire_urx = $x; $wire_ury = $coords1[3];
+                   }   
+                @wireRectCoords = ($wire_llx, $wire_lly, $wire_urx, $wire_ury);
+                for(my $i=0; $i<=$#wireRectCoords; $i=$i+2){
+                    my @coord_mic = dbfGuiGui2Micron($wireRectCoords[$i],$wireRectCoords[$i+1]);
+                    push(@wireCoordInMicron,@coord_mic);
+                }
+                my $wireCoords_str = join ",", @wireCoordInMicron;
+                if($wire_llx == 0 || $wire_lly == 0 || $wire_urx == 0 || $wire_ury == 0){return;}
+                $wireInst = $design_canvas->createLine(
+                                                      @wireRectCoords,
+                                                      -fill => 'blue',
+                                                      -arrow => 'last',
+                                                      -width => 5,
+                                                      );
+                $design_canvas->itemconfigure($wireInst, -tags =>'TST_BUS' );
+                $design_canvas->addtag($wireName , "withtag", $wireInst);
+                   &updatePseudoNet("-net",$wireName,"-sink",$sinkMod, "-netCoords", $wireCoords_str); 
+                   print"#<CMD> updatePseudoNet -net $wireName -sink $sinkMod -netCoords $wireCoords_str\n";
+                }elsif($instConn == 1 || $topConn == 1){
+                   if    ($x <= $coords1[0] + 0.3 * $width){$wire_urx = $coords1[0];$wire_ury = $y;
+                   }elsif($x >= $coords1[2] - 0.3 * $width){$wire_urx = $coords1[2];$wire_ury = $y;
+                   }elsif($y <= $coords1[1] + 0.3 * $height){$wire_urx = $x; $wire_ury = $coords1[1]; 
+                   }elsif($y >= $coords1[3] - 0.3 * $height){$wire_urx = $x; $wire_ury = $coords1[3];
+                   }   
+                @wireRectCoords = ($wire_llx, $wire_lly, $wire_urx, $wire_ury);
+                for(my $i=0; $i<=$#wireRectCoords; $i=$i+2){
+                    my @coord_mic = dbfGuiGui2Micron($wireRectCoords[$i],$wireRectCoords[$i+1]);
+                    push(@wireCoordInMicron,@coord_mic);
+                }
+                my $wireCoords_str = join ",", @wireCoordInMicron;
+                if($wire_llx == 0 || $wire_lly == 0 || $wire_urx == 0 || $wire_ury == 0){return;}
+                $wireInst = $design_canvas->createLine(
+                                                @wireRectCoords,
+                                                -fill => 'blue',
+                                                -arrow => 'last',
+                                                -width => 5,
+                                                );
+                if($netPrefix eq "" && $netWidth ne ""){
+                   print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod -sink $sinkMod -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                }elsif($netWidth eq "" && $netPrefix ne ""){
+                   print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod -sink $sinkMod -prefix $netPrefix -netCoords $wireCoords_str\n";
+                }elsif($netWidth eq "" && $netPrefix eq ""){
+                   print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod -sink $sinkMod -netCoords $wireCoords_str\n";
+                }else{
+                   print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod -sink $sinkMod -prefix $netPrefix -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                } 
+                my $netName = &createPseudoNet("-parentModule","$TOP_MODULE","-type","bus","-source","$srcMod","-sink","$sinkMod", "-prefix", $netPrefix, "-wireWidth", $netWidth,"-netCoords", $wireCoords_str);
+                $design_canvas->itemconfigure($wireInst, -tags =>'TST_BUS' );
+                $design_canvas->addtag($netName , "withtag", $wireInst);
+
+                }else {$design_canvas->delete($wireInstTemp);}
+            }else {$design_canvas->delete($wireInstTemp);}
+($topConn, $instConn,$wireConn) = (0, 0, 0);
+                            }});
+}#sub dbTstGUICreateStraightBus
+
+sub dbTstGUICreateZBus{
+&dbfGuiResetCanvasBind;
+my $netPrefix = $_[0];
+my $netWidth = $_[1];
+my $busType = $_[2];
+
+my $srcMod = "";
+my $sinkMod = "";
+my $wireName = "";
+my @wireRectCoords = ();
+my ($canx1,$cany1,$wireConn, $instConn,$topConn,$dx,$dy) = (0,0,0,0,0,0,0);
+my ($mod_llx1,$mod_ury1,$mod_urx1,$mod_ury1) = (0,0,0,0);
+#$design_canvas->focusForce;
+#$design_canvas->grab;
+#$top->bind('<Any-Enter>' => sub { $design_canvas->Tk::focus });
+   $design_canvas->CanvasBind('<Shift-Button-1>' => sub {
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+            my @id      = $design_canvas->find(qw/withtag current/);
+            my @tagList = $design_canvas->gettags($id[0]);
+            my @topCoords = $design_canvas->coords("TOP_MODULE"); 
+               if($x>$topCoords[0] && $x<$topCoords[2] && $y >$topCoords[1] && $y<$topCoords[3] && $tagList[0] eq "TOP_MODULE"){}
+               else{&popup_selectSrcPin_forBus($x, $y, \@id,$busType);}
+                  
+   });
+   $design_canvas->CanvasBind('<Control-Button-1>' => sub {
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+            my @id      = $design_canvas->find(qw/withtag current/);
+            my @tagList = $design_canvas->gettags($id[0]);
+            my @topCoords = $design_canvas->coords("TOP_MODULE"); 
+               if($x>$topCoords[0] && $x<$topCoords[2] && $y >$topCoords[1] && $y<$topCoords[3] && $tagList[0] eq "TOP_MODULE"){}
+               else{&popup_selectSinkPin_forBus($x, $y, \@id,$netPrefix,$netWidth,$busType);}   
+   });
+   $design_canvas->CanvasBind('<1>' => sub {
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+            my @id      = $design_canvas->find(qw/withtag current/);
+            my @tagList = $design_canvas->gettags($id[0]);
+            my @topCoords = $design_canvas->coords("TOP_MODULE"); 
+               $wireConn = 0;
+               $instConn = 0;
+               $topConn = 0;
+               $dx = 0; $dy = 0;
+               $canx1 = 0; $cany1 = 0;
+               $mod_llx1 = 0; $mod_ury1 = 0;
+               $mod_urx1 = 0; $mod_ury1 = 0;
+            if(($x <= $topCoords[0]) || ($x >= $topCoords[2]) || ($y <= $topCoords[1]) || ($y >= $topCoords[3])){
+               $mod_llx1 = $topCoords[0];
+               $mod_lly1 = $topCoords[1];
+               $mod_urx1 = $topCoords[2];
+               $mod_ury1 = $topCoords[3];   
+               $canx1 = $x;$cany1 = $y;
+               if($canx1 <= $mod_llx1){$dx = 1;}
+               elsif($canx1 >= $mod_urx1){$dx = -1;}
+               elsif($cany1 <= $mod_lly1){$dy = 1;}
+               elsif($cany1 >= $mod_ury1){$dy = -1;}
+               @wireRectCoords = ($x, $y, $x, $y);
+               $wireInstTemp = $design_canvas->createLine(
+                                                           @wireRectCoords,
+                                                           -fill => 'blue',
+                                                           -arrow => 'last',
+                                                           -width => 5,
+                                                            );
+               $srcMod = "PIN";  ### $srcMod = $TOP_MODULE; ###
+               $topConn = 1;
+            }else {
+               if(($tagList[0] ne "TOP_MODULE") && ($tagList[0] ne "TST_BUS")){
+                   my @coords  = $design_canvas->coords($id[0]);
+                   if($tagList[0] eq "FLOP"){
+                      $mod_llx1 = $coords[0];
+                      $mod_lly1 = $coords[1];
+                      $mod_urx1 = $coords[4];
+                      $mod_ury1 = $coords[7];   
+                   }elsif($tagList[0] eq "MUX"){
+                      $mod_lly1 = $coords[1];
+                      $mod_ury1 = $coords[7]; 
+                      if($coords[0] < $coords[4]){ 
+                         $mod_llx1 = $coords[0];
+                         $mod_urx1 = $coords[4];
+                      }else {
+                         $mod_llx1 = $coords[4];
+                         $mod_urx1 = $coords[0];
+                      }
+                    }else{
+                       $mod_llx1 = $coords[0];
+                       $mod_lly1 = $coords[1];
+                       $mod_urx1 = $coords[2];
+                       $mod_ury1 = $coords[3];   
+                          }
+                       $canx1 = $x;
+                       $cany1 = $y;
+                    @wireRectCoords = ($x, $y, $x, $y);
+                    $wireInstTemp = $design_canvas->createLine(
+                                                        @wireRectCoords,
+                                                         -fill => 'blue',
+                                                         -arrow => 'last',
+                                                         -width => 5,
+                                                          );
+                    $srcMod = $tagList[1];
+                    $instConn = 1;
+               }elsif($tagList[0] eq "TST_BUS"){
+                   my @wire_coords  = $design_canvas->coords($id[0]);
+                   for(my $i=0; $i<= $#wire_coords; $i= $i+2){
+                       if($wire_coords[$i] == $wire_coords[$i+2]){
+                          if(((($y>=$wire_coords[$i+1]) && ($y<=$wire_coords[$i+3])) || (($y<=$wire_coords[$i+1])&& ($y>=$wire_coords[$i+3]))) && (($x>= ($wire_coords[$i]-2.5)) && ($x <= ($wire_coords[$i]+2.5)))){$canx1 = $wire_coords[$i]; $cany1 = $y;last;}
+                       }elsif($wire_coords[$i+1] == $wire_coords[$i+3]){
+                          if(((($x>=$wire_coords[$i]) && ($x<=$wire_coords[$i+2])) || (($x<=$wire_coords[$i]) && ($x>=$wire_coords[$i+2]))) && (($y>= ($wire_coords[$i+1]-2.5)) && ($y <= ($wire_coords[$i+1]+2.5)))){$canx1 = $x; $cany1 = $wire_coords[$i+1];last;}
+                       }
+                                                                 }#foreach
+                   @wireRectCoords = ($x, $y, $x, $y);
+                   $wireInstTemp = $design_canvas->createLine(
+                                                        @wireRectCoords,
+                                                        -fill => 'blue',
+                                                        -arrow => 'last',
+                                                        -width => 5,
+                                                        );
+                   $wireConn = 1;
+                   if($canx1 == 0 || $cany1 == 0){$wireConn = 0;}
+                   #my ($count) = (split(/BD0_net/,$tagList[1]))[1]; 
+                   #$wireName = "BD0_netB".$count; ## if connection from a net   
+                   $wireName = $tagList[1];   
+               }else {$mod_llx1 = ""; $mod_lly1 = "";$mod_urx1 = ""; $mod_ury1 = ""; $canx1 = ""; $cany1 = "";}
+   }});
+   $design_canvas->CanvasBind('<B1-Motion>' => sub {
+            @wireRectCoords[2,3] = ($design_canvas->canvasx($Tk::event->x),
+                                    $design_canvas->canvasy($Tk::event->y));
+            $design_canvas->coords($wireInstTemp => @wireRectCoords);
+   });
+   $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+            my $x = $design_canvas->canvasx($Tk::event->x),
+            my $y = $design_canvas->canvasy($Tk::event->y);
+            my $overlapllx = $x - 1 ;
+            my $overlaplly = $y - 1 ;
+            my $overlapurx = $x + 1 ;
+            my $overlapury = $y + 1 ;
+            my @topCoords = $design_canvas->coords("TOP_MODULE"); 
+            my @wireCoordInMicron = ();  
+            my ($canx2,$cany2,$mod_llx2,$mod_lly2,$mod_urx2,$mod_ury2) = (0,0,0,0,0,0);
+            if(($instConn == 1) && (($x <=$topCoords[0]) || ($x >= $topCoords[2]) || ($y <= $topCoords[1]) || ($y >= $topCoords[3]))){
+               $mod_llx2 = $topCoords[0];
+               $mod_lly2 = $topCoords[1];
+               $mod_urx2 = $topCoords[2];
+               $mod_ury2 = $topCoords[3];
+               $canx2 = $x;$cany2 = $y;                      
+               $sinkMod = "PIN";  ### $sinkMod = $TOP_MODULE; ###
+               $design_canvas->delete($wireInstTemp);
+               if($x <= $mod_llx2){
+                  my $bend = rand($mod_llx1 - $mod_llx2)+$mod_llx2; 
+                  @wireRectCoords = ($mod_llx1, $cany1, $bend, $cany1,$bend, $cany2, $mod_llx2,$cany2);
+               }elsif($x >= $mod_urx2){
+                  my $bend = rand($mod_urx2 - $mod_urx1)+$mod_urx1;
+                  @wireRectCoords = ($mod_urx1, $cany1, $bend, $cany1,$bend, $cany2, $mod_urx2,$cany2);
+               }elsif($y <= $mod_lly2){
+                  my $bend = rand($mod_lly1 - $mod_lly2)+$mod_lly2;
+                  @wireRectCoords = ($canx1, $mod_lly1, $canx1,$bend ,$canx2,$bend, $canx2,$mod_lly2);
+               }elsif($y >= $mod_ury2){
+                  my $bend = rand($mod_ury2 - $mod_ury1)+$mod_ury1;
+                  @wireRectCoords = ($canx1, $mod_ury1, $canx1,$bend ,$canx2,$bend, $canx2, $mod_ury2);
+               }
+            for(my $i=0; $i<=$#wireRectCoords; $i=$i+2){
+                my @coord_mic = dbfGuiGui2Micron($wireRectCoords[$i],$wireRectCoords[$i+1]);
+                push(@wireCoordInMicron,@coord_mic);
+            }
+            my $wireCoords_str = join ",", @wireCoordInMicron;
+            $wireInst = $design_canvas->createLine(
+                                                @wireRectCoords,
+                                                -fill => 'blue',
+                                                -arrow => 'last',
+                                                -width => 5,
+                                                    );
+            #print "DBG : fist call : -parentModule,$TOP_MODULE,-type,bus,-source,$srcMod,-sink,$sinkMod, -prefix, $netPrefix, -wireWidth, $netWidth\n";
+            if($netPrefix eq "" && $netWidth ne ""){
+               print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod -sink $sinkMod -wireWidth $netWidth -netCoords $wireCoords_str\n";
+            }elsif($netWidth eq "" && $netPrefix ne ""){
+               print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod -sink $sinkMod -prefix $netPrefix -netCoords $wireCoords_str\n";
+            }elsif($netWidth eq "" && $netPrefix eq ""){
+               print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod -sink $sinkMod -netCoords $wireCoords_str\n";
+            }else{
+               print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod -sink $sinkMod -prefix $netPrefix -wireWidth $netWidth -netCoords $wireCoords_str\n";
+            } 
+            my $netName = &createPseudoNet("-parentModule","$TOP_MODULE","-type","bus","-source","$srcMod","-sink","$sinkMod", "-prefix", $netPrefix, "-wireWidth", $netWidth,"-netCoords",$wireCoords_str);
+            $design_canvas->itemconfigure($wireInst, -tags =>'TST_BUS' );
+            $design_canvas->addtag($netName , "withtag", $wireInst);
+            }else {
+               my @ids = $design_canvas->find("overlapping", $overlapllx, $overlaplly, $overlapurx, $overlapury);
+               foreach $id ( @ids ) {
+               my @tagList = $design_canvas->gettags($id);
+               if (($tagList[0] ne "TOP_MODULE") && ($tagList[0] ne "") && ($tagList[0] ne "current") && ($tagList[1] ne $srcMod) && ($tagList[0] ne "TST_BUS"))  { 
+                  $sinkMod = $tagList[1];
+                  my @coords1  = $design_canvas->coords($id);
+                  if($tagList[0] eq "FLOP"){
+                     $mod_llx2 = $coords1[0];
+                     $mod_lly2 = $coords1[1];
+                     $mod_urx2 = $coords1[4];
+                     $mod_ury2 = $coords1[7];
+                  }elsif($tagList[0] eq "MUX"){
+                     $mod_lly2 = $coords1[1];
+                     $mod_ury2 = $coords1[7];
+                     if($coords1[0] < $coords1[4]){ 
+                        $mod_llx2 = $coords1[0];
+                        $mod_urx2 = $coords1[4];
+                     }else {
+                        $mod_llx2 = $coords1[4];
+                        $mod_urx2 = $coords1[0];
+                     }
+                  }else{  
+                     $mod_llx2 = $coords1[0];
+                     $mod_lly2 = $coords1[1];
+                     $mod_urx2 = $coords1[2];
+                     $mod_ury2 = $coords1[3];
+                  }
+                  $canx2 = $x;                      
+                  $cany2 = $y;                      
+                  $design_canvas->delete($wireInstTemp);
+                  if($wireConn == 1){ 
+                     if($canx1 < $mod_llx2){
+                        my $bend = rand($mod_llx2 - $canx1)+$canx1;
+                        @wireRectCoords = ($canx1, $cany1, $bend, $cany1, $bend, $cany2, $mod_llx2,$cany2);
+                     }elsif($canx1 > $mod_urx2) {
+                        my $bend = rand($canx1 - $mod_urx2)+$mod_urx2;
+                        @wireRectCoords = ($canx1, $cany1, $bend, $cany1, $bend, $cany2, $mod_urx2,$cany2);
+                     }elsif($cany1 > $mod_ury2){
+                      my $bend = rand($cany1 - $mod_ury2)+$mod_ury2;  
+                      @wireRectCoords = ($canx1, $cany1, $canx1, $bend, $canx2, $bend, $canx2,$mod_ury2);
+                     }elsif($cany1 < $mod_lly2){
+                      my $bend = rand($mod_lly2 - $cany1)+$cany1;
+                      @wireRectCoords = ($canx1, $cany1, $canx1, $bend, $canx2, $bend, $canx2, $mod_lly2);
+                     }   
+                  for(my $i=0; $i<=$#wireRectCoords; $i=$i+2){
+                      my @coord_mic = dbfGuiGui2Micron($wireRectCoords[$i],$wireRectCoords[$i+1]);
+                      push(@wireCoordInMicron,@coord_mic);
+                  }
+                  my $wireCoords_str = join ",", @wireCoordInMicron;
+                  $wireInst = $design_canvas->createLine(
+                                                      @wireRectCoords,
+                                                      -fill => 'blue',
+                                                      -arrow => 'last',
+                                                      -width => 5,
+                                                      );
+                  $design_canvas->itemconfigure($wireInst, -tags =>'TST_BUS' );
+                  $design_canvas->addtag($wireName , "withtag", $wireInst);
+                  &updatePseudoNet("-net",$wireName,"-sink",$sinkMod, "-netCoords", $wireCoords_str); 
+                  print"#<CMD> updatePseudoNet -net $wireName -sink $sinkMod -netCoords $wireCoords_str\n";
+                  }elsif($instConn == 1){
+                     if($mod_urx1 < $mod_llx2){
+                        my $bend = rand($mod_llx2-$mod_urx1)+$mod_urx1;
+                        @wireRectCoords = ($mod_urx1, $cany1, $bend, $cany1, $bend, $cany2, $mod_llx2, $cany2);
+                     }elsif($mod_llx1 > $mod_urx2) {
+                        my $bend = rand($mod_llx1-$mod_urx2)+$mod_urx2;
+                        @wireRectCoords = ($mod_llx1, $cany1, $bend, $cany1, $bend, $cany2, $mod_urx2, $cany2);
+                     }elsif($mod_lly1 > $mod_ury2){
+                        my $bend = rand($mod_lly1-$mod_ury2)+$mod_ury2;
+                        @wireRectCoords = ($canx1, $mod_lly1, $canx1, $bend, $canx2, $bend, $canx2, $mod_ury2);
+                     }elsif($mod_ury1 < $mod_lly2){
+                        my $bend = rand($mod_lly2-$mod_ury1)+$mod_ury1;
+                        @wireRectCoords = ($canx1, $mod_ury1, $canx1, $bend, $canx2, $bend, $canx2, $mod_lly2);
+                     }
+                  for(my $i=0; $i<=$#wireRectCoords; $i=$i+2){
+                      my @coord_mic = dbfGuiGui2Micron($wireRectCoords[$i],$wireRectCoords[$i+1]);
+                      push(@wireCoordInMicron,@coord_mic);
+                  }
+                  my $wireCoords_str = join ",", @wireCoordInMicron;
+                  $wireInst = $design_canvas->createLine(
+                                                @wireRectCoords,
+                                                -fill => 'blue',
+                                                -arrow => 'last',
+                                                -width => 5,
+                                                );
+                  if($netPrefix eq "" && $netWidth ne ""){
+                     print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod -sink $sinkMod -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                  }elsif($netWidth eq "" && $netPrefix ne ""){
+                     print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod -sink $sinkMod -prefix $netPrefix -netCoords $wireCoords_str\n";
+                  }elsif($netWidth eq "" && $netPrefix eq ""){
+                     print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod -sink $sinkMod -netCoords $wireCoords_str\n";
+                  }else{
+                     print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod -sink $sinkMod -prefix $netPrefix -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                  }
+                  my $netName = &createPseudoNet("-parentModule","$TOP_MODULE","-type","bus","-source","$srcMod","-sink","$sinkMod", "-prefix", $netPrefix, "-wireWidth", $netWidth,"-netCoords", $wireCoords_str);
+                  $design_canvas->itemconfigure($wireInst, -tags =>'TST_BUS' );
+                  $design_canvas->addtag($netName , "withtag", $wireInst);
+
+                  }elsif($topConn == 1){
+                     if($dx == 1){
+                        my $bend = rand($mod_llx2-$mod_llx1)+$mod_llx1; 
+                        @wireRectCoords = ($mod_llx1, $cany1, $bend, $cany1, $bend, $cany2, $mod_llx2, $cany2);
+                     }elsif($dx == -1){
+                        my $bend = rand($mod_urx1-$mod_urx2)+$mod_urx2;
+                        @wireRectCoords = ($mod_urx1, $cany1, $bend, $cany1, $bend, $cany2, $mod_urx2, $cany2);
+                     }elsif($dy == 1){
+                        my $bend = rand($mod_lly2-$mod_lly1)+$mod_lly1;
+                        @wireRectCoords = ($canx1, $mod_lly1, $canx1, $bend, $canx2, $bend, $canx2, $mod_lly2);
+                     }elsif($dy == -1){
+                        my $bend = rand($mod_ury1-$mod_ury2)+$mod_ury2;
+                        @wireRectCoords = ($canx1, $mod_ury1, $canx1, $bend, $canx2, $bend, $canx2, $mod_ury2);
+                     }
+                  for(my $i=0; $i<=$#wireRectCoords; $i=$i+2){
+                      my @coord_mic = dbfGuiGui2Micron($wireRectCoords[$i],$wireRectCoords[$i+1]);
+                      push(@wireCoordInMicron,@coord_mic);
+                  }
+                  my $wireCoords_str = join ",", @wireCoordInMicron;
+                  $wireInst = $design_canvas->createLine(
+                                                @wireRectCoords,
+                                                -fill => 'blue',
+                                                -arrow => 'last',
+                                                -width => 5,
+                                                );
+                  if($netPrefix eq "" && $netWidth ne ""){
+                     print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod -sink $sinkMod -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                  }elsif($netWidth eq "" && $netPrefix ne ""){
+                     print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod -sink $sinkMod -prefix $netPrefix -netCoords $wireCoords_str\n";
+                  }elsif($netWidth eq "" && $netPrefix eq ""){
+                     print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod -sink $sinkMod -netCoords $wireCoords_str\n";
+                  }else{
+                     print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod -sink $sinkMod -prefix $netPrefix -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                  }
+                  my $netName = &createPseudoNet("-parentModule","$TOP_MODULE","-type","bus","-source","$srcMod","-sink","$sinkMod", "-prefix", $netPrefix, "-wireWidth", $netWidth,"-netCoords", $wireCoords_str);
+                  $design_canvas->itemconfigure($wireInst, -tags =>'TST_BUS' );
+                  $design_canvas->addtag($netName , "withtag", $wireInst);
+
+                  }else {$design_canvas->delete($wireInstTemp);}
+               }else {$design_canvas->delete($wireInstTemp);}
+          }#foreach id
+($topConn, $instConn, $wireConn) = (0, 0, 0);
+   }});
+
+}#sub dbTstGUICreateZBus
+
+#sub dbTstGUICreateRoutingBus{
+#&dbfGuiResetCanvasBind;
+#my $netPrefix = $_[0];
+#my $netWidth = $_[1];
+#my $wireType = $_[2];
+#
+#my $srcMod = "";
+#my $sinkMod = "";
+#my $wireName = "";
+#my @netCoords = ();
+#my ($noshift,$instConn,$wireConn,$x1_draw,$y1_draw) = (0,0,0,0,0); 
+#
+#$design_canvas->CanvasBind('<Shift-Button-1>' => sub {
+#   my $x = $design_canvas->canvasx($Tk::event->x);
+#   my $y = $design_canvas->canvasy($Tk::event->y);
+#   my @id      = $design_canvas->find(qw/withtag current/);
+#   my @tagList = $design_canvas->gettags($id[0]);
+#   my @topCoords = $design_canvas->coords("TOP_MODULE"); 
+#   @netCoords = ();
+#   $noshift = 0;
+#   $instConn = 0;
+#   $wireConn = 0;
+#   $x1_draw = 0;
+#   $y1_draw = 0; 
+#   if(($x <= $topCoords[0]) || ($x >= $topCoords[2]) || ($y <= $topCoords[1]) || ($y >= $topCoords[3])){
+#       if    ($x<=$topCoords[0] && ($y>$topCoords[1] && $y<$topCoords[3])){$x1_draw = $topCoords[0];$y1_draw = $y; 
+#       }elsif($x>=$topCoords[2] && ($y>$topCoords[1] && $y<$topCoords[3])){$x1_draw = $topCoords[2];$y1_draw = $y; 
+#       }elsif($y<=$topCoords[1] && ($x>$topCoords[0] && $x<$topCoords[2])){$x1_draw = $x;$y1_draw = $topCoords[1]; 
+#       }elsif($y>=$topCoords[3] && ($x>$topCoords[0] && $x<$topCoords[2])){$x1_draw = $x;$y1_draw = $topCoords[3]; 
+#       }
+#       push(@netCoords, $x1_draw, $y1_draw);
+#            $srcMod = "PIN";
+#            $instConn = 1;
+#   }elsif($tagList[0] ne "TOP_MODULE") {
+#       if(($tagList[0] eq "current") || ($tagList[0] eq "TST_BUS")){
+#           my @wire_coords  = $design_canvas->coords($id[0]);
+#           for(my $i=0; $i<= $#wire_coords; $i= $i+2){
+#               if ($wire_coords[$i] == $wire_coords[$i+2]){
+#                   if(((($y>$wire_coords[$i+1])&&($y<$wire_coords[$i+3])) || (($y<$wire_coords[$i+1])&&($y>$wire_coords[$i+3]))) && (($x> ($wire_coords[$i]-2.5)) && ($x < ($wire_coords[$i]+2.5)))){push(@netCoords, $wire_coords[$i], $y);$wireConn = 1; $wireName = $tagList[1];}
+#               }elsif($wire_coords[$i+1] == $wire_coords[$i+3]){
+#                   if(((($x>$wire_coords[$i])&&($x<$wire_coords[$i+2])) || (($x<$wire_coords[$i])&&($x>$wire_coords[$i+2]))) && (($y> ($wire_coords[$i+1]-2.5)) && ($y < ($wire_coords[$i+1]+2.5)))){push(@netCoords, $x,$wire_coords[$i+1]);$wireConn = 1;$wireName = $tagList[1];}
+#               }
+#           }#foreach
+#       }else{ my @coords  = $design_canvas->coords($id[0]);
+#              if($tagList[0] eq "FLOP" || $tagList[0] eq "MUX"){
+#                 $coords[3] = $coords[7]
+#              }else{}   
+#              my $width   = $coords[2] - $coords[0];
+#              my $height  = $coords[3] - $coords[1];
+#              if      ($x < $coords[0] + 0.3 * $width) {
+#                   $x1_draw = $coords[0];
+#              } elsif ($x > $coords[2] - 0.3 * $width) {
+#                   $x1_draw = $coords[2];
+#              } else {
+#                   $x1_draw = $x;
+#              }
+#
+#              if      ($y < $coords[1] + 0.3 * $height) {
+#                   $y1_draw = $coords[1];
+#              } elsif ($y > $coords[3] - 0.3 * $height) {
+#                   $y1_draw = $coords[3];
+#              } else {
+#                   $y1_draw = $y;
+#              }
+#              push(@netCoords, $x1_draw, $y1_draw);
+#              $srcMod = $tagList[1];
+#       }
+#              $instConn = 1;
+#   }#if not TopModule
+# });
+#
+#$design_canvas->CanvasBind('<1>' => sub {
+#   my $x = $design_canvas->canvasx($Tk::event->x);
+#   my $y = $design_canvas->canvasy($Tk::event->y);
+#   if($instConn == 1){                               
+#      if(abs($x -$netCoords[-2]) > abs($y - $netCoords[-1])){
+#         push(@netCoords, $x, $netCoords[-1]);
+#      }else {
+#         push(@netCoords, $netCoords[-2], $y);
+#      }#else
+#   $design_canvas->createLine(
+#                              @netCoords,
+#                              -fill => 'blue',
+#                              -width => 5,
+#                              -tags => "BUSTEMP",
+#                               );
+#   }#if wire is connected with source module
+# });
+#$design_canvas->CanvasBind('<Control-Button-1>' => sub {
+#   my $x = $design_canvas->canvasx($Tk::event->x),
+#   my $y = $design_canvas->canvasy($Tk::event->y);
+#   my @id      = $design_canvas->find(qw/withtag current/);
+#   my @tagList = $design_canvas->gettags($id[0]);
+#   my @topCoords = $design_canvas->coords("TOP_MODULE"); 
+#   my @coords1 = ();
+#   my @wireCoordInMicron = ();
+#   if(($tagList[0] ne "TOP_MODULE") && ($tagList[0] ne "TST_BUS") && ($tagList[1] ne "current") && ($tagList[1] ne $srcMod)){ 
+#      if(($x <= $topCoords[0]) || ($x >= $topCoords[2]) || ($y <= $topCoords[1]) || ($y >= $topCoords[3])){
+#          if    ($x<=$topCoords[0] && ($y>$topCoords[1] && $y<$topCoords[3])){push(@netCoords,$topCoords[0],$netCoords[-1]); 
+#          }elsif($x>=$topCoords[2] && ($y>$topCoords[1] && $y<$topCoords[3])){push(@netCoords,$topCoords[2],$netCoords[-1]); 
+#          }elsif($y<=$topCoords[1] && ($x>$topCoords[0] && $x<$topCoords[2])){push(@netCoords,$netCoords[-2],$topCoords[1]); 
+#          }elsif($y>=$topCoords[3] && ($x>$topCoords[0] && $x<$topCoords[2])){push(@netCoords,$netCoords[-2],$topCoords[3]); 
+#          }
+#          @coords1 = @topCoords;
+#          $sinkMod = "PIN"; 
+#      }else{
+#          $sinkMod = $tagList[1];
+#          @coords1  = $design_canvas->coords($id[0]);
+#          if($tagList[0] eq "FLOP" || $tagList[0] eq "MUX"){
+#             $coords1[3] = $coords1[7]
+#          }else{}   
+#          if(($netCoords[-2] < $coords1[0])&&(($netCoords[-1] > $coords1[1])&&($netCoords[-1] < $coords1[3]))) {push(@netCoords, $coords1[0],$netCoords[-1]);} 
+#          if(($netCoords[-2] > $coords1[2]) && (($netCoords[-1] > $coords1[1]) && ($netCoords[-1] < $coords1[3]))) {push(@netCoords, $coords1[2],$netCoords[-1]);} 
+#          if(($netCoords[-1] < $coords1[1]) && (($netCoords[-2] > $coords1[0]) && ($netCoords[-2] < $coords1[2]))) {push(@netCoords,$netCoords[-2],$coords1[1]);} 
+#          if(($netCoords[-1] > $coords1[3]) && (($netCoords[-2] > $coords1[0]) && ($netCoords[-2] < $coords1[2]))) {push(@netCoords,$netCoords[-2],$coords1[3]);} 
+#      }#if not connected with TOP_MODULE
+#          if($instConn == 1){
+#                          for(my $i=0; $i<=$#netCoords; $i=$i+2){
+#                              my @coord_mic = dbfGuiGui2Micron($netCoords[$i],$netCoords[$i+1]);
+#                              push(@wireCoordInMicron,@coord_mic);
+#                          }
+#                          my $wireCoords_str = join ",", @wireCoordInMicron;
+#                          $design_canvas->delete(BUSTEMP);  
+#                          $wireInst = $design_canvas->createLine(
+#                                                                 @netCoords,
+#                                                                 -fill => 'blue',
+#                                                                 -arrow => 'last',
+#                                                                 -width => 5,
+#                                                                 );
+#             if($wireConn == 0){
+#                if($netPrefix eq "" && $netWidth ne ""){
+#                   print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod -sink $sinkMod -wireWidth $netWidth -netCoords $wireCoords_str\n";
+#                }elsif($netWidth eq "" && $netPrefix ne ""){
+#                   print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod -sink $sinkMod -prefix $netPrefix -netCoords $wireCoords_str\n";
+#                }elsif($netWidth eq "" && $netPrefix eq ""){
+#                   print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod -sink $sinkMod -netCoords $wireCoords_str\n";
+#                }else{
+#                   print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod -sink $sinkMod -prefix $netPrefix -wireWidth $netWidth -netCoords $wireCoords_str\n";
+#                }
+#                my $netName = &createPseudoNet("-parentModule","$TOP_MODULE","-type","bus","-source","$srcMod","-sink","$sinkMod", "-prefix", $netPrefix, "-wireWidth", $netWidth,"-netCoords",$wireCoords_str);
+#                $design_canvas->itemconfigure($wireInst, -tags =>'TST_BUS' );
+#                $design_canvas->addtag($netName , "withtag", $wireInst);
+#             }else {
+#                &updatePseudoNet("-net",$wireName,"-sink",$sinkMod,"-netCoords", $wireCoords_str); 
+#                print"#<CMD> updatePseudoNet -net $wireName -sink $sinkMod -netCoords $wireCoords_str\n";
+#                $design_canvas->itemconfigure($wireInst, -tags =>'TST_BUS' );
+#                $design_canvas->addtag($wireName , "withtag", $wireInst);
+#             }#if same wire
+#          }#if wire is connected with src
+#   }#if neither wire nor top module
+#   else{$design_canvas->delete(BUSTEMP);}
+#$instConn = 0;
+#});
+#}#sub dbTstGUICreateRoutingBus
+
+sub dbTstGUICreateRoutingBus{
+&dbfGuiResetCanvasBind;
+my $netPrefix = $_[0];
+my $netWidth = $_[1];
+my $wireType = $_[2];
+
+$design_canvas->CanvasBind('<Shift-Button-1>' => sub {
+   my $x = $design_canvas->canvasx($Tk::event->x);
+   my $y = $design_canvas->canvasy($Tk::event->y);
+   my @id      = $design_canvas->find(qw/withtag current/);
+   my @tagList = $design_canvas->gettags($id[0]);
+   my @topCoords = $design_canvas->coords("TOP_MODULE"); 
+   if($x>$topCoords[0] && $x<$topCoords[2] && $y >$topCoords[1] && $y<$topCoords[3] && $tagList[0] eq "TOP_MODULE"){}
+   else{&popup_selectSrcPin_forBus($x, $y, \@id,$wireType);}   
+ });
+$design_canvas->CanvasBind('<1>' => sub {
+   my $x = $design_canvas->canvasx($Tk::event->x);
+   my $y = $design_canvas->canvasy($Tk::event->y);
+   my @netCoords = @{$ROUTBUS_SOURCE_CONN[5]};
+   if($ROUTBUS_SOURCE_CONN[3] == 1){                               
+      if(abs($x -$netCoords[-2]) > abs($y - $netCoords[-1])){
+         push(@{$ROUTBUS_SOURCE_CONN[5]}, $x, $netCoords[-1]);
+      }else {
+         push(@{$ROUTBUS_SOURCE_CONN[5]}, $netCoords[-2], $y);
+      }#else
+   $design_canvas->createLine(
+                              @{$ROUTBUS_SOURCE_CONN[5]},
+                              -fill => 'blue',
+                              -width => 5,
+                              -tags => "WIRETEMP",
+                               );
+   }#if wire is connected with source module
+ });
+$design_canvas->CanvasBind('<Control-Button-1>' => sub {
+   my $x = $design_canvas->canvasx($Tk::event->x),
+   my $y = $design_canvas->canvasy($Tk::event->y);
+   my @id      = $design_canvas->find(qw/withtag current/);
+   my @tagList = $design_canvas->gettags($id[0]);
+   my @topCoords = $design_canvas->coords("TOP_MODULE"); 
+   if($x>$topCoords[0] && $x<$topCoords[2] && $y >$topCoords[1] && $y<$topCoords[3] && $tagList[0] eq "TOP_MODULE"){}
+   else{&popup_selectSinkPin_forBus($x, $y, \@id,$netPrefix,$netWidth,$wireType);}   
+   
+});
+}#sub dbTstGUICreateRoutingBus
+
+##################################### Creating TieHi and TieLow Connections ########################################
+sub dbTstGUICreateTieHi{
+&dbfGuiResetCanvasBind;
+my $netPrefix = $_[0];
+my $netWidth = $_[1];
+
+my $sinkMod = "";
+my $wireName = "";
+my @wireRectCoords = ();
+my ($wire_llx, $wire_lly,$wire_urx,$wire_ury) = (0,0,0,0);
+my ($wireConn,$instConn) = (0,0,0);
+
+$design_canvas->CanvasBind('<Shift-Button-1>' => sub {
+     my $x = $design_canvas->canvasx($Tk::event->x);
+     my $y = $design_canvas->canvasy($Tk::event->y);
+     my @id      = $design_canvas->find(qw/withtag current/);
+     my @tagList = $design_canvas->gettags($id[0]);
+     my @topCoords = $design_canvas->coords("TOP_MODULE"); 
+     if($x>$topCoords[0] && $x<$topCoords[2] && $y >$topCoords[1] && $y<$topCoords[3] && $tagList[0] eq "TOP_MODULE"){}
+     else{&popup_selectPin_forTieHi($x, $y, \@tagList,$netPrefix,$netWidth);}
+                  
+   });
+$design_canvas->CanvasBind('<1>' => sub {
+   my $x = $design_canvas->canvasx($Tk::event->x);
+   my $y = $design_canvas->canvasy($Tk::event->y);
+   my @id      = $design_canvas->find(qw/withtag current/);
+   my @tagList = $design_canvas->gettags($id[0]);
+   $wireConn = 0;
+   $instConn = 0;
+   $wire_llx = 0; $wire_lly = 0;
+   if(($tagList[0] ne "TOP_MODULE") && ($tagList[0] ne "TST_WIRE") && ($tagList[0] ne "TST_BUS") && ($tagList[0] ne "") && ($tagList[0] ne "TST_POWER") && ($tagList[0] ne "TST_GROUND")){
+      my @coords  = $design_canvas->coords($id[0]);
+      my @coords1 = ();
+      if($tagList[0] eq "FLOP"){
+         $coords1[0] = $coords[0];
+         $coords1[1] = $coords[1];
+         $coords1[2] = $coords[4];
+         $coords1[3] = $coords[7];   
+      }elsif($tagList[0] eq "MUX"){
+         $coords1[1] = $coords[1];
+         $coords1[3] = $coords[7]; 
+         if($coords[0] < $coords[4]){ 
+            $coords1[0] = $coords[0];
+            $coords1[2] = $coords[4];
+         }else {
+            $coords1[0] = $coords[4];
+            $coords1[2] = $coords[0];
+         }
+      }else{
+         $coords1[0] = $coords[0];
+         $coords1[1] = $coords[1];
+         $coords1[2] = $coords[2];
+         $coords1[3] = $coords[3];   
+      }
+      my $width   = $coords1[2] - $coords1[0];
+      my $height  = $coords1[3] - $coords1[1];
+      if    ($x <= $coords1[0] + 0.2 * $width){$wire_llx = $coords1[0]; $wire_lly = $y;
+      }elsif($x >= $coords1[2] - 0.2 * $width){$wire_llx = $coords1[2]; $wire_lly = $y;
+      }elsif($y <= $coords1[1] + 0.2 * $height){$wire_llx = $x; $wire_lly = $coords1[1];
+      }elsif($y >= $coords1[3] - 0.2 * $height){$wire_llx = $x; $wire_lly = $coords1[3];
+      }else{}
+      @wireRectCoords = ($x, $y, $x, $y);
+      $wireInstTemp = $design_canvas->createLine(
+                                                @wireRectCoords,
+                                                -fill => 'red',
+                                                -arrow => 'last',
+                                                -arrowshape => [10, 5, 5],
+                                                -width => 5,
+                                                 );
+      $sinkMod = $tagList[1];
+      $instConn = 1;
+####################### To connect tieHi/tieLo from wire/bus we should assume the sink modules are the connected module from that wire/bus(we can find these modules from t+button-1 display code) #################################
+ 
+#   }elsif($tagList[0] eq "TST_WIRE" || $tagList[0] eq "TST_BUS"){
+#      my @wire_coords  = $design_canvas->coords($id[0]);
+#      if($#wire_coords == 3){
+#         $wire_llx = $x, $wire_lly = $wire_coords[1] + ($wire_coords[3]- $wire_coords[1])*($x - $wire_coords[0])/($wire_coords[2]-$wire_coords[0]);
+#      }else{
+#         for(my $i=0; $i<= $#wire_coords; $i= $i+2){
+#             if    ($wire_coords[$i] == $wire_coords[$i+2]){
+#                 if(((($y>$wire_coords[$i+1]) && ($y<$wire_coords[$i+3])) || (($y<$wire_coords[$i+1])&& ($y>$wire_coords[$i+3]))) && (($x> ($wire_coords[$i]-2.5)) && ($x < ($wire_coords[$i]+2.5)))){$wire_llx = $wire_coords[$i]; $wire_lly = $y;}
+#             }elsif($wire_coords[$i+1] == $wire_coords[$i+3]){
+#                 if(((($x>$wire_coords[$i]) && ($x<$wire_coords[$i+2])) || (($x<$wire_coords[$i]) && ($x>$wire_coords[$i+2]))) && (($y> ($wire_coords[$i+1]-2.5)) && ($y < ($wire_coords[$i+1]+2.5)))){$wire_llx = $x; $wire_lly = $wire_coords[$i+1];}
+#             }
+#         }#foreach
+#      }
+#      @wireRectCoords = ($x, $y, $x, $y);
+#      $wireInstTemp = $design_canvas->createLine(
+#                                                @wireRectCoords,
+#                                                -fill => 'red',
+#                                                -arrow => 'last',
+#                                                -arrowshape => [10, 5, 5],
+#                                                -width => 5,
+#                                                  );
+#      $wireConn = 1;
+#      $wireName = $tagList[1]; ## if connection from a net   
+   }else { }
+});
+$design_canvas->CanvasBind('<B1-Motion>' => sub {
+     @wireRectCoords[2,3] = ($design_canvas->canvasx($Tk::event->x),
+                             $design_canvas->canvasy($Tk::event->y));
+     $design_canvas->coords($wireInstTemp => @wireRectCoords);
+});
+$design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+     my $x = $design_canvas->canvasx($Tk::event->x),
+     my $y = $design_canvas->canvasy($Tk::event->y);
+     my $overlapllx = $x - 1 ;
+     my $overlaplly = $y - 1 ;
+     my $overlapurx = $x + 1 ;
+     my $overlapury = $y + 1 ;
+     my @tagList = ();
+     my @id = $design_canvas->find("overlapping", $overlapllx, $overlaplly, $overlapurx, $overlapury);
+     if($#id >=1){
+        @tagList = $design_canvas->gettags($id[-2]);
+     }else{return;}
+     $wire_urx = 0; $wire_ury = 0;
+     my @wireCoordInMicron = ();
+     if(($tagList[0] eq "TOP_MODULE") && ($tagList[1] ne $sinkMod) && ($tagList[0] ne "TST_POWER") && ($tagList[0] ne "TST_GROUND")){
+        #if($instConn == 1 || $wireConn == 1){
+        if($instConn == 1){
+           if((abs($x - $wire_llx)) >= (abs($y - $wire_lly))){
+              $wire_urx = $x; $wire_ury = $wire_lly;
+           }else {
+              $wire_urx = $wire_llx; $wire_ury = $y;
+           }
+           @wireRectCoords = ($wire_llx,$wire_lly,$wire_urx,$wire_ury); 
+           for(my $i=0; $i<=$#wireRectCoords; $i=$i+2){
+               my @coord_mic = dbfGuiGui2Micron($wireRectCoords[$i],$wireRectCoords[$i+1]);
+               push(@wireCoordInMicron,@coord_mic);
+           }
+           my $wireCoords_str = join ",", @wireCoordInMicron;
+           $design_canvas->delete($wireInstTemp);
+           if($wire_llx == 0 || $wire_lly == 0 || $wire_urx == 0 || $wire_ury == 0){return;}
+           $wireInst = $design_canvas->createLine(
+                                                @wireRectCoords,
+                                                -fill => 'red',
+                                                -arrow => 'last',
+                                                -arrowshape => [10, 5, 5],
+                                                #-arrowshape => [7, 0, 8],
+                                                -width => 5,
+                                                 );
+         if($netPrefix eq "" && $netWidth ne ""){
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -tieHi $sinkMod -wireWidth $netWidth -netCoords $wireCoords_str\n";
+         }elsif($netWidth eq "" && $netPrefix ne ""){
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -tieHi $sinkMod -prefix $netPrefix -netCoords $wireCoords_str\n";
+         }elsif($netWidth eq "" && $netPrefix eq ""){
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -tieHi $sinkMod -netCoords $wireCoords_str\n";
+         }else{
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -tieHi $sinkMod -prefix $netPrefix -wireWidth $netWidth -netCoords $wireCoords_str\n";
+         }
+         my $netName = &createPseudoNet("-parentModule","$TOP_MODULE","-type","bus","-tieHi","$sinkMod", "-prefix", $netPrefix, "-wireWidth", $netWidth,"-netCoords",$wireCoords_str);
+            $design_canvas->itemconfigure($wireInst, -tags =>'TST_POWER');
+            $design_canvas->addtag($netName , "withtag", $wireInst);
+        }else {$design_canvas->delete($wireInstTemp);}
+     }else{$design_canvas->delete($wireInstTemp);}
+($instConn,$wireConn) = (0, 0, 0);
+});
+}#sub dbTstGUICreateTieHi
+
+##################################### Subroutine to create Power Connection ######################################
+sub dbTstGUICreateTieLow{
+&dbfGuiResetCanvasBind;
+my $netPrefix = $_[0];
+my $netWidth = $_[1];
+#my $wireType = $_[2];
+
+my $sinkMod = "";
+my $wireName = "";
+my @wireRectCoords = ();
+my ($wire_llx, $wire_lly,$wire_urx,$wire_ury) = (0,0,0,0);
+my ($wireConn,$instConn) = (0,0,0);
+
+$design_canvas->CanvasBind('<Shift-Button-1>' => sub {
+     my $x = $design_canvas->canvasx($Tk::event->x);
+     my $y = $design_canvas->canvasy($Tk::event->y);
+     my @id      = $design_canvas->find(qw/withtag current/);
+     my @tagList = $design_canvas->gettags($id[0]);
+     my @topCoords = $design_canvas->coords("TOP_MODULE"); 
+     if($x>$topCoords[0] && $x<$topCoords[2] && $y >$topCoords[1] && $y<$topCoords[3] && $tagList[0] eq "TOP_MODULE"){}
+     else{&popup_selectPin_forTieLo($x, $y, \@tagList,$netPrefix,$netWidth);}
+   });
+$design_canvas->CanvasBind('<1>' => sub {
+   my $x = $design_canvas->canvasx($Tk::event->x);
+   my $y = $design_canvas->canvasy($Tk::event->y);
+   my @id      = $design_canvas->find(qw/withtag current/);
+   my @tagList = $design_canvas->gettags($id[0]);
+   $wireConn = 0;
+   $instConn = 0;
+   $wire_llx = 0; $wire_lly = 0;
+   if(($tagList[0] ne "TOP_MODULE") && ($tagList[0] ne "TST_WIRE") && ($tagList[0] ne "TST_BUS") && ($tagList[0] ne "") && ($tagList[0] ne "TST_POWER") && ($tagList[0] ne "TST_GROUND")){
+      my @coords  = $design_canvas->coords($id[0]);
+      my @coords1 = ();
+      if($tagList[0] eq "FLOP"){
+         $coords1[0] = $coords[0];
+         $coords1[1] = $coords[1];
+         $coords1[2] = $coords[4];
+         $coords1[3] = $coords[7];   
+      }elsif($tagList[0] eq "MUX"){
+         $coords1[1] = $coords[1];
+         $coords1[3] = $coords[7]; 
+         if($coords[0] < $coords[4]){ 
+            $coords1[0] = $coords[0];
+            $coords1[2] = $coords[4];
+         }else {
+            $coords1[0] = $coords[4];
+            $coords1[2] = $coords[0];
+         }
+      }else{
+         $coords1[0] = $coords[0];
+         $coords1[1] = $coords[1];
+         $coords1[2] = $coords[2];
+         $coords1[3] = $coords[3];   
+      }
+      my $width   = $coords1[2] - $coords1[0];
+      my $height  = $coords1[3] - $coords1[1];
+      if    ($x <= $coords1[0] + 0.2 * $width){$wire_llx = $coords1[0]; $wire_lly = $y;
+      }elsif($x >= $coords1[2] - 0.2 * $width){$wire_llx = $coords1[2]; $wire_lly = $y;
+      }elsif($y <= $coords1[1] + 0.2 * $height){$wire_llx = $x; $wire_lly = $coords1[1];
+      }elsif($y >= $coords1[3] - 0.2 * $height){$wire_llx = $x; $wire_lly = $coords1[3];
+      }else{}
+      @wireRectCoords = ($x, $y, $x, $y);
+      $wireInstTemp = $design_canvas->createLine(
+                                                @wireRectCoords,
+                                                -fill => 'green',
+                                                -arrow => 'last',
+                                                -arrowshape => [7, 0, 8],
+                                                -width => 5,
+                                                 );
+      $sinkMod = $tagList[1];
+      $instConn = 1;
+#   }elsif($tagList[0] eq "TST_WIRE" || $tagList[0] eq "TST_BUS"){
+#      my @wire_coords  = $design_canvas->coords($id[0]);
+#      if($#wire_coords == 3){
+#         $wire_llx = $x, $wire_lly = $wire_coords[1] + ($wire_coords[3]- $wire_coords[1])*($x - $wire_coords[0])/($wire_coords[2]-$wire_coords[0]);
+#      }else{
+#         for(my $i=0; $i<= $#wire_coords; $i= $i+2){
+#             if    ($wire_coords[$i] == $wire_coords[$i+2]){
+#                 if(((($y>$wire_coords[$i+1]) && ($y<$wire_coords[$i+3])) || (($y<$wire_coords[$i+1])&& ($y>$wire_coords[$i+3]))) && (($x> ($wire_coords[$i]-2.5)) && ($x < ($wire_coords[$i]+2.5)))){$wire_llx = $wire_coords[$i]; $wire_lly = $y;}
+#             }elsif($wire_coords[$i+1] == $wire_coords[$i+3]){
+#                 if(((($x>$wire_coords[$i]) && ($x<$wire_coords[$i+2])) || (($x<$wire_coords[$i]) && ($x>$wire_coords[$i+2]))) && (($y> ($wire_coords[$i+1]-2.5)) && ($y < ($wire_coords[$i+1]+2.5)))){$wire_llx = $x; $wire_lly = $wire_coords[$i+1];}
+#             }
+#         }#foreach
+#      }
+#      @wireRectCoords = ($x, $y, $x, $y);
+#      $wireInstTemp = $design_canvas->createLine(
+#                                                @wireRectCoords,
+#                                                -fill => 'green',
+#                                                -arrow => 'last',
+#                                                -arrowshape => [7, 0, 8],
+#                                                -width => 5,
+#                                                  );
+#      $wireConn = 1;
+#      $wireName = $tagList[1]; ## if connection from a net   
+   }else { }
+});
+$design_canvas->CanvasBind('<B1-Motion>' => sub {
+     @wireRectCoords[2,3] = ($design_canvas->canvasx($Tk::event->x),
+                             $design_canvas->canvasy($Tk::event->y));
+     $design_canvas->coords($wireInstTemp => @wireRectCoords);
+});
+$design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+     my $x = $design_canvas->canvasx($Tk::event->x),
+     my $y = $design_canvas->canvasy($Tk::event->y);
+     my $overlapllx = $x - 1 ;
+     my $overlaplly = $y - 1 ;
+     my $overlapurx = $x + 1 ;
+     my $overlapury = $y + 1 ;
+     my @tagList = ();
+     my @id = $design_canvas->find("overlapping", $overlapllx, $overlaplly, $overlapurx, $overlapury);
+     if($#id >=1){
+        @tagList = $design_canvas->gettags($id[-2]);
+     }else{return;}
+     $wire_urx = 0; $wire_ury = 0;
+     my @wireCoordInMicron = ();
+     if(($tagList[0] eq "TOP_MODULE") && ($tagList[1] ne $sinkMod) && ($tagList[0] ne "TST_POWER") && ($tagList[0] ne "TST_GROUND")){
+        #if($instConn == 1 || $wireConn == 1){
+        if($instConn == 1){
+           if((abs($x - $wire_llx)) >= (abs($y - $wire_lly))){
+              $wire_urx = $x; $wire_ury = $wire_lly;
+           }else {
+              $wire_urx = $wire_llx; $wire_ury = $y;
+           }
+           @wireRectCoords = ($wire_llx,$wire_lly,$wire_urx,$wire_ury); 
+           for(my $i=0; $i<=$#wireRectCoords; $i=$i+2){
+               my @coord_mic = dbfGuiGui2Micron($wireRectCoords[$i],$wireRectCoords[$i+1]);
+               push(@wireCoordInMicron,@coord_mic);
+           }
+           my $wireCoords_str = join ",", @wireCoordInMicron;
+           $design_canvas->delete($wireInstTemp);
+           if($wire_llx == 0 || $wire_lly == 0 || $wire_urx == 0 || $wire_ury == 0){return;}
+           $wireInst = $design_canvas->createLine(
+                                                @wireRectCoords,
+                                                -fill => 'green',
+                                                -arrow => 'last',
+                                                -arrowshape => [7, 0, 8],
+                                                -width => 5,
+                                                 );
+         if($netPrefix eq "" && $netWidth ne ""){
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -tieLo $sinkMod -wireWidth $netWidth -netCoords $wireCoords_str\n";
+         }elsif($netWidth eq "" && $netPrefix ne ""){
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -tieLo $sinkMod -prefix $netPrefix -netCoords $wireCoords_str\n";
+         }elsif($netWidth eq "" && $netPrefix eq ""){
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -tieLo $sinkMod -netCoords $wireCoords_str\n";
+         }else{
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -tieLo $sinkMod -prefix $netPrefix -wireWidth $netWidth -netCoords $wireCoords_str\n";
+         }
+         my $netName = &createPseudoNet("-parentModule","$TOP_MODULE","-type","bus","-tieLo","$sinkMod", "-prefix", $netPrefix, "-wireWidth", $netWidth,"-netCoords",$wireCoords_str);
+            $design_canvas->itemconfigure($wireInst, -tags =>'TST_GROUND');
+            $design_canvas->addtag($netName , "withtag", $wireInst);
+        }else {$design_canvas->delete($wireInstTemp);}
+     }else{$design_canvas->delete($wireInstTemp);}
+($instConn,$wireConn) = (0, 0, 0);
+});
+}#sub dbTstGUICreateTieLow
+
+##################################### Subroutine to create tieHitieLo connection via bus ###########################
+sub dbTstGUICreateTieLowHi{
+&dbfGuiResetCanvasBind;
+my $netPrefix = $_[0];
+my $netWidth = $_[1];
+
+$design_canvas->CanvasBind('<Shift-Button-1>' => sub {
+     my $x = $design_canvas->canvasx($Tk::event->x);
+     my $y = $design_canvas->canvasy($Tk::event->y);
+     my @id      = $design_canvas->find(qw/withtag current/);
+     my @tagList = $design_canvas->gettags($id[0]);
+     my @topCoords = $design_canvas->coords("TOP_MODULE"); 
+     if($x>$topCoords[0] && $x<$topCoords[2] && $y >$topCoords[1] && $y<$topCoords[3] && $tagList[0] eq "TOP_MODULE"){}
+     else{&popup_selectPin_forTieLoTieHi_BusConn($x, $y, \@tagList,$netPrefix,$netWidth);}
+   });
+}#sub dbTstGUICreateTieLowHi
+
+##################################### Subroutine to create Bump connection  ########################################
+sub dbTstGUICreateBump{
+my $netPrefix = $_[0];
+my $netWidth = $_[1];
+
+my @wireRectCoords = ();
+my $wireInstTemp;
+my ($canx1,$cany1) =(0,0);
+
+$design_canvas->CanvasBind('<1>' => sub {
+     my $x = $design_canvas->canvasx($Tk::event->x);
+     my $y = $design_canvas->canvasy($Tk::event->y);
+     $canx1 = $x; $cany1 = $y;
+     @wireRectCoords = ($x, $y, $x, $y);
+     $wireInstTemp = $design_canvas->createLine(
+                                                @wireRectCoords,
+                                                -fill => 'pink',
+                                                -arrow => 'last',
+                                                -width => 3,
+                                                 );
+   });
+        
+$design_canvas->CanvasBind('<B1-Motion>' => sub {
+     @wireRectCoords[2,3] = ($design_canvas->canvasx($Tk::event->x),
+                             $design_canvas->canvasy($Tk::event->y));
+     $design_canvas->coords($wireInstTemp => @wireRectCoords);
+   });
+$design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+     my $x = $design_canvas->canvasx($Tk::event->x),
+     my $y = $design_canvas->canvasy($Tk::event->y);
+     my @wireCoordInMicron = ();
+     my @topCoords = $design_canvas->coords("TOP_MODULE"); 
+     if((($x < $topCoords[0]) || ($x > $topCoords[2]) || ($y < $topCoords[1]) || ($y > $topCoords[3])) && (($canx1 > $topCoords[0]) || ($canx1 < $topCoords[2]) || ($cany1 > $topCoords[1]) || ($cany1 < $topCoords[3]))){
+       $srcMod = "BUMP"; 
+       $sinkMod = "PIN";  
+       $design_canvas->delete($wireInstTemp);
+
+       my @bumpNetCoords = ($canx1-5,$cany1-5,$canx1+5,$cany1+5); 
+       for(my $i=0; $i<=$#bumpNetCoords; $i=$i+2){
+           my @coord_mic = dbfGuiGui2Micron($bumpNetCoords[$i],$bumpNetCoords[$i+1]);
+           push(@wireCoordInMicron,@coord_mic);
+       }
+       my $wireCoords_str = join ",", @wireCoordInMicron;
+
+       my $wireInst = $design_canvas->createOval(@bumpNetCoords, -fill=>"pink", -outline=>"pink", -stipple=>"gray12");
+
+         if($netPrefix eq "" && $netWidth ne ""){
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bump -source $srcMod -sink $sinkMod -wireWidth $netWidth -netCoords $wireCoords_str\n";
+         }elsif($netWidth eq "" && $netPrefix ne ""){
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bump -source $srcMod -sink $sinkMod -prefix $netPrefix -netCoords $wireCoords_str\n";
+         }elsif($netWidth eq "" && $netPrefix eq ""){
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bump -source $srcMod -sink $sinkMod -netCoords $wireCoords_str\n";
+         }else{
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bump -source $srcMod -sink $sinkMod -prefix $netPrefix -wireWidth $netWidth -netCoords $wireCoords_str\n";
+         }
+
+         my $netName = &createPseudoNet("-parentModule","$TOP_MODULE","-type","bump","-source", "$srcMod", "-sink","$sinkMod", "-prefix", $netPrefix, "-wireWidth", $netWidth,"-netCoords",$wireCoords_str);
+            $design_canvas->itemconfigure($wireInst, -tags =>'TST_BUMP');
+            $design_canvas->addtag($netName , "withtag", $wireInst);
+
+     }elsif((($x > $topCoords[0]) || ($x < $topCoords[2]) || ($y > $topCoords[1]) || ($y < $topCoords[3])) && (($canx1 < $topCoords[0]) || ($canx1 > $topCoords[2]) || ($cany1 < $topCoords[1]) || ($cany1 > $topCoords[3]))){
+       $srcMod = "PIN"; 
+       $sinkMod = "BUMP";  
+       $design_canvas->delete($wireInstTemp);
+
+       my @bumpNetCoords = ($x-5,$y-5,$x+5,$y+5); 
+       for(my $i=0; $i<=$#bumpNetCoords; $i=$i+2){
+           my @coord_mic = dbfGuiGui2Micron($bumpNetCoords[$i],$bumpNetCoords[$i+1]);
+           push(@wireCoordInMicron,@coord_mic);
+       }
+       my $wireCoords_str = join ",", @wireCoordInMicron;
+       my $wireInst = $design_canvas->createOval(@bumpNetCoords, -fill=>"pink", -outline=>"pink", -stipple=>"gray12");
+
+         if($netPrefix eq "" && $netWidth ne ""){
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bump -source $srcMod -sink $sinkMod -wireWidth $netWidth -netCoords $wireCoords_str\n";
+         }elsif($netWidth eq "" && $netPrefix ne ""){
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bump -source $srcMod -sink $sinkMod -prefix $netPrefix -netCoords $wireCoords_str\n";
+         }elsif($netWidth eq "" && $netPrefix eq ""){
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bump -source $srcMod -sink $sinkMod -netCoords $wireCoords_str\n";
+         }else{
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bump -source $srcMod -sink $sinkMod -prefix $netPrefix -wireWidth $netWidth -netCoords $wireCoords_str\n";
+         }
+
+         my $netName = &createPseudoNet("-parentModule","$TOP_MODULE","-type","bump","-source", "$srcMod", "-sink","$sinkMod", "-prefix", $netPrefix, "-wireWidth", $netWidth,"-netCoords",$wireCoords_str);
+            $design_canvas->itemconfigure($wireInst, -tags =>'TST_BUMP');
+            $design_canvas->addtag($netName , "withtag", $wireInst);
+     }else{$design_canvas->delete($wireInstTemp);}
+   });
+
+
+
+}#sub dbTstGUICreateBump
+
+####################################################################################################################
+sub dbTstGUICreateTopModule {
+        $design_canvas->CanvasBind('<1>' => sub {
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+
+            @moduleRectCoords = ($x, $y, $x, $y);
+
+            $moduleInst = $design_canvas->createRectangle(
+                                            @moduleRectCoords,
+                                            -outline => 'yellow',
+                                            -fill => 'black',
+                                            -stipple => 'gray12',
+                                            );
+        });
+                $design_canvas->CanvasBind('<B1-Motion>' => sub {
+            @moduleRectCoords[2,3] = ($design_canvas->canvasx($Tk::event->x),
+                                    $design_canvas->canvasy($Tk::event->y));
+            $design_canvas->coords($moduleInst => @moduleRectCoords);
+        });
+            $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+        &dbfTstgenCreateTopModule(TOP);
+            $design_canvas->itemconfigure($moduleInst, -tags =>'TOP_MODULE' );
+            $design_canvas->addtag('TOP' , "withtag", $moduleInst);
+
+        });
+}#sub dbTstGUICreateTopModule
+
+sub dbfTstGUIQueryModule {
+        $design_canvas->CanvasBind('<1>' => sub {
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+            my $object = $design_canvas->find('closest', $x, $y);
+            print "$object\n";
+        });
+}#sub dbfTstGUIQueryModule
+
+sub dbfTstGUICreatePlacementBlockage {
+my @blockageRectCoords = ();
+        $design_canvas->CanvasBind('<1>' => sub {
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+
+            @blockageRectCoords = ($x, $y, $x, $y);
+
+            $blockageRect = $design_canvas->createRectangle(
+                                            @blockageRectCoords,
+                                            -outline => 'grey',
+                                            -fill => 'grey',
+                                            -stipple => 'gray12',
+                                            );
+        });
+                $design_canvas->CanvasBind('<B1-Motion>' => sub {
+            @blockageRectCoords[2,3] = ($design_canvas->canvasx($Tk::event->x),
+                                    $design_canvas->canvasy($Tk::event->y));
+
+            $design_canvas->coords($blockageRect => @blockageRectCoords);
+        });
+            $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+            my @ll = dbfGuiGui2Micron($blockageRectCoords[0],$blockageRectCoords[1]);
+            my @ur = dbfGuiGui2Micron($blockageRectCoords[2],$blockageRectCoords[3]);
+            my $blkgName = &createPseudoPlacementBlockage("-rect",$ll[0],$ll[1],$ur[0],$ur[1]);
+            $design_canvas->itemconfigure($blockageRect, -tags =>'TST_PBLKG' );
+            $design_canvas->addtag($blkgName , "withtag", $blockageRect);
+
+        });
+}#sub dbfTstGUICreatePlacementBlockage
+
+sub dbfTstGUICreateRoutingBlockage {
+my @blockageRectCoords = ();
+my $layerName = $_[0];
+my $color = "yellow4";
+   $color = $PTDB{$layerName}->dbTechGetLayerColor if(exists $PTDB{$layerName});
+        $design_canvas->CanvasBind('<1>' => sub {
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+
+            @blockageRectCoords = ($x, $y, $x, $y);
+
+            $blockageRect = $design_canvas->createRectangle(
+                                            @blockageRectCoords,
+                                            -outline =>$color,
+                                            -fill =>$color ,
+                                            -stipple => 'gray12',
+                                            );
+        });
+        $design_canvas->CanvasBind('<B1-Motion>' => sub {
+            @blockageRectCoords[2,3] = ($design_canvas->canvasx($Tk::event->x),
+                                    $design_canvas->canvasy($Tk::event->y));
+
+            $design_canvas->coords($blockageRect => @blockageRectCoords);
+        });
+        $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+            my @ll = dbfGuiGui2Micron($blockageRectCoords[0],$blockageRectCoords[1]);
+            my @ur = dbfGuiGui2Micron($blockageRectCoords[2],$blockageRectCoords[3]);
+            my $blkgName = &createPseudoRoutingBlockage("-rect",$ll[0],$ll[1],$ur[0],$ur[1],"-layer", $layerName);
+            $design_canvas->itemconfigure($blockageRect, -tags =>'TST_RBLKG' );
+            $design_canvas->addtag($blkgName , "withtag", $blockageRect);
+        });
+}#sub dbfTstGUICreateRoutingBlockage
+
+sub dbfTstGUIGenerateDesign {
+
+foreach $moduleName (keys %{PSEUDO_MODULE_ALREADY} ) {
+my $incount = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetInCount;
+my $outcount = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetOutCount;
+my $ffcount = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetSeqComps;
+my $cluster = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetClusterCount;
+my $RC = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetRoutingComplexity;
+my $TC = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetTimingComplexity;
+my $mod_type = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetType;
+open(WRITE,">netlist.dat");
+print WRITE "INPUTS $incount\n";
+print WRITE "OUTPUTS $outcount\n";
+print WRITE "FLOPS $ffcount\n";
+print WRITE "CLUSTERSIZE $cluster\n";
+print WRITE "TIMINGCOMPLEX $TC\n";
+print WRITE "PHYSICALCOMPLEX $RC\n";
+if ($mod_type eq "ILM") {print WRITE "ALGO 200\n";} else { print WRITE "ALGO 2\n"; }
+print WRITE "VERILOGFILENAME $moduleName\n";
+print WRITE "TOP_MODULE $moduleName\n";
+close(WRITE);
+&generate_netlist("-spec","netlist.dat"),
+                                                     }#foreach
+}#sub dbfTstGUIGenerateDesign
+
+sub dbfQaGUIReadRunScript {
+####### create some tags #####
+$script_tab1->tagConfigure("comment_text", -foreground => "blue");
+$script_tab1->tagConfigure("source_text", -foreground => "green");
+$script_tab1->tagConfigure("command_text", -foreground => "black");
+$script_tab1->tagConfigure("loop_text", -foreground => "red");
+
+my $start_loop = 0;
+my $types = [ ['Tcl files', '.tcl'],
+              ['All Files',   '*'],];
+my $open = $top->getOpenFile(-filetypes => $types,
+                              -defaultextension => '.tcl');
+
+my @file = ();
+$EXT_FLOW{1} = ExternalFlowDB::new();
+open(READ,"$open");
+while(<READ>) {
+chomp();
+push(@file,$_);
+##### setting the background color #####
+if ($start_loop == 1) {
+      $script_tab1->insert('end', "$_", 'loop_text');
+      $script_tab1->insert('end', "\n");
+                      }
+if($_ =~ /^\s*source/) {
+      $script_tab1->insert('end', "$_", 'source_text');
+      $script_tab1->insert('end', "\n");
+                       }
+elsif($_ =~ /^\#/) {
+      $script_tab1->insert('end', "$_", 'comment_text');
+      $script_tab1->insert('end', "\n");
+                   }
+elsif($_ =~ /{/ && $_ =~/}/) { 
+      $script_tab1->insert('end', "$_", 'loop_text');
+      $script_tab1->insert('end', "\n");
+                   }
+elsif($_ =~ /{/) { 
+      $script_tab1->insert('end', "$_", 'loop_text');
+      $script_tab1->insert('end', "\n");
+      $start_loop = 1;
+                   }
+elsif($_ =~ /}/) { 
+      $start_loop = 0;
+                   }
+elsif( $start_loop == 0) {
+      $script_tab1->insert('end', "$_", 'command_text');
+      $script_tab1->insert('end', "\n");
+     }
+              }#while
+$EXT_FLOW{1}->dbmExternalFlowDBSetScript(@file);
+}#sub dbfQaGUIReadRunScript
+
+
+sub dbfQaGUIModifyRunScript {
+$selected = $script_tab1->getSelected();
+$EXT_FLOW{1}->dbmExternalFlowDBSetSelected($selected);
+
+$script_tab2->tagConfigure("comment_text", -foreground => "blue");
+$script_tab2->tagConfigure("source_text", -foreground => "green");
+$script_tab2->tagConfigure("command_text", -foreground => "black");
+$script_tab2->tagConfigure("loop_text", -foreground => "red");
+my @newScr = &generate_script;
+my $start_loop = 0;
+      $script_tab2->delete('1.0','end');
+foreach ( @newScr ) {
+if ($start_loop == 1) {
+      $script_tab2->insert('end', "$_", 'loop_text');
+      $script_tab2->insert('end', "\n");
+                      }
+if($_ =~ /^\s*source/) {
+      $script_tab2->insert('end', "$_", 'source_text');
+      $script_tab2->insert('end', "\n");
+                       }
+elsif($_ =~ /^\#/) {
+      $script_tab2->insert('end', "$_", 'comment_text');
+      $script_tab2->insert('end', "\n");
+                   }
+elsif($_ =~ /{/ && $_ =~/}/) { 
+      $script_tab2->insert('end', "$_", 'loop_text');
+      $script_tab2->insert('end', "\n");
+                   }
+elsif($_ =~ /{/) { 
+      $script_tab2->insert('end', "$_", 'loop_text');
+      $script_tab2->insert('end', "\n");
+      $start_loop = 1;
+                   }
+elsif($_ =~ /}/) { 
+      $start_loop = 0;
+                   }
+elsif( $start_loop == 0) {
+      $script_tab2->insert('end', "$_", 'command_text');
+      $script_tab2->insert('end', "\n");
+     }
+                             }# foreach
+}#sub dbfQaGUIModifyRunScript
+
+sub call_dbTstGUICreateTopModule {
+my $moduleName = shift @_;
+my $width = shift @_;
+my $height = shift @_;
+print "DBG-INFO creating $moduleName with $width , $height\n";
+print "#<CMD> createPseudoTopModule -top $moduleName -H $height -W $width\n";
+&createPseudoTopModule("-top", "$moduleName", "-H", $height, "-W", $width);
+my @ll = (0,0);
+my @ur = ($width,$height);
+my @guill = dbfGuiMicron2Gui(@ll);
+my @guiur = dbfGuiMicron2Gui(@ur);
+my @moduleRectCoords = (@guill,@guiur);
+print "DBG-INFO : $moduleRectCoords[0] $moduleRectCoords[1] $moduleRectCoords[2] $moduleRectCoords[3]\n";
+my $moduleInst = $design_canvas->createRectangle(
+                @moduleRectCoords,
+                -outline => 'yellow',
+                -fill => 'black',
+                -stipple => 'gray12',
+                                 );
+            $design_canvas->itemconfigure($moduleInst, -tags =>'TOP_MODULE' );
+            $design_canvas->addtag($moduleName, "withtag", $moduleInst);
+#--------- Added by Aditya ---------------------#
+            &Set_TopModule_attributes("-parent", $TOP_MODULE, "-topName", $moduleName, "-clk", "", "-rst", "");
+
+}#sub call_dbTstGUICreateTopModule
+
+
+sub dbfGuiMicron2Gui {
+my $dbX = $_[0];
+my $dbY = $_[1];
+my $mufx = $GLOBAL->dbGlobalGetMicronFactor;
+$guiX = 20 + ($dbX)*$mufx;
+$guiY = 520 - ($dbY)*$mufx;
+return($guiX,$guiY);
+}#sub dbfGuiMicron2Gui
+
+sub dbfGuiGui2Micron {
+my $dbX = $_[0];
+my $dbY = $_[1];
+my $mufx = $GLOBAL->dbGlobalGetMicronFactor;
+$micX = sprintf("%.3f",($dbX -20)/$mufx) ;
+$micY = sprintf("%.3f",(520 - $dbY)/$mufx);
+return($micX,$micY);
+}#sub dbfGuiGui2Micron
+
+sub dbfGuiPopupProp {
+my $moduleName = $_[0];
+my $instName = $_[1];
+$Q_MODULE = $moduleName;
+my $x = $_[2];
+my $y = $_[3];
+        if ( exists $PSEUDO_MODULE_ALREADY{$Q_MODULE} ) {
+             @bbox = $PSEUDO_MODULE_ALREADY{$Q_MODULE}->dbaTstgenGetSize;
+             $qmod_coords_str = $bbox[0].",".$bbox[1].",".$bbox[2].",".$bbox[3];
+             $qmod_ins = $PSEUDO_MODULE_ALREADY{$Q_MODULE}->dbaTstgenGetInCount;
+             $qmod_outs = $PSEUDO_MODULE_ALREADY{$Q_MODULE}->dbaTstgenGetOutCount;
+             $qmod_seq = $PSEUDO_MODULE_ALREADY{$Q_MODULE}->dbaTstgenGetSeqComps;
+             $qmod_comb = $PSEUDO_MODULE_ALREADY{$Q_MODULE}->dbaTstgenGetCombComps;
+             $qmod_total = $PSEUDO_MODULE_ALREADY{$Q_MODULE}->dbaTstgenGetTotalComps;
+             $qmod_tc = $PSEUDO_MODULE_ALREADY{$Q_MODULE}->dbaTstgenGetTimingComplexity;
+             $qmod_rc = $PSEUDO_MODULE_ALREADY{$Q_MODULE}->dbaTstgenGetRoutingComplexity;
+             $qmod_pc = $PSEUDO_MODULE_ALREADY{$Q_MODULE}->dbaTstgenGetTimingComplexity;
+             $qmod_pwrc = $PSEUDO_MODULE_ALREADY{$Q_MODULE}->dbaTstgenGetTimingComplexity;
+             $qmod_vd = $PSEUDO_MODULE_ALREADY{$Q_MODULE}->dbaTstgenGetVoltageDomain;
+             $qmod_type = $PSEUDO_MODULE_ALREADY{$Q_MODULE}->dbaTstgenGetType;
+             $qmod_class = $PSEUDO_MODULE_ALREADY{$Q_MODULE}->dbaTstgenGetClass;
+             $qmod_module = $Q_MODULE;
+        }elsif(exists $PLDB{$Q_MODULE}){
+             $qmod_class = $DLDB{$Q_MODULE}->dbDldbGetClass if(exists $DLDB{$Q_MODULE});
+        }  
+             
+my $modulePropGui = MainWindow->new();
+   $modulePropGui->title ($moduleName);
+   $modulePropGui->Post($x,$y);
+my $areaFrame   = $modulePropGui->Frame(-relief=>"raised", -borderwidth=>2)->pack(-side=>'top');
+my $mainFrame = $modulePropGui->Frame(-relief=>"raised", -borderwidth=>2)->pack(-side=>'top');
+my $buttonFrame = $modulePropGui->Frame(-relief=>"raised", -borderwidth=>2)->pack(-side=>'top');
+#-----------------------------------------------------------#
+my $qmod_type= "Select";
+my $type_dropdown = $mainFrame->BrowseEntry(-label => "Type  ",-variable => \$qmod_type,)->pack(-side=>'top');
+foreach (qw/GUIDE FENCE REGION ILM/){
+                                   $type_dropdown->insert('end',$_);
+                                     }#foreach
+#------------------------------------------------------------#
+my $status = "";
+if(exists $PSEUDO_MODULE_ALREADY{$Q_MODULE}){
+   if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$instName}){
+      $status = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$instName}->dbPimDBGetInstStatus;
+   }
+}elsif(exists $PLDB{$Q_MODULE}){
+   if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$instName}){
+      $status = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$instName}->dbPimDBGetInstStatus;
+   }
+}
+
+my $qmod_status = $status;
+my $status_dropdown = $mainFrame->BrowseEntry(-label => "Status",-variable => \$qmod_status,)->pack(-side=>'top');
+foreach (qw/UNPLACED PLACED FIRM/){
+                                   $status_dropdown->insert('end',$_);
+                                     }#foreach
+#------------------------------------------------------------#
+my %MOD_CLASS_HASH = (0 => "Soft", 1 => "Region", 2 => "Firm", 3 => "custom RTL", 4 => "IP", 5 => "Arithmatic", 6 => "Boolean", 7 => "Register", 8 => "Parametric RTL", 9 => "STD cell", 10 => "HardMacro", 11 => "blackbox" ); 
+my @class_var = ();
+my $qmod_class_var = $MOD_CLASS_HASH{$qmod_class};
+   push(@class_var,$qmod_class_var); 
+foreach $key (keys %MOD_CLASS_HASH){
+     my $value = $MOD_CLASS_HASH{$key};
+        if($value eq $qmod_class_var){ }
+      else{push(@class_var,$value);}
+}     
+my $class_dropdown = $mainFrame->BrowseEntry(-label => "Class ",-variable => \$qmod_class_var,)->pack(-side=>'top');
+foreach (@class_var){
+                      $class_dropdown->insert('end',$_);
+                       }#foreach
+#-----------------------------------------------------------#
+$mainFrame->Entry(-textvariable => \$qmod_vd,-borderwidth =>0, -relief => 'flat', -font => "cuorier 8 normal")->pack(-side=>"bottom", -anchor=>'w');
+$mainFrame->Entry(-textvariable => \$qmod_total,-borderwidth =>0, -relief => 'flat', -font => "cuorier 8 normal")->pack(-side=>"bottom", -anchor=>'w');
+$mainFrame->Entry(-textvariable => \$qmod_outs,-borderwidth =>0, -relief => 'flat', -font => "cuorier 8 normal")->pack(-side=>"bottom", -anchor=>'w');
+$mainFrame->Entry(-textvariable => \$qmod_ins,-borderwidth =>0, -relief => 'flat', -font => "cuorier 8 normal")->pack(-side=>"bottom", -anchor=>'w');
+$mainFrame->Entry(-textvariable => \$qmods_coords_str,-borderwidth =>0, -relief => 'flat', -font => "cuorier 8 normal")->pack(-side=>"bottom", -anchor=>'w');
+$mainFrame->Entry(-textvariable => \$qmod_module,-borderwidth =>0, -relief => 'flat', -font => "cuorier 8 normal")->pack(-side=>"bottom", -anchor=>'w');
+$mainFrame->Scale(-orient => 'horizontal', -showvalue => 1, -width => 5, -relief => 'flat', -sliderlength => 10,
+                  -troughcolor => 'red', -label => "TC", -variable => \$qmod_tc, -to => 10,
+                  -borderwidth => 0,
+                 )->pack(-side=>'top');
+$mainFrame->Scale(-orient => 'horizontal', -showvalue => 1, -width => 5, -relief => 'flat', -sliderlength => 10,
+                  -troughcolor => 'blue', -label => "RC", -variable => \$qmod_rc, -to => 10,
+                  -borderwidth => 0,
+                 )->pack(-side=>'top');
+$mainFrame->Scale(-orient => 'horizontal', -showvalue => 1, -width => 5, -relief => 'flat', -sliderlength => 10,
+                  -troughcolor => 'green', -label => "PC", -variable => \$qmod_pc, -to => 10,
+                  -borderwidth => 0,
+                 )->pack(-side=>'top');
+$mainFrame->Scale(-orient => 'horizontal', -showvalue => 1, -width => 5, -relief => 'flat', -sliderlength => 10,
+                  -troughcolor => 'black', -label => "PwrC", -variable => \$qmod_pwrc, -to => 10,
+                  -borderwidth => 0,
+                 )->pack(-side=>'top');
+
+#-----------------------------------------------------------#
+# if the class of the module is one of type RTL's which can be text edited #
+# we will add a edit button
+if(exists $PSEUDO_MODULE_ALREADY{$Q_MODULE}){
+   if($PSEUDO_MODULE_ALREADY{$Q_MODULE}->dbaTstgenGetClass == 8 ) {  
+      my $editButton = $buttonFrame->Button(-text=>'edit-RTL', -command=>sub {
+                                                                 print "INFO : Editing the module $Q_MODULE in the rtl-edit tab\n";
+                                                                 &rtledit_module('-module', $Q_MODULE);
+                                                                 $modulePropGui->destroy();
+                                                                 })->pack(-side => 'right');
+                                                                 }# if module is of class "Parametric RTL"
+}
+my $applyButton = $buttonFrame->Button(-text=>'OK', -command=>sub {
+           if(exists $PSEUDO_MODULE_ALREADY{$Q_MODULE}){  
+              $PSEUDO_MODULE_ALREADY{$Q_MODULE}->dbaTstgenSetInCount($qmod_ins);
+              $PSEUDO_MODULE_ALREADY{$Q_MODULE}->dbaTstgenSetOutCount($qmod_outs);
+              $PSEUDO_MODULE_ALREADY{$Q_MODULE}->dbaTstgenSetSeqComps($qmod_seq);
+              $PSEUDO_MODULE_ALREADY{$Q_MODULE}->dbaTstgenSetCombComps($qmod_comb);
+              $PSEUDO_MODULE_ALREADY{$Q_MODULE}->dbaTstgenSetTotalComps($qmod_total);
+              $PSEUDO_MODULE_ALREADY{$Q_MODULE}->dbaTstgenSetTimingComplexity($qmod_tc);
+              $PSEUDO_MODULE_ALREADY{$Q_MODULE}->dbaTstgenSetRoutingComplexity($qmod_rc);
+              $PSEUDO_MODULE_ALREADY{$Q_MODULE}->dbaTstgenSetPlacementComplexity($qmod_pc);
+              $PSEUDO_MODULE_ALREADY{$Q_MODULE}->dbaTstgenSetPowerComplexity($qmod_pwrc);
+              $PSEUDO_MODULE_ALREADY{$Q_MODULE}->dbaTstgenSetVoltageDomain($qmod_vd);
+              $PSEUDO_MODULE_ALREADY{$Q_MODULE}->dbaTstgenSetType($qmod_type);
+           }  
+              $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$instName}->dbPimDBSetInstStatus($qmod_status);
+              my  %RMOD_CLASS_HASH = reverse %MOD_CLASS_HASH;         
+              my $qmod_set_class = $RMOD_CLASS_HASH{$qmod_class_var};
+              $PSEUDO_MODULE_ALREADY{$Q_MODULE}->dbaTstgenSetClass($qmod_set_class)if(exists $PSEUDO_MODULE_ALREADY{$Q_MODULE});
+              #$PLDB{$Q_MODULE}->dbMdbSetClass($qmod_set_class)if(exists $PLDB{$Q_MODULE});
+              $modulePropGui->destroy();
+                                                              })->pack(-side => 'left');
+
+my $cancelButton = $buttonFrame->Button(-text=>'Cancel', -command=>sub {
+              $modulePropGui->destroy();
+                                                                 })->pack(-side => 'right');
+}#sub dbfGuiPopupProp
+#--------------------------------------------------------------------------------------------#
+
+sub dbfTstGUICookieCut {
+        $design_canvas->CanvasBind('<1>' => sub {
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+
+            @CookieCutCoords = ($x, $y, $x, $y);
+
+            $CookieCutBBox = $design_canvas->createRectangle(
+                                            @CookieCutCoords,
+                                            -outline => 'white',
+                                            );
+        });
+                $design_canvas->CanvasBind('<B1-Motion>' => sub {
+            @CookieCutCoords[2,3] = ($design_canvas->canvasx($Tk::event->x),
+                                    $design_canvas->canvasy($Tk::event->y));
+            $design_canvas->coords($CookieCutBBox => @CookieCutCoords);
+        });
+            $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+            @ll = dbfGuiGui2Micron($CookieCutCoords[0],$CookieCutCoords[1]);
+            @ur = dbfGuiGui2Micron($CookieCutCoords[2],$CookieCutCoords[3]);
+#            &call_CookieCutFunc("-bbox", "{$ll[0],$ur[1],$ur[0],$ll[1]}");
+#            print "$ll[0],$ur[1],$ur[0],$ll[1]}\n";
+#            &extractDesign("-bbox", "{$ll[0],$ur[1],$ur[0],$ll[1]}");
+        });
+return($ll[0],$ur[1],$ur[0],$ll[1]);
+}# sub dbfTstGUICookieCut
+
+sub call_popup_dbfTstGUICookieCut {
+my $VAR1 = 0;
+my $VAR2 = 0;
+my $VAR3 = 0;
+my $llx = 0; my $lly = 0; my $urx = 0; my $ury = 0;
+my $bbox = $llx."\,".$lly."\,".$urx."\,".$ury;
+$popupgui = MainWindow->new();
+$popupgui->title ("Cookie-cut");
+my $areaFrame = $popupgui->Frame(-relief=>"raised", -borderwidth=>2)->pack(-side=>'top');
+my $optionFrame = $popupgui->Frame(-relief=>"raised", -borderwidth=>2)->pack(-side=>'top');
+my $buttonFrame = $popupgui->Frame(-relief=>"raised", -borderwidth=>2)->pack(-side=>'top');
+#----------------------------------------------------------------------#
+$areaButton = $areaFrame->Button(-text=>'Area', -command=>sub {
+        $design_canvas->CanvasBind('<1>' => sub {
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+
+            @CookieCutCoords = ($x, $y, $x, $y);
+
+            $CookieCutBBox = $design_canvas->createRectangle(
+                                            @CookieCutCoords,
+                                            -outline => 'white',
+                                            );
+        });
+                $design_canvas->CanvasBind('<B1-Motion>' => sub {
+            @CookieCutCoords[2,3] = ($design_canvas->canvasx($Tk::event->x),
+                                    $design_canvas->canvasy($Tk::event->y));
+            $design_canvas->coords($CookieCutBBox => @CookieCutCoords);
+        });
+            $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+            @ll = dbfGuiGui2Micron($CookieCutCoords[0],$CookieCutCoords[1]);
+            @ur = dbfGuiGui2Micron($CookieCutCoords[2],$CookieCutCoords[3]);
+            $llx = $ll[0]; $lly = $ur[1]; $urx = $ur[0]; $ury = $ll[1];
+            $bbox = $llx."\,".$lly."\,".$urx."\,".$ury;
+        });
+                                                              })->pack(-side => 'left');
+$areaEntry = $areaFrame->Entry(-textvariable => \$bbox)->pack(-side => 'left');
+
+#----------------------------------------------------------------------#
+$optionFrame->Checkbutton(-text=>'keep orig die', -variable => \$VAR1 )->pack(-side => 'left', -anchor =>'w', -fill=>'x');
+$optionFrame->Checkbutton(-text=>'add plc blkg',  -variable => \$VAR2 )->pack(-side => 'left', -anchor =>'w', -fill=>'x');
+$optionFrame->Checkbutton(-text=>'add rt blkg',   -variable => \$VAR3 )->pack(-side => 'left', -anchor =>'w', -fill=>'x');
+#----------------------------------------------------------------------#
+$applyButton = $buttonFrame->Button(-text=>'Apply', -command=>sub {
+              &extractDesign("-bbox", "{$ll[0],$ur[1],$ur[0],$ll[1]}", "-keepOrigDie", "-addPlcBlkg", "-addRtBlkg");
+             # &write_def_cookie("-output", "test4");
+                                                              })->pack(-side => 'left');
+
+$cancelButton = $buttonFrame->Button(-text=>'Cancel', -command=>sub {
+              $popupgui->destroy();
+                                                                 })->pack(-side => 'right');
+}#sub call_popup_dbfTstGUICookieCut
+
+
+sub call_popup_dbfGUIFractals {
+my $VAR1 = 0;
+my $VAR2 = 0;
+my $VAR3 = 0;
+my $VAR4 = 0;
+$popupgui = MainWindow->new();
+$popupgui->title ("nFractals");
+my $optionFrame = $popupgui->Frame(-relief=>"raised", -borderwidth=>2)->pack(-side=>'top');
+my $buttonFrame = $popupgui->Frame(-relief=>"raised", -borderwidth=>2)->pack(-side=>'top');
+#----------------------------------------------------------------------#
+$optionFrame->Checkbutton(-text=>'timing', -variable => \$VAR1 )->pack(-side => 'left', -anchor =>'w', -fill=>'x');
+$optionFrame->Checkbutton(-text=>'placement',  -variable => \$VAR2 )->pack(-side => 'left', -anchor =>'w', -fill=>'x');
+$optionFrame->Checkbutton(-text=>'routability',   -variable => \$VAR3 )->pack(-side => 'left', -anchor =>'w', -fill=>'x');
+$optionFrame->Checkbutton(-text=>'power',   -variable => \$VAR4 )->pack(-side => 'left', -anchor =>'w', -fill=>'x');
+#----------------------------------------------------------------------#
+$ApplyButton = $buttonFrame->Button(-text=>'Apply', -command=>sub {
+              if ($VAR1 == 1) {
+              &write_matlab("-type", "r2r") ;
+              &plot_analysis_graph("-type" , "cell");
+                              }
+                                                              })->pack(-side => 'left');
+
+$CancelButton = $buttonFrame->Button(-text=>'Cancel', -command=>sub {
+                 $popupgui->destroy();
+                                                                 })->pack(-side => 'right');
+}#sub call_popup_dbfGUIFractals
+
+######################################################################################################################################
+################################ subroutine to display the Instance Name via keyBind {t+ LMB} ########################################
+######################################################################################################################################
+sub display_ProtoEleText {
+my $canvas = $_[0];
+$canvas->focusForce;
+$canvas->CanvasBind('<t><1>', => sub{
+               my $x = $canvas->canvasx($Tk::event->x);
+               my $y = $canvas->canvasy($Tk::event->y);
+               my @id      = $canvas->find(qw/withtag current/);
+               my @tagList = $canvas->gettags($id[0]);
+               if($tagList[0] ne "TOP_MODULE" && $tagList[0] ne "" && $tagList[0] ne "current"){
+                  #$if($tagList[0] eq "TST_BUS"){($count) = (split(/BD0_net/,$tagList[1]))[1]; 
+                  #$                                 $tagList[1] = "BD0_netB".$count;}
+                  $canvas->createRectangle($x+5,$y-25,$x+75,$y-5, -outline=>"green",-fill=>"white",-tags=>"PROTOTEXT");   
+                  $canvas->createText($x+40,$y-15, -text=>$tagList[1] ,-tags=>"PROTOTEXT");
+                  if($tagList[0] eq "TST_WIRE" || $tagList[0] eq "TST_BUS"){  
+                     my @sourceInst = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$tagList[1]}->dbaTstgenGetPseudoNetSourceFanInList;
+                     my @sinkInst = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$tagList[1]}->dbaTstgenGetPseudoNetSinkFanOutList;
+                     my @src_coords  = $design_canvas->coords($sourceInst[0]);
+                        $canvas->createRectangle((($src_coords[0]+$src_coords[2])/2)-30,(($src_coords[1]+$src_coords[3])/2)-10,(($src_coords[0]+$src_coords[2])/2)+30,(($src_coords[1]+$src_coords[3])/2)+10, -outline=>"green",-fill=>"white",-tags=>"PROTOTEXT");   
+                        $canvas->createText(($src_coords[0]+$src_coords[2])/2,($src_coords[1]+$src_coords[3])/2, -text=>$sourceInst[0],-font=> "TIMES 10",-tags=>"PROTOTEXT");
+                     my $str = "";
+                     my @sinkMods = ();
+                     foreach(my $i=0; $i <=$#sinkInst; $i=$i+2){
+                             push(@sinkMods,$sinkInst[$i]);
+                             my @sink_coords  = $design_canvas->coords($sinkInst[$i]);
+                             $canvas->createRectangle((($sink_coords[0]+$sink_coords[2])/2)-30,(($sink_coords[1]+$sink_coords[3])/2)-10,(($sink_coords[0]+$sink_coords[2])/2)+30,(($sink_coords[1]+$sink_coords[3])/2)+10, -outline=>"green",-fill=>"white",-tags=>"PROTOTEXT");   
+                             $canvas->createText(($sink_coords[0]+$sink_coords[2])/2,($sink_coords[1]+$sink_coords[3])/2, -text=>$sinkInst[$i],-font=> "TIMES 10", -tags=>"PROTOTEXT");
+                     }#foreach sink instance        
+                        $str = join(",",@sinkMods); 
+                     my $textMsg = "Net:- ".$tagList[1]."    SourceMod: ".$sourceInst[0]."    SinkMod: ".$str;   
+                        $msg_label = $utilitybar->Label(-text=>$textMsg,-font=>"TIMES 10")->pack(-fill=>'x', -side=>'left', -expand=>1);
+                  }#if wire or bus found 
+                  $canvas->CanvasBind("<B1-ButtonRelease>"=> [sub{$canvas->delete(PROTOTEXT);
+                                                                  if(Exists($msg_label)){$msg_label->destroy;}
+                                                                  }]);
+
+               }
+            });
+}#sub display_ProtoEleText
+
+########################################################################################################
+########################### subroutine to Descend Hierarchy via keyBind {D+ LMB} #######################
+########################################################################################################
+sub createPopup_downHier {
+my $canvas = $_[0];
+   $canvas->CanvasBind('<D><1>', => sub{
+               my $x = $canvas->canvasx($Tk::event->x);
+               my $y = $canvas->canvasy($Tk::event->y);
+               my @id      = $canvas->find(qw/withtag current/);
+               my @tagList = $canvas->gettags($id[0]);
+               if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}){
+                  &call_popup_downHier($tagList[1]);  
+               }}); 
+}#sub createPopup_downHier
+
+########################################################################################################
+##################### subroutine to resize Instances via keyBind {r+ Srolling LMB} #####################
+########################################################################################################
+sub resize_Instance_designCanvas{
+#&dbfGuiResetCanvasBind;
+my $canvas = $_[0];
+my $dx   = 0;
+my $dy   = 0;
+my $inst = "";
+$canvas->CanvasFocus;
+$canvas->CanvasBind('<r><1>', => sub{
+               &dbfGuiResetCanvasBind;
+               $inst = "";
+               $dx = 0; $dy = 0;     
+               my $x = $canvas->canvasx($Tk::event->x);
+               my $y = $canvas->canvasy($Tk::event->y);
+               my @id      = $canvas->find(qw/withtag current/);
+               my @tagList = $canvas->gettags($id[0]);
+               if($tagList[0] eq "TOP_MODULE"){return;
+               }else{
+                  if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}){
+                     my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstCellref;
+                     my $class = $DLDB{$cellref}->dbDldbGetClass if(exists $DLDB{$cellref});
+                     return if($class == 10);#if hardMacro
+                     my @coords  = $canvas->coords($tagList[1]);
+                     my $width   = $coords[2] - $coords[0];
+                     my $height  = $coords[3] - $coords[1];
+
+                        if($x < $coords[0] + 0.3 * $width) {$dx =  1;}
+                     elsif($x > $coords[2] - 0.3 * $width) {$dx = -1;}
+                     else {$dx = 0;}
+
+                        if($y < $coords[1] + 0.3 * $height) {$dy =  1;}
+                     elsif($y > $coords[3] - 0.3 * $height) {$dy = -1;}
+                     else {$dy = 0;}
+                     #$inst = $id[0];
+                     if    ($dx == -1 && $dy ==  0){$canvas->configure(-cursor => 'right_side');
+                     }elsif($dx ==  1 && $dy ==  0){$canvas->configure(-cursor => 'left_side');
+                     }elsif($dx == -1 && $dy == -1){$canvas->configure(-cursor => 'bottom_right_corner');
+                     }elsif($dx == -1 && $dy ==  1){$canvas->configure(-cursor => 'top_right_corner');
+                     }elsif($dx ==  1 && $dy == -1){$canvas->configure(-cursor => 'bottom_left_corner');
+                     }elsif($dx ==  1 && $dy ==  1){$canvas->configure(-cursor => 'top_left_corner');
+                     }elsif($dx ==  0 && $dy == -1){$canvas->configure(-cursor => 'bottom_side');
+                     }elsif($dx ==  0 && $dy ==  1){$canvas->configure(-cursor => 'top_side');
+                     }else{$canvas->configure(-cursor => 'top_left_arrow');}
+                     $inst = $tagList[1];
+                     $canvas->createRectangle(@coords,
+                                                   -outline => 'green',
+                                                   -tags    => ['TEMP'],
+                                                   );
+                  }else{return;}
+               }#if not TopModule
+     });
+$canvas->CanvasBind('<r><B1-Motion>' => sub {
+                    my $x = $canvas->canvasx($Tk::event->x);
+                    my $y = $canvas->canvasy($Tk::event->y);
+                        my @coords = $canvas->coords('TEMP');
+                        if    ($dx ==  1) { $coords[0] = $x }
+                        elsif ($dx == -1) { $coords[2] = $x }
+                        else{}
+
+                        if    ($dy ==  1) { $coords[1] = $y }
+                        elsif ($dy == -1) { $coords[3] = $y }
+                        else{}
+                        $canvas->coords('TEMP', @coords);
+     });
+$canvas->CanvasBind('<r><B1-ButtonRelease>' => sub {
+        my @coords = $canvas->coords('TEMP');
+        # Delete the rectangle.
+        $canvas->delete('TEMP');
+        $canvas->coords($inst => @coords);
+        my @ll = dbfGuiGui2Micron($coords[0],$coords[1]);
+        my @ur = dbfGuiGui2Micron($coords[2],$coords[3]);
+        &setPseudoInstBox("-inst", $inst, "-bBox", "{$ll[0],$ur[1],$ur[0],$ll[1]}");
+        $canvas->configure(-cursor => 'top_left_arrow');
+     });
+}#sub resize_Instance_designCanvas
+
+########################################################################################################
+########################### subroutine to move Instances via keyBind {m+ LMB} ##########################
+########################################################################################################
+sub move_Instance_designCanvas {
+#&dbfGuiResetCanvasBind;
+my $canvas = $_[0];
+my $oldx   = 0;
+my $oldy   = 0;
+my $inst = "";
+my $moving_start = 0;
+$canvas->CanvasFocus;
+$canvas->CanvasBind('<m><1>', => sub{
+               &dbfGuiResetCanvasBind;
+               $moving_start = 0;
+               $inst = "";
+               my $x = $canvas->canvasx($Tk::event->x);
+               my $y = $canvas->canvasy($Tk::event->y);
+               my @id      = $canvas->find(qw/withtag current/);
+               my @tagList = $canvas->gettags($id[0]);
+               if($tagList[0] eq "TOP_MODULE"){return;
+               }else{
+                  $canvas->configure(-cursor => 'diamond_cross');
+                  $oldx = $x;
+                  $oldy = $y;
+                  $inst = $tagList[1];   
+                  $moving_start = 1;
+               }#if not TopModule 
+  });
+$canvas->CanvasBind('<m><B1-Motion>' => sub {
+                    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+                    if($moving_start == 1){
+                        $canvas->move($inst => $x - $oldx, $y - $oldy);
+                        $oldx = $x;
+                        $oldy = $y;
+                    }
+  });
+$canvas->CanvasBind('<m><B1-ButtonRelease>' => sub {
+        my @coords = $canvas->coords($inst);
+        my @ll = dbfGuiGui2Micron($coords[0],$coords[1]);
+        my @ur = dbfGuiGui2Micron($coords[2],$coords[3]);
+        #$canvas->coords($inst => @coords);
+        &movePseudoInst("-inst", $inst, "-toLoc", "{$ll[0],$ur[1]}");
+        $canvas->configure(-cursor => 'top_left_arrow');
+        $moving_start = 0;
+    });
+}#sub move_Instance_designCanvas
+
+########################################################################################################
+##################### subroutine to move/resize Instances via widget in design Canvas ##################
+########################################################################################################
+sub moveOrResize_Instance_byWidgetIn_designCanvas{
+&dbfGuiResetCanvasBind;
+my $canvas = $_[0];
+my $dx   = 0;
+my $dy   = 0;
+my $inst = "";
+my $moving_start = 0;
+my $proceed = 0;
+$canvas->CanvasFocus;
+$canvas->CanvasBind('<1>', => sub{
+               $moving_start = 0;
+               $proceed = 0; 
+               $inst = "";
+               $dx = 0; $dy = 0;     
+               my $x = $canvas->canvasx($Tk::event->x);
+               my $y = $canvas->canvasy($Tk::event->y);
+               my @id      = $canvas->find(qw/withtag current/);
+               my @tagList = $canvas->gettags($id[0]);
+               if($tagList[0] eq "TOP_MODULE"){return;
+               }else{
+                  if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}){
+                     my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstCellref;
+                     my $class = $DLDB{$cellref}->dbDldbGetClass if(exists $DLDB{$cellref});
+                     return if($class == 10);#if hardMacro
+                     my @coords  = $canvas->coords($tagList[1]);
+                     my $width   = $coords[2] - $coords[0];
+                     my $height  = $coords[3] - $coords[1];
+                     $inst = $tagList[1];
+
+                        if($x < $coords[0] + 0.3 * $width) {$dx =  1;}
+                     elsif($x > $coords[2] - 0.3 * $width) {$dx = -1;}
+                     else {$dx = 0;}
+
+                        if($y < $coords[1] + 0.3 * $height) {$dy =  1;}
+                     elsif($y > $coords[3] - 0.3 * $height) {$dy = -1;}
+                     else {$dy = 0;}
+
+                     if    ($dx == -1 && $dy ==  0){return if($class == 10);#if hardMacro
+                                                    $canvas->configure(-cursor => 'right_side');
+                                                    $proceed = 1;
+                     }elsif($dx ==  1 && $dy ==  0){return if($class == 10);#if hardMacro
+                                                    $canvas->configure(-cursor => 'left_side');
+                                                    $proceed = 1;
+                     }elsif($dx == -1 && $dy == -1){return if($class == 10);#if hardMacro
+                                                    $canvas->configure(-cursor => 'top_left_corner');
+                                                    $proceed = 1;
+                     }elsif($dx == -1 && $dy ==  1){return if($class == 10);#if hardMacro
+                                                    $canvas->configure(-cursor => 'bottom_left_corner');
+                                                    $proceed = 1;
+                     }elsif($dx ==  1 && $dy == -1){return if($class == 10);#if hardMacro
+                                                    $canvas->configure(-cursor => 'top_right_corner');
+                                                    $proceed = 1;
+                     }elsif($dx ==  1 && $dy ==  1){return if($class == 10);#if hardMacro
+                                                    $canvas->configure(-cursor => 'bottom_right_corner');
+                                                    $proceed = 1;
+                     }elsif($dx ==  0 && $dy == -1){return if($class == 10);#if hardMacro
+                                                    $canvas->configure(-cursor => 'bottom_side');
+                                                    $proceed = 1;
+                     }elsif($dx ==  0 && $dy ==  1){return if($class == 10);#if hardMacro
+                                                    $canvas->configure(-cursor => 'top_side');
+                                                    $proceed = 1;
+                     }else{$canvas->configure(-cursor => 'diamond_cross');
+                           $oldx = $x;
+                           $oldy = $y;
+                           $moving_start = 1;
+                           $proceed = 1;
+                     }
+                       
+                     $canvas->createRectangle(@coords,
+                                                   -outline => 'green',
+                                                   -tags    => ['TEMP'],
+                                                   )if($moving_start == 0);
+                     $canvas->createRectangle(@coords,
+                                                   -outline => 'white',
+                                                   -tags    => ['TEMP'],
+                                                   )if($moving_start == 1);
+                  }else{return;}
+         
+               }#if not TopModule
+     });
+$canvas->CanvasBind('<B1-Motion>' => sub {
+                 if($proceed == 1){
+                    my $x = $canvas->canvasx($Tk::event->x);
+                    my $y = $canvas->canvasy($Tk::event->y);
+                    if($moving_start == 1){
+                       $canvas->move($inst => $x - $oldx, $y - $oldy);
+                       $canvas->move("TEMP" => $x - $oldx, $y - $oldy);
+                       $oldx = $x;
+                       $oldy = $y;
+                    }else{
+                        my @coords = $canvas->coords('TEMP');
+                        if    ($dx ==  1) { $coords[0] = $x }
+                        elsif ($dx == -1) { $coords[2] = $x }
+                        else{}
+
+                        if    ($dy ==  1) { $coords[1] = $y }
+                        elsif ($dy == -1) { $coords[3] = $y }
+                        else{}
+                        $canvas->coords('TEMP', @coords);
+                    }
+                 }else{return;}
+     });
+$canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+     if($proceed == 1){
+        if($moving_start == 1){
+           my @coords = $canvas->coords($inst);
+           my @ll = dbfGuiGui2Micron($coords[0],$coords[1]);
+           my @ur = dbfGuiGui2Micron($coords[2],$coords[3]);
+           &movePseudoInst("-inst", $inst, "-toLoc", "{$ll[0],$ur[1]}");
+           $moving_start = 0;
+        }else{
+           my @coords = $canvas->coords('TEMP');
+           $canvas->coords($inst => @coords);
+           my @ll = dbfGuiGui2Micron($coords[0],$coords[1]);
+           my @ur = dbfGuiGui2Micron($coords[2],$coords[3]);
+           &setPseudoInstBox("-inst", $inst, "-bBox", "{$ll[0],$ur[1],$ur[0],$ll[1]}");
+        }   
+        $canvas->configure(-cursor => 'top_left_arrow');
+        # Delete the rectangle.
+        $canvas->delete('TEMP');
+     }
+  });
+}#sub moveOrResize_Instance_byWidgetIn_designCanvas
+
+#####################################################################################
+
+
+1;

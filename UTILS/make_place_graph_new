@@ -1,0 +1,81 @@
+#!/bin/perl -w
+
+sub place_graph_smatrix {
+	&write_graph_smatrix ;
+	&run_placer_new;
+	&read_graph_new;
+}#sub place_graph_smatrix
+
+sub read_graph_new {
+$DEBUG = 31;
+$DBU = $GLOBAL->dbfGlobalGetDBU;
+my $INPUT_GRAPH = "xy.out";
+if ( -e $INPUT_GRAPH) {
+open(READ,"$INPUT_GRAPH");
+print "MSG-UTS-READ_GRPH_NEW : 001 : Reading the graph for $INPUT_GRAPH\n";
+#print "Existing Die size are : @{$DIE_ALREADY{dieArea}} \n";
+
+##########Scaling to values to the die size##########
+$line1 = <READ>;
+($llx,$lly) = (split(/\s+/, $line1))[0,1];
+$absllx = abs($llx);
+$abslly = abs($lly);
+
+$line2 = <READ>;
+($urx,$ury) = (split(/\s+/, $line2))[0,1];
+#print "$line1 : $llx and $lly and $absllx and $abslly\n";
+$newurx = $urx + $absllx;
+$newury = $ury + $abslly;
+#print "$line2 : $urx and $ury and $newurx and $newury\n";
+
+$scalex = $DIE_ALREADY{dieArea}[2]/($DBU*$newurx);
+$scaley = $DIE_ALREADY{dieArea}[3]/($DBU*$newury);
+#print "Scalex : $scalex and Scaley : $scaley \n";
+
+while(<READ>) {
+chomp();
+($node,$x,$y) = (split(/\s+/, $_))[0,1,2];
+$x = ($x+$absllx)*$DBU*$scalex;
+$y = ($y+$abslly)*$DBU*$scaley;
+$x = int($x);
+$y = int($y);
+
+#print "$x and $y\n";
+$found = 0;
+#foreach $inst ( keys %TEMP ) { if ( $node == $TEMP{$inst} ) { $found = 1; $instance = $inst } }
+if ( exists $TEMP_hash{$node} ) { $found = 1; $instance = $TEMP_hash{$node}; } else { $found = 0;}
+if($found == 1 ) { 
+                if ( exists $CADB{$instance} ) {
+     $CADB{$instance}->dbCadbSetLoc($x,$y);
+     $CADB{$instance}->dbCadbSetStatus(PLACED);
+     $CADB{$instance}->dbCadbSetOrient(N);
+                                               } 
+                elsif ( exists $PORTS_ALREADY{$TOP_MODULE}{$instance} ) {
+     $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetLoc($x,$y);
+     $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetSide($side);
+     $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetStatus(PLACED);
+                                               }
+                else { print "ERR-UTS-READ_GRPH_NEW : 002 : $instance is neither a port nor a component\n"; }
+
+                 }
+else { print "DBG-UTS-READ_GRPH_NEW : 003 : pseudo node $node not found in TEMP_hash\n" if($debug); }
+              }#while
+
+}#end if
+else {
+print "ERR-UTS-READ_GRPH_NEW : 004 : No xy.out file found \n";
+}
+close($INPUT_GRAPH) ;
+&set_inst_box;
+}#sub read_graph_new
+
+sub run_placer_new {
+$INPUT_NET_FILE = "$TOP_MODULE.txt";
+$NODE_FILE = "nodefile";
+print "MSG-UTS : 001 : Placing the design $TOP_MODULE \n";
+if ( -e $INPUT_NET_FILE) {
+system( "plan -key \"long string from plan.key\" $INPUT_NET_FILE $NODE_FILE");
+                         }
+}#sub run_placer_new
+
+1;

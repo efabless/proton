@@ -1,0 +1,411 @@
+sub dbGenGetCellbyFunc {
+my $func = $_[0];
+my $numOfInputs = $_[1];
+
+foreach $cellref ( keys %PLDB ) { my $tempFunc = $PLDB{$cellref}->dbMdbGetFunction;
+                                  if ( $func eq $tempFunc ) { 
+                                  my  @tempPins = $PLDB{$cellref}->dbMdbGetPins;
+                                  my $count = 0;
+                                  foreach my $pin (@tempPins) { my $dir = $PLDB{$cellref}->dbMdbGetPinDir($pin); 
+                                          if ( $dir == 0 ) { $count ++; }
+                                                              }#foreach
+                                  if ( $count eq $numOfInputs ) { 
+                                                                return($cellref);
+                                                                } # if num of input pins matches
+                                                             }# if func matches
+                                }
+
+
+}#sub dbGenGetCellbyFunc
+
+sub dbGenMakeCombiConn {
+my $distInst = $_[0];
+my $dPin     = $_[1];
+my $srcInst  = $_[2];
+my $sPin     = $_[3];
+my $netName  = $_[4];
+
+$COMP_ALREADY{$distInst}{$dPin} = $netName;
+$NETS_ALREADY{$netName}{$distInst} = $dPin;
+$COMP_ALREADY{$srcInst}{$sPin} = $netName;
+$NETS_ALREADY{$netName}{$srcInst} = $sPin;
+
+}#sub dbGenMakeCombiConn
+
+sub dbGenMakePortConn {
+my $distInst = $_[0];
+my $dPin     = $_[1];
+my $netName  = $_[2];
+
+$COMP_ALREADY{$distInst}{$dPin} = $netName;
+$NETS_ALREADY{$netName}{$distInst} = $dPin;
+if ( exists $PORTS_ALREADY{$TOP_MODULE}{$netName} ) {
+#$PORTS_ALREADY{$TOP_MODULE}{$netName}->dbPortSetConn($netName);
+#$NETS_ALREADY{$netName}{PIN} = $netName;
+                                                  } 
+else { 
+     print "ERR-TST : 001 : trying to connect to a port that does not exist\n";
+     }
+#print "add port connection to $netName\n";
+
+}#sub dbGenMakePortConn
+
+sub dbGenVerySimple {
+my $num_inputs = $_[0];
+my $num_outputs = $_[1];
+my $num_flops = $_[2];
+my $moduleName = $_[3];
+
+my $row = $num_outputs + $num_flops;
+my $col = $num_flops + $num_inputs;
+print "INFO-TST : 001 : $row : $col\n";
+
+for ( my $xx = 0; $xx < $row ; $xx++ ) {
+      my $count1 = $col - ($xx+1 );
+      my $count2 = $col - ($xx+2 ) - 1;
+      my $count3 = $col - ($xx+2 ) - 3;
+      my $count4 = $col - ($xx+2 ) - 7;
+      if ( $count1 < $col ) {
+      $GEN{$moduleName}->dbGenDesignSetTpathVal_new($xx,$count1,9);
+      $GEN{$moduleName}->dbGenDesignSetTpathVal_new($xx,$count2,13);
+#      $GEN{$moduleName}->dbGenDesignSetTpathVal($xx,$count3,50);
+#      $GEN{$moduleName}->dbGenDesignSetTpathVal($xx,$count4,80);
+                            }
+                                       }
+
+#$GEN{$moduleName}->dbgGenDesignGetTpath;
+}#sub dbGenVerySimple
+
+
+sub dbGenAlgoIFillMatrix {
+my $num_inputs = $_[0];
+my $num_outputs = $_[1];
+my $num_flops = $_[2];
+my $moduleName = $_[3];
+
+####################### Reg 2 Reg Fill ins ####################
+#  choose 3 random numbers, first for row  betwwen 0 and num of flops
+# and 3rd for the num of timing paths, to keep the num of fillins less generate a 4th random num betwwen 0, 1 
+# and if it is greater than 0.8 will add in the matrix entry
+for ( my $xx = 0; $xx < $num_flops; $xx++ ) {
+      my $numOfColums = int( rand(5) + 2 );
+         for ( my $yy = 0; $yy < $numOfColums ; $yy++ ) {
+               my $col = int( rand($num_flops));
+               my $val = int(rand(3) + 2);
+#               print "Add entries in $xx,$col $val\n";
+               $GEN{$moduleName}->dbGenDesignSetTpathVal_new($xx,$col,$val);
+                                                        }#for
+                                            }#for
+
+####################### Reg 2 out Fill ins ####################
+for ( my $xx = $num_flops; $xx < $num_flops + $num_outputs; $xx++ ) {
+      my $numOfColums = int( rand(5) + 2 );
+         for ( my $yy = 0; $yy < $numOfColums ; $yy++ ) {
+               my $col = int( rand($num_flops));
+               my $val = int(rand(3) + 2);
+#               print "Add entries in $xx,$col $val\n";
+               $GEN{$moduleName}->dbGenDesignSetTpathVal_new($xx,$col,$val);
+                                                        }#for
+                                            }#for
+
+####################### in  2 Reg Fill ins ####################
+for ( my $xx = 0; $xx < $num_flops ; $xx++ ) {
+      my $numOfColums = int( rand(5) + 2 );
+         for ( my $yy = 0; $yy < $numOfColums ; $yy++ ) {
+               my $col = int( rand($num_inputs) + $num_flops);
+               my $val = int(rand(3) + 2);
+#               print "Add entries in $xx,$col $val\n";
+               $GEN{$moduleName}->dbGenDesignSetTpathVal_new($xx,$col,$val);
+                                                        }#for
+                                            }#for
+
+####################### in  2 out Fill ins ####################
+
+
+}# sub dbGenAlgoIFillMatrix
+
+
+sub dbGenAlgoFillMatrix_Type1 {
+######################################### ALGO #############################################
+# Type1 algo is to create perfectly decounpled sections of the data flow
+# Refer to Fig 1 in the GEN_ALGO_DOC for more details
+######################################### ALGO #############################################
+my $num_inputs = $_[0];
+my $num_outputs = $_[1];
+my $num_flops = $_[2];
+my $moduleName = $_[3];
+my $numOfClusters = $_[4];;
+
+# my $numOfClusters = int(rand(5) + 1);
+print "INFO-TST : 001 : num of clusters : $numOfClusters\n";
+my $clusterSize = int($num_flops/$numOfClusters);
+#print "cluster size is $clusterSize\n";
+my $PCL = 1;
+my $TCL = 1;
+
+####################### Reg 2 Reg Fill ins ####################
+my $clusterCount = 0;
+for ( my $xx = 0; $xx < $num_flops; $xx++ ) {
+         $clusterCount = int($xx/$clusterSize);
+#         print "cluster count $clusterCount\n";
+              if ( $clusterCount < $numOfClusters ) { 
+      my $numOfColums = int( rand($PCL) + 3 );
+         for ( my $yy = 0; $yy < $numOfColums ; $yy++ ) {
+               my $col = int( rand($clusterSize)+ ($clusterCount)*$clusterSize);
+               my $val = int(rand(6) + 2);
+#               print "Add R2R entries in $xx,$col $val\n";
+               $GEN{$moduleName}->dbGenDesignSetTpathVal_new($xx,$col,$val);
+                                                        }#for
+                                                    }
+               else {
+      my $numOfColums = int( rand($PCL) + 2 );
+         for ( my $yy = 0; $yy < $numOfColums ; $yy++ ) {
+               my $col = int( rand($clusterSize)+ $num_flops - $clusterSize);
+               my $val = int(rand(3) + 2);
+#               print "Add R2R entries in $xx,$col $val\n";
+               $GEN{$moduleName}->dbGenDesignSetTpathVal_new($xx,$col,$val);
+                                                        }#for
+                    }
+                                            }#for
+
+####################### Reg 2 out Fill ins ####################
+my $OutClusterSize = int($num_outputs/$numOfClusters);
+$clusterCount = 0;
+for ( my $xx = $num_flops; $xx < $num_flops + $num_outputs; $xx++ ) {
+      $clusterCount =  int( ($xx - $num_flops)/$OutClusterSize);
+#      print "cluster count $clusterCount\n";
+              if ( $clusterCount < $numOfClusters ) { 
+      my $numOfColums = int( rand($PCL) + 1 );
+         for ( my $yy = 0; $yy < $numOfColums ; $yy++ ) {
+               my $col = int( rand($clusterSize) + ($clusterCount)*$clusterSize);
+               my $val = int(rand(3) + 2);
+#               print "Add R2O entries in $xx,$col $val\n";
+               $GEN{$moduleName}->dbGenDesignSetTpathVal_new($xx,$col,$val);
+                                                        }#for
+                                                     }
+             else {
+      my $numOfColums = int( rand($PCL) + 1 );
+         for ( my $yy = 0; $yy < $numOfColums ; $yy++ ) {
+               my $col = int( rand($clusterSize) + $num_flops - $clusterSize);
+               my $val = int(rand(3) + 2);
+#               print "Add R2O entries in $xx,$col $val\n";
+               $GEN{$moduleName}->dbGenDesignSetTpathVal_new($xx,$col,$val);
+                                                        }#for
+                  }
+                                            }#for
+
+####################### in  2 Reg Fill ins ####################
+my $InClusterSize = int($num_inputs/$numOfClusters);
+$clusterCount = 0;
+my $zz = 0;
+for ( my $xx = 0; $xx < $num_flops ; $xx++ ) {
+      $clusterCount =  int( $xx/$clusterSize);
+#      print "cluster count $clusterCount\n";
+
+              if ( $clusterCount < $numOfClusters ) { 
+      my $numOfColums = int( rand($PCL) + 1 );
+         for ( my $yy = 0; $yy < $numOfColums ; $yy++ ) {
+               my $col = int( rand($InClusterSize) + $clusterCount*$InClusterSize + $num_flops);
+               my $val = int(rand(3) + 2);
+#               print "Add I2R entries in $xx,$col $val\n";
+               $GEN{$moduleName}->dbGenDesignSetTpathVal_new($xx,$col,$val);
+                                                        }#for
+                                                    }
+              else {
+      my $numOfColums = int( rand($PCL) + 1 );
+         for ( my $yy = 0; $yy < $numOfColums ; $yy++ ) {
+               my $col = int( rand($InClusterSize) + $num_inputs - $InClusterSize + $num_flops);
+               my $val = int(rand(3) + 2);
+#               print "Add I2R entries in $xx,$col $val\n";
+               $GEN{$moduleName}->dbGenDesignSetTpathVal_new($xx,$col,$val);
+                                                        }#for
+                   }
+                                            }#for
+
+####################### in  2 out Fill ins ####################
+
+}#sub dbGenAlgoFillMatrix_Type1
+
+sub dbGenAlgoFillMatrix_Type2 {
+######################################### ALGO #############################################
+# Type1 algo is to create perfectly decounpled sections of the data flow
+# Refer to Fig 1 in the GEN_ALGO_DOC for more details
+######################################### ALGO #############################################
+my $num_inputs = $_[0];
+my $num_outputs = $_[1];
+my $num_flops = $_[2];
+my $moduleName = $_[3];
+my $numOfClusters = $_[4];;
+my $PCL = $_[5];
+my $TCL = $_[6];
+
+# my $numOfClusters = int(rand(5) + 1);
+print "INFO-TST : 001 : num of clusters : $numOfClusters\n";
+my $clusterSize = int($num_flops/$numOfClusters);
+#print "cluster size is $clusterSize\n";
+
+####################### Reg 2 Reg Fill ins ####################
+my $clusterCount = 0;
+for ( my $xx = 0; $xx < $num_flops; $xx++ ) {
+         $clusterCount = int($xx/$clusterSize);
+#         print "cluster count $clusterCount\n";
+              if ( $clusterCount < $numOfClusters ) { 
+      my $numOfColums = int( rand($PCL) + 3 );
+         for ( my $yy = 0; $yy < $numOfColums ; $yy++ ) {
+               my $col = int( rand($clusterSize)+ ($clusterCount)*$clusterSize);
+               my $val = int(rand(6*$TCL) + 2);
+#               print "Add R2R entries in $xx,$col $val\n";
+               $GEN{$moduleName}->dbGenDesignSetTpathVal_new($xx,$col,$val);
+                                                        }#for
+                                                    }
+               else {
+      my $numOfColums = int( rand($PCL) + 2 );
+         for ( my $yy = 0; $yy < $numOfColums ; $yy++ ) {
+               my $col = int( rand($clusterSize)+ $num_flops - $clusterSize);
+               my $val = int(rand(3*$TCL) + 2);
+#               print "Add R2R entries in $xx,$col $val\n";
+               $GEN{$moduleName}->dbGenDesignSetTpathVal_new($xx,$col,$val);
+                                                        }#for
+                    }
+                                            }#for
+
+####################### Reg 2 out Fill ins ####################
+my $OutClusterSize = int($num_outputs/$numOfClusters);
+$clusterCount = 0;
+for ( my $xx = $num_flops; $xx < $num_flops + $num_outputs; $xx++ ) {
+      $clusterCount =  int( ($xx - $num_flops)/$OutClusterSize);
+#      print "cluster count $clusterCount\n";
+              if ( $clusterCount < $numOfClusters ) { 
+      my $numOfColums = int( rand($PCL) + 1 );
+         for ( my $yy = 0; $yy < $numOfColums ; $yy++ ) {
+               my $col = int( rand($clusterSize) + ($clusterCount)*$clusterSize);
+               my $val = int(rand(3*$TCL) + 2);
+#               print "Add R2O entries in $xx,$col $val\n";
+               $GEN{$moduleName}->dbGenDesignSetTpathVal_new($xx,$col,$val);
+                                                        }#for
+                                                     }
+             else {
+      my $numOfColums = int( rand($PCL) + 1 );
+         for ( my $yy = 0; $yy < $numOfColums ; $yy++ ) {
+               my $col = int( rand($clusterSize) + $num_flops - $clusterSize);
+               my $val = int(rand(3*$TCL) + 2);
+#               print "Add R2O entries in $xx,$col $val\n";
+               $GEN{$moduleName}->dbGenDesignSetTpathVal_new($xx,$col,$val);
+                                                        }#for
+                  }
+                                            }#for
+
+####################### in  2 Reg Fill ins ####################
+my $InClusterSize = int($num_inputs/$numOfClusters);
+$clusterCount = 0;
+my $zz = 0;
+for ( my $xx = 0; $xx < $num_flops ; $xx++ ) {
+      $clusterCount =  int( $xx/$clusterSize);
+#      print "cluster count $clusterCount\n";
+
+              if ( $clusterCount < $numOfClusters ) { 
+      my $numOfColums = int( rand($PCL) + 1 );
+         for ( my $yy = 0; $yy < $numOfColums ; $yy++ ) {
+               my $col = int( rand($InClusterSize) + $clusterCount*$InClusterSize + $num_flops);
+               my $val = int(rand(3*$TCL) + 2);
+#               print "Add I2R entries in $xx,$col $val\n";
+               $GEN{$moduleName}->dbGenDesignSetTpathVal_new($xx,$col,$val);
+                                                        }#for
+                                                    }
+              else {
+      my $numOfColums = int( rand($PCL) + 1 );
+         for ( my $yy = 0; $yy < $numOfColums ; $yy++ ) {
+               my $col = int( rand($InClusterSize) + $num_inputs - $InClusterSize + $num_flops);
+               my $val = int(rand(3*$TCL) + 2);
+#               print "Add I2R entries in $xx,$col $val\n";
+               $GEN{$moduleName}->dbGenDesignSetTpathVal_new($xx,$col,$val);
+                                                        }#for
+                   }
+                                            }#for
+
+####################### in  2 out Fill ins ####################
+
+}#sub dbGenAlgoFillMatrix_Type2
+
+sub dbGenAlgoFillMatrix_ilmSimple {
+######################################### ALGO #############################################
+# This algo is to create1 - 1 connection between TO's and flops
+# Refer to Fig 1 in the GEN_ALGO_DOC for more details
+######################################### ALGO #############################################
+my $num_inputs = $_[0];
+my $num_outputs = $_[1];
+my $num_flops = $_[2];
+my $moduleName = $_[3];
+my $numOfClusters = $_[4];;
+my $PCL = $_[5];
+my $TCL = $_[6];
+
+# my $numOfClusters = int(rand(5) + 1);
+print "INFO-TST : 001 : num of clusters : $numOfClusters\n";
+my $clusterSize = int($num_flops/$numOfClusters);
+#print "cluster size is $clusterSize\n";
+
+####################### Reg 2 Reg Fill ins ####################
+
+####################### Reg 2 out Fill ins ####################
+my $OutClusterSize = int($num_outputs/$numOfClusters);
+$clusterCount = 0;
+for ( my $xx = $num_flops; $xx < $num_flops + $num_outputs; $xx++ ) {
+      $clusterCount =  int( ($xx - $num_flops)/$OutClusterSize);
+#      print "cluster count $clusterCount\n";
+              if ( $clusterCount < $numOfClusters ) { 
+      my $numOfColums = int( rand($PCL) + 1 );
+         for ( my $yy = 0; $yy < $numOfColums ; $yy++ ) {
+               my $col = int( rand($clusterSize) + ($clusterCount)*$clusterSize);
+               my $val = int(rand(1*$TCL) + 2);
+#               print "Add R2O entries in $xx,$col $val\n";
+               $GEN{$moduleName}->dbGenDesignSetTpathVal_new($xx,$col,$val);
+                                                        }#for
+                                                     }
+             else {
+      my $numOfColums = int( rand($PCL) + 1 );
+         for ( my $yy = 0; $yy < $numOfColums ; $yy++ ) {
+               my $col = int( rand($clusterSize) + $num_flops - $clusterSize);
+               my $val = int(rand(1*$TCL) + 2);
+#               print "Add R2O entries in $xx,$col $val\n";
+               $GEN{$moduleName}->dbGenDesignSetTpathVal_new($xx,$col,$val);
+                                                        }#for
+                  }
+                                            }#for
+
+####################### in  2 Reg Fill ins ####################
+my $InClusterSize = int($num_inputs/$numOfClusters);
+$clusterCount = 0;
+my $zz = 0;
+for ( my $xx = 0; $xx < $num_flops ; $xx++ ) {
+      $clusterCount =  int( $xx/$clusterSize);
+#      print "cluster count $clusterCount\n";
+
+              if ( $clusterCount < $numOfClusters ) { 
+      my $numOfColums = int( rand($PCL) + 1 );
+         for ( my $yy = 0; $yy < $numOfColums ; $yy++ ) {
+               my $col = int( rand($InClusterSize) + $clusterCount*$InClusterSize + $num_flops);
+               my $val = int(rand(1*$TCL) + 2);
+#               print "Add I2R entries in $xx,$col $val\n";
+               $GEN{$moduleName}->dbGenDesignSetTpathVal_new($xx,$col,$val);
+                                                        }#for
+                                                    }
+              else {
+      my $numOfColums = int( rand($PCL) + 1 );
+         for ( my $yy = 0; $yy < $numOfColums ; $yy++ ) {
+               my $col = int( rand($InClusterSize) + $num_inputs - $InClusterSize + $num_flops);
+               my $val = int(rand(1*$TCL) + 2);
+#               print "Add I2R entries in $xx,$col $val\n";
+               $GEN{$moduleName}->dbGenDesignSetTpathVal_new($xx,$col,$val);
+                                                        }#for
+                   }
+                                            }#for
+
+####################### in  2 out Fill ins ####################
+
+############################### ################################
+
+}#sub dbGenAlgoFillMatrix_ilmSimple
+
+
+1

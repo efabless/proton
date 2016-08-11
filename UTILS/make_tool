@@ -1,0 +1,138 @@
+#!/usr/bin/perl -w
+
+$outFile = "./proton";
+open (OUTFILE, "> $outFile") || die ("Couldn't open $outFile for writing");
+
+$inFile = "./UTILS/tool.nopath";
+open (INFILE, " $inFile") || die ("Couldn't open $inFile for reading");
+
+################# Added by aditya for app authentication #################
+my $authOutFile = "./proton_auth";
+if(@ARGV == 2){ #First arg is appName. If second arg is given (we can give 1 as 2nd arg), it will generate fileName same as appName
+   $authOutFile = $ARGV[0]; 
+}
+open(AUTH_OUT_FILE, "> $authOutFile") ||  die ("Couldn't open $authOutFile for writing");
+
+my $authInFile = "./SCRATCH/app_auth.pl";
+##########################################################################
+
+# get cwd
+chomp($toolDir = `pwd`);
+my $version = "1.1"; 
+#my $version = `svn info | grep Revision: | sed 's/Revision: //'`;
+#chomp($version);
+#print "$version\n";
+
+print OUTFILE <<EOT_;
+#!/usr/bin/perl
+
+######### set BEEHOME to cwd ##########
+\$BEEHOME = \"$toolDir\";
+
+######### Now appending $inFile ########
+
+EOT_
+
+$inLine = <INFILE>;
+while ($inLine) {
+  if ($inLine =~ /SVN_VERSION/) { $inLine =~ s/SVN_VERSION/$version/ ; }
+  print OUTFILE $inLine;
+  $inLine = <INFILE>;
+}
+
+################# Added by aditya for app authentication #################
+print AUTH_OUT_FILE <<EOT_;
+#!/usr/bin/perl
+
+######### set BEEHOME to cwd ##########
+\$BEEHOME = \"$toolDir\";
+
+######### Now appending $inFile ########
+
+EOT_
+
+close (INFILE);
+my $app_name = "proton";
+if($ARGV[0]){
+   $app_name = $ARGV[0];
+}
+
+open (INFILE, " $inFile");
+my $auth_begin_write = 0;
+my $auth_end_write = 0;
+use POSIX qw/strftime/;
+my $build_date = strftime('%d-%b-%Y %H:%M:%S',localtime);
+while(<INFILE>){
+  chomp();
+  my $in_line = $_;
+  if($auth_begin_write == 1){
+     open (AUTH_IN_FILE, " $authInFile") || die ("Couldn't open $authInFile for reading");
+     while(<AUTH_IN_FILE>){
+       chomp();
+        my $auth_line = $_;
+        if($auth_line =~ /\/usr\/bin\/perl/){next;}
+        if($auth_line =~ /put script here/){last;}
+        if($auth_line =~ /test_app/){
+           print AUTH_OUT_FILE "print \"Build Date: $build_date\\n\"\;\n";
+           print AUTH_OUT_FILE "\$auth_code_return = 0;\n";
+           $auth_line =~ s/test_app/$app_name/;
+        }
+        if($auth_line =~ /exit/){
+           print AUTH_OUT_FILE "   \$auth_code_return = 1;\n";
+           $auth_line =~ s/exit/return/;
+        }
+        print AUTH_OUT_FILE "$auth_line\n";
+     }
+     close(AUTH_IN_FILE);
+     $auth_begin_write = 0;
+  }
+  if($auth_end_write == 1){
+     open (AUTH_IN_FILE, " $authInFile") || die ("Couldn't open $authInFile for reading");
+     my $writing_start = 0;
+     while(<AUTH_IN_FILE>){
+       chomp();
+        my $auth_line = $_;
+        if($writing_start == 1){
+           print AUTH_OUT_FILE "$auth_line\n";
+        }
+        if($auth_line =~ /put script here/){
+           $writing_start = 1;
+        }
+     }
+     close(AUTH_IN_FILE);
+     $auth_end_write = 0;
+  }
+
+  if($in_line =~ /\/usr\/bin\/perl/){
+  }elsif($in_line =~ /SVN_VERSION/){ 
+     $in_line =~ s/SVN_VERSION/$version/ ; 
+     print AUTH_OUT_FILE "$in_line\n";
+  }elsif($in_line =~ /sub BEGIN/){
+     $auth_begin_write = 1;
+     print AUTH_OUT_FILE "$in_line\n";
+  }elsif($in_line =~ /sub END/){
+     print AUTH_OUT_FILE "$in_line\n";
+     print AUTH_OUT_FILE "if(\$auth_code_return == 1){\n";
+     print AUTH_OUT_FILE "   return;\n";
+     print AUTH_OUT_FILE "}\n";
+  }elsif($in_line =~ /\&check_create_app_tcl/){
+     print AUTH_OUT_FILE "if(\$auth_code_return == 1){\n";
+     print AUTH_OUT_FILE "   exit;\n";
+     print AUTH_OUT_FILE "}\n";
+     print AUTH_OUT_FILE "$in_line\n";
+  }elsif($in_line =~ /closeTee/){
+     $auth_end_write = 1;
+     print AUTH_OUT_FILE "$in_line\n";
+  }else{
+     print AUTH_OUT_FILE "$in_line\n";
+  }
+}
+system("chmod +x $authOutFile");
+##########################################################################
+
+close (OUTFILE);
+close (INFILE);
+
+system("chmod +x proton");
+system("rm -rf proton.lnx.bin");
+system("ln -s proton proton.lnx.bin");

@@ -1,0 +1,369 @@
+sub NoOfColumns {
+if ($MAC_DATABASE eq "UND" ) {#return(0);
+                                }#if 
+else {
+my $dbh = DBI->connect( "dbi:mysql:$MAC_DATABASE",qaadmin,qaadmin ) || die "Cannot connect: $DBI::errstr";
+$sth = $dbh->prepare("SHOW COLUMNS FROM MAC ");
+$sth->execute();
+my $i = 0;
+while (($colName,$t) = $sth->fetchrow_array) {
+                                              $i = $i+1; 
+                                                     }#while
+  return($i);
+   }#if MAC database found 
+}#sub NoOfColumns;
+
+sub populate_headers {
+my $n = &NoOfColumns; 
+$MacList = $efarmFrame2->Scrolled("HList",
+                        -header => 1,
+                        -columns => $n,
+                        -height =>5,  
+                        -scrollbars => 'osoe',
+                        -width => 130,
+                        -selectmode => 'single',
+                        -relief => "sunken",
+                        -borderwidth => 2,
+                        -browsecmd  => sub {
+                          $dbSelectMachine = shift;
+                          &call_MacName();},
+                        -command=>sub {&popup_gui_StartStopService ;}
+                                  );
+                                          
+$MacList->Subwidget("yscrollbar")->configure(-width=>8,-borderwidth=>2);
+$MacList->pack(-expand => 1, -fill => 'both');
+if ($MAC_DATABASE eq "UND" ) {
+                                }#if 
+else {
+
+my $dbh = DBI->connect( "dbi:mysql:$MAC_DATABASE",qaadmin,qaadmin ) || die "Cannot connect: $DBI::errstr";
+$sth = $dbh->prepare("SHOW COLUMNS FROM MAC ");
+$sth->execute();
+my $i = 0;
+while (($colName,$t) = $sth->fetchrow_array) { 
+$MacList->header('create', $i, -text => $colName);
+                 $i= $i+1;
+                                               }#while
+      &populate_header_Items;
+       }#else
+}#sub populate_header
+
+##-----------------------------------------------------------------------------------------## 
+sub populate_header_Items {
+my $n = &NoOfColumns; 
+my $dbh = DBI->connect( "dbi:mysql:$MAC_DATABASE",qaadmin,qaadmin ) || die "Cannot connect: $DBI::errstr";
+$sth = $dbh->prepare("SELECT * FROM MAC ORDER BY macName ASC");
+$sth->execute();
+my $i = 0;
+while (my  @arr = $sth->fetchrow_array()){
+$MacList->add($i);
+for (my $j=0;$j<$n;$j++){
+                         $MacList->itemCreate($i, $j, -text => $arr[$j]);
+                           }#for each column
+$MachineName[$i]= $arr[0];
+$MachineType[$i]= $arr[1];
+#
+$MacHash{$MachineName[$i]}=$MachineType[$i];
+
+        $i++
+
+    }#while rows
+}#sub populate_header_Items
+
+##-------------------------------------------------##
+
+sub call_MacName{
+
+$SelectedMacName = $MachineName[$dbSelectMachine];
+$SelectedMacType = $MachineType[$dbSelectMachine];
+return($SelectedMacName,$SelectedMacType);
+
+}#call_MacName
+
+##------------------------------------------------##
+
+sub popup_gui_RegMac{
+my $popupgui = MainWindow->new();
+$popupgui->title ("Register New Machine");
+        my $Frame1=$popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $Frame2=$popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $Frame2=$popupgui->Frame()->pack(-side => 'bottom',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $ButtonFrame = $Frame2->Frame()->pack(-side=>'bottom');
+
+$Frame1->Label(-text => "MachineName",-font=>"Times 10 italic")->pack(-side =>'left', -anchor => 'w');
+$Frame1->Entry(-textvariable =>\$MacName )->pack(-side =>'left', -anchor => 'w',-fill => 'x', -expand=> '1');
+                                                  
+$Frame2->Label(-text => "MachineType",-font=>"Times 10 italic")->pack(-side =>'left',-fill=>'x',-expand=>1);
+$Frame2->Radiobutton(-variable =>\$MacType,
+  		     -value => "slave",
+  		     -text => "slave",
+                                   )->pack(-side =>"right"); 
+
+$Frame2->Radiobutton(-variable =>\$MacType,
+  		     -value => "master",
+  		     -text => "master",
+                                   )->pack(-side =>"right");  
+                 
+my $okbutton = $ButtonFrame->Button(-text=>'Ok',  
+                                    -pady=>0,                                                                                                                             -command =>sub {if ($MacType eq "slave"){&register_slave_machine(-mac,$MacName);}
+                                                  elsif($MacType eq "master"){&register_master_machine(-mac,$MacName);}
+                                                    $popupgui->destroy;
+                                    })->pack(-side => 'left');
+
+my $Applybutton = $ButtonFrame->Button(-text=>'Apply',  
+                                    -pady=>0,                                                                                                                             -command =>sub {if ($MacType eq "slave"){&register_slave_machine(-mac,$MacName);}
+                                                  elsif($MacType eq "master"){&register_master_machine(-mac,$MacName);}
+
+                                    })->pack(-side => 'left');
+
+my $cancelbutton = $ButtonFrame->Button(-text=>'Cancel', 
+                                        -pady=>0,                                                                                                                             -command =>sub {$popupgui->destroy;}
+
+                                    
+                                     )->pack(-side => 'left');
+}#sub popup_gui_RegMac
+
+#-----------------------------------------------------------------------------#
+sub popup_gui_DelMac {
+
+my $popupgui = MainWindow->new();
+$popupgui->title ("Delete Existing Machine");
+        my $Frame1=$popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $Frame2=$popupgui->Frame()->pack(-side => 'bottom',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $ButtonFrame = $Frame2->Frame()->pack(-side=>'bottom');
+
+$Frame1->Label(-text => "MachineName",-font=>"Times 10 italic")->pack(-side =>'left', -anchor => 'w');
+$Frame1->Entry(-textvariable =>\$SelectedMacName)->pack(-side =>'left', -anchor => 'w',-fill => 'x', -expand=> '1');
+
+                                                  
+my $Deletebutton = $ButtonFrame->Button(-text=>'Delete', 
+                                     -pady=>0,                                                                                                                             -command =>sub {
+                                                     #&warning_popup_DelMac($popupgui);}
+                                                     &warning_popup_DelMac1;$popupgui->destroy;}
+                                     )->pack(-side => 'left');
+
+my $cancelbutton = $ButtonFrame->Button(-text=>'Cancel', 
+                                     -pady=>0,                                                                                                                             -command =>sub {$popupgui->destroy;},
+                                     )->pack(-side => 'left');
+
+}#sub popup_gui_DelMac
+
+sub warning_popup_DelMac {
+my $mw = $_[0];
+my $yesno_button = $mw->messageBox(-message => "Are you sure you want to delete 
+machine $SelectedMacName ?",
+                                   -type => "yesno", -icon => "question");
+
+    if ($yesno_button eq "Yes") {
+                               &delete_machine(-del, $SelectedMacName);
+                               $mw->destroy;
+                                 }#if yes
+    else {
+            $mw->destroy;
+               }#if no
+
+}#sub warning_popup_DelMac
+
+sub warning_popup_DelMac1 {
+my $popupgui = MainWindow->new();
+$popupgui->title ("Confirm Machine Delete");
+
+        my $labelFrame=$popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $Frame1=$popupgui->Frame()->pack(-side => 'bottom',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $ButtonFrame = $Frame1->Frame()->pack(-side=>'bottom');
+
+           $labelFrame->Label(-text => "Are you sure you want to delete 
+machine $SelectedMacName ?",-font=>"Times 12 normal")->pack();
+
+my $YesButton = $ButtonFrame->Button(-text=>'Yes', 
+                                  -pady=>0,                                                                                                                             -command =>sub {&delete_machine(-del, $SelectedMacName);                         
+                                                  $popupgui->destroy;
+                                                            }                                    
+                                     )->pack(-side => 'left');
+
+my $NoButton = $ButtonFrame->Button(-text=>'No',
+                                 -pady=>0,                                                                                                                             -command =>sub {$popupgui->destroy;}                                    
+                                     )->pack(-side => 'left');
+
+}#sub warning_popup_DelMac
+#-----------------------------------------------------------------------------#
+
+sub popup_gui_StartStopService {
+
+my $popupgui = MainWindow->new();
+$popupgui->title ("");
+
+        my $EntryFrame=$popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $EntryFrame1=$popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $EntryFrame2=$popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $EntryFrame3=$popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $ButtonFrame1=$popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $ButtonFrame2=$popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+
+$EntryFrame->Label(-text => "HostName    -")->pack(-side =>'left', -anchor => 'w');
+$EntryFrame->Entry(-textvariable =>\$SelectedMacName)->pack(-side =>'left', -anchor => 'w',
+                                                  -fill => 'x', -expand=> '1');
+if ($SelectedMacType == 0){
+foreach $MacName (keys %MacHash){
+my $MacType = $MacHash{$MacName};
+$MasterMacName= $MacName if ($MacType == 1)
+                                 }#foreach
+
+$EntryFrame1->Label(-text => "MasterName-")->pack(-side =>'left', -anchor => 'w');
+$EntryFrame1->Entry(-textvariable =>\$MasterMacName)->pack(-side =>'left', -anchor => 'w',
+                                                  -fill => 'x', -expand=> '1');
+                            }
+$EntryFrame2->Label(-text => "UserName    -")->pack(-side =>'left', -anchor => 'w');
+$EntryFrame2->Entry(-textvariable =>\$usrName)->pack(-side =>'left', -anchor => 'w',
+                                                  -fill => 'x', -expand=> '1');
+$EntryFrame3->Label(-text => "Password     -")->pack(-side =>'left', -anchor => 'w');
+$EntryFrame3->Entry(-textvariable =>\$password ,-show=>"*")->pack(-side =>'left', -anchor => 'w',
+                                                  -fill => 'x', -expand=> '1');
+$StartButton = $ButtonFrame1->Button(-text=>'StartService',                                                                                              -command =>sub {if ($SelectedMacType == 0){
+                                                        &start_slave_daemon(-host,$SelectedMacName,-user,$usrName,-passwd,$password,-master,$MasterMacName);}
+                                                     elsif ($SelectedMacType == 1){
+                                                            &start_master_daemon(-host,$SelectedMacName,-user,$usrName,-passwd,$password);}                                    
+                                     })->pack(-side => 'left');
+
+$StopButton = $ButtonFrame1->Button(-text=>'StopService',                                                                                                    -command =>sub {if ($SelectedMacType == 0){
+                                                              &stop_slave_daemon($SelectedMacName);}
+                                                         elsif ($SelectedMacType == 1){
+                                                                 &stop_control_daemon($SelectedMacName);}
+                                    
+                                     })->pack(-side => 'left');
+
+$ReStartButton = $ButtonFrame2->Button(-text=>'Restart',                                                                                                    -command =>sub {}                                    
+                                     )->pack(-side => 'left');
+
+$StatusButton = $ButtonFrame2->Button(-text=>'Status',                                                                                                    -command =>sub {}                                    
+                                     )->pack(-side => 'left');
+
+$CancelButton = $ButtonFrame2->Button(-text=>'Cancel',                                                                                                    -command =>sub {$popupgui->destroy;}                                    
+                                     )->pack(-side => 'left');
+
+}#popup_gui_StartStopService
+#-----------------------------------------------------------------------------#
+sub start_report_allSlave{
+my $usrName = $_[0];
+my $password = $_[1];
+my $MasterMacName = $_[2];
+foreach $MacName (keys %MacHash){
+my $MacType = $MacHash{$MacName};
+if ($MacType == 0){
+&start_slave_daemon(-host,$MacName,-user,$usrName,-passwd,$password,-master,$MasterMacName);
+                }#if
+#print " $MacName, $MacType\n";
+           }#foreach
+}#sub start_report_allSlave
+
+sub popup_start_report_allSlave {
+my $usrName;
+my $password;
+my $popupgui = MainWindow->new();
+$popupgui->title ("start all Slave Machines");
+
+        my $EntryFrame1=$popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $EntryFrame2=$popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $EntryFrame3=$popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $ButtonFrame1=$popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+
+foreach $MacName (keys %MacHash){
+my $MacType = $MacHash{$MacName};
+$MasterMacName= $MacName if ($MacType == 1)
+                                 }#foreach
+
+$EntryFrame1->Label(-text => "MasterName-")->pack(-side =>'left', -anchor => 'w');
+$EntryFrame1->Entry(-textvariable =>\$MasterMacName)->pack(-side =>'left', -anchor => 'w',
+                                                  -fill => 'x', -expand=> '1');
+$EntryFrame2->Label(-text => "UserName    -")->pack(-side =>'left', -anchor => 'w');
+$EntryFrame2->Entry(-textvariable =>\$usrName)->pack(-side =>'left', -anchor => 'w',
+                                                  -fill => 'x', -expand=> '1');
+$EntryFrame3->Label(-text => "Password     -")->pack(-side =>'left', -anchor => 'w');
+$EntryFrame3->Entry(-textvariable =>\$password ,-show=>"*")->pack(-side =>'left', -anchor => 'w',
+                                                  -fill => 'x', -expand=> '1');
+$StartButton = $ButtonFrame1->Button(-text=>'Start',                                                                                                        -command =>sub {&start_report_allSlave($usrName,$password,$MasterMacName);                            
+                                     })->pack(-side => 'left');
+
+$CancelButton = $ButtonFrame1->Button(-text=>'Cancel',                                                                                                       -command =>sub {$popupgui->destroy;} 
+                                      )->pack(-side => 'left');
+
+
+}#sub popup_start_report_allSlave
+
+sub start_control_allMaster{
+my $usrName = $_[0];
+my $password = $_[1];
+foreach $MacName (keys %MacHash){
+my $MacType = $MacHash{$MacName};
+if ($MacType == 1){
+&start_master_daemon(-host,$MacName,-user,$usrName,-passwd,$password);
+                }#if
+#printu" $MacName, $MacType\n";
+           }#foreach
+}#sub start_control_allMaster
+
+sub popup_start_control_allMaster {
+
+my $usrName;
+my $password;
+my $popupgui = MainWindow->new();
+$popupgui->title ("start all Master Machines");
+
+        my $EntryFrame1=$popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $EntryFrame2=$popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $ButtonFrame=$popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+
+$EntryFrame1->Label(-text => "UserName    -")->pack(-side =>'left', -anchor => 'w');
+$EntryFrame1->Entry(-textvariable =>\$usrName)->pack(-side =>'left', -anchor => 'w',
+                                                  -fill => 'x', -expand=> '1');
+$EntryFrame2->Label(-text => "Password     -")->pack(-side =>'left', -anchor => 'w');
+$EntryFrame2->Entry(-textvariable =>\$password ,-show=>"*")->pack(-side =>'left', -anchor => 'w',
+                                                  -fill => 'x', -expand=> '1');
+$StartButton = $ButtonFrame->Button(-text=>'Start',                                                                                                        -command =>sub {&start_control_allMaster($usrName,$password);                            
+                                     })->pack(-side => 'left');
+
+$CancelButton = $ButtonFrame->Button(-text=>'Cancel',                                                                                                       -command =>sub {$popupgui->destroy;} 
+                                      )->pack(-side => 'left');
+
+
+}#sub popup_start_control_allMaster
+#-------------------------------------------------------------------------------#
+
+sub popup_gui_StartScheduler {
+
+my $popupgui = MainWindow->new();
+$popupgui->title ("Start Scheduler");
+
+        my $EntryFrame =$popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $EntryFrame1=$popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $EntryFrame2=$popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $EntryFrame3=$popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $EntryFrame4=$popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $ButtonFrame1=$popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1);
+
+$EntryFrame->Label(-text => "SqlDataBase  -")->pack(-side =>'left', -anchor => 'w');
+$EntryFrame->Entry(-textvariable =>\$sqlDB)->pack(-side =>'left', -anchor => 'w',
+                                                  -fill => 'x', -expand=> '1'); 
+$EntryFrame1->Label(-text => "SqlUserName-")->pack(-side =>'left', -anchor => 'w');
+$EntryFrame1->Entry(-textvariable =>\$sqlusrName)->pack(-side =>'left', -anchor => 'w',
+                                                  -fill => 'x', -expand=> '1');
+$EntryFrame2->Label(-text => "SqlPassword  -")->pack(-side =>'left', -anchor => 'w');
+$EntryFrame2->Entry(-textvariable =>\$sqlpassword ,-show=>"*")->pack(-side =>'left', -anchor => 'w',
+                                                  -fill => 'x', -expand=> '1');
+$EntryFrame3->Label(-text => "LUserName    -")->pack(-side =>'left', -anchor => 'w');
+$EntryFrame3->Entry(-textvariable =>\$lusrName)->pack(-side =>'left', -anchor => 'w',
+                                                  -fill => 'x', -expand=> '1');
+$EntryFrame4->Label(-text => "LPassword     -")->pack(-side =>'left', -anchor => 'w');
+$EntryFrame4->Entry(-textvariable =>\$lpassword ,-show=>"*")->pack(-side =>'left', -anchor => 'w',
+                                                  -fill => 'x', -expand=> '1');
+
+$StartButton = $ButtonFrame1->Button(-text=>'Start',                                                                                       -command =>sub {&start_scheduler(-sqldb, $sqlDB, -sqluser, $sqlusrName, -sqlpasswd, $sqlpassword, -luser, $lusrName, -lpasswd, $lpassword);}        
+                                       )->pack(-side => 'left');
+
+$CancelButton = $ButtonFrame1->Button(-text=>'Cancel',                                                                                      -command =>sub {$popupgui->destroy;}                                    
+                                       )->pack(-side => 'left');
+
+}#sub popup_gui_StartScheduler
+
+#-------------------------------------------------------------------------------#
+1;

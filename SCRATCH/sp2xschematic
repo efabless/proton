@@ -1,0 +1,99 @@
+#!/usr/bin/perl
+use Benchmark;
+my $t0 = new Benchmark;
+
+my $noOfArg = @ARGV; 
+my ($spFile_str,$outfile) = ("","");
+my $output = "";
+my $module;
+my $loc_value;
+my $model_file;
+my $drupal_temp_path;
+my $cloud_share_path;
+
+if($ARGV[0] eq "-h" || $ARGV[0] eq "-help" || $ARGV[0] eq "-HELP"){
+   print "Usage : sp2xschematic -spice_file <sp file name>\n";
+   print "      : -output <file name>\n";
+   print "      : -model_file <file name>\n";
+}else{
+  for(my $xx=0; $xx<$noOfArg; $xx++){
+    if($ARGV[$xx] eq "-spice_file"){$spFile_str = $ARGV[$xx+1];}
+    if($ARGV[$xx] eq "-model_file"){$model_file = $ARGV[$xx+1];}
+    if($ARGV[$xx] eq "-cloud_share_path"){$cloud_share_path = $ARGV[$xx+1];}
+    if($ARGV[$xx] eq "-drupal_temp_storage_path"){$drupal_temp_path = $ARGV[$xx+1];}
+    if($ARGV[$xx] eq "-output"){$outfile = $ARGV[$xx+1];}
+  }#for
+  if($outfile eq ""){
+    $output = "silverline.xschematic";
+  }else {
+    if($outfile =~ /\.xschematic/){
+      $output = $outfile;
+    }else {
+      $output = "$outfile.xschematic";
+    }
+  }
+open(WRITE,">script_0");
+print WRITE "read_spice_new -sp $spFile_str\n";
+print WRITE "check_location_exists_in_spice\n";
+print WRITE "exit\n";
+#system("$cloud_share_path/apps/content/drupal_app/proton -f script_0 --nolog");
+system("/home/mansis/Projects/proton/proton -f script_0 --nolog");
+
+open(READ,"loc_check");
+while(<READ>){
+  chomp();
+  if($_ =~/location/){
+    ($module,$loc_value) = (split(/\s+/,$_))[0,1];
+  }#if
+}#while
+close(READ);
+if(-e "loc_check"){
+  system("rm loc_check");
+}
+
+if($loc_value == 1){
+  open(WRITE,">script_1");
+  print WRITE "read_spice_new -sp $spFile_str --model\n"; 
+  print WRITE "set_spice_loc_in_flplan -utilization 10\n";
+  print WRITE "edit_module -module $module\n";
+  print WRITE "write_edp_dia_for_spice -output $output -W 800 -H 500\n";
+  if( -e $model_file) {
+    print WRITE "create_new_model_file -sp_model_file tmpslvr_model_file -usr_model_file $model_file \n";
+  }
+  print WRITE "exit\n";
+  close(WRITE);
+  #system("$cloud_share_path/apps/content/drupal_app/proton -f script_1 --nolog");
+  system("/home/mansis/Projects/proton/proton -f script_1 --nolog");
+}else{
+  open(WRITE,">script_1");
+  print WRITE "read_spice_new -sp $spFile_str --model\n"; 
+  print WRITE "calc_loc_of_without_run_placement -W 800 -H 500\n";
+  print WRITE "set_spice_loc_in_flplan -utilization 10\n";
+  print WRITE "edit_module -module $module\n";
+  print WRITE "write_edp_dia_for_spice -output $output -W 800 -H 500\n";
+  if( -e $model_file) {
+    print WRITE "create_new_model_file -sp_model_file tmpslvr_model_file -usr_model_file $model_file \n";
+  }
+  print WRITE "exit\n";
+  close(WRITE);
+  #system("$cloud_share_path/apps/content/drupal_app/proton -f script_1 --nolog");
+  system("/home/mansis/Projects/proton/proton -f script_1 --nolog");
+}
+my $file_size = -s "tmpslvr_model_file";
+if($file_size != 0){ 
+}else {
+  system ("rm tmpslvr_model_file");
+}
+if (-e "tmpslvr_model_file"){
+  system ("/home/mansis/Projects/proton/SCRATCH/create_model_file_for_svg.pl -model tmpslvr_model_file");
+  system ("rm tmpslvr_model_file");
+}else {
+  #system ("$cloud_share_path/apps/content/drupal_app/create_model_file_for_svg -model $model_file");
+  system ("/home/mansis/Projects/proton/SCRATCH/create_model_file_for_svg.pl -model $model_file");
+}
+#system("cp $output $drupal_temp_path/");
+#system("chown apache:apache $drupal_temp_path/*");
+}#else
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "script sp2xschematic took:",timestr($td),"\n";

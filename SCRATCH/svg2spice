@@ -1,0 +1,643 @@
+#!/usr/bin/perl
+use XML::Simple;
+use Data::Dumper;
+
+my ($svgFile, $cloud_share_path);
+
+if(@ARGV < 2 || $ARGV[0] eq "-help" || $ARGV[0] eq "-h" || $ARGV[0] eq "-HELP"){ 
+  print "Usage: ./svg2tcl -svg <svg file name>\n"; 
+  return;
+}
+for(my $i=0;$i <=$#ARGV;$i++){
+  if($ARGV[$i] eq "-svg"){$svgFile = $ARGV[$i+1];}
+  if($ARGV[$i] eq "-cloud_share_path"){$cloud_share_path = $ARGV[$i+1];}
+}
+my @path =split(/\//,$svgFile);
+$fileName = $path[-1];
+$fileName =~ s/\.svg//; 
+
+my $data = XMLin($svgFile);
+
+open (WRITE, ">script") || die("Cannot open file for writing");
+
+my $modelFile_temp = $data->{svg}->{modelProperty};
+$modelFile_temp =~ s/..\/..\///g;
+my $modelFile = "$cloud_share_path/$modelFile_temp";
+
+my $canW = $data->{svg}->{width};
+my $canH = $data->{svg}->{height};
+my %CELL_VS_INST = ();
+my %CELL_VS_INST_LOC = ();
+my %INST_VS_ID = ();
+my %ID_VS_INST = ();
+my %INST_VS_CELL = ();
+my @polyline = ();
+my @text = ();
+if(ref($data->{svg}->{g}->{polyline}) eq 'ARRAY'){
+   @polyline = @{$data->{svg}->{g}->{polyline}};
+}elsif($data->{svg}->{g}->{polyline}){
+   push(@polyline, $data->{svg}->{g}->{polyline});
+}
+if(ref($data->{svg}->{g}->{text}) eq 'ARRAY'){
+   @text = @{$data->{svg}->{g}->{text}};
+}elsif($data->{svg}->{g}->{text}){
+   push(@text, $data->{svg}->{g}->{text});
+}
+#------------------------------------------------------read model----------------------------------------------------------#
+my %MODEL_PMOS_FRM_SVG = ();
+my %MODEL_NMOS_FRM_SVG = ();
+foreach my $instId (sort {$a <=> $b} keys %{$data->{svg}->{g}->{g}}){
+  my $fig_type = $data->{svg}->{g}->{g}->{$instId}->{type};
+  my $modelPmos = $data->{svg}->{g}->{g}->{$instId}->{modelPmos};
+  my $modelNmos = $data->{svg}->{g}->{g}->{$instId}->{modelNmos};
+  if($fig_type eq "pmos"){
+    my @each_pmos_model_data = (split(/,/,$modelPmos));
+    for(my $j=0;$j<=$#each_pmos_model_data;$j=$j+2){ 
+      $each_pmos_model_data[$j+1] =~ s/\)//g;
+      $each_pmos_model_data[$j+1] =~ s/\s*$//g;
+      $each_pmos_model_data[$j+1] =~ s/^\s*//g;
+      $MODEL_PMOS_FRM_SVG{$instId}{$each_pmos_model_data[$j]} = $each_pmos_model_data[$j+1]; 
+    }
+  }elsif($fig_type eq "nmos"){
+    my (@each_nmos_model_data) = (split(/,/,$modelNmos));
+    for(my $j=0;$j<=$#each_nmos_model_data;$j=$j+2){ 
+      $each_nmos_model_data[$j+1] =~ s/\)//g;
+      $each_nmos_model_data[$j+1] =~ s/\s*$//g;
+      $each_nmos_model_data[$j+1] =~ s/^\s*//g;
+      $MODEL_NMOS_FRM_SVG{$instId}{$each_nmos_model_data[$j]} = $each_nmos_model_data[$j+1]; 
+    }
+  }
+}
+my $tempmodelFile = "temp_model_file_new";
+open(WRITE_TEMP,">$tempmodelFile");
+open(READ_MODEL,"$modelFile");
+while(<READ_MODEL>){
+  chomp();
+  print WRITE_TEMP"$_\n";
+}#while
+  print WRITE_TEMP".end\n";
+close(WRITE_TEMP);
+my ($NEW_MODEL_PMOS_HASH,$NEW_MODEL_NMOS_HASH) = &read_model_file($tempmodelFile);
+
+my %MODEL_PMOS_HASH = %$NEW_MODEL_PMOS_HASH; 
+my %MODEL_NMOS_HASH = %$NEW_MODEL_NMOS_HASH; 
+
+#----------------------------------------------------pmos-----------------------------------#
+my %PMOS_VALUE_HASH_FRM_SVG = ();
+foreach my $inst_id (keys %MODEL_PMOS_FRM_SVG){
+  foreach my $inst_id_key (keys %{$MODEL_PMOS_FRM_SVG{$inst_id}}){
+    my $inst_id_key_value = $MODEL_PMOS_FRM_SVG{$inst_id}{$inst_id_key};
+    $PMOS_VALUE_HASH_FRM_SVG{$inst_id}{$inst_id_key} = $inst_id_key_value;
+  }
+}
+#--------------------------------------------------nmos-------------------------------------#
+my %NMOS_VALUE_HASH_FRM_SVG = ();
+foreach my $inst_id (keys %MODEL_NMOS_FRM_SVG){
+  foreach my $inst_id_key (keys %{$MODEL_NMOS_FRM_SVG{$inst_id}}){
+    my $inst_id_key_value = $MODEL_NMOS_FRM_SVG{$inst_id}{$inst_id_key};
+    $NMOS_VALUE_HASH_FRM_SVG{$inst_id}{$inst_id_key} = $inst_id_key_value;
+  }
+}
+#-------------------------------------------------------------------------------------------#
+foreach my $instId (sort {$a <=> $b} keys %{$data->{svg}->{g}->{g}}){
+  my $fig_type = $data->{svg}->{g}->{g}->{$instId}->{type};
+  my $bound_box = $data->{svg}->{g}->{g}->{$instId}->{bounds}; 
+  my ($llx,$lly,$urx,$ury) = (split(/,/,$bound_box))[0,1,2,3];
+  my $sizeW =sprintf("%.2f",($urx - $llx)/100);
+  my $sizeH =sprintf("%.2f",($ury - $lly)/100);
+  my $poly_text = $data->{svg}->{g}->{g}->{$instId}->{text}->{tspan}->{content};
+  if($poly_text eq ""){
+    if(exists $INST_VS_ID{"BD0_u".$inst_cnt_pin}){
+      $inst_cnt_pin++;
+      $poly_text = "BD0_u".$inst_cnt_pin;
+    }else{
+      $poly_text = "BD0_u".$inst_cnt_pin;
+      $inst_cnt_pin++;
+    }
+  }elsif(exists $INST_VS_ID{$poly_text}){
+    open(IN, "+<$tcl_file");
+    $inst_cnt_pin++;
+    my $new_name = "BD0_u".$inst_cnt_pin;
+    while (<IN>){
+      s/$poly_text/$new_name/;
+    }
+    close IN;
+  }else {}
+  $INST_VS_ID{$poly_text} = $instId;
+  $ID_VS_INST{$instId} = $poly_text;
+  $INST_VS_CELL{$poly_text} = $fig_type;
+  if(($fig_type =~ /input/)|| ($fig_type =~ /output/)){
+  }else{
+    push(@{$CELL_VS_INST{$fig_type}},$poly_text, $sizeW, $sizeH);
+    push(@{$CELL_VS_INST_LOC{$poly_text}},$fig_type, $llx,$lly);
+  }
+}#foreach
+my %PARAM_CHECK_HASH = ();
+foreach my $cell (keys %CELL_VS_INST){
+  my @cellvalue = @{$CELL_VS_INST{$cell}};
+  print WRITE "create_lef_cell -cell $cell -size {$cellvalue[1],$cellvalue[2]} ";
+  if($cell =~ /pmos/){ 
+    my $each_pindata_0 = "-pinData {0_tmpslvr_drain,inout}";
+    my $each_pindata_1 = "-pinData {1_tmpslvr_gate,inout}";
+    my $each_pindata_2 = "-pinData {2_tmpslvr_source,inout}";
+    my $each_pindata_3 = "-pinData {3_tmpslvr_body,inout}";
+    my $pin_cnt = 4;
+    my @pin_data = ();
+    foreach my $key (keys %MODEL_PMOS_HASH){
+      my $pin = $pin_cnt."_"."tmpslvr_param_$key";
+      $PARAM_CHECK_HASH{$cell}{$key} = $pin;
+      my $each_pindata = "-pinData {$pin,inout}";
+      push (@pin_data,$each_pindata);
+      $pin_cnt++;
+    }
+    print WRITE "$each_pindata_0 $each_pindata_1 $each_pindata_2 $each_pindata_3 @pin_data\n";
+  }elsif($cell =~ /nmos/){
+    my $each_pindata_0 = "-pinData {0_tmpslvr_drain,inout}";
+    my $each_pindata_1 = "-pinData {1_tmpslvr_gate,inout}";
+    my $each_pindata_2 = "-pinData {2_tmpslvr_source,inout}";
+    my $each_pindata_3 = "-pinData {3_tmpslvr_body,inout}";
+    my $pin_cnt = 4;
+    my @pin_data = ();
+    foreach my $key (keys %MODEL_NMOS_HASH){
+      my $pin = $pin_cnt."_"."tmpslvr_param_$key";
+      $PARAM_CHECK_HASH{$cell}{$key} = $pin;
+      my $each_pindata = "-pinData {$pin,inout}";
+      push (@pin_data,$each_pindata);
+      $pin_cnt++;
+    }
+    print WRITE "$each_pindata_0 $each_pindata_1 $each_pindata_2 $each_pindata_3 @pin_data\n";
+  }elsif($cell =~ /vdd/){
+    print WRITE "-pinData {vdd,inout}\n";
+  }elsif($cell =~ /vss/){
+    print WRITE "-pinData {vss,inout}\n";
+  }elsif($cell =~ /notGate/){
+    print WRITE "-pinData {Z,inout} ";
+    print WRITE "-pinData {A,inout} ";
+    print WRITE "-pinData {B,inout}\n";
+  }elsif($cell =~ /capacitor/){
+    print WRITE "-pinData {input,inout} ";
+    print WRITE "-pinData {output,inout}\n";
+  }elsif($cell =~ /resistor/){
+    print WRITE "-pinData {input,inout} ";
+    print WRITE "-pinData {output,inout}\n";
+  }
+}#foreach
+print WRITE "\n";
+print WRITE "createPseudoTopModule -top mychip -H $canH -W $canW\n";
+my @inst_list = ();
+my %temp_hash = ();
+foreach my $inst (keys %CELL_VS_INST_LOC){
+  my @inst_with_loc = @{$CELL_VS_INST_LOC{$inst}};
+  push(@inst_list,$inst);
+  print WRITE "createPseudoInstance -parent mychip -cell $inst_with_loc[0] -inst $inst -loc {$inst_with_loc[1],$inst_with_loc[2]} -orient N\n";
+}#foreach 
+my %CHECK_SRC_PIN = ();
+my %CHECK_SINK_PIN = ();
+for(my $i=0; $i<=$#polyline; $i++){
+  my $line_text = $text[$i]->{tspan}->{content};
+  if($line_text eq ""){
+    $line_text ="Net".$i;
+  }
+  my $srcInst = $ID_VS_INST{$polyline[$i]->{src}};
+  my $sinkInst = $ID_VS_INST{$polyline[$i]->{sink}};
+  my $src_pin_id = $polyline[$i]->{srcPin};
+  my $sink_pin_id = $polyline[$i]->{sinkPin};
+  my $cell_src = $INST_VS_CELL{$srcInst};
+  my $cell_sink = $INST_VS_CELL{$sinkInst};
+  if(($cell_src =~ /input/)|| ($cell_src =~ /output/)|| ($cell_src =~ /vdd/) || ($cell_src =~ /vss/)){
+   $line_text = $srcInst; 
+  }
+  if(($cell_sink =~ /output/)|| ($cell_sink =~ /input/) || ($cell_sink =~ /vdd/) || ($cell_sink =~ /vss/)){ 
+   $line_text = $sinkInst;
+  } 
+  if(($cell_src =~ /output/)|| ($cell_sink =~ /output/)|| ($cell_src =~ /vdd/) || ($cell_sink =~ /vdd/) || ($cell_src =~ /vss/) || ($cell_sink =~ /vss/)){
+    push(@{$CHECK_SRC_PIN{$src_pin_id}},$line_text);
+    push(@{$CHECK_SINK_PIN{$sink_pin_id}},$line_text);
+  }
+}
+for(my $i=0; $i<=$#polyline; $i++){
+  my $line_coords = $polyline[$i]->{points};
+  my $src_pin_id = $polyline[$i]->{srcPin};
+  my $sink_pin_id = $polyline[$i]->{sinkPin};
+  my $srcInst = $ID_VS_INST{$polyline[$i]->{src}};
+  my $sinkInst = $ID_VS_INST{$polyline[$i]->{sink}};
+  my $line_text = $text[$i]->{tspan}->{content};
+  if($line_text eq ""){
+    $line_text ="Net".$i;
+  }
+  my $cell_src = $INST_VS_CELL{$srcInst};
+  my $cell_sink = $INST_VS_CELL{$sinkInst};
+  if(($cell_src =~ /input/)|| ($cell_src =~ /output/)|| ($cell_src =~ /vdd/) || ($cell_src =~ /vss/)){
+   $line_text = $srcInst; 
+  }
+  if(($cell_sink =~ /output/)|| ($cell_sink =~ /input/) || ($cell_sink =~ /vss/) || ($cell_sink =~ /vdd/)){ 
+   $line_text = $sinkInst;
+  } 
+
+  my $src_inst_and_pin_id = $srcInst."_".$src_pin_id;
+  my $sink_inst_and_pin_id = $sinkInst."_".$sink_pin_id; 
+  if(exists $temp_hash{$src_inst_and_pin_id}){
+    my @old_net = @{$temp_hash{$src_inst_and_pin_id}};
+    push(@{$temp_hash{$src_inst_and_pin_id}},$old_net[0]);
+    push(@{$temp_hash{$sink_inst_and_pin_id}},$old_net[0]);
+    push(@{$NET_CONN{$old_net[0]}},$srcInst,$sinkInst);
+    push(@{$NET_COORD{$old_net[0]}},$line_coords);
+  }elsif(exists $temp_hash{$sink_inst_and_pin_id}){
+    my @old_net = @{$temp_hash{$sink_inst_and_pin_id}};
+    push(@{$temp_hash{$src_inst_and_pin_id}},$old_net[0]);
+    push(@{$temp_hash{$sink_inst_and_pin_id}},$old_net[0]);
+    push(@{$NET_CONN{$old_net[0]}},$srcInst,$sinkInst);
+    push(@{$NET_COORD{$old_net[0]}},$line_coords);
+  }else{ 
+    if(exists $CHECK_SINK_PIN{$sink_pin_id}){
+    my @new_net_array = @{$CHECK_SINK_PIN{$sink_pin_id}};
+      $new_net = @new_net_array[0] ;
+    }elsif(exists $CHECK_SINK_PIN{$src_pin_id}){
+    my @new_net_array = @{$CHECK_SINK_PIN{$src_pin_id}};
+      $new_net = @new_net_array[0] ;
+    }elsif(exists $CHECK_SRC_PIN{$src_pin_id}){
+    my @new_net_array = @{$CHECK_SRC_PIN{$src_pin_id}};
+      $new_net = @new_net_array[0] ;
+    }elsif(exists $CHECK_SRC_PIN{$sink_pin_id}){
+    my @new_net_array = @{$CHECK_SRC_PIN{$sink_pin_id}};
+      $new_net = @new_net_array[0] ;
+    }else{
+      $new_net = $line_text;
+    }
+    push(@{$temp_hash{$src_inst_and_pin_id}},$new_net);
+    push(@{$temp_hash{$sink_inst_and_pin_id}},$new_net);
+    push(@{$NET_CONN{$new_net}},$srcInst,$sinkInst);
+    push(@{$NET_COORD{$new_net}},$line_coords);
+  }
+}#for
+foreach my $net (keys %NET_CONN){ 
+  my @net_conn_data = @{$NET_CONN{$net}};
+  my $srcPin = "";
+  if($net =~ /vss/){
+    unshift(@net_conn_data,"PIN");
+    $srcPin = "vss";
+  }
+  if($net =~ /vdd/){
+    unshift(@net_conn_data,"PIN");
+    $srcPin = "vdd";
+  }
+  my $srcInst = shift @net_conn_data;
+  @net_conn_data = sort @net_conn_data; 
+  my @temp_net_conn_data = @net_conn_data; 
+  my $temp_net = pop (@temp_net_conn_data); 
+  my $net_type = "";
+  if(exists $INST_VS_CELL{$temp_net}){
+    $net_type = $INST_VS_CELL{$temp_net};
+  }
+  if($net_type =~ /output/ || $net_type =~ /vss/i || $net_type =~ /vdd/i){
+    my $last_net_conn_inst = pop @net_conn_data;
+    unshift ( @net_conn_data, $last_net_conn_inst );
+  }
+  if(exists $NET_COORD{$net}){
+    my @line_coords_list = @{$NET_COORD{$net}};
+    my @SinkCell_Pin_array =();
+    my @SinkCell_Pin_array_input_output =();
+    my @sink_list_of_length = ();
+    my @sink_list_of_width = ();
+    foreach my $line_coords (@line_coords_list){
+       my @coords = split(/\s+|\,/,$line_coords);
+       my $poly_x1 = sprintf("%.2f",($coords[0]));
+       my $poly_y1 = sprintf("%.2f",($coords[1]));
+       my $poly_x2 = sprintf("%.2f",($coords[-2]));
+       my $poly_y2 = sprintf("%.2f",($coords[-1]));
+       if(exists $INST_VS_ID{$srcInst}){ 
+         my $instId = $INST_VS_ID{$srcInst};
+         #-------------------------------------------------------cap and res-------------------------------------#
+         my $output_x2;
+         my $output_y2;
+         $output_x2 = $data->{svg}->{g}->{g}->{$instId}->{line}->[1]{x2};
+         $output_y2 = $data->{svg}->{g}->{g}->{$instId}->{line}->[1]{y2}; 
+
+         $output_x0 = $data->{svg}->{g}->{g}->{$instId}->{line}->[0]{x1};
+         $output_y0 = $data->{svg}->{g}->{g}->{$instId}->{line}->[0]{y1}; 
+
+         $output_x1 = $data->{svg}->{g}->{g}->{$instId}->{line}->[2]{x2};
+         $output_y1 = $data->{svg}->{g}->{g}->{$instId}->{line}->[2]{y2}; 
+
+         $output_x4 = $data->{svg}->{g}->{g}->{$instId}->{line}->[3]{x2};
+         $output_y4 = $data->{svg}->{g}->{g}->{$instId}->{line}->[3]{y2}; 
+
+         $output_x2 =  sprintf("%.2f",($output_x2)); 
+         $output_y2 =  sprintf("%.2f",($output_y2)); 
+         $output_x0 =  sprintf("%.2f",($output_x0)); 
+         $output_y0 =  sprintf("%.2f",($output_y0)); 
+         #print "$net => src $srcInst => $instId => $output_x2 => $output_y2 $output_x0 => $output_y0 => $output_x1 => $output_y1 $output_x4 => $output_y4\n";
+         #print "$net => poly $poly_x1 $poly_y1 $poly_x2 $poly_y2\n";
+         print "\n";
+         if(($poly_x1 == $output_x2 || $poly_x2 == $output_x2) && ($poly_y1 == $output_y2 || $poly_y2 == $output_y2)){ 
+           if(exists $INST_VS_CELL{$srcInst}){
+             my $cell = $INST_VS_CELL{$srcInst};
+             if($cell =~ /(capacitor|resistor)/){
+               $srcPin = "output"; 
+ #              print "1==$srcPin\n";
+             }
+           }
+         }
+         if(($poly_x1 == $output_x0 || $poly_x2 == $output_x0) && ($poly_y1 == $output_y0 || $poly_y2 == $output_y0)){ 
+           if(exists $INST_VS_CELL{$srcInst}){
+             my $cell = $INST_VS_CELL{$srcInst};
+             if($cell =~ /(capacitor|resistor)/){
+               $srcPin = "input"; 
+#               print "2==$srcPin\n";
+             }
+           }
+         }
+         #-------------------------------------------------------------------------------------------------------#
+         my $drain_x2;
+         my $drain_y2;
+         $drain_x2 = $data->{svg}->{g}->{g}->{$instId}->{line}->[5]{x2};
+         $drain_y2 = $data->{svg}->{g}->{g}->{$instId}->{line}->[5]{y2};
+         $drain_x2 =  sprintf("%.2f",($drain_x2)); 
+         $drain_y2 =  sprintf("%.2f",($drain_y2)); 
+         if(($poly_x1 == $drain_x2 || $poly_x2 == $drain_x2) && ($poly_y1 == $drain_y2 || $poly_y2 == $drain_y2)){
+           #due to reverse canvas on edp
+           if(exists $INST_VS_CELL{$srcInst}){
+             my $cell = $INST_VS_CELL{$srcInst};
+             if($cell =~ /pmos/){
+               $srcPin = "2_tmpslvr_source -sink $srcInst -pin 3_tmpslvr_body"; 
+             }elsif($cell =~ /nmos/){
+               $srcPin = "0_tmpslvr_drain"; 
+             }
+           }
+         }
+         my $gate_x1;
+         my $gate_y1;
+         $gate_x1 = $data->{svg}->{g}->{g}->{$instId}->{line}->[1]{x1};
+         $gate_y1 = $data->{svg}->{g}->{g}->{$instId}->{line}->[1]{y1};
+         $gate_x1 =  sprintf("%.2f",($gate_x1)); 
+         $gate_y1 =  sprintf("%.2f",($gate_y1)); 
+         if(($poly_x1 == $gate_x1 || $poly_x2 == $gate_x1) && ($poly_y1 == $gate_y1 || $poly_y2 == $gate_y1)){
+           $srcPin = "1_tmpslvr_gate"; 
+         }
+         my $src_x1;
+         my $src_y1;
+         $src_x1 = $data->{svg}->{g}->{g}->{$instId}->{line}->[6]{x1};
+         $src_y1 = $data->{svg}->{g}->{g}->{$instId}->{line}->[6]{y1};
+         $src_x1 =  sprintf("%.2f",($src_x1)); 
+         $src_y1 =  sprintf("%.2f",($src_y1)); 
+         if(($poly_x1 == $src_x1 || $poly_x2 == $src_x1) && ($poly_y1 == $src_y1 || $poly_y2 == $src_y1)){
+           #due to reverse canvas on edp
+           if(exists $INST_VS_CELL{$srcInst}){
+             my $cell = $INST_VS_CELL{$srcInst};
+             if($cell =~ /pmos/){
+               $srcPin = "0_tmpslvr_drain"; 
+             }elsif($cell =~ /nmos/){
+               $srcPin = "2_tmpslvr_source -sink $srcInst -pin 3_tmpslvr_body"; 
+             }
+           }
+         }
+       }
+      foreach my $sinkInst (@net_conn_data){
+        my $sinkPin = "";
+        if(exists $INST_VS_ID{$sinkInst}){
+          my $instId = $INST_VS_ID{$sinkInst};
+          if($sinkInst =~ /vdd/){
+            $sinkPin = "vdd"; 
+          }elsif($sinkInst =~ /vss/){
+            $sinkPin = "vss"; 
+          }
+          #-------------------------------------------------cap and res--------------------------------------#
+         my $input_x1;
+         my $input_y1;
+         $input_x1 = $data->{svg}->{g}->{g}->{$instId}->{line}->[0]{x1};
+         $input_y1 = $data->{svg}->{g}->{g}->{$instId}->{line}->[0]{y1}; 
+
+         $input_x0 = $data->{svg}->{g}->{g}->{$instId}->{line}->[1]{x2};
+         $input_y0 = $data->{svg}->{g}->{g}->{$instId}->{line}->[1]{y2}; 
+
+         $input_x2 = $data->{svg}->{g}->{g}->{$instId}->{line}->[2]{x1};
+         $input_y2 = $data->{svg}->{g}->{g}->{$instId}->{line}->[2]{y1}; 
+
+         $input_x3 = $data->{svg}->{g}->{g}->{$instId}->{line}->[3]{x1};
+         $input_y3 = $data->{svg}->{g}->{g}->{$instId}->{line}->[3]{y1}; 
+
+         $input_x1 =  sprintf("%.2f",($input_x1)); 
+         $input_y1 =  sprintf("%.2f",($input_y1)); 
+         $input_x0 =  sprintf("%.2f",($input_x0)); 
+         $input_y0 =  sprintf("%.2f",($input_y0)); 
+#         print "$net=> sink $sinkInst => $instId => $input_x1 => $input_y1 => $input_x0 => $input_y0 => $input_x2 => $input_y2 => $input_x3 => $input_y3\n";
+#         print "$net => poly $poly_x1 $poly_y1 $poly_x2 $poly_y2\n";
+
+         if(($poly_x1 == $input_x1 || $poly_x2 == $input_x1) && ($poly_y1 == $input_y1 || $poly_y2 == $input_y1)){ 
+           if(exists $INST_VS_CELL{$sinkInst}){
+             my $cell = $INST_VS_CELL{$sinkInst};
+             if($cell =~ /(capacitor|resistor)/){
+               $sinkPin = "input"; 
+             }
+           }
+         }
+         if(($poly_x1 == $input_x0 || $poly_x2 == $input_x0) && ($poly_y1 == $input_y0 || $poly_y2 == $input_y0)){
+           if(exists $INST_VS_CELL{$sinkInst}){
+             my $cell = $INST_VS_CELL{$sinkInst};
+             if($cell =~ /(capacitor|resistor)/){
+               $sinkPin = "output"; 
+             }
+           }
+         }
+          #-------------------------------------------------------------------------------------------------#
+          my $drain_x2;
+          my $drain_y2;
+          $drain_x2 = $data->{svg}->{g}->{g}->{$instId}->{line}->[5]{x2};
+          $drain_y2 = $data->{svg}->{g}->{g}->{$instId}->{line}->[5]{y2};
+          $drain_x2 =  sprintf("%.2f",($drain_x2)); 
+          $drain_y2 =  sprintf("%.2f",($drain_y2)); 
+          if(($poly_x1 == $drain_x2 || $poly_x2 == $drain_x2) && ($poly_y1 == $drain_y2 || $poly_y2 == $drain_y2)){
+            #due to reverse canvas on edp
+            if(exists $INST_VS_CELL{$sinkInst}){
+              my $cell = $INST_VS_CELL{$sinkInst};
+              if($cell =~ /pmos/){
+                $sinkPin = "2_tmpslvr_source -pin 3_tmpslvr_body"; 
+              }elsif($cell =~ /nmos/){
+                $sinkPin = "0_tmpslvr_drain"; 
+              }
+            }
+          }
+          my $gate_x1;
+          my $gate_y1;
+          $gate_x1 = $data->{svg}->{g}->{g}->{$instId}->{line}->[1]{x1};
+          $gate_y1 = $data->{svg}->{g}->{g}->{$instId}->{line}->[1]{y1};
+          $gate_x1 =  sprintf("%.2f",($gate_x1)); 
+          $gate_y1 =  sprintf("%.2f",($gate_y1)); 
+          if(($poly_x1 == $gate_x1 || $poly_x2 == $gate_x1) && ($poly_y1 == $gate_y1 || $poly_y2 == $gate_y1)){
+            $sinkPin = "1_tmpslvr_gate"; 
+          }
+          my $src_x1;
+          my $src_y1;
+          $src_x1 = $data->{svg}->{g}->{g}->{$instId}->{line}->[6]{x1};
+          $src_y1 = $data->{svg}->{g}->{g}->{$instId}->{line}->[6]{y1};
+          $src_x1 =  sprintf("%.2f",($src_x1)); 
+          $src_y1 =  sprintf("%.2f",($src_y1)); 
+          if(($poly_x1 == $src_x1 || $poly_x2 == $src_x1) && ($poly_y1 == $src_y1 || $poly_y2 == $src_y1)){
+            #due to reverse canvas on edp
+            if(exists $INST_VS_CELL{$sinkInst}){
+              my $cell = $INST_VS_CELL{$sinkInst};
+              if($cell =~ /pmos/){
+                $sinkPin = "0_tmpslvr_drain"; 
+              }elsif($cell =~ /nmos/){
+                $sinkPin = "2_tmpslvr_source -pin 3_tmpslvr_body"; 
+              }
+            }
+          }
+          my $cell_src = $INST_VS_CELL{$srcInst};
+          my $cell_sink = $INST_VS_CELL{$sinkInst};
+          if(($cell_src =~ /vdd/)){
+            if(($net =~ /vdd/) && ($cell_sink ne "vdd")){
+              $sinkPin = "2_tmpslvr_source -pin 3_tmpslvr_body";
+            }else {
+              $sinkPin = "vdd";
+            }
+          }
+          #if(($net =~ /vss/) && ($cell_sink ne "vss")){
+          #   #if(($cell_sink eq "capacitor")||($cell_sink eq "resistor")){
+          #   #  $sinkPin = "input";
+          #   #}else{
+          #     $sinkPin = "2_tmpslvr_source -pin 3_tmpslvr_body";
+          #   #}
+          #}
+          if(($cell_sink =~ /output/)|| ($cell_sink =~ /input/)){
+            $sinkPin = "inOut";
+          }else{
+           if($sinkPin ne ""){
+             push (@SinkCell_Pin_array,"-sink",$sinkInst ,"-pin",$sinkPin);
+           }
+          }
+          push (@SinkCell_Pin_array_input_output,"-sink",$sinkInst ,"-pin",$sinkPin);
+        }
+      }#foreach 
+    }
+   if($srcInst eq "" ){
+     #print WRITE "createPseudoNet -parentModule mychip -type wire -wireWidth 1 -source PIN @SinkCell_Pin_array -prefix $net \n";#source Inst is not connected in svg
+   }else{
+     my $cell_src = $INST_VS_CELL{$srcInst};
+     if(($cell_src =~ /input/)|| ($cell_src =~ /output/)|| ($cell_sink =~ /vdd/) || ($cell_sink =~ /vss/)){
+       $net = $srcInst;
+       print WRITE "createPseudoNet -parentModule mychip -type wire -wireWidth 1 -source PIN @SinkCell_Pin_array -prefix $net \n";
+     }else{
+       for(my $i=0;$i<=$#SinkCell_Pin_array_input_output;$i=$i+4){
+         my $inst = $SinkCell_Pin_array_input_output[$i+1];
+         my $cell_sink = $INST_VS_CELL{$inst};
+         if(($cell_sink =~ /output/)|| ($cell_sink =~ /input/) || ($cell_sink =~ /vdd/) || ($cell_sink =~ /vss/)){
+          $net = $inst;
+          print WRITE "createPseudoNet -parentModule mychip -type wire -wireWidth 1 -source PIN -sink $srcInst -pin $srcPin @SinkCell_Pin_array -prefix $net \n";
+           last;
+         }else{
+           print WRITE "createPseudoNet -parentModule mychip -type wire -wireWidth 1 -source $srcInst -pin $srcPin @SinkCell_Pin_array -prefix $net \n";
+           last;
+         }
+       }
+     }  
+   }
+ }
+}#foreach
+my $inst_first = shift @inst_list;
+for(my$i=0;$i<=$#inst_list;$i++){
+  push (@sink_list_of_length,"-sink",$inst_list[$i] ,"-pin","4_tmpslvr_param_l");
+  push (@sink_list_of_width,"-sink",$inst_list[$i] ,"-pin","5_tmpslvr_param_w");
+
+}#for
+my @cell_value = ();
+foreach my $cell (keys %CELL_VS_INST){
+  @cell_value = @{$CELL_VS_INST{$cell}};
+}#foreach
+#-------------------------------------------param----------------------------------------------------------------------#
+my %NET_PARAM_HASH = ();
+foreach my $id (keys %PMOS_VALUE_HASH_FRM_SVG){
+  foreach my $key (keys %{$PMOS_VALUE_HASH_FRM_SVG{$id}}){
+    my $value = $PMOS_VALUE_HASH_FRM_SVG{$id}{$key};
+    if(exists $MODEL_PMOS_HASH{$key}){
+      my $new_value = $MODEL_PMOS_HASH{$key}; 
+      if($new_value ne $value){
+        my $inst = $ID_VS_INST{$id};
+        my $cell = $INST_VS_CELL{$inst};
+        push(@{$NET_PARAM_HASH{$value}},$inst,$PARAM_CHECK_HASH{$cell}{$key});
+        #print WRITE "createPseudoNet -parentModule mychip -type wire -wireWidth 1 -source $inst -pin $PARAM_CHECK_HASH{$cell}{$key} -prefix $value\n";
+      }
+    }
+  }
+}
+foreach my $id (keys %NMOS_VALUE_HASH_FRM_SVG){
+  foreach my $key (keys %{$NMOS_VALUE_HASH_FRM_SVG{$id}}){
+    my $value = $NMOS_VALUE_HASH_FRM_SVG{$id}{$key};
+    if(exists $MODEL_NMOS_HASH{$key}){
+      my $new_value = $MODEL_NMOS_HASH{$key}; 
+      if($new_value ne $value){
+        my $inst = $ID_VS_INST{$id};
+        my $cell = $INST_VS_CELL{$inst};
+        push(@{$NET_PARAM_HASH{$value}},$inst,$PARAM_CHECK_HASH{$cell}{$key});
+        #print WRITE "createPseudoNet -parentModule mychip -type wire -wireWidth 1 -source $inst -pin $PARAM_CHECK_HASH{$cell}{$key} -prefix $value\n";
+      }
+    }
+  }
+}
+foreach my $param_net (keys %NET_PARAM_HASH){
+  my @inst_pin_data = @{$NET_PARAM_HASH{$param_net}};
+  my $source = $inst_pin_data[0];
+  my $source_pin = $inst_pin_data[1];
+  print WRITE "createPseudoNet -parentModule mychip -type wire -wireWidth 1 -source $source -pin $source_pin ";
+  for(my $i=2;$i<=$#inst_pin_data;$i=$i+2){
+     print WRITE "-sink $inst_pin_data[$i] -pin $inst_pin_data[$i+1] " if($inst_pin_data[$i] ne "");
+  } 
+  print WRITE "-prefix $param_net\n";
+}#foreach
+#----------------------------------------------------------------------------------------------------------------------#
+print WRITE "commit_module -module mychip\n";
+#print WRITE "write_verilog -output $fileName.v --overwrite --hier --notWriteEmptyModule\n";
+print WRITE "create_black_box_frm_pldb\n";
+print WRITE "write_spice_file -output $fileName.sp --overwrite --hier --notWriteEmptyModule\n";
+print WRITE "exit\n";
+close WRITE;
+system("$cloud_share_path/apps/content/drupal_app/proton -f script --nolog");
+#system("/home/mansis/Projects/proton/proton -f script --nolog");
+#-----------------------------------------------------------------------------------------------------------------------#
+sub read_model_file {
+my $model_file = $_[0];
+open(READ,"$model_file");
+my $previous_line = "";
+my $next_line = "";
+my %MODEL_PMOS_HASH = ();
+my %MODEL_NMOS_HASH = ();
+while(<READ>){
+  chomp($_);
+  if($_ =~ /^\s*\*/){next;}
+  if($_ =~ /^\s*$/){next;}
+  if($_ =~ /^\s*\+/){
+    s/\s+$//;
+    s/^\s*\+\s*//;
+    $previous_line = $previous_line." ".$_;
+    next;
+  }
+  $next_line = $_;
+  $previous_line =~ s/^\s*//;
+  $previous_line =~ s/\s*$//;
+  if($previous_line =~ /.model/i){
+    $previous_line =~ s/^\s*\.model\s*//i;
+    $previous_line =~ s/\s+/ /g;
+    my $temp_previous_line = $previous_line;
+    $temp_previous_line =~ s/\(.*//g;
+    $previous_line =~ s/.*\(\s*//g;
+    $previous_line =~ s/=//g;
+    my @model_data = (split(/\s+/,$previous_line));
+    my ($model_name,$type) = (split(/\s+/,$temp_previous_line))[0,1];
+    for(my $i=0;$i<=$#model_data;$i=$i+2){
+       if($type =~ /p/i){
+         $model_data[$i+1] =~ s/\)//g;
+         $MODEL_PMOS_HASH{$model_data[$i]} = $model_data[$i+1]; 
+       }elsif ($type =~ /n/i){
+         $model_data[$i+1] =~ s/\)//g;
+         $MODEL_NMOS_HASH{$model_data[$i]} = $model_data[$i+1]; 
+       }
+    }#for 
+  }
+$previous_line = $next_line;
+}#while
+#close(READ);
+return(\%MODEL_PMOS_HASH,\%MODEL_NMOS_HASH);
+}#sub read_model_file
+#---------------------------------------------------------#
+
+

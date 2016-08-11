@@ -1,0 +1,430 @@
+sub create_lef_image{
+use GD;
+use Benchmark;
+my $t0 = new Benchmark;
+
+my $noOfArg = @_; 
+my $macroName = "";
+my ($image_width, $image_height) = (880,380);
+my ($outFile, $format) = ("lef_view", "png");
+my ($rect_display,$obs_display,$text_display,$grid_display) = (0,0,0,0);
+my ($x_displacement, $y_displacement, $marginX, $marginY) = (0, 0, 0, 0);
+my ($LefDisplayXFact, $LefDisplayYFact, $LefDisplayFact) = (1, 1, 1);
+my @bbox = ();
+my @errBBox = (); 
+my %NEW_COLOR_HASH = ();
+
+if($_[0] eq "-h" || $_[0] eq "-help" || $_[0] eq "-HELP"){
+   print"Usage: create_lef_image  -cell <macro name>\n";
+   print"                         -output <output filename>\n";
+   print"                         -width <image width>\n";
+   print"                         -height <image height>\n";
+   print"                         -bbox <{x1,y1,x2,y2}>\n";
+   print"                         --rect <metal rect display>\n";
+   print"                         --obs <obs display>\n";
+   print"                         --text <pin text display>\n";
+   print"                         --grid <grid display>\n";
+   print"                         -format <file format (png/jpeg/gif/gd/gd2>\n";
+   print" default value <output:lef_view.png>\n";
+   print" default value <width:880>\n";
+   print" default value <height:380>\n";
+   print" default value <format:png>\n";
+   return @errBBox;
+}else{
+   for(my $xx=0; $xx<$noOfArg; $xx++){
+       if($_[$xx] eq "-cell"){$macroName = $_[$xx+1];}
+       if($_[$xx] eq "-output"){$outFile = $_[$xx+1];}
+       if($_[$xx] eq "-width"){$image_width = $_[$xx+1];}
+       if($_[$xx] eq "-height"){$image_height = $_[$xx+1];}
+       if($_[$xx] eq "-format"){$format = $_[$xx+1];}
+       if($_[$xx] eq "-bbox"){
+          my $bbox_str = $_[$xx+1];
+          $bbox_str =~ s/\{//;         
+          $bbox_str =~ s/\}//;        
+          @bbox = split(/\,/,$bbox_str);
+       }
+       if($_[$xx] eq "--rect"){$rect_display = 1;}
+       if($_[$xx] eq "--obs"){$obs_display = 1;}
+       if($_[$xx] eq "--text"){$text_display = 1;}
+       if($_[$xx] eq "--grid"){$grid_display = 1;}
+   }
+
+   if($macroName eq ""){
+      my @keys = keys %PLDB;
+      $macroName = $keys[0];
+   }
+
+   if($macroName eq ""){   
+      print"WARN: Please provide cell name\n";
+      return;
+   }
+   
+   if($outFile =~ /.png$/){}else{$outFile = $outFile.".".$format;}
+
+   # Create a new image
+   my $im = new GD::Image($image_width,$image_height,[0,0,0]);
+   my $po = new Graphics::ColorNames('X');
+   # Allocate some colors
+   &InitColors($im);
+   # Make the background transparent and interlaced
+   #$im->transparent($red);
+   #$im->interlaced('true');
+   
+   if(exists $PLDB{$macroName} ) {
+      my @size = $PLDB{$macroName}->dbMdbGetSize;   
+      my $class = $PLDB{$macroName}->dbMdbGetClass;
+      my @cellOrigin = $PLDB{$macroName}->dbMdbGetOrigin;
+      my $cell_width = $size[0];
+      my $cell_height = $size[1];
+      my $width  = $size[0];
+      my $height  = $size[1];
+      ################## if -bbox option is used ##############
+      #-------- we should scale the design with bbox ---------#
+      if((@bbox < 4) || ($bbox[0] == 0 && $bbox[1] == 0 && $bbox[2] == 0 && $bbox[3] == 0)){
+         @bbox = (0,0,$size[0],$size[1]);
+         $LefDisplayXFact = ($image_width-80)/$width;
+         $LefDisplayYFact = ($image_height-80)/$height;
+      }else{
+         $width = abs($bbox[2] - $bbox[0]);
+         $height = abs($bbox[3] - $bbox[1]);
+         $x_displacement = $bbox[0];
+         $y_displacement = $bbox[1];
+         $LefDisplayXFact = $image_width/$width;
+         $LefDisplayYFact = $image_height/$height;
+      }
+      #-------------------------------------------------------#
+      #my $LefDisplayXFact = ($image_width-80)/$width;
+      #my $LefDisplayYFact = ($image_height-80)/$height;
+      if ($LefDisplayXFact < $LefDisplayYFact ) {
+          $LefDisplayFact  = $LefDisplayXFact;
+      } else {
+          $LefDisplayFact  =  $LefDisplayYFact 
+      }
+
+      ############### Calculating X margin & Y margin to display image in centre ##############
+      $marginX = ($image_width - $width*$LefDisplayFact)/2;
+      $marginY = ($image_height - $height*$LefDisplayFact)/2;
+      #########################################################################################
+       
+      my $llx = 0 - $x_displacement;
+      my $lly = 0 - $y_displacement; 
+      my $urx = $size[0] - $x_displacement;
+      my $ury = $size[1] - $y_displacement;
+      $llx = $marginX + $llx*$LefDisplayFact;
+      $lly = ($image_height - $marginY) - $lly*$LefDisplayFact;
+      $urx = $marginX + $urx*$LefDisplayFact;
+      $ury = ($image_height - $marginY) - $ury*$LefDisplayFact;
+      my $color = $im->colorAllocate($po->rgb("azure"));
+      $im->rectangle($llx,$ury,$urx,$lly, $color);
+
+      my $numOfLayers = keys %PTDB;
+      if($numOfLayers == 0 ){ 
+         $grid_display = 0;
+         print "WARN : No lef technology present ...\n";
+      #   print "INFO : please read the lef technology file before I can display the macros\n"; 
+      #   return @errBBox;
+      }
+      ########################### calculating layer  pitch and offset ########################
+      my $xpitch = 0;
+      my $ypitch = 0;
+      my $nLH = 100;
+      my $nLV = 100;
+      my @layers = keys %PTDB;
+      foreach my $layerName (@layers){
+         my $type = $PTDB{$layerName}->dbTechGetLayerType;
+         if($type eq "ROUTING") {
+            my $dir = $PTDB{$layerName}->dbTechGetLayerDir;
+            my $num = $PTDB{$layerName}->dbTechGetLayerNum;
+            my $pitch = $PTDB{$layerName}->dbTechGetLayerPitch;
+            my $offset = $PTDB{$layerName}->dbTechGetLayerOffset;
+            if($dir eq "HORIZONTAL" ) { 
+               if($nLH > $num ) {
+                  $nLH = $num ; $ypitch = $pitch;
+                  if($offset eq "UND"){$shifty = 0.5*$ypitch;}
+                  else                {$shifty = $offset;}  
+               }
+            }elsif($dir eq "VERTICAL" ){
+               if($nLV > $num ){ 
+                  $nLV = $num ; $xpitch = $pitch;
+                  if ($offset eq "UND"){$shiftx = 0.5*$xpitch;}
+                  else                 {$shiftx = $offset;}  
+                              
+               } 
+            }else{print "invalid direction on routing layer $layerName\n";}
+         }#if layer is a routing layer
+      } #search the first 2 consequtive orthgonal routing layers
+      #################################### displaying grid ##################################
+      if($grid_display == 1){
+         if($class eq "CORE"){
+            $nv = int ($cell_width/$xpitch);
+            for($i = 0; $i <= $nv; $i++){
+                $xx = ($shiftx + $xpitch*$i)*$LefDisplayFact;
+                if($xx > $cell_width*$LefDisplayFact){last;}
+                   my $vl_color = $im->colorAllocate($po->rgb("medium sea green"));
+                   my $x1 = $marginX + $xx - $x_displacement*$LefDisplayFact;
+                   my $y1 = ($image_height - $marginY) - (0 - $y_displacement)*$LefDisplayFact;
+                   my $x2 = $x1;
+                   my $y2 = ($image_height - $marginY) - ($cell_height - $y_displacement)*$LefDisplayFact;;
+                   $im->dashedLine($x1,$y1,$x2,$y2, $vl_color);
+            }#for vertical lines 
+            $nh = int ($cell_height/$ypitch);
+            for($j = 0; $j <=$nh; $j++){
+                $yy = ($shifty + $ypitch*$j)*$LefDisplayFact;
+                if($yy > $cell_height*$LefDisplayFact){last;}
+                   my $hl_color = $im->colorAllocate($po->rgb("PaleVioletRed4"));
+                   my $x1 = $marginX + (0 - $x_displacement)*$LefDisplayFact;
+                   my $y1 = ($image_height - $marginY) - ($yy - $y_displacement*$LefDisplayFact);
+                   my $x2 = $marginX + ($cell_width - $x_displacement)*$LefDisplayFact;
+                   my $y2 = $y1;
+                   $im->dashedLine($x1,$y1,$x2,$y2, $hl_color);
+            }#for horizontal lines 
+         }#if class is core
+      }#if grid display is ON
+      ####################### displaying pin Rectangles and pin Name #######################
+      my @pins = $PLDB{$macroName}->dbMdbGetPins;
+      foreach $pinName ( @pins ) {
+        my @RECTS = $PLDB{$macroName}->dbMdbGetPinRect($pinName);
+        my @POLY = $PLDB{$macroName}->dbMdbGetPinPolygon($pinName);
+        if($#RECTS >= 0){
+           if($rect_display == 1){
+              foreach my $rectLine ( @RECTS ) {
+                  my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$rectLine))[0,2,3,4,5];
+                  my $rect_color = "";
+                  if(exists $PTDB{$layer}){
+                     $rect_color = $PTDB{$layer}->dbTechGetLayerColor;
+                  }elsif(exists $NEW_COLOR_HASH{$layer}){
+                     $rect_color = $NEW_COLOR_HASH{$layer};
+                  }else{
+                     my $num_keys = keys %NEW_COLOR_HASH;
+                     $rect_color = $HashCol{$num_keys};
+                     $NEW_COLOR_HASH{$layer} = $rect_color;
+                  }
+                  $llx = $marginX + ($llx+$cellOrigin[0]-$x_displacement)*$LefDisplayFact;
+                  $lly = ($image_height - $marginY) - ($lly+$cellOrigin[1]-$y_displacement)*$LefDisplayFact;
+                  $urx = $marginX + ($urx+$cellOrigin[0]-$x_displacement)*$LefDisplayFact;
+                  $ury = ($image_height - $marginY) - ($ury+$cellOrigin[1]-$y_displacement)*$LefDisplayFact;
+                  #?my $im_rect_color = $im->colorAllocate($po->rgb($rect_color));
+                  #?$im->rectangle($llx,$ury,$urx,$lly, $im_rect_color);
+                  #$im->filledRectangle($llx,$ury,$urx,$lly, $im_rect_color);
+                  #my $path2proton = $GLOBAL->dbfGlobalGetProtonHome;
+                  #my $tile = newFromPng GD::Image("$path2proton/ETC/dotted_bitmap.png");
+                  #$im->setTile($tile);   
+                  #$im->filledRectangle($llx,$ury,$urx,$lly, gdTiled) 
+                  #------------------ Making bitmap ---------------------#
+                  my $tile = new GD::Image(4,4);
+                  my $black = $tile->colorAllocate(0,0,0);
+                  my $im_rect_color = $tile->colorAllocate($po->rgb($rect_color));
+                  $tile->dashedLine(0, 0,4,4,$im_rect_color);
+                  $im->setTile($tile);
+                  $im->filledRectangle($llx,$ury,$urx,$lly, gdTiled);
+                  my $im_color = $im->colorAllocate($po->rgb($rect_color));
+                  $im->rectangle($llx,$ury,$urx,$lly, $im_color);
+                  #------------------------------------------------------#
+              }#foreach rectangle
+           }#if pin rect display is ON
+           if($text_display == 1){
+              my $fortext = shift @RECTS;
+              my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$fortext))[0,2,3,4,5];
+              my $midx = ($llx + $urx)/2;
+              my $midy = ($lly + $ury)/2;
+              $midx = $marginX + ($midx+$cellOrigin[0]-$x_displacement)*$LefDisplayFact;
+              $midy = ($image_height - $marginY) - ($midy+$cellOrigin[1]-$y_displacement)*$LefDisplayFact;
+              my $im_text_color = $im->colorAllocate($po->rgb("yellow"));
+              $im->string(gdSmallFont, $midx, $midy, $pinName, $im_text_color);
+           }#if pin text display is ON
+        }else{
+           if($rect_display == 1){
+              foreach my $polyLine ( @POLY ) {
+                my @polygon = ();
+                my @rect_or_polygon = (split(/\s+/,$polyLine));
+                my $arrlen = @rect_or_polygon;
+                my $layer = $rect_or_polygon[0];
+                my $rect_color = "";
+                if(exists $PTDB{$layer}){
+                   $rect_color = $PTDB{$layer}->dbTechGetLayerColor;
+                }elsif(exists $NEW_COLOR_HASH{$layer}){
+                   $rect_color = $NEW_COLOR_HASH{$layer};
+                }else{
+                   my $num_keys = keys %NEW_COLOR_HASH;
+                   $rect_color = $HashCol{$num_keys};
+                   $NEW_COLOR_HASH{$layer} = $rect_color;
+                }
+                #?my $im_rect_color = $im->colorAllocate($po->rgb($rect_color));
+                my $poly = new GD::Polygon;
+                for (my $xx=2; $xx<$arrlen; $xx = $xx+2){
+                  my $llx = $marginX + ($rect_or_polygon[$xx]+$cellOrigin[0]-$x_displacement)*$LefDisplayFact;
+                  my $lly = ($image_height - $marginY) - ($rect_or_polygon[$xx+1]+$cellOrigin[1]-$y_displacement)*$LefDisplayFact;
+                  $poly->addPt($llx, $lly);     
+                }
+                #?$im->polygon($poly, $im_rect_color);
+                #$im->filledPolygon($poly, $im_rect_color);
+                #------------------ Making bitmap ---------------------#
+                my $tile = new GD::Image(4,4);
+                my $black = $tile->colorAllocate(0,0,0);
+                my $im_rect_color = $tile->colorAllocate($po->rgb($rect_color));
+                $tile->dashedLine(0, 0,4,4,$im_rect_color);
+                $im->setTile($tile);
+                $im->filledPolygon($poly, gdTiled);
+                my $im_color = $im->colorAllocate($po->rgb($rect_color));
+                $im->polygon($poly, $im_color);
+                #------------------------------------------------------#
+              }
+           }#if pin rect display is ON
+           if($text_display == 1){
+              my $fortext = shift @POLY;
+              my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$fortext))[0,2,3,4,7];
+              my $midx = ($llx + $urx)/2;
+              my $midy = ($lly + $ury)/2;
+              $midx = $marginX + ($midx+$cellOrigin[0]-$x_displacement)*$LefDisplayFact;
+              $midy = ($image_height - $marginY) - ($midy+$cellOrigin[1]-$y_displacement)*$LefDisplayFact;
+              my $im_text_color = $im->colorAllocate($po->rgb("yellow"));
+              $im->string(gdSmallFont, $midx, $midy, $pinName, $im_text_color);
+           }#if pin text display is ON
+        }
+      }#foreach poly of pin
+      ######################### displaying obstraction Rectangles #########################
+      if($obs_display == 1){
+         my @OBS = $PLDB{$macroName}->dbMdbGetObs;
+         my @POLY_OBS = $PLDB{$macroName}->dbMdbGetObsPolygon;
+         if($#OBS >= 0){
+           foreach $obsLine ( @OBS ) {
+             my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$obsLine))[0,2,3,4,5];
+             my $rect_color = "";
+             if(exists $PTDB{$layer}){
+                $rect_color = $PTDB{$layer}->dbTechGetLayerColor;
+             }elsif(exists $NEW_COLOR_HASH{$layer}){
+                $rect_color = $NEW_COLOR_HASH{$layer};
+             }else{
+                my $num_keys = keys %NEW_COLOR_HASH;
+                $rect_color = $HashCol{$num_keys};
+                $NEW_COLOR_HASH{$layer} = $rect_color;
+             }
+             $llx = $marginX + ($llx+$cellOrigin[0]-$x_displacement)*$LefDisplayFact;
+             $lly = ($image_height - $marginY) - ($lly+$cellOrigin[1]-$y_displacement)*$LefDisplayFact;
+             $urx = $marginX + ($urx+$cellOrigin[0]-$x_displacement)*$LefDisplayFact;
+             $ury = ($image_height - $marginY) - ($ury+$cellOrigin[1]-$y_displacement)*$LefDisplayFact;
+             #?my $im_rect_color = $im->colorAllocate($po->rgb($rect_color));
+             #?$im->rectangle($llx,$ury,$urx,$lly, $im_rect_color)
+             #$im->filledRectangle($llx,$ury,$urx,$lly, $im_rect_color)
+             #------------------ Making bitmap ---------------------#
+             my $tile = new GD::Image(2,2);
+             my $black = $tile->colorAllocate(0,0,0);
+             my $im_rect_color = $tile->colorAllocate($po->rgb($rect_color));
+             $tile->dashedLine(0, 0,2,2,$im_rect_color);
+             $im->setTile($tile);
+             $im->filledRectangle($llx,$ury,$urx,$lly, gdTiled);
+             my $im_color = $im->colorAllocate($po->rgb($rect_color));
+             $im->rectangle($llx,$ury,$urx,$lly, $im_color);
+             #------------------------------------------------------#
+           }# foreach obs line
+         }else {
+           foreach my $polyobsLine ( @POLY_OBS ) {
+             my @obs_polygon = ();
+             my @rect_or_polygon = (split(/\s+/,$polyobsLine));
+             my $arrlen = @rect_or_polygon;
+             my $layer = $rect_or_polygon[0];
+             my $rect_color = "";
+             if(exists $PTDB{$layer}){
+                $rect_color = $PTDB{$layer}->dbTechGetLayerColor;
+             }elsif(exists $NEW_COLOR_HASH{$layer}){
+                $rect_color = $NEW_COLOR_HASH{$layer};
+             }else{
+                my $num_keys = keys %NEW_COLOR_HASH;
+                $rect_color = $HashCol{$num_keys};
+                $NEW_COLOR_HASH{$layer} = $rect_color;
+             }
+             #?my $im_rect_color = $im->colorAllocate($po->rgb($rect_color));
+             my $poly = new GD::Polygon;
+             for (my $xx=2; $xx<$arrlen; $xx = $xx+2){
+               my $llx = $marginX + ($rect_or_polygon[$xx]+$cellOrigin[0]-$x_displacement)*$LefDisplayFact;
+               my $lly = ($image_height - $marginY) - ($rect_or_polygon[$xx+1]+$cellOrigin[1]-$y_displacement)*$LefDisplayFact;
+               $poly->addPt($llx, $lly);
+             }
+             #?$im->polygon($poly, $im_rect_color);
+             #$im->filledPolygon($poly, $im_rect_color);
+             #------------------ Making bitmap ---------------------#
+             my $tile = new GD::Image(2,2);
+             my $black = $tile->colorAllocate(0,0,0);
+             my $im_rect_color = $tile->colorAllocate($po->rgb($rect_color));
+             $tile->dashedLine(0, 0,2,2,$im_rect_color);
+             $im->setTile($tile);
+             $im->filledPolygon($poly, gdTiled);
+             my $im_color = $im->colorAllocate($po->rgb($rect_color));
+             $im->polygon($poly, $im_color);
+             #------------------------------------------------------#
+           }#foreach poly obs line
+         }#if poly obs
+      }#if obstraction display is ON
+      ##################### context bbox #########################
+      $bbox[0] = $bbox[0] - $marginX/$LefDisplayFact;
+      $bbox[1] = $bbox[1] - $marginY/$LefDisplayFact;
+      $bbox[2] = $bbox[0] + $image_width/$LefDisplayFact;
+      $bbox[3] = $bbox[1] + $image_height/$LefDisplayFact;
+      #foreach my $key(keys %NEW_COLOR_HASH){
+      #  print "$key => $NEW_COLOR_HASH{$key}\n";
+      #}
+      ############################################################
+   }#if cell exists
+   # Open a file for writing 
+   open(PICTURE, ">$outFile") or $! and print"WARN: permission denied to write $outFile\n" and return @errBBox;
+
+   # Make sure we are writing to a binary stream
+   binmode PICTURE;
+   
+   # Convert the image to PNG and print it to the file PICTURE
+   print PICTURE $im->png if($format eq "png");
+   print PICTURE $im->jpeg if($format eq "jpeg");
+   print PICTURE $im->gif() if($format eq "gif");
+   print PICTURE $im->gd if($format eq "gd");
+   print PICTURE $im->gd2 if($format eq "gd2");
+   close PICTURE;
+}
+$t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "lef image creation for $macroName took:",timestr($td),"\n";
+return(@bbox);
+}#sub create_lef_image
+
+sub create_all_cell_image {
+ use Benchmark;
+ my $t0 = new Benchmark;
+ 
+ my @arg = @_;
+ 
+ if($_[0] eq "-h" || $_[0] eq "-help" || $_[0] eq "-HELP"){
+    print"Usage: create_all_cell_image  \n";
+    print"                         -width <image width>\n";
+    print"                         -height <image height>\n";
+    print"                         --rect <metal rect display>\n";
+    print"                         --obs <obs display>\n";
+    print"                         --text <pin text display>\n";
+    print"                         --grid <grid display>\n";
+    print" default value <width:880>\n";
+    print" default value <height:380>\n";
+    return;
+ }else{
+    foreach my $macro (sort keys %PLDB){
+        &create_lef_image(@arg,-output, $macro, -cell , $macro);
+        my @size = $PLDB{$macro}->dbMdbGetSize;   
+        my $class = $PLDB{$macro}->dbMdbGetClass;
+        open(WRITE ,">$macro.cellinfo");
+          print WRITE "MACRO=$macro\n";
+          print WRITE "TYPE=$class\n";
+          print WRITE "WIDTH=$size[0]\n";
+          print WRITE "HEIGHT=$size[1]\n";
+        close(WRITE);
+    }
+ }
+ $t1 = new Benchmark;
+ my $td = timediff($t1, $t0);
+ print "cmd:create_all_cell_image took:",timestr($td),"\n";
+}#sub create_all_cell_image
+
+sub run_complete{
+ open(WRITE,">complete") or die "Can't create complete: $!";;
+ close(WRITE);
+}#sub run_complete
+ 
+
+1;
+

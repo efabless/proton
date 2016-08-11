@@ -1,0 +1,270 @@
+package GCell;
+
+####  explanation of database ####
+#IL : array of instances pointers or names
+#RL : pointer of rows contained in the Gcell
+#NFLOPS: Number of flops
+#bbox  :  [ x1, y1, x2, y2 ]
+#aT : available tracks in each layer  eg : 10,10,10,5,3
+#bT : blocked tracks in each layer
+#rT : reserved tracks , generally for power, clock routing
+#netStat : #of within nets, #of across nets, #of over nets
+#S : G-cell status can be either of  0,1,2,3,4 
+#     0 means Gcell data has changed and the data needs to be recalculated
+#     1 means data is current, but the images need to regenerated
+#     2 means only local display image needs to be regenerated.
+
+sub new {
+  my $inst = {
+              IL => [],
+              RL => [],
+              bbox => [],
+              aT => [],
+              bT => [],
+              rT => [],
+              netStat => [4],
+	      S => 0,
+              MM => [],
+	      PID=> -1,
+              NFLOPS => 0,
+              FL => [],
+              DL => [],
+	     };
+  bless $inst, 'GCell';
+  return $inst;
+}#sub new
+
+#-------------------------------------------------#
+sub dbgGcellAddInst{
+my ($self,$inst) = @_;
+push(@{$self->{IL}}, $inst);
+$self->dbgGcellSetStat(0);
+#if ( $main::PLACE{$TOP_MODULE}->dbPlaceGetIsInstFlop($inst)) {
+#  $self->dbgGcellNflopIncr;
+#}
+}#sub dbgGcellAddInst
+
+sub dbgGcellDelInst{
+my ($self,$inst) = @_;
+foreach (@{$self->{IL}}) {
+	my $test_inst = pop(@{$self->{IL}});
+	if ($test_inst eq $inst) {}
+	else { unshift(@{$self->{IL}}, $test_inst);}
+}
+}#sub dbgGcellDelInst
+
+sub dbgGcellGetInst{
+my ($self) = @_;
+my @inst = @{$self->{IL}};
+return(@inst);
+}#sub dbgGcellGetInst
+
+#-------------------------------------------------#
+
+sub dbgGcellAddRow{
+my ($self,$row) = @_;
+push(@{$self->{RL}}, $row);
+}#sub dbgGcellAddRow
+
+sub dbgGcellDelRow{
+my ($self,$row) = @_;
+foreach (@{$self->{RL}}) {
+	my $test_row = pop(@{$self->{RL}});
+	if ($test_row eq $row) {}
+	else { unshift(@{$self->{RL}}, $test_row);}
+}
+}#sub dbgGcellDelRow
+
+sub dbgGcellGetRow{
+my ($self) = @_;
+my @row = @{$self->{RL}};
+return(@row);
+}#sub dbgGcellGetRow
+
+#-------------------------------------------------#
+
+sub dbgGcellSetBBox{
+my ($self,$x1,$y1,$x2,$y2) = @_;
+    ${$self->{bbox}}[0] = $x1;
+    ${$self->{bbox}}[1] = $y1;
+    ${$self->{bbox}}[2] = $x2;
+    ${$self->{bbox}}[3] = $y2;
+}#sub dbgGcellSetBBox
+
+sub dbgGcellGetBBox{
+my ($self) = @_;
+#my @bb =  join (",", @{$self->{bbox}});
+my @bb =   @{$self->{bbox}};
+return(@bb);
+}#sub dbgGcellGetBBox
+
+#-------------------------------------------------#
+
+sub dbgGcellSetNetStat{
+my ($self,$local, $semiLocal, $semiGlobal, $global) = @_;
+    ${$self->{netStat}}[0] = $local;
+    ${$self->{netStat}}[1] = $semiLocal;
+    ${$self->{netStat}}[2] = $semiGlobal;
+    ${$self->{netStat}}[3] = $Global;
+}#sub dbgGcellSetNetStat
+
+sub dbgGcellGetNetStat{
+my ($self) = @_;
+my $netS =   join(",", @{$self->{netStat}});
+return($netS);
+}#sub dbgGcellGetNetStat
+
+sub dbgGcellIncrNetStat{
+# 0 = local, 1 = semi-local, 2 = semi-global, 3 = global
+my ($self,$id) = @_;
+    ${$self->{netStat}}[$id]++;
+}#sub dbgGcellIncrNetStat
+
+#-------------------------------------------------#
+
+sub dbgGcellSetAvailTracks{
+my ($self,$m1,$m2,$m3,$m4,$m5,$m6,$m7,$m8,$m9) = @_;
+    ${$self->{aT}}[0] = $m1;
+    ${$self->{aT}}[1] = $m2;
+    ${$self->{aT}}[2] = $m3;
+    ${$self->{aT}}[3] = $m4;
+    ${$self->{aT}}[4] = $m5;
+    ${$self->{aT}}[5] = $m6;
+    ${$self->{aT}}[6] = $m7;
+    ${$self->{aT}}[7] = $m8;
+    ${$self->{aT}}[8] = $m9;
+}#sub dbgGcellSetAvailTracks
+
+sub dbgGcellGetAvailTracks{
+my ($self) = @_;
+my @a =   join(",", @{$self->{aT}});
+return(@a);
+}#sub dbgGcellGetAvailTracks
+
+#-------------------------------------------------#
+
+sub dbgGcellSetBlockedTracks{
+my ($self,$m1,$m2,$m3,$m4,$m5,$m6,$m7,$m8,$m9) = @_;
+    ${$self->{bT}}[0] = $m1;
+    ${$self->{bT}}[1] = $m2;
+    ${$self->{bT}}[2] = $m3;
+    ${$self->{bT}}[3] = $m4;
+    ${$self->{bT}}[4] = $m5;
+    ${$self->{bT}}[5] = $m6;
+    ${$self->{bT}}[6] = $m7;
+    ${$self->{bT}}[7] = $m8;
+    ${$self->{bT}}[8] = $m9;
+}#sub dbgGcellSetBlockedTracks
+
+sub dbgGcellGetBlockedTracks{
+my ($self) = @_;
+my @b =   join(",", @{$self->{bT}});
+return(@b);
+}#sub dbgGcellGetBlockedTracks
+
+#-------------------------------------------------#
+
+sub dbgGcellSetReservedTracks{
+my ($self,$m1,$m2,$m3,$m4,$m5,$m6,$m7,$m8,$m9) = @_;
+    ${$self->{rT}}[0] = $m1;
+    ${$self->{rT}}[1] = $m2;
+    ${$self->{rT}}[2] = $m3;
+    ${$self->{rT}}[3] = $m4;
+    ${$self->{rT}}[4] = $m5;
+    ${$self->{rT}}[5] = $m6;
+    ${$self->{rT}}[6] = $m7;
+    ${$self->{rT}}[7] = $m8;
+    ${$self->{rT}}[8] = $m9;
+}#sub dbgGcellSetReservedTracks
+
+sub dbgGcellGetReservedTracks{
+my ($self) = @_;
+my @r =   join(",", @{$self->{rT}});
+return(@r);
+}#sub dbgGcellGetReservedTracks
+
+#-------------------------------------------------#
+
+sub dbgGcellSetStat{
+my ($self,$stat) = @_;
+    $self->{S} = $stat;
+}#sub dbgGcellGetStat
+
+sub dbgGcellGetStat{
+my ($self) = @_;
+  my $stat =  $self->{S};
+return($stat);
+}#sub dbgGcellSetStat
+
+#-------------------------------------------------#
+sub dbgGcellSetMinMaxNets{
+my ($self,$min,$max) = @_;
+    ${$self->{MM}}[0] = $min;
+    ${$self->{MM}}[1] = $max;
+}#sub dbgGcellSetMinMaxNets
+
+sub dbgGcellGetMinMaxNets{
+my ($self) = @_;
+my @numNets =   @{$self->{MM}};
+return(@numNets);
+}#sub dbgGcellGetMinMaxNets
+
+#-------------------------------------------------#
+sub dbgGcellSetPid{
+  my ($self,$pid) = @_;
+  $self->{PID} = $pid;
+}#sub dbgGcellSetPid
+
+sub dbgGcellGetPid{
+  my ($self) = @_;
+  return($self->{PID});
+}#sub dbgGcellGetPid
+#-------------------------------------------------#
+sub dbgGcellGetNflop {
+  my ($self) = @_;
+  return $self->{NFLOPS};
+}
+
+sub dbgGcellSetNflop {
+  my ($self, $n) = @_;
+  $self->{NFLOPS} = $n;
+}
+
+sub dbgGcellResetNflop {
+  my ($self) = @_;
+  $self->{NFLOPS} = 0;
+}
+
+sub dbgGcellIncrNflop {
+  my ($self) = @_;
+  $self->{NFLOPS} = $self->{NFLOPS}+1;
+}
+
+#-------------------------------------------------#
+
+sub dbgGcellSetFilteredList{
+my ($self,@list) = @_;
+    @{$self->{FL}} = @list
+}#sub dbgGcellSetFilteredList
+
+sub dbgGcellGetFilteredList{
+my ($self) = @_;
+my @list = @{$self->{FL}};
+return(@list);
+}#sub dbgGcellGetFilteredList
+#-------------------------------------------------#
+
+sub dbgGcellSetDisplayedList{
+my ($self,@list) = @_;
+    @{$self->{DL}} = @list
+}#sub dbgGcellSetDisplayedList
+
+sub dbgGcellGetDisplayedList{
+my ($self) = @_;
+my @list = @{$self->{DL}};
+return(@list);
+}#sub dbgGcellGetDisplayedList
+#-------------------------------------------------#
+
+
+1;

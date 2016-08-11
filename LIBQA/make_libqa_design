@@ -1,0 +1,84 @@
+
+sub  check_routability {
+my $cellName = "";
+
+
+}#sub check_routability
+
+
+sub gen_libqa_design {
+my $noOfArguments = @_;
+my @cells2use = ();
+my $routeComplexity = 'low';
+
+if($_[0] eq "-h" )  {
+        print "Usage :  gen_libqa_design\n";
+        print "                         -cells {cell1,cell2,...} list of cells to be analysed\n";
+        print "                         [-designName <name of the design>]\n"; 
+        print "                         [-effort <low | medium | high>]\n"; 
+        print "                         [-debug]\n";
+
+  }
+  else {
+  for(my $i = 0; $i < $noOfArguments; $i++){
+  if($_[$i] eq "-cells"){ my $list = $_[$i+1]; $list =~ s/{//; $list =~ s/}//;  @cells2use = split(/\,/,$list); }
+  if($_[$i] eq "-effort"){ $routeComplexity = $_[$i+1];}
+  if($_[$i] eq "-designName"){ $TOP_MODULE = $_[$i+1];}
+                                           } # for
+
+#---- create the top level design ----#
+      print "INFO-LIBQA-GEN_LQA_DES : 001 : Creating a design : $TOP_MODULE\n";
+#$FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}} = Floorplan::new();
+
+#--- choose  cells -----#
+print "INFO-LIBQA-GEN_LQA_DES : 002 : @cells2use cells will be used in this test\n";
+if ( @cells2use < 10 ) { print "INFO-LIBQA-GEN_LQA_DES : 003 : cells are :\n"; print join" ", @cells2use; print "\n"; }
+
+#---- create instance and place cells -----#
+if ( $routeComplexity eq 'low' ) {
+      #------ instantiate each cell ----#
+              my $cnt = keys %COMP_ALREADY;
+              foreach $cellName ( @cells2use ) {
+                      if ( exists  $PLDB{$cellName} ) {
+           #-------- instantiate 8 instances of each cell -------#
+                      for(my $xx = 0 ; $xx < 8 ; $xx++ ) {
+                      $cnt++;
+                      my $newInstName = "U".$cnt;
+                      print "INFO-LIBQA-GEN_LQA_DES : 004 : $newInstName\n";
+                      $CADB{$newInstName} = CompAttDB::new();
+                      $CADB{$newInstName}->dbCadbSetCellref($cellName);
+           #------------ create a floating connectivity ---------#
+                      my @pins = $PLDB{$cellName}->dbMdbGetPins;
+                         foreach $pinName ( @pins ) {
+                         my $pinType = $PLDB{$cellName}->dbMdbGetPinType($pinName);
+                         print "INFO-LIBQA-GEN_LQA_DES : 005 : $pinName : $pinType\n";
+                            if ( $pinType == 0 ) {
+                               my $newNetName = &dbLibqaGetNewNet;
+                               print "INFO-LIBQA-GEN_LQA_DES : 006 : pin : $pinName connected to net : $newNetName\n";
+                      $COMP_ALREADY{$newInstName}{$pinName} = $newNetName;
+                      $NETS_ALREADY{$newNetName}{$newInstName} = $pinName;
+                                                 }
+                                                    }#foreach signal pin on the cell
+                                                         } # create 8 instances of the cell
+                                                       }#if the cell exits in the lef database
+                                               }# foreach cell in the given cell list
+                                 }# if effort is low, create a basic design
+
+
+#---- add placement based connectivity ----#
+
+
+
+      }#if correct arguments
+}#sub gen_libqa_design
+
+sub dbLibqaGetNewNet {
+
+my $cnt = keys %NETS_ALREADY;
+my $netName = "n_".$cnt;
+return($netName);
+
+}#sub dbLibqaGetNewNet
+
+
+1;

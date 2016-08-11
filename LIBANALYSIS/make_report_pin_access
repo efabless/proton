@@ -1,0 +1,73 @@
+
+
+sub report_cell_pin_access {
+my $noOfArguments = @_;
+my $printSummary = 0;
+my $printDetail = 0;
+my $print2File = 0;
+
+my %pinOnZ = ();
+if($_[0] eq "-h" )  {
+        print "Usage :  report_cell_pin_access\n";
+        print "                           --summary\n";
+        print "                           --detail\n";
+        print "                           -output <filename>\n";
+        print "                           [-debug]\n";
+
+  }
+  else {
+  for(my $i = 0; $i < $noOfArguments; $i++){
+  if($_[$i] eq "-output"){ $RPTFILE = $_[$i+1]; $print2File = 1;}
+  if($_[$i] eq "--detail"){ $printDetail = 1;}
+  if($_[$i] eq "--summary"){ $printSummary = 1;}
+                                           } # for
+
+open(WRITE,">$RPTFILE") if ($print2File == 1);
+print WRITE "DETAIL\n" if ($print2File == 1 && $printDetail == 1);
+print WRITE "------\n" if ($print2File == 1 && $printDetail == 1);
+foreach my $macroName ( keys %PLDB ) {
+           if ( exists $PLDB{$macroName} ) {
+                my @pins = $PLDB{$macroName}->dbMdbGetPins;
+                   foreach my $pinName ( @pins ) {
+                           my $pinType = $PLDB{$macroName}->dbMdbGetPinType($pinName);
+                           if ($pinType == 0) {
+                           my @pinRects = $PLDB{$macroName}->dbMdbGetPinRect($pinName);
+                           my %pinZ = ();
+                           my @L = ();
+                           my $pinZStr = "";
+                              foreach my $l (@pinRects) {
+                                      my $pinRectZ = (split(/\s+/,$l))[0];
+                                      $pinZ{$pinRectZ} = 1;
+                                                        }
+                              foreach my $l ( keys %pinZ ) { push(@L,$l); $pinOnZ{$l}++; }
+                                       $pinZStr =  join ",",@L;
+                           my @pinAccessData = $PLDB{$macroName}->dbMdbGetPinAccess($pinName);
+                                       $pinAccessStr =  join ",",@pinAccessData;
+                                       my $totalScore = 0;
+                                       foreach my $val (@pinAccessData) { $totalScore = $totalScore + $val; }
+                           print WRITE "$macroName, $pinName\($pinZStr\), $pinAccessStr ,\t\[$totalScore\] \n" if ($print2File == 1 && $printDetail == 1);
+                                              }#if pin is of type signal
+                                                 }#foreach pin of the cell
+                                         }# if the cell exists
+                                            }# foreach
+
+close(WRITE) if ($print2File == 1);
+my $o_rw = File::Data->new($RPTFILE) if ($print2File == 1 && $printSummary == 1) ;
+my @data2prepend = ();
+print "INFO-LIBLYIS-RPT_CL_PN_ACSS : 001 : Total number of pin : $totPins \n";
+push(@data2prepend,$totPins)  if ($print2File == 1 && $printSummary == 1);
+foreach my $l ( keys %pinOnZ ) {
+                               print "INFO-LIBLYIS-RPT_CL_PN_ACSS : 002 : $l : $pinOnZ{$l}\n";
+push(@data2prepend,"$l : $pinOnZ{$l}")  if ($print2File == 1 && $printSummary == 1);
+                               }
+foreach my $l ( keys %pinsAccesOnZ ) {
+                               print "INFO-LIBLYIS-RPT_CL_PN_ACSS : 003 : $l : $pinsAccesOnZ{$l}\n";
+push(@data2prepend,"$l : $pinsAccesOnZ{$l}")  if ($print2File == 1 && $printSummary == 1);
+                               }
+push(@data2prepend,"")  if ($print2File == 1 && $printSummary == 1);
+push(@data2prepend,"")  if ($print2File == 1 && $printSummary == 1);
+$o_rw->prepend(join"\n", @data2prepend) if ($print2File == 1 && $printSummary == 1);
+                        }#if correct arguments
+}#sub report_cell_pin_access
+
+1;

@@ -1,0 +1,664 @@
+sub activate_lefViewTab{
+    $GLOBAL->dbGlobalSetActiveLibraryTab("lef_view");
+    $GLOBAL->dbGlobalSetActiveCanvas("lef_view");
+    $LefCanvas->CanvasFocus;
+}#sub activate_lefViewTab
+
+sub read_lef_gui {
+$cellwidth = 0;
+$cellheight = 0;
+$lefgui_menubar = $libFrame1->Frame();
+##############################################################################################
+#         LEF Menu                                                                          #
+##############################################################################################
+$lefDirectory = $lefgui_menubar->pack(-side=>'top',-fill=>'x');
+$lefDirectory->Label(-text => "cell")->pack(-side=>'left',-anchor=>'w');
+$queryCell = $lefDirectory->Entry(-textvariable=>\$MACRO_TO_DISPLAY)->pack(-side =>'left',-anchor=>'w',-fill=>'x',-expand=> '1');
+$queryCell->bind('<KeyRelease>', sub { &call_read_lef($MACRO_TO_DISPLAY);1;});
+
+$totalNumOfMacros =   &serGetLefMacroTotalNum;
+$lefDirectory->Label(-textvariable => \$totalNumOfMacros)->pack(-side =>'left',-anchor=>'w');
+$lefDirectory->Label(-text => "H")->pack(-side =>'left',-anchor =>'w');
+$queryCell = $lefDirectory->Entry(-textvariable=>\$cellheight)->pack(-side =>'left',-anchor=>'w',-fill=>'x',-expand=>'1');
+$lefDirectory->Label(-text => "W")->pack(-side =>'left', -anchor=>'w');
+$queryCell = $lefDirectory->Entry(-textvariable => \$cellwidth)->pack(-side =>'left', -anchor => 'w', -fill => 'x', -expand=> '1' );
+$lefDirectory->Checkbutton(-text=>"Grid On/Off",
+                        -relief=>"groove",
+                        -variable =>\$GridVar,
+                        -onvalue=>1,
+                        -offvalue=>0,
+                        -command=> sub{if ($GridVar == 1){&grid_display($MACRO_TO_DISPLAY);}
+                                     else{$LefCanvas->delete("GRIDTAG")}}
+                        )->pack(-side=>"left");
+
+$lefFileList = $libFrame1->Scrolled("HList",
+                        -header => 1,
+                        -columns => 9,
+                        -pady => 0,
+                        -height =>5,  
+                        -font => 'Arial -9',
+                        -scrollbars => 'osoe',
+                        -width => 70,
+                        #-selectbackground => 'DeepSkyBlue4',
+                        -selectmode => 'single',
+                        -browsecmd  => sub {
+                         #$dropdown->delete(0, 'end');
+                         #$dropdown1->delete(0, 'end');
+                         $dbgGuiSelectedMacro = shift;
+                         &call_dbGuiDisplayLef();
+                         #&InOutPin;
+                                           });
+$lefFileList->Subwidget("yscrollbar")->configure(-width=>10,-borderwidth=>2);
+$lefFileList->pack(-expand => 1, -fill => 'x');
+$lefFileList->header('create', 0, -text => 'Cell');
+$lefFileList->header('create', 1, -text => 'Type');
+$lefFileList->header('create', 2, -text => 'Logial');
+$lefFileList->header('create', 3, -text => 'Power');
+$lefFileList->header('create', 4, -text => 'Function');
+$lefFileList->header('create', 5, -text => 'DFM');
+$lefFileList->header('create', 6, -text => 'DFY');
+$lefFileList->header('create', 7, -text => 'Dont Use');
+$lefFileList->header('create', 8, -text => 'Pins (s-p-g-u)');
+
+&call_read_lef;
+}#sub read_lef_gui
+
+sub call_read_lef {
+@lef_Macro = ();
+my $pat = $_[0];
+$pat = "\.\*".$pat."\.\*";
+$totalNumOfMacros = 0;
+my @macro_list = @{&serGetLefMacroList};
+foreach $macroName (@macro_list ) { 
+   if($macroName =~ /$pat/) {
+      push @lef_Macro , $macroName; 
+      $totalNumOfMacros++;
+   }
+}
+
+####### Added new type of list ######
+$lefFileList->delete("all");
+my $len = @lef_Macro;
+for (my $xx = 0; $xx < $len ; $xx++ ) {
+$lefFileList->add($xx);
+my $macroName = $lef_Macro[$xx];
+# print "$xx : $macroName\n";
+my %tldb_hash = &get_tldb_hash;
+if (exists $tldb_hash{$macroName} ) { $dbgGUIMacroLibExist = "yes"; } else { $dbgGUIMacroLibExist = "no"; }
+my $func = &serGetLefMacroAttr($macroName,"function");
+my $macroType = &serGetLefMacroAttr($macroName,"class");
+my @pins = @{&serGetLefMacroAttr($macroName,"pins")};
+my ($s, $p, $g, $u) = (0,0,0,0);
+foreach my $pin ( @pins ) {
+   my $pinType = &serGetLefPinAttr($macroName, $pin, "type");
+   if ($pinType == 0 ){$s++;}
+   elsif ($pinType == 1 ){$p++;}
+   elsif ($pinType == 2 ){$g++;}
+}
+$lefFileList->itemCreate($xx, 0, -text => "$macroName");
+$lefFileList->itemCreate($xx, 1, -text => "$macroType");
+$lefFileList->itemCreate($xx, 2, -text => "$dbgGUIMacroLibExist");
+$lefFileList->itemCreate($xx, 3, -text => "-");
+$lefFileList->itemCreate($xx, 4, -text => "$func");
+$lefFileList->itemCreate($xx, 5, -text => "-");
+$lefFileList->itemCreate($xx, 6, -text => "-");
+$lefFileList->itemCreate($xx, 7, -text => "X");
+$lefFileList->itemCreate($xx, 8, -text => "$s\-$p\-$g");
+                                  }# for
+}#sub call_read_lef
+
+
+sub call_dbGuiDisplayLef {
+$MACRO_TO_DISPLAY = $lef_Macro[$dbgGuiSelectedMacro];
+
+print "Displayed Macro : $MACRO_TO_DISPLAY \n";
+&dbGuiDisplayLef(-cell, $MACRO_TO_DISPLAY);
+} #sub call_dbGuiDisplayLef 
+
+
+sub dbGuiDisplayLef {
+my $noOfArguments = @_;
+if($noOfArguments < 1 || $_[0] eq '-h'){ 
+   print "Usage : dbGuiDisplayLef -cell <cell name>\n";
+}else{ 
+   for(my $x = 0; $x < $noOfArguments ; $x++){
+       if($_[$x] eq "-cell"){$MACRO_TO_DISPLAY = $_[$x+1];}
+   }#for all the arguments
+
+   # printing the cell Name if it exists in the data base
+   # else give a message that the cell is not in data base
+   # possible reasons could be that the lef file for that cell is not read
+   # or a typo on users part.
+
+   my $macroType = &serGetLefMacroAttr($MACRO_TO_DISPLAY,"class");
+   my @size = @{&serGetLefMacroAttr($MACRO_TO_DISPLAY,"size")};
+   my @cellOrigin = @{&serGetLefMacroAttr($MACRO_TO_DISPLAY,"origin")};
+   $width = $size[0];  $cellwidth = $width;
+   $height = $size[1]; $cellheight = $height;
+               
+   ####################################################################################
+   ###   open the canvas widget 
+   $LefCanvas->delete("all");
+   $LefCanvas->CanvasFocus;
+   #### Calculate Scaling Factor ####
+   
+   $LefDisplayXFact = 800/$width;
+   $LefDisplayYFact = 300/$height;
+   if($LefDisplayXFact <= $LefDisplayYFact ){
+      $LefDisplayFact  = $LefDisplayXFact;
+   }else{
+      $LefDisplayFact  =  $LefDisplayYFact;
+   }
+   $LefDisplayFact = sprintf("%.2f",$LefDisplayFact);
+   print "LefDisplayFact \= $LefDisplayFact\n" if ($DEBUG == 1000);
+   
+   ####################################################################################
+   #   Display the inners of the lef macro
+   ####################################################################################
+   my $llx = 0;
+   my $lly = 0; 
+   my $urx = $width;
+   my $ury = $height;
+   $llx = $llx*$LefDisplayFact;
+   $lly = $lly*$LefDisplayFact;
+   $urx = $urx*$LefDisplayFact;
+   $ury = $ury*$LefDisplayFact;
+   #--------------------- display the outline of the macro ---------------------------#
+   print "creating boundary $llx+20,$lly+20,$urx+20,$ury+20\n" if ($DEBUG == 1000);
+   $LefCanvas->createRectangle(0,0,840,340, -outline,"black");#to view boundary
+   $LefCanvas->createRectangle($llx+20,$lly+20,$urx+20,$ury+20, -outline,"azure");
+   
+   my $numOfLayers = @{&serGetLefLayerList};
+   if($numOfLayers < 1){
+      print "WARN : No lef technology present ...\n";
+      print "INFO : please read the lef technology file before I can display the macros\n"; 
+      return;
+   }
+   my $xpitch = 0;
+   my $ypitch = 0;
+   my $nLH = 100;
+   my $nLV = 100;
+   my @layers = @{&serGetLefLayerList};
+   foreach my $layerName (@layers){
+      my $type = &serGetLefLayerAttr($layerName,"type");
+      if($type eq "ROUTING"){
+         my $dir = &serGetLefLayerAttr($layerName,"dir");
+         my $num = &serGetLefLayerAttr($layerName,"num");
+         my $pitch = &serGetLefLayerAttr($layerName,"pitch");
+         my $offset = &serGetLefLayerAttr($layerName,"offset");
+         if($dir eq "HORIZONTAL"){ 
+           if($nLH > $num){
+             $nLH = $num ; $ypitch = $pitch;
+             if ($offset eq "UND"){$shifty = 0.5*$ypitch;}
+             else                 {$shifty = $offset;}  
+           }
+         }elsif($dir eq "VERTICAL"){ 
+           if($nLV > $num ){ 
+              $nLV = $num ; $xpitch = $pitch;
+              if ($offset eq "UND"){$shiftx = 0.5*$xpitch;}
+              else                 {$shiftx = $offset;}  
+           } 
+         }else{print "invalid direction on routing layer $layerName\n";}
+      } # if layer is a routing layer
+   } #search the first 2 consequtive orthgonal routing layers 
+   
+   print "lowest H : $nLH \= $ypitch, lowest V : $nLV \= $xpitch\n" if ($DEBUG == 100);
+   
+   if($macroType eq "CORE"){
+      my $nv = int ($width/$xpitch);
+      my $nh = int ($height/$ypitch);
+      for($i = 0; $i <= $nv; $i++) {
+          my $xx = ($xpitch*$i*$LefDisplayFact)+20+($shiftx*$LefDisplayFact);
+          if ($xx >(($width*$LefDisplayFact) +20)){last;}
+          $LefCanvas->createLine($xx,20,$xx,20+$height*$LefDisplayFact, -stipple=>'vdots', -fill=>"medium sea green", width=>1,-tags=>"GRIDTAG");
+      }#for vertical lines 
+      for($j = 0; $j <=$nh; $j++) {
+          my $yy = ($ypitch*$j*$LefDisplayFact)+ ($shifty*$LefDisplayFact);
+          if ($yy > ($height*$LefDisplayFact)){last;}
+          $LefCanvas->createLine(20,$yy+20,$width*$LefDisplayFact+20,$yy+20, -stipple=>'hdots', -fill=>"PaleVioletRed4", width=>1,-tags=>"GRIDTAG");
+      }#for horizontal lines 
+   }#if macrotype is core
+   #################################################################
+   my @pins = @{&serGetLefMacroAttr($MACRO_TO_DISPLAY,"pins")};
+   foreach $pinName ( @pins ) {
+      my @RECTS = @{&serGetLefPinAttr($MACRO_TO_DISPLAY,$pinName,"rect")};
+      my @POLY = @{&serGetLefPinAttr($MACRO_TO_DISPLAY,$pinName,"polygon")};
+      foreach my $rectLine ( @RECTS ) {
+          my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$rectLine))[0,2,3,4,5];
+          my $color = &serGetLefLayerAttr($layer,"color");
+          $llx = ($llx+$cellOrigin[0])*$LefDisplayFact;
+          $lly = ($lly+$cellOrigin[1])*$LefDisplayFact;
+          $urx = ($urx+$cellOrigin[0])*$LefDisplayFact;
+          $ury = ($ury+$cellOrigin[1])*$LefDisplayFact;
+          my $pinRect = $LefCanvas->createRectangle($llx+20,$lly+20,$urx+20,$ury+20,-outline,$color,-fill,$color,-stipple,"gray12");
+          $LefCanvas->itemconfigure($pinRect, -tags =>'LEF_PIN_RECT' );
+          $LefCanvas->addtag($pinName , "withtag", $pinRect);
+          $LefCanvas->addtag($layer , "withtag", $pinRect);
+      }#foreach rect
+      foreach my $polyLine ( @POLY ) {
+        my @polygon = ();
+        my @rect_or_polygon = (split(/\s+/,$polyLine));
+        my $arrlen = @rect_or_polygon;
+        my $layer = $rect_or_polygon[0];
+        my $color = &serGetLefLayerAttr($layer,"color");
+        for (my $xx=2; $xx<$arrlen; $xx = $xx+2){
+          my $llx = 20+($rect_or_polygon[$xx]+$cellOrigin[0])*$LefDisplayFact;
+          my $lly = 20+($rect_or_polygon[$xx+1]+$cellOrigin[1])*$LefDisplayFact;
+          push(@polygon, $llx,$lly);
+        }
+        my $pinRect = $LefCanvas->createPolygon(@polygon,-outline,$color,-fill,$color,-stipple,"gray12");
+        $LefCanvas->itemconfigure($pinRect, -tags =>'LEF_PIN_RECT' );
+        $LefCanvas->addtag($pinName , "withtag", $pinRect);
+        $LefCanvas->addtag($layer , "withtag", $pinRect);
+      }#foreach polygon
+      if($#POLY >= 0){
+         my $fortext = shift @POLY;
+         my ($layer, $llx, $lly) = (split(/\s+/,$fortext))[0,2,3];
+         my $x = ($llx+$cellOrigin[0])*$LefDisplayFact;
+         my $y = ($lly+$cellOrigin[1])*$LefDisplayFact;
+         $LefCanvas->createText($x+20,$y+20, -text=>$pinName, -fill=>"yellow", -anchor=>"sw",  -tags=>"PINTEXT");
+      }else{
+         my $fortext = shift @RECTS;
+         my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$fortext))[0,2,3,4,5];
+         my $midx = $llx + ($urx - $llx)/2;
+         my $midy = $lly + ($ury - $lly)/2;
+         $midx = ($midx+$cellOrigin[0])*$LefDisplayFact;
+         $midy = ($midy+$cellOrigin[1])*$LefDisplayFact;
+         $LefCanvas->createText($midx+20,$midy+20, -text=>$pinName, -fill=>"yellow", -anchor=>"sw",  -tags=>"PINTEXT");
+      }
+   }#foreach poly of pin
+           
+   #--------------------------------------------------------------------------------------#
+   #$LefCanvas->bind("LEF_PIN_RECT", '<Enter>', sub {
+   #                   my $x = $LefCanvas->canvasx($Tk::event->x);
+   #                   my $y = $LefCanvas->canvasy($Tk::event->y);
+   #                   @object = $LefCanvas->find("overlapping", $x,$y,$x,$y);
+   #
+   #                 $LefCanvas->itemconfigure($object[0], -fill => "red");
+   #                                                }) ;
+   #$LefCanvas->bind("LEF_PIN_RECT", "<Leave>", sub {                 
+   #                  $LefCanvas->itemconfigure($object[0], -fill => $colour); });
+   #
+   #
+   ##--------------------------------------------------------------------------------------#
+   #                                  my $fortext = shift @RECTS;
+   #                                  my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$fortext))[0,2,3,4,5];
+   #                                  my $midx = $llx + ($urx - $llx)/2;
+   #                                  my $midy = $lly + ($ury - $lly)/2;
+   #                                  $midx = ($midx+$cellOrigin[0])*$LefDisplayFact;
+   #                                  $midy = ($midy+$cellOrigin[1])*$LefDisplayFact;
+   #        ###### make the display upside down
+   ##        $midy = $box->[3] - $midy;
+   #        $LefCanvas->createText($midx+20,$midy+20, -text=>$pinName, -fill=>"yellow", -anchor=>"sw",  -tags=>"PINTEXT");
+   #                                      { }#foreach pin
+   #-------------------------------------------------------------------------------------#
+   my @OBS = @{&serGetLefMacroAttr($MACRO_TO_DISPLAY,"obs")};
+   my @POLY_OBS = @{&serGetLefMacroAttr($MACRO_TO_DISPLAY,"poly_obs")};
+   foreach $obsLine ( @OBS ) {
+     my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$obsLine))[0,2,3,4,5];
+     my $colour = &serGetLefLayerAttr($layer,"color");
+     $llx = ($llx+$cellOrigin[0])*$LefDisplayFact;
+     $lly = ($lly+$cellOrigin[1])*$LefDisplayFact;
+     $urx = ($urx+$cellOrigin[0])*$LefDisplayFact;
+     $ury = ($ury+$cellOrigin[1])*$LefDisplayFact;
+     my $obsRect = $LefCanvas->createRectangle($llx+20,$lly+20,$urx+20,$ury+20, -outline,$colour,-fill,$colour,-stipple,"gray50");
+     $LefCanvas->itemconfigure($obsRect, -tags =>'OBS' );
+     $LefCanvas->addtag($layer , "withtag", $obsRect);
+   }# foreach obs line
+   foreach my $polyobsLine ( @POLY_OBS ) {
+     my @obs_polygon = ();
+     my @rect_or_polygon = (split(/\s+/,$polyobsLine));
+     my $arrlen = @rect_or_polygon;
+     my $layer = $rect_or_polygon[0];
+     my $colour = &serGetLefLayerAttr($layer,"color");
+     for (my $xx=2; $xx<$arrlen; $xx = $xx+2){
+       my $llx = 20+($rect_or_polygon[$xx]+$cellOrigin[0])*$LefDisplayFact;
+       my $lly = 20+($rect_or_polygon[$xx+1]+$cellOrigin[1])*$LefDisplayFact;
+       push(@obs_polygon, $llx,$lly);
+     }
+       my $obsRect = $LefCanvas->createPolygon(@obs_polygon, -outline,$colour,-fill,$colour,-stipple,"gray50");
+       $LefCanvas->itemconfigure($obsRect, -tags =>'OBS' );
+       $LefCanvas->addtag($layer , "withtag", $obsRect);
+   }#foreach poly obs line
+ }# if correct no of inputs
+
+#$LefCanvas->viewArea(@$box, -border => 0);
+$LefCanvas->viewArea(0,0,840,380, -border => 0);
+my @box_org = $LefCanvas->getView();
+&design_ZoomIn_ZoomOut($LefCanvas,\@box_org);
+&display_LefPinText($LefCanvas);
+}#sub dbGuiDisplayLef
+
+###################################################################################################################
+#################################### Creating popup window to query Pins ##########################################
+###################################################################################################################
+sub popup_lefgui_layerPin {
+my $popupgui = MainWindow->new();
+   $popupgui->title ("Create Pin Acoordig to layer");
+my $top_frame = $popupgui->Frame(-relief=>'sunken',-borderwidth=>2)->pack(-side => 'top',-expand=>1,-fill=>'both');
+my $bottom_frame = $popupgui->Frame(-relief=>'sunken',-borderwidth=>2)->pack(-side => 'top',-expand=>1,-fill=>'both');
+
+my $topFrame1 = $top_frame->Frame(-relief=>'raised',-borderwidth=>2)->pack(-side => 'top');
+my $topFrame2 = $top_frame->Frame()->pack(-side => 'top', -expand=>1, -fill=>'x');
+my $topFrame3 = $top_frame->Frame()->pack(-side => 'top', -expand=>1, -fill=>'x');
+my $topFrame4 = $top_frame->Frame()->pack(-side => 'top', -expand=>1, -fill=>'x');
+my $topFrame5 = $top_frame->Frame()->pack(-side => 'top');
+
+my $bottomFrame1 =  $bottom_frame->Frame()->pack(-side => 'bottom');
+my $bottomFrame2 =  $bottom_frame->Frame()->pack(-side => 'bottom',-expand=>1, -fill=>'x');
+my $bottomFrame3 =  $bottom_frame->Frame(-relief=>'raised',-borderwidth=>2)->pack(-side => 'bottom',-expand=>1, -fill=>'x');
+
+my ($Pin,$Obs,$var) = (0,0,0);
+####################### making Checkbuttons for Routing, Cut & Masterslice layers ############################
+$topFrame1->Checkbutton(-text =>"PinRect" ,-variable => \$Pin, -onvalue => 1, -offvalue => 0)->pack(-side=>'left');
+$topFrame1->Checkbutton(-text =>"ObsRect" ,-variable => \$Obs, -onvalue => 1, -offvalue => 0)->pack(-side=>'left');
+my @key = sort hashValueAscendingNum (keys(%RML));
+my $n = @key;
+my @var = (); 
+for(my $j = 0; $j<$n; $j++){
+    $metal[$j] = shift @key;
+    if($n == 0){last;}
+    my $type = &serGetLefLayerAttr($metal[$j],"type");
+    my $layerNo = &serGetLefLayerAttr($metal[$j],"num");
+    my $layername= $metal[$j];
+    if($type eq "ROUTING"){                 
+       $topFrame2->Checkbutton(-text => $metal[$j],-variable => \$var[$j],-onvalue => 1, -offvalue => 0,
+                            -command => sub{if($var[$layerNo]==1){&call_lefgui_layerPin_display($layername,$Pin,$Obs);
+                                            }else{$LefCanvas->delete($layername);}
+                                           })->pack(-side => 'left', -anchor =>'w', -fill=>'x' );
+    }
+    if($type eq "CUT"){ 
+       $topFrame3->Checkbutton(-text => $metal[$j],-variable => \$var[$j], -onvalue => 1, -offvalue => 0,
+                            -command => sub{if ($var[$layerNo]==1){&call_lefgui_layerPin_display($layername,$Pin,$Obs);                        
+                                            }else {$LefCanvas->delete($layername);}
+                                           })->pack(-side => 'left', -anchor =>'w', -fill=>'x' );
+    }
+    if($type eq "MASTERSLICE"){
+       $topFrame4->Checkbutton(-text => $metal[$j],-variable => \$var[$j], -onvalue => 1, -offvalue => 0,
+                            -command => sub{if ($var[$layerNo]==1){&call_lefgui_layerPin_display($layername,$Pin,$Obs);
+                                            }else {$LefCanvas->delete($layername);}
+                                           })->pack(-side => 'left', -anchor =>'w', -fill=>'x' );}
+}#for 
+$topFrame5->Button(-text=>'Delete All',-padx=>0,-pady=>0,-command =>sub {$LefCanvas->delete(LEF_PIN_RECT,PINTEXT,OBS);       
+                                                                         my @key = sort hashValueAscendingNum (keys(%RML));
+                                                                         my $n = @var;
+                                                                         for(my $i = 0 ; $i < $n; $i++){
+                                                                             $var[$i] =0 ;
+                                                                             $metal[$i] = shift @key;
+                                                                             my $layername = $metal[$i]; 
+                                                                             $LefCanvas->delete($layername);}
+                                                                           })->pack(-side => 'left');
+$topFrame5->Button(-text=>'Select All',-padx=>0,-pady=>0,-command =>sub {my @key = sort hashValueAscendingNum (keys(%RML));
+                                                                         my $n = @var;
+                                                                         for(my $i = 0 ; $i < $n; $i++){
+                                                                             $var[$i] =1 ;
+                                                                             $metal[$i] = shift @key;
+                                                                             my $layername = $metal[$i];
+                                                                             &call_lefgui_layerPin_display($layername,$Pin,$Obs)}
+                                                                            })->pack(-side => 'left');
+#-------------------------------------- Pins to Highlight -------------------------------------------#
+$bottomFrame1->Radiobutton(-variable =>\$var,-value => "Select",-text => "Select",
+                           -command => sub {if($var eq "Select"){&call_lefgui_pinRects_display($SelectedPinName);}
+                           })->pack(-side =>"left");
+$bottomFrame1->Radiobutton(-variable =>\$var,-value => "DeSelect",-text => "DeSelect",
+                           -command => sub{if($var eq "DeSelect"){$LefCanvas->delete(SELECTPIN);}
+                           })->pack(-side =>"left");
+
+$bottomFrame2->Label(-text =>"PinsName")->pack(-side =>'left');
+$bottomFrame2->Entry(-textvariable =>\$SelectedPinName)->pack(-side =>'left',-fill => 'x', -expand=> '1' );
+$bottomFrame3->Label(-text => "For given Cell Select Pins to Highlight")->pack(-side =>'left');
+
+
+
+}#sub popup_lefgui_layerPin
+
+##################################################### Display layer rectangles ########################################################
+sub call_lefgui_layerPin_display {
+my $layerName = $_[0];
+my $pin = $_[1];
+my $obs = $_[2];
+my $MacroToDisplay = $lef_Macro[$dbgGuiSelectedMacro];
+&lefgui_layerPin_display($MacroToDisplay,$layerName,$pin,$obs);
+}#sub call_lefgui_layerPin_display
+
+#----------------------------------------------------------------#
+sub lefgui_layerPin_display{
+my $MACRO_TO_DISPLAY = $_[0];
+my $layerName = $_[1];
+my $Pin = $_[2];
+my $Obs = $_[3];
+my @cellOrigin = @{&serGetLefMacroAttr($MACRO_TO_DISPLAY,"origin")};
+if($Pin==1){
+   my @pins = @{&serGetLefMacroAttr($MACRO_TO_DISPLAY,"pins")};
+   foreach my $pinName (@pins ) {
+     my @RECTS = @{&serGetLefPinAttr($MACRO_TO_DISPLAY,$pinName,"rect")};
+     my @POLY = @{&serGetLefPinAttr($MACRO_TO_DISPLAY,$pinName,"polygon")};
+     foreach $rectLine ( @RECTS ) {
+          my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$rectLine))[0,2,3,4,5];
+          my $color = &serGetLefLayerAttr($layer,"color");
+             $llx = ($llx+$cellOrigin[0])*$LefDisplayFact;
+             $lly = ($lly+$cellOrigin[1])*$LefDisplayFact;
+             $urx = ($urx+$cellOrigin[0])*$LefDisplayFact;
+             $ury = ($ury+$cellOrigin[1])*$LefDisplayFact;
+          if ($layer eq $layerName){
+              my $pinRect = $LefCanvas->createRectangle($llx+20,$lly+20,$urx+20,$ury+20,-outline,$color,-fill,$color,-stipple,"gray12",);
+              
+              $LefCanvas->itemconfigure($pinRect, -tags =>'LEF_PIN_RECT' );
+              $LefCanvas->addtag($pinName , "withtag", $pinRect);
+              $LefCanvas->addtag($layer , "withtag", $pinRect);
+          }#if layer found
+     }#foreach rect of pin
+     foreach my $polyLine ( @POLY ) {
+          my @polygon = ();
+          my @rect_or_polygon = (split(/\s+/,$polyLine));
+          my $arrlen = @rect_or_polygon;
+          my $layer = $rect_or_polygon[0];
+          my $color = &serGetLefLayerAttr($layer,"color");
+          for (my $xx=2; $xx<$arrlen; $xx = $xx+2){
+            my $llx = 20+($rect_or_polygon[$xx]+$cellOrigin[0])*$LefDisplayFact;
+            my $lly = 20+($rect_or_polygon[$xx+1]+$cellOrigin[1])*$LefDisplayFact;
+            push(@polygon, $llx,$lly);
+          }
+          if($layer eq $layerName){
+             my $pinRect = $LefCanvas->createPolygon(@polygon,-outline,$color,-fill,$color,-stipple,"gray12");
+             $LefCanvas->itemconfigure($pinRect, -tags =>'LEF_PIN_RECT' );
+             $LefCanvas->addtag($pinName , "withtag", $pinRect);
+             $LefCanvas->addtag($layer , "withtag", $pinRect);
+          }#if layer found
+     }#foreach polygon
+     if($#POLY >= 0){
+        my $fortext = shift @POLY;
+        my ($layer, $llx, $lly) = (split(/\s+/,$fortext))[0,2,3];
+        my $x = ($llx+$cellOrigin[0])*$LefDisplayFact;
+        my $y = ($lly+$cellOrigin[1])*$LefDisplayFact;
+        $LefCanvas->createText($x+20,$y+20, -text=>$pinName, -fill=>"yellow", -anchor=>"sw",  -tags=>$layerName);
+     }else{
+        my ($layer1, $llx1, $lly1, $urx1, $ury1)=(split(/\s+/,$RECTS[0]))[0,2,3,4,5];
+        my $midx = ($llx1 + $urx1)/2;
+        my $midy = ($lly1 + $ury1)/2;
+        $midx = ($midx+$cellOrigin[0])*$LefDisplayFact;
+        $midy = ($midy+$cellOrigin[1])*$LefDisplayFact;
+        $LefCanvas->createText($midx+20,$midy+20, -text=>$pinName, -fill=>"yellow", -anchor=>"sw",-tags=>$layerName);
+     }
+   }#foreach pin
+}#if pin display ON
+#-----------------------------------------------------------------------------------------------------------------#
+if($Obs == 1){
+   my @OBS = @{&serGetLefMacroAttr($MACRO_TO_DISPLAY,"obs")};
+   my @POLY_OBS = @{&serGetLefMacroAttr($MACRO_TO_DISPLAY,"poly_obs")};
+   foreach my $obsLine ( @OBS ) {
+     my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$obsLine))[0,2,3,4,5];
+     my $color = &serGetLefLayerAttr($layer,"color");
+        $llx = ($llx+$cellOrigin[0])*$LefDisplayFact;
+        $lly = ($lly+$cellOrigin[1])*$LefDisplayFact;
+        $urx = ($urx+$cellOrigin[0])*$LefDisplayFact;
+        $ury = ($ury+$cellOrigin[1])*$LefDisplayFact;
+     if ($layer eq $layerName){
+         my $obsRect = $LefCanvas->createRectangle($llx+20,$lly+20,$urx+20,$ury+20, -outline,$color,-fill,$color,-stipple,"gray50");
+         $LefCanvas->itemconfigure($obsRect, -tags =>'OBS' );
+         $LefCanvas->addtag($layer , "withtag", $obsRect);
+     }#if layer found
+   }# foreach obs line
+   foreach my $polyobsLine ( @POLY_OBS ) {
+     my @obs_polygon = ();
+     my @rect_or_polygon = (split(/\s+/,$polyobsLine));
+     my $arrlen = @rect_or_polygon;
+     my $layer = $rect_or_polygon[0];
+     if($layer eq $layerName){
+        my $color = &serGetLefLayerAttr($layer,"color");
+        for (my $xx=2; $xx<$arrlen; $xx = $xx+2){
+          my $llx = 20+($rect_or_polygon[$xx]+$cellOrigin[0])*$LefDisplayFact;
+          my $lly = 20+($rect_or_polygon[$xx+1]+$cellOrigin[1])*$LefDisplayFact;
+          push(@obs_polygon, $llx,$lly);
+        }
+        my $obsRect = $LefCanvas->createPolygon(@obs_polygon, -outline,$color,-fill,$color,-stipple,"gray50");
+        $LefCanvas->itemconfigure($obsRect, -tags =>'OBS' );
+        $LefCanvas->addtag($layer , "withtag", $obsRect);
+     }#if layer found
+   }#foreach poly obs line
+}#if obs display ON
+}#sub lefgui_layerPin_display
+
+##############################################  Highlight Pin Rectangles #################################################
+sub call_lefgui_pinRects_display {
+my $SelectedPinName = $_[0];
+my $MacroToDisplay = $lef_Macro[$dbgGuiSelectedMacro];
+&lefgui_pinRects_display($MacroToDisplay,$SelectedPinName);
+}#sub call_lefgui_pinRects_display
+
+sub lefgui_pinRects_display {
+my $MACRO_TO_DISPLAY = $_[0];
+my $PinName= $_[1];
+my @array_pins  = split(/\,/,$PinName);
+my @cellOrigin = @{&serGetLefMacroAttr($MACRO_TO_DISPLAY,"origin")};
+for (my $i=0;$i<=$#array_pins ;$i++){
+     my $pinName = $array_pins[$i];
+     my @RECTS = @{&serGetLefPinAttr($MACRO_TO_DISPLAY,$pinName,"rect")};
+     my @POLY = @{&serGetLefPinAttr($MACRO_TO_DISPLAY,$pinName,"polygon")};
+     foreach $rectLine ( @RECTS ) {
+       my($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$rectLine))[0,2,3,4,5];
+        $llx = ($llx+$cellOrigin[0])*$LefDisplayFact;
+        $lly = ($lly+$cellOrigin[1])*$LefDisplayFact;
+        $urx = ($urx+$cellOrigin[0])*$LefDisplayFact;
+        $ury = ($ury+$cellOrigin[1])*$LefDisplayFact;
+        $LefCanvas->createRectangle($llx+20,$lly+20,$urx+20,$ury+20, -tags, "SELECTPIN",-outline,"yellow");
+     }#foreach rect
+     foreach my $polyLine ( @POLY ) {
+          my @polygon = ();
+          my @rect_or_polygon = (split(/\s+/,$polyLine));
+          my $arrlen = @rect_or_polygon;
+          my $layer = $rect_or_polygon[0];
+          my $color = &serGetLefLayerAttr($layer,"color");
+          for (my $xx=2; $xx<$arrlen; $xx = $xx+2){
+            my $llx = 20+($rect_or_polygon[$xx]+$cellOrigin[0])*$LefDisplayFact;
+            my $lly = 20+($rect_or_polygon[$xx+1]+$cellOrigin[1])*$LefDisplayFact;
+            push(@polygon, $llx,$lly);
+          }
+          my $pinRect = $LefCanvas->createPolygon(@polygon,-outline,"yellow",-tags, "SELECTPIN");
+     }#foreach polygon
+}#for pins
+}#sub lefgui_pinRects_display 
+
+############################################################################################################################
+########################################## Grid display ON/OFF #############################################################
+############################################################################################################################
+sub grid_display {
+my $MACRO_TO_DISPLAY = $_[0];
+my $macroType = &serGetLefMacroAttr($MACRO_TO_DISPLAY,"class");
+   my @size = @{&serGetLefMacroAttr($MACRO_TO_DISPLAY,"size")};
+   my $width = $size[0]; 
+   my $height = $size[1]; 
+   $LefCanvas->delete("GRIDTAG");
+   my $llx = 0;
+   my $lly = 0; 
+   my $urx = $width;
+   my $ury = $height;
+   $llx = $llx*$LefDisplayFact;
+   $lly = $lly*$LefDisplayFact;
+   $urx = $urx*$LefDisplayFact;
+   $ury = $ury*$LefDisplayFact;
+   my $xpitch = 0;
+   my $ypitch = 0;
+   my $nLH = 100;
+   my $nLV = 100;
+   my @layers = @{&serGetLefLayerList};
+   foreach my $layerName (@layers){
+        my $type = &serGetLefLayerAttr($layerName,"type");
+        if($type eq "ROUTING") {
+           my $dir = &serGetLefLayerAttr($layerName,"dir");
+           my $num = &serGetLefLayerAttr($layerName,"num");
+           my $pitch = &serGetLefLayerAttr($layerName,"pitch");
+           my $offset = &serGetLefLayerAttr($layerName,"offset");
+           if($dir eq "HORIZONTAL"){if($nLH > $num){
+                                       $nLH = $num ; $ypitch = $pitch;
+                                       if ($offset eq "UND"){$shifty = 0.5*$ypitch;}
+                                       else                 {$shifty = $offset;}  
+                                    }
+           }elsif($dir eq "VERTICAL"){if($nLV > $num){ 
+                                         $nLV = $num ; $xpitch = $pitch;
+                                         if ($offset eq "UND"){$shiftx = 0.5*$xpitch;}
+                                         else               {$shiftx = $offset;}  
+                                      } 
+           }else { print "invalid direction on routing layer $layerName\n"; }
+        } # if layer is a routing layer
+   } #search the first 2 consequtive orthgonal routing layers 
+
+   my $nv = int ($width/$xpitch);
+   for($i = 0; $i <= $nv; $i++) {
+       my $xx = ($xpitch*$i*$LefDisplayFact)+20+($shiftx*$LefDisplayFact);
+       if ($xx >(($width*$LefDisplayFact) +20)){last;}
+           $LefCanvas->createLine($xx,20,$xx,20+$height*$LefDisplayFact, -stipple=>'vdots', -fill=>"medium sea green", width=>1,-tags=>"GRIDTAG");
+   }#for vertical lines 
+   my $nh = int ($height/$ypitch);
+   for($j = 0; $j <=$nh; $j++) {
+       my $yy = ($ypitch*$j*$LefDisplayFact)+ ($shifty*$LefDisplayFact);
+       if ($yy > ($height*$LefDisplayFact)){last;}
+           $LefCanvas->createLine(20,$yy+20,$width*$LefDisplayFact+20,$yy+20, -stipple=>'hdots', -fill=>"PaleVioletRed4", width=>1,-tags=>"GRIDTAG");
+   }#for horizontal lines 
+}#grid_display 
+
+##########################################################################################################################################
+sub dbfGuiShowLefCanvasCoords{
+if($LefDisplayFact > 0){
+   my $canvas = $_[0];
+   my @xy = $canvas->eventLocation();
+   my $x = $xy[0];
+   my $y = $xy[1];
+   $CURSORX = sprintf("%.2f", (($x-20)/$LefDisplayFact));
+   $CURSORY = sprintf("%.2f", (($y-20)/$LefDisplayFact));
+}
+}#sub dbfGuiShowLefCanvasCoords
+
+sub display_LefPinText {
+my $canvas = $_[0];
+$canvas->CanvasBind('<1>',=> sub{my @xy = $canvas->eventLocation();
+                                 my $x = $xy[0];
+                                 my $y = $xy[1];
+                                 my @id      = $canvas->find(qw/withtag current/);
+                                 my $selectedPin = "";
+                                 foreach my $id (@id){
+                                   my @tagList = $canvas->gettags($id);
+                                   if($tagList[0] eq "LEF_PIN_RECT"){
+                                      $selectedPin = $tagList[1];  
+				      $canvas->createText($x,$y, -text=>$tagList[1] ,-anchor=>"sw",-tags=>"TEMP_TEXT",-fill=>"yellow",-font=>"Times 10");
+                                   }
+                                 }
+                                 my @ids      = $canvas->find("all");
+                                 foreach my $id (@ids){
+                                   my @tagList = $canvas->gettags($id);
+                                   if(($tagList[0] eq "LEF_PIN_RECT") && ($tagList[1] eq $selectedPin)){
+                                      my @coords  = $canvas->coords($id);
+                                      #$canvas->createRectangle(@coords, -outline=>"yellow",-tags=>"TEMP_TEXT");
+                                      $canvas->createPolygon(@coords, -outline=>"yellow",-tags=>"TEMP_TEXT");
+                                   }
+                                 } 
+                              });
+$canvas->CanvasBind('<B1-ButtonRelease>' => sub {$canvas->delete('TEMP_TEXT');});
+}#sub display_LefPinText
+
+
+
+
+
+
+1;

@@ -1,0 +1,445 @@
+##############################################################################################
+################################ Adding spice elements in PLDB ###############################
+##############################################################################################
+sub add_spice_cells_in_PLDB{
+  my $t0 = new Benchmark;
+  my %TEMP_DELETED_MODULE = ();
+  foreach my $cellref (keys %MODULE_ALREADY){
+     my $class = $MODULE_ALREADY{$cellref}->dbVNOMGetClass;
+     if($class == 11){
+        my @argList = ("-cell", $cellref);
+        if($cellref =~ /capacitor/){
+           push(@argList,"-size", "{0.5,0.5}"); #for size
+           push(@argList, "-pinData", "{0_tmpslvr_input,input,METAL1,0.0,0.24,0.02,0.26}"); #for input
+           #push(@argList, "-pinData", "{1_tmpslvr_output,output,METAL1,0.48,0.24,0.50,0.26}"); #for output
+           push(@argList, "-pinData", "{1_tmpslvr_output,input,METAL1,0.48,0.24,0.50,0.26}"); #for output
+        }elsif($cellref =~ /resistance/){
+           push(@argList,"-size", "{1.0,0.25}"); #for size
+           push(@argList, "-pinData", "{0_tmpslvr_input,input,METAL1,0.0,0.124,0.02,0.126}"); #for input
+           #push(@argList, "-pinData", "{1_tmpslvr_output,output,METAL1,0.98,0.124,1.0,0.126}"); #for output
+           push(@argList, "-pinData", "{1_tmpslvr_output,input,METAL1,0.98,0.124,1.0,0.126}"); #for output
+        }else{
+           if($MODULE_ALREADY{$cellref}->dbVNOMHasBidi("0_tmpslvr_drain")){ 
+              push(@argList,"-size", "{1.0,1.5}"); #for size
+              #push(@argList, "-pinData", "{0_tmpslvr_drain,output,METAL1,0.48,1.46,0.52,1.5}"); #for drain
+              push(@argList, "-pinData", "{0_tmpslvr_drain,input,METAL1,0.48,1.46,0.52,1.5}"); #for drain
+              push(@argList, "-pinData", "{1_tmpslvr_gate,input,METAL1,0.0,0.73,0.04,0.77}"); #for gate
+              push(@argList, "-pinData", "{2_tmpslvr_source,input,METAL1,0.48,0.0,0.52,0.04}"); #for source 
+              push(@argList, "-pinData", "{3_tmpslvr_body,input,METAL1,0.96,0.73,1.0,0.77}"); #for body 
+           }else{
+              my @bidi_pins = $MODULE_ALREADY{$cellref}->dbVNOMGetBidi;
+              push(@argList,"-size", "{1.0,1.0}"); #for size
+              my @leftPins = ();
+              my @rightPins = ();
+              my @topPins = ();
+              my @bottomPins = ();
+              for(my $i=0; $i<=$#bidi_pins; $i++){
+                  if($bidi_pins[$i] =~ /^\d+_tmpslvr_param_/){next;}
+                  if($#leftPins == $#bottomPins){
+                     push(@leftPins, $bidi_pins[$i]);
+                  }elsif($#leftPins > $#rightPins){
+                     push(@rightPins, $bidi_pins[$i]);
+                  }elsif($#rightPins > $#topPins){
+                     push(@topPins, $bidi_pins[$i]);
+                  }elsif($#topPins > $#bottomPins){
+                     push(@bottomPins, $bidi_pins[$i]);
+                  }
+              }
+    
+              my $rect_size = 0.04;
+              my $left_step_size = 1/(@leftPins + 1);
+              for(my $i=0; $i<=$#leftPins; $i++){
+                  my $llx = 0.0; 
+                  my $lly = $left_step_size*($i+1) - $rect_size/2;
+                  my $urx = $llx + $rect_size;
+                  my $ury = $lly + $rect_size;
+                  push(@argList, "-pinData", "{$leftPins[$i],input,METAL1,$llx,$lly,$urx,$ury}");
+              }
+              my $right_step_size = 1/(@rightPins + 1);
+              if($right_step_size == $left_step_size){  #to avoid overlapping of nets 
+                 $right_step_size = 1/(@rightPins + 2); #place the pins with diffrent step size
+              }
+              for(my $i=0; $i<=$#rightPins; $i++){
+                  my $llx = 1.0 - $rect_size;
+                  my $lly = $right_step_size*($i+1) - $rect_size/2;
+                  my $urx = $llx + $rect_size;
+                  my $ury = $lly + $rect_size;
+                  push(@argList, "-pinData", "{$rightPins[$i],input,METAL1,$llx,$lly,$urx,$ury}");
+              }
+              my $bottom_step_size = 1/(@bottomPins + 1);
+              for(my $i=0; $i<=$#bottomPins; $i++){
+                  my $llx = $bottom_step_size*($i+1) - $rect_size/2;
+                  my $lly = 0.0;
+                  my $urx = $llx + $rect_size;
+                  my $ury = $lly + $rect_size;
+                  push(@argList, "-pinData", "{$bottomPins[$i],input,METAL1,$llx,$lly,$urx,$ury}");
+              }
+              my $top_step_size = 1/(@topPins + 1);
+              if($top_step_size == $bottom_step_size){  #to avoid overlapping of nets 
+                 $top_step_size = 1/(@topPins + 2);     #place the pins with diffrent step size
+              }
+              for(my $i=0; $i<=$#topPins; $i++){
+                  my $llx = $top_step_size*($i+1) - $rect_size/2;
+                  my $lly = 1.0 - $rect_size;
+                  my $urx = $llx + $rect_size;
+                  my $ury = $lly + $rect_size;
+                  push(@argList, "-pinData", "{$topPins[$i],input,METAL1,$llx,$lly,$urx,$ury}");
+              }
+           }
+        }
+        create_lef_cell(@argList);
+        print "WARN-UPDATE-SP-CELL-IN-PLDB : 002 : deleting module $cellref from module already ...\n";
+        delete $MODULE_ALREADY{$cellref}; #deleting cell from MODULE_ALREADY
+        $TEMP_DELETED_MODULE{$cellref} = 1;
+     }
+  }
+
+  ######## Moving instances of above cellref from hierInst list to leaf inst list since it has been deleted from MODULE_ALREADY & updated in PLDB ########
+  foreach my $mod (keys %MODULE_ALREADY){
+     my @hierInsts =  $MODULE_ALREADY{$mod}->dbVNOMGetHierInst;
+     foreach my $inst (@hierInsts) {
+        my $cellref = $MODULE_ALREADY{$mod}->dbVNOMGetHierInstCell($inst);
+        if(exists $TEMP_DELETED_MODULE{$cellref}){
+           $MODULE_ALREADY{$mod}->dbVNOMWipeSingleHierInst($inst);
+           $MODULE_ALREADY{$mod}->dbVNOMAddLeafInst($inst);
+           $MODULE_ALREADY{$mod}->dbVNOMSetLeafInstCell($inst, $cellref);
+           next;
+        }
+     }
+  }
+  my $t1 = new Benchmark;
+  my $td = timediff($t1, $t0);
+  print "command add_spice_cells_in_PLDB took:",timestr($td),"\n"
+}#sub add_spice_cells_in_PLDB
+
+#################################################################################################
+######################## setting input/output ports using VNOM & PLDB ###########################
+#################################################################################################
+sub add_spice_input_output_in_VNOM {
+  my $t0 = new Benchmark;
+  my $noOfArguments = @_;
+  if($noOfArguments < 0 || $_[0] eq "-h"){
+    print "Usage : add_spice_input_output_in_VNOM\n";
+    return;
+  }
+
+  foreach my $moduleName (keys %MODULE_ALREADY){
+     my @bidi_pins = $MODULE_ALREADY{$moduleName}->dbVNOMGetBidi;
+     foreach my $pin(@bidi_pins){
+        my $type = $MODULE_ALREADY{$moduleName}->dbVNOMGetBidiType($pin);
+        my $busWidth = $MODULE_ALREADY{$moduleName}->dbVNOMGetBidiBits($pin);
+        $MODULE_ALREADY{$moduleName}->dbVNOMRemovePin($pin);
+        $MODULE_ALREADY{$moduleName}->dbVNOMAddInput($pin); 
+        $MODULE_ALREADY{$moduleName}->dbVNOMSetInputType($pin,$type);
+        $MODULE_ALREADY{$moduleName}->dbVNOMSetInputBits($pin,$busWidth);
+     }
+  }#foreach
+
+  my $t1 = new Benchmark;
+  my $td = timediff($t1, $t0);
+  print "command add_spice_input_output_in_VNOM took:",timestr($td),"\n"
+}#sub add_spice_input_output_in_VNOM
+
+######################################################################################################
+######################################## pseudo spice placer #########################################
+######################################################################################################
+sub add_inst_pin_vs_net{
+  my $t0 = new Benchmark;
+  my $numOfArg = @_;
+
+  if($numOfArg < 0 || $_[0] eq "-h" || $_[0] eq "-H" || $_[0] eq "-help" || $_[0] eq "-HELP"){
+     print "Usage: add_inst_pin_vs_net -module <module name(default is TOP)>\n";
+
+  }else{
+     %INST_PIN_VS_NET = ();
+     my $moduleName = $TOP_MODULE;
+     for(my $i=0; $i<$numOfArg; $i++){
+         if($_[$i] eq "-module"){ $moduleName = $_[$i+1];}
+     }
+
+     if(exists $PSEUDO_MODULE_ALREADY{$parent} ) {
+        foreach my $net (keys %{$PSEUDO_VNET_ALREADY{$parent}}) {
+           my $isRealNet = 1;
+           if($net =~ /^\d+_tmpslvr_param_/){next;}
+           my @srcList = $PSEUDO_VNET_ALREADY{$parent}->{$net}->dbaTstgenGetPseudoNetSourceFanInList;  
+           my @sinkList = $PSEUDO_VNET_ALREADY{$parent}->{$net}->dbaTstgenGetPseudoNetSinkFanOutList;  
+
+           my @temp_check_param_net = (@srcList, @sinkList);
+           for(my $i=0; $i<=$#temp_check_param_net; $i=$i+2){
+               if($temp_check_param_net[$i+1] =~ /^\d+(_tmpslvr_param_|_tmpslvr_value)/){
+                  $isRealNet = 0;
+                  last;
+               }
+           }
+
+           if($isRealNet == 1 && @temp_check_param_net > 0){
+              for(my $j=0; $j<=$#temp_check_param_net; $j=$j+2){
+                  $INST_PIN_VS_NET{$temp_check_param_net[$j]}{$temp_check_param_net[$j+1]} = $net;
+              }
+           }
+        }
+     }
+  }#if correct num of arg
+  my $t1 = new Benchmark;
+  my $td = timediff($t1, $t0);
+  print "command add_inst_pin_vs_net took:",timestr($td),"\n"
+}#sub add_inst_pin_vs_net
+
+######################################################################################################
+######################################## pseudo spice placer #########################################
+######################################################################################################
+sub pseudoSpicePlacer{
+  my $t0 = new Benchmark;
+  my $numOfArg = @_;
+
+  if($numOfArg < 0 || $_[0] eq "-h" || $_[0] eq "-H" || $_[0] eq "-help" || $_[0] eq "-HELP"){
+     print "Usage: pseudoSpicePlacer -module <module name(default is TOP)>\n";
+
+  }else{
+     my $moduleName = $TOP_MODULE;
+     for(my $i=0; $i<$numOfArg; $i++){
+         if($_[$i] eq "-module"){ $moduleName = $_[$i+1];}
+     }
+     
+     if(exists $PSEUDO_MODULE_ALREADY{$moduleName}){
+        my @input_pins = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetInput;
+        my @output_pins = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetOutput;
+        my @bidi_pins = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetBidi;
+
+        my @size = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetSize;
+        my $chip_width = $size[2] - $size[0];
+        my $chip_height = $size[3] - $size[1];
+
+        my $pin_rect_side = 1;
+        if(($size[2] - $size[0]) < ($size[3] - $size[1])){
+           $pin_rect_side = $chip_width/1000;
+        }else{
+           $pin_rect_side = $chip_height/1000;
+        }
+
+        my $input_step = $chip_height/(@input_pins + 1);
+        for(my $i=0; $i<=$#input_pins; $i++){
+            my $pin = $input_pins[$i];
+            my $pin_status = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetPinStatus($pin);
+            if($pin_status == 0){
+               $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenWipePinRect($pin);
+               $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetPinStatus($pin, "PLACED");
+               my $pin_layer = "NONE";
+               my $pin_llx = $size[0] - $pin_rect_side/2;
+               my $pin_lly = $size[1] + ( ($input_step*($i+1)) - $pin_rect_side/2 );
+               my $pin_urx = $size[0] + $pin_rect_side/2;
+               my $pin_ury = $size[1] + ( ($input_step*($i+1)) + $pin_rect_side/2 );
+               my $shape = join(" ", $pin_layer, $pin_llx, $pin_lly, $pin_urx, $pin_ury);
+               $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenAddPinRect($pin, $shape);
+            }
+        }
+
+        my $output_step = $chip_height/(@output_pins + 1);
+        for(my $i=0; $i<=$#output_pins; $i++){
+            my $pin = $output_pins[$i];
+            my $pin_status = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetPinStatus($pin);
+            if($pin_status == 0){
+               $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenWipePinRect($pin);
+               $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetPinStatus($pin, "PLACED");
+               my $pin_layer = "NONE";
+               my $pin_llx = $size[2] - $pin_rect_side/2;
+               my $pin_lly = $size[1] + ( ($output_step*($i+1)) - $pin_rect_side/2 );
+               my $pin_urx = $size[2] + $pin_rect_side/2;
+               my $pin_ury = $size[1] + ( ($output_step*($i+1)) + $pin_rect_side/2 );
+               my $shape = join(" ", $pin_layer, $pin_llx, $pin_lly, $pin_urx, $pin_ury);
+               $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenAddPinRect($pin, $shape);
+            }
+        }
+
+        my $bidi_step = $chip_width/(@bidi_pins + 1);
+        for(my $i=0; $i<=$#bidi_pins; $i++){
+            my $pin = $bidi_pins[$i];
+            my $pin_status = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetPinStatus($pin);
+            if($pin_status == 0){
+               $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenWipePinRect($pin);
+               $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetPinStatus($pin, "PLACED");
+               my $pin_layer = "NONE";
+               my $pin_llx = $size[0] + ( ($bidi_step*($i+1)) - $pin_rect_side/2 );
+               my $pin_lly = $size[3] - $pin_rect_side/2;
+               my $pin_urx = $size[0] + ( ($bidi_step*($i+1)) + $pin_rect_side/2 );
+               my $pin_ury = $size[3] + $pin_rect_side/2;
+               my $shape = join(" ", $pin_layer, $pin_llx, $pin_lly, $pin_urx, $pin_ury);
+               $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenAddPinRect($pin, $shape);
+            }
+        }
+
+        ############################# COMPONENTS section ##############################
+        my %inst_vs_width = ();
+        foreach my $instance (keys %{$PSEUDO_VINST_ALREADY{$moduleName}}){
+           if($instance eq "PIN"){ 
+           }else{ 
+              my ($mod_width, $mod_height) = (0, 0);
+              my $cellref = $PSEUDO_VINST_ALREADY{$moduleName}{$instance}->dbPimDBGetInstCellref;
+              if(exists $PLDB{$cellref}){
+                 ($mod_width, $mod_height) = $PLDB{$cellref}->dbMdbGetSize;
+              }elsif(exists $PSEUDO_MODULE_ALREADY{$cellref}){
+                  my @bbox = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetSize;
+                  $mod_width = $bbox[2] - $bbox[0];
+                  $mod_height = $bbox[3] - $bbox[1];
+              }
+              $inst_vs_width{$instance} = $mod_width; 
+           }
+        }
+        my @inst_width_sorted_array = sort{$inst_vs_width{$b}<=>$inst_vs_width{$a}} keys %inst_vs_width;
+        my $maxWidth = $inst_vs_width{$inst_width_sorted_array[0]};
+        %inst_vs_width = (); #making hash empty
+        my %hierInstModules = ();
+        my @widthArray = ();
+        my $startX = $size[0] + $maxWidth/4;
+        my $startY = $size[0];
+        foreach my $instance (@inst_width_sorted_array){
+           if($instance eq "PIN"){ 
+           }else{ 
+             my $cellref = $PSEUDO_VINST_ALREADY{$moduleName}{$instance}->dbPimDBGetInstCellref;
+             my $status = $PSEUDO_VINST_ALREADY{$moduleName}{$instance}->dbPimDBGetInstStatus;
+             my @bbox = $PSEUDO_VINST_ALREADY{$moduleName}{$instance}->dbPimDBGetInstRelBbox;
+             if($status eq "UNPLACED" || $status eq "UND" || ($bbox[0] == 0 && $bbox[1] == 0)){
+                my ($mod_width, $mod_height) = (0, 0);
+                if(exists $PLDB{$cellref}){
+                   ($mod_width, $mod_height) = $PLDB{$cellref}->dbMdbGetSize;
+                }elsif(exists $PSEUDO_MODULE_ALREADY{$cellref}){
+                    my @bbox = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetSize;
+                    $mod_width = $bbox[2] - $bbox[0];
+                    $mod_height = $bbox[3] - $bbox[1];
+                }
+                $startY = $startY + $mod_height/4;
+
+                if($startY > ($size[3]*2 - $mod_height)){ 
+                   $startY = $size[1] + $mod_height/4;
+                   @widthArray = sort{$a<=>$b}@widthArray;
+                   $startX = $startX + $widthArray[-1] + $mod_width/4;
+                   @widthArray = ();
+                }  
+                push(@widthArray,$mod_width);
+
+                my ($llx, $lly, $urx, $ury) = ($startX, $startY, $startX+$mod_width, $startY+$mod_height);
+                $PSEUDO_VINST_ALREADY{$moduleName}{$instance}->dbPimDBSetInstRelBbox($llx, $lly, $urx, $ury);
+                $PSEUDO_VINST_ALREADY{$moduleName}{$instance}->dbPimDBSetInstRelLoc($llx, $lly);
+                $PSEUDO_VINST_ALREADY{$moduleName}{$instance}->dbPimDBSetInstStatus("PLACED");
+                $startY = $ury;
+             }
+             if(exists $PSEUDO_MODULE_ALREADY{$cellref}){
+                if(!exists $hierInstModules{$cellref}){
+                   $hierInstModules{$cellref} = 1;
+                }
+             }
+           }#if not PIN
+        }#foreach inst
+        @inst_width_sorted_array = (); #making array empty
+        foreach my $module (keys %hierInstModules){
+           pseudoModulePinPlace(-module, $module);
+        }
+     }#if exists in psedo module already
+  }#if correct num of arg
+  my $t1 = new Benchmark;
+  my $td = timediff($t1, $t0);
+  print "command pseudoSpicePlacer took:",timestr($td),"\n"
+}#sub pseudoSpicePlacer
+
+######################################################################################################
+#################################### pseudo module pin placer ########################################
+######################################################################################################
+sub pseudoModulePinPlace{
+  my $t0 = new Benchmark;
+  my $numOfArg = @_;
+
+  if($numOfArg < 0 || $_[0] eq "-h" || $_[0] eq "-H" || $_[0] eq "-help" || $_[0] eq "-HELP"){
+     print "Usage: pseudoModulePinPlace -module <module name(default is TOP)>\n";
+
+  }else{
+     my $moduleName = $TOP_MODULE;
+
+     for(my $i=0; $i<$numOfArg; $i++){
+         if($_[$i] eq "-module"){ $moduleName = $_[$i+1];}
+     }
+     
+     if(exists $PSEUDO_MODULE_ALREADY{$moduleName}){
+        print "INFO-PSEUDO-MOD-PIN-PLACER : 001 : Placing the pins of module $moduleName..\n";
+        my @input_pins = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetInput;
+        my @output_pins = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetOutput;
+        my @bidi_pins = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetBidi;
+
+        my @size = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetSize;
+        my $chip_width = $size[2] - $size[0];
+        my $chip_height = $size[3] - $size[1];
+
+        my $pin_rect_side = 1;
+        if(($size[2] - $size[0]) < ($size[3] - $size[1])){
+           $pin_rect_side = $chip_width/1000;
+        }else{
+           $pin_rect_side = $chip_height/1000;
+        }
+
+        my $input_step = $chip_height/(@input_pins + 1);
+        for(my $i=0; $i<=$#input_pins; $i++){
+            my $pin = $input_pins[$i];
+            my $pin_status = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetPinStatus($pin);
+            if($pin_status == 0){
+               $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenWipePinRect($pin);
+               $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetPinStatus($pin, "PLACED");
+               my $pin_layer = "NONE";
+               my $pin_llx = $size[0] - $pin_rect_side/2;
+               my $pin_lly = $size[1] + ( ($input_step*($i+1)) - $pin_rect_side/2 );
+               my $pin_urx = $size[0] + $pin_rect_side/2;
+               my $pin_ury = $size[1] + ( ($input_step*($i+1)) + $pin_rect_side/2 );
+               my $shape = join(" ", $pin_layer, $pin_llx, $pin_lly, $pin_urx, $pin_ury);
+               $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenAddPinRect($pin, $shape);
+            }
+        }
+
+        my $output_step = $chip_height/(@output_pins + 1);
+        for(my $i=0; $i<=$#output_pins; $i++){
+            my $pin = $output_pins[$i];
+            my $pin_status = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetPinStatus($pin);
+            if($pin_status == 0){
+               $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenWipePinRect($pin);
+               $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetPinStatus($pin, "PLACED");
+               my $pin_layer = "NONE";
+               my $pin_llx = $size[2] - $pin_rect_side/2;
+               my $pin_lly = $size[1] + ( ($output_step*($i+1)) - $pin_rect_side/2 );
+               my $pin_urx = $size[2] + $pin_rect_side/2;
+               my $pin_ury = $size[1] + ( ($output_step*($i+1)) + $pin_rect_side/2 );
+               my $shape = join(" ", $pin_layer, $pin_llx, $pin_lly, $pin_urx, $pin_ury);
+               $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenAddPinRect($pin, $shape);
+            }
+        }
+
+        my $bidi_step = $chip_width/(@bidi_pins + 1);
+        for(my $i=0; $i<=$#bidi_pins; $i++){
+            my $pin = $bidi_pins[$i];
+            my $pin_status = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetPinStatus($pin);
+            if($pin_status == 0){
+               $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenWipePinRect($pin);
+               $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetPinStatus($pin, "PLACED");
+               my $pin_layer = "NONE";
+               my $pin_llx = $size[0] + ( ($bidi_step*($i+1)) - $pin_rect_side/2 );
+               my $pin_lly = $size[3] - $pin_rect_side/2;
+               my $pin_urx = $size[0] + ( ($bidi_step*($i+1)) + $pin_rect_side/2 );
+               my $pin_ury = $size[3] + $pin_rect_side/2;
+               my $shape = join(" ", $pin_layer, $pin_llx, $pin_lly, $pin_urx, $pin_ury);
+               $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenAddPinRect($pin, $shape);
+            }
+        }
+
+     }else{
+        print "WARN-PSEUDO-MOD-PIN-PLACER : 001 : module $moduleName does not exists..\n";
+     }
+  }#if correct num of arguments
+  my $t1 = new Benchmark;
+  my $td = timediff($t1, $t0);
+  print "command pseudoModulePinPlace took:",timestr($td),"\n"
+}#sub pseudoModulePinPlace
+
+######################################################################################################
+######################################################################################################
+######################################################################################################
+
+
+
+1;
+

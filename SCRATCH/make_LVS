@@ -1,0 +1,56 @@
+
+
+sub write_label_text {
+  my (@args) =  @_;
+  $args = join(' ',@args);
+  if (!defined($args)) { $args = ""; }
+  my $help = 0;
+  my $debug = 0;
+  my $parseResult = Getopt::Long::GetOptionsFromString($args ,
+                                                                      # read args here
+                                                             "h"          => \$help,
+                                                             "help"       => \$help,
+                                                             "debug"      => \$debug,
+                                                             "verbose"    => \$verbose,
+                                                             "inst=s"    => \$instName,
+                                                       );
+
+open(WRITE,">labelMap");
+print "processing all instances to generate label on all pins\n";
+foreach $inst ( keys %COMP_ALREADY ) {
+print "processing $inst \n" if ($debug);
+if ( exists $CADB{$inst} ) {
+ # get the cellref
+   my $cellref = $CADB{$inst}->dbCadbGetCellref;
+   my @instLoc = $CADB{$inst}->dbCadbGetLoc;
+   my $instOrient = $CADB{$inst}->dbCadbGetOrient;
+ # check for the existance of pin name on the cell
+print "\t $cellref @instLoc $instOrient \n" if ($debug);
+   if ( exists $PLDB{$cellref} ) {
+        my @cellOrigin = $PLDB{$cellref}->dbMdbGetOrigin;
+        my @cellSize =   $PLDB{$cellref}->dbMdbGetSize;
+
+        my @pins = $PLDB{$cellref}->dbMdbGetPins;
+        foreach $pin ( @pins ) {
+ # get all the rects of the pin
+             my @r = $PLDB{$cellref}->dbMdbGetPinRect($pin);
+           print "@PinRect\n" if ($debug);
+ # transform the pin rects to instance rects
+           my $rectLine = $r[0];
+           my ($z, $llx, $lly, $urx, $ury ) = (split(/\s+/,$rectLine))[0,2,3,4,5];
+           my @PinRect = &xformCellPinToInstPin($instLoc[0],$instLoc[1],$cellOrigin[0], $cellOrigin[1],$instOrient,$cellSize[0],$cellSize[1],$llx,$lly,$urx,$ury);
+           my $midX = ($PinRect[0]+$PinRect[2])/2;
+           my $midY = ($PinRect[1]+$PinRect[3])/2;
+           my $net = dbaGetInstPinNet($inst,$pin);
+           print WRITE "LABEL TEXT \"$net\" $midX $midY $z $TOP_MODULE\n";
+                                   }# foreach pin on the cell
+                                 }
+
+}# if the instance attribute exists
+}
+
+close(WRITE);
+}#sub write_label_text
+
+
+1;

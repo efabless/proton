@@ -1,0 +1,278 @@
+
+sub dbSqlGetTestCaseByStatus {
+#Return the testcase ID's that have the status = $status
+my $DBvalue = $GLOBAL->dbfGlobalGetInitializeDB;
+if ( $DBvalue == 0 ) {
+  print "first call IntKB to create database table\n";
+  return;
+}
+
+$status = $_[0];
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","qaadmin","qaadmin" ) || die "Cannot connect: $DBI::errstr";
+$sth = $dbh->prepare("SELECT ID FROM designStat WHERE Status = '$status'");
+$sth->execute();
+while (my $ref = $sth->fetchrow_array()){
+print" $ref\n";}
+
+}#sub dbSqlGetTestCaseByStatus
+
+
+sub dbSqlGetTestcaseByLastRunDays {
+my $DBvalue = $GLOBAL->dbfGlobalGetInitializeDB;
+if ( $DBvalue == 0 ) {
+  print "first call IntKB to create database table\n";
+  return;
+}
+$lastrunday = $_[0];
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","qaadmin","qaadmin" ) || die "Cannot connect: $DBI::errstr";
+$sth = $dbh->prepare("SELECT TestName FROM designStat WHERE LastExecDate = '$lastrunday'");
+$sth->execute();
+while (my $ref = $sth->fetchrow_array()){
+print" $ref\n";}
+
+}# sub dbSqlGetTestcaseByLastRunDays
+
+
+sub dbSqlGetNoOfDaysByLastRun {
+#Return number of days since the testcase was executed with TestName = $testname
+my $DBvalue = $GLOBAL->dbfGlobalGetInitializeDB;
+if ( $DBvalue == 0 ) {
+  print "first call IntKB to create database table\n";
+  return;
+}
+
+$testname = $_[0];
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","qaadmin","qaadmin" ) || die "Cannot connect: $DBI::errstr";
+#$dbh->do("UPDATE designStat SET Days = DATEDIFF(CURDATE(),LastExecDate) WHERE RID = 0");
+$dbh->do("UPDATE designStat SET Days = DATEDIFF(CURDATE(),LastExecDate) WHERE TestName = '$testname'");
+#$dbh->do("UPDATE designStat SET Days = DATEDIFF(CURDATE(),TID) WHERE TestName = '$testname'");
+
+}#sub dbSqlGetNoOfDaysByLastRun
+
+
+sub find_function_kb {
+my $DBvalue = $GLOBAL->dbfGlobalGetInitializeDB;
+if ( $DBvalue == 0 ) {
+  print "first call IntKB to create database table\n";
+  return;
+}
+my $testname = $_[0];
+my $lastexecdate = $_[1];
+my $a = $_[2];
+my $b = $_[3];
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","qaadmin","qaadmin" ) || die "Cannot connect: $DBI::errstr";
+$sth = $dbh->prepare("SELECT * FROM designStat WHERE TestName = '$testname' AND days BETWEEN $a AND $b");
+$sth->execute();
+while (my @ref = $sth->fetchrow_array()){
+print" @ref\n";}
+
+}#find_function_kb	
+
+sub get_node_status {
+
+#****f* /get_node_status
+# NAME
+#     get_node_status
+# FUNCTION
+#         It tests whether testcase is nodelocked or not .
+# SYNOPSIS
+#         get_node_status  -test <testname>.
+# INPUTS
+#      options :
+#              -test <testname>  
+# OUTPUTS
+
+#****
+
+my $DBvalue = $GLOBAL->dbfGlobalGetInitializeDB;
+if ( $DBvalue == 0 ) {
+  print "first call IntKB to create database table\n";
+  return;
+}
+my $ref;
+my $testname;
+my $noOfArguments = @_;
+if ( $noOfArguments < 2  || $_[0] eq '-h'){ print "usage get_node_status  -test <testname> \n";
+                        }#if 
+
+else {
+for ( my $i=0; $i< $noOfArguments ;$i++) {
+if ($_[$i] eq "-test"){$testname = $_[$i+1];} 
+                                         }#for correct no. of arguments  
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","qaadmin","qaadmin" ) || die "Cannot connect: $DBI::errstr";
+$sth = $dbh->prepare("SELECT nodeLock FROM designStat WHERE TestName = '$testname' AND RID = 0");
+$sth->execute();
+while ( $ref = $sth->fetchrow_array()){
+print" $ref\n";
+if ($ref == 1) {print " TestCase is nodeLocked\n";}
+else {print " TestCase is not nodeLocked\n";}
+                                      }#while
+                                       }#else
+
+}#get_node_status
+
+
+#------------------------------------------------------------------------------------------------------------#
+sub set_testcase_attribute {
+
+#****f* /set_testcase_attribute
+# NAME
+#     set_testcase_attribute
+# FUNCTION
+#         It set attribute value or a new attribute can also be added  
+# SYNOPSIS
+#         register_testcase -test <name of the testcase> -attrib <attribute name> -value <attribute value>
+# INPUTS
+#      options :
+#              -test <name of the testcase>
+#              -attrib <attribute name>
+#              -value <attribute value>
+#              --add <to add a new attribute>
+#     switches :
+#              [-runID ID] { optional, by default attribute is only set on RID == 0 }           
+# OUTPUTS
+
+#****
+my $DBvalue = $GLOBAL->dbfGlobalGetInitializeDB;
+if ( $DBvalue == 0 ) {
+  print "first call IntKB to create database table\n";
+  return;
+}
+my $noOfArguments = @_;
+my $testName;
+my $attrName;
+my $attrVal;
+if( $noOfArguments < 2 || $_[0] eq '-h') { print "Usage : register_testcase -test <name of the testcase> \n";
+                                           print "                          -attrib <attribute name> \n";
+                                           print "                          -value <attribute value> \n";
+                                           print "                          --add <to add a new attribute> \n";
+                                           print "        [-runID ID] { optional, by default attribute is only set on RID == 0 }\n";
+                         }
+else { # if correct no. of inputs
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-test"){$testName = $_[$i+1];}
+if($_[$i] eq "-attrib"){$attrName = $_[$i+1];}
+if($_[$i] eq "-value"){$attrVal = $_[$i+1];}	
+if($_[$i] eq "--add"){$add = 1;}
+                                         } # for
+
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","qaadmin","qaadmin" ) || die "Cannot connect: $DBI::errstr";
+$sth = $dbh->prepare("SHOW COLUMNS FROM designStat LIKE '$attrName'");
+$sth->execute();
+@rows = $sth->fetchrow_array() ;
+my $len = @rows;
+if(! $len) {
+print "column not found $attrName\n";
+if ($add == 1){
+print "adding new attribute $attrName \n";
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","qaadmin","qaadmin" ) || die "Cannot connect: $DBI::errstr";
+$dbh->do("ALTER TABLE designStat ADD $attrName varchar(255) ");
+$dbh->do("UPDATE designStat SET $attrName = $attrVal WHERE TestName = '$testName' AND RID = 1");
+return 0 ;}
+            } else {
+print "column found $attrName\n";
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","qaadmin","qaadmin" ) || die "Cannot connect: $DBI::errstr";
+$dbh->do("UPDATE designStat SET $attrName = $attrVal WHERE TestName = '$testName' AND RID = 1");
+print "Setting $attrName to $attrVal for testcase $testName\n";
+                   }#else
+     }# if correct no. of inputs
+}# sub set_testcase_attribute
+
+
+sub get_testcase_attribute {
+
+#****f* /get_testcase_attribute
+# NAME
+#     get_testcase_attribute
+# FUNCTION
+#         it get the value for any testcase attribute name
+# SYNOPSIS
+#         get_testcase_attribute -test <name of the testcase> -attrib <attribute name>.
+# INPUTS
+#      options :
+#              -test <name of the testcase>
+#              -attrib <attribute name>    
+# OUTPUTS
+
+#****
+my $DBvalue = $GLOBAL->dbfGlobalGetInitializeDB;
+if ( $DBvalue == 0 ) {
+  print "first call IntKB to create database table\n";
+  return;
+}
+my $noOfArguments = @_;
+my $testName;
+my $attrName;
+if( $noOfArguments < 2 || $_[0] eq '-h') { print "Usage : get_testcase_attribute -test <name of the testcase> \n";
+                                           print "                               -attrib <attribute name>     \n";
+                         }
+else { # if correct no. of inputs
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-test"){$testName = $_[$i+1];}
+if($_[$i] eq "-attrib"){$attrName = $_[$i+1];}
+                                                                     } # for
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","qaadmin","qaadmin" ) || die "Cannot connect: $DBI::errstr";
+$sth = $dbh->prepare("SELECT $attrName FROM designStat WHERE TestName = '$testName' AND RID = 0");
+$sth->execute();
+while ( $ref = $sth->fetchrow_array()){
+return($ref);}
+     }# if correct no. of inputs
+}# sub get_testcase_attribute
+
+
+sub print_testcase_attribute {
+
+#****f* /print_testcase_attribute
+# NAME
+#     print_testcase_attribute
+# FUNCTION
+#         It prints the columnnames value for RID=0 or print all the colunm value for given testname. 
+# SYNOPSIS
+#        print_testcase_attribute -test <name of the testcase>  -attrib <attribute name> -all <name of testcase> .
+# INPUTS
+#      options :
+#              -test <name of the testcase>
+#              -attrib <attribute name>
+#              -all <name of testcase>  
+# OUTPUTS
+
+#****
+my $DBvalue = $GLOBAL->dbfGlobalGetInitializeDB;
+if ( $DBvalue == 0 ) {
+  print "first call IntKB to create database table\n";
+  return;
+}
+my $noOfArguments = @_;
+my $testName;
+my $attrName;
+my @ref = 0;
+if( $noOfArguments < 2 || $_[0] eq '-h') { print "Usage : print_testcase_attribute -test <name of the testcase> \n";
+                                           print "                                 -attrib <attribute name>     \n";
+                                           print "                                 -all <name of testcase>      \n";                               
+                         }
+else { # if correct no. of inputs
+
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-test"){$testName = $_[$i+1];}
+if($_[$i] eq "-attrib"){$attrName = $_[$i+1];
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","qaadmin","qaadmin" ) || die "Cannot connect: $DBI::errstr";
+$sth = $dbh->prepare("SELECT $attrName FROM designStat WHERE TestName = '$testName' AND RID = 0");
+$sth->execute();
+while ( @ref = $sth->fetchrow_array()){
+print" @ref\n";}
+                        }#if
+
+elsif($_[$i] eq "-all"){$testName = $_[$i+1];
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","qaadmin","qaadmin" ) || die "Cannot connect: $DBI::errstr";
+$sth = $dbh->prepare("SELECT * FROM designStat WHERE TestName = '$testName' AND RID = 0");
+$sth->execute();
+while (my @ref = $sth->fetchrow_array()){
+print" @ref\n"; }#
+                                        }#elsif
+                                    }#for
+                }# if correct no. of inputs
+}#sub print_testcase_attribute
+
+#------------------------------------------------------------------------------------------------------------#
+
+1;

@@ -1,0 +1,371 @@
+
+
+
+
+sub set_floorplan_parameters {
+
+my $DEFAULT_UTILIZATION = 70;
+$UTILIZATION = "variable";
+$ADVNC_UTILIZATION = "variable";
+$ASPECT_RATIO = "variable";
+$IO2KORL = 0;
+$IO2KORR = 0;
+$IO2KORT = 0;
+$IO2KORB = 0;
+$HEIGHT = 0;
+$WIDTH = 0;
+$SITE_HEIGHT = 0;
+$SITE_WIDTH = 0;
+
+use Benchmark;
+my $t0 = new Benchmark;
+
+my $noOfArguments = @_;
+
+for(my $xx = 0; $xx < $noOfArguments; $xx++){ 
+         if($_[$xx] eq -UTILIZATION) { $UTILIZATION = $_[$xx + 1];}
+         if($_[$xx] eq -ASPECT_RATIO) { $ASPECT_RATIO = $_[$xx + 1];}
+         if($_[$xx] eq -IO2KORL) { $IO2KORL = $_[$xx + 1];}
+         if($_[$xx] eq -IO2KORR) { $IO2KORR = $_[$xx + 1];}
+         if($_[$xx] eq -IO2KORU) { $IO2KORU = $_[$xx + 1];}
+         if($_[$xx] eq -IO2KORB) { $IO2KORB = $_[$xx + 1];}
+         if($_[$xx] eq -HEIGHT) { $HEIGHT = $_[$xx + 1];}
+         if($_[$xx] eq -WIDTH) { $WIDTH = $_[$xx + 1];}
+         if($_[$xx] eq -SITE_HEIGHT) {$SITE_HEIGHT = $_[$xx +1];}
+         if($_[$xx] eq -SITE_WIDTH) {$SITE_WIDTH = $_[$xx +1];}
+         if($_[$xx] eq -ADVNC_UTILIZATION) {$ADVNC_UTILIZATION = $_[$xx + 1];}
+                                            }
+if($UTILIZATION eq "variable" && $ASPECT_RATIO eq "variable") { 
+                if($HEIGHT == 0 && $WIDTH == 0 ) { $UTILIZATION = $DEFAULT_UTILIZATION; $ASPECT_RATIO = 1; }
+                if($HEIGHT > 0 && $WIDTH == 0 ) { print "WARN-PAR-FLP_PAMTR : 001 : Please specify atleast UTILIZATION or ASPECT_RATIO\n";
+                                                        $UTILIZATION = $DEFAULT_UTILIZATION;}
+                if($HEIGHT == 0 && $WIDTH > 0 ) { print "WARN-PAR-FLP_PAMTR : 002 : Please specify atleast UTILIZATION or ASPECT_RATIO\n";
+                                                        $UTILIZATION = $DEFAULT_UTILIZATION;}
+                                                              } else {
+if($UTILIZATION eq "variable" ) {
+                if($HEIGHT == 0 && $WIDTH == 0 ) { $UTILIZATION = $DEFAULT_UTILIZATION;}
+                                                              } else {
+if($ASPECT_RATIO eq "variable" ) {
+                if($HEIGHT == 0 && $WIDTH == 0 ) { $ASPECT_RATIO = 1;} else { $UTILIZATION = $DEFAULT_UTILIZATION;}
+                                                              }
+
+
+}}
+my$t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "subroutine set_floorplan_parameters took:",timestr($td),"\n";
+
+} #sub set_floorplan_parameters
+
+
+
+sub set_floorplan {
+
+use Benchmark;
+my $t0 = new Benchmark;
+
+my $noOfArguments = @_;
+$area = 0;
+$area_modified = 0;
+$x_size = 0;
+$y_size = 0;
+my $flplanName;
+my $forced = 0;
+my $partitionName = $TOP_MODULE;
+my $cmd = $GLOBAL->dbfGlobalGetCurrCommand;
+if($_[0] eq '-h') { print "Usage : $cmd -partition <module_name>\n"; 
+                    print "             -floorplan <non-default floorplan name>\n";
+                    print "             --force    to overwrite the previous setting\n";
+                  } else {
+
+
+for(my $i = 0 ; $i < $noOfArguments ;  $i++){
+if($_[$i] eq "-partition"){  $partitionName = $_[$i+1];}
+if($_[$i] eq "-floorplan") { $flplanName = $_[$i+1]; }
+if($_[$i] eq "--force"){  $forced = 1;}
+                              }# for no of arguments
+if($partitionName eq ""){$partitionName = $TOP_MODULE;}
+
+if ( defined $flplanName ) {
+  $flplanName =~ s(^/*(.*)/*$)(\1);  # remove leading and trailing slashes
+  if ( $flplanName eq $partitionName ) {
+    $flplanName .= "/_self_";
+  }
+}
+else {
+  $flplanName = $partitionName . "/_self_";
+}
+
+if ( exists $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{$flplanName}} && $forced == 0) {
+     print "INFO-PAR-FLP : 001 : floorplan parameters for the module \"$partitionName\" already set\n";
+     print "INFO-PAR-FLP : 002 : to set it again use --force option\n";
+                                                 } else {
+if($UTILIZATION eq ""){
+  &set_floorplan_parameters("-UTILIZATION","70");
+}
+my $flplanID = $GLOBAL->dbfGlobalGetNextFlplanID;
+$FLOORPLAN_LOOKUP{$flplanName} = $flplanID;
+$FLOORPLAN_ALREADY{$flplanID} = Floorplan::new();
+$FLOORPLAN_ALREADY{$flplanID}->dbFlplanSetID($flplanID);
+$FLOORPLAN_ALREADY{$flplanID}->dbFlplanSetCellref($partitionName);
+$FLOORPLAN_ALREADY{$flplanID}->dbFlplanSetDBUnit($GLOBAL->dbfGlobalGetDBU);
+if ( exists $MODULE_ALREADY{$partitionName} ) {
+  $MODULE_ALREADY{$partitionName}->dbVNOMSetFloorplanID($flplanID);
+}
+
+if($HEIGHT == 0 && $WIDTH == 0) {
+                                $area = get_area_II;
+				$area_modified = $area*100/$UTILIZATION;
+				$x_size = sqrt($area_modified/$ASPECT_RATIO);
+				$y_size = sqrt($area_modified * $ASPECT_RATIO);
+				$HEIGHT = $y_size + $IO2KORT + $IO2KORB;
+				$WIDTH = $x_size + $IO2KORL + $IO2KORR;
+
+} elsif ( $HEIGHT > 0 && $WIDTH == 0) {
+				$y_size = $HEIGHT - $IO2KORT -$IO2KORB;
+                                if($ASPECT_RATIO eq "variable") { $area = get_area_II;
+                                                                  $area_modified = $area*100/$UTILIZATION;
+                                                                  $x_size = $area_modified/$y_size;
+				                                  $WIDTH = $x_size + $IO2KORL + $IO2KORR;
+								  $ASPECT_RATIO = $HEIGHT/$WIDTH;
+                                                                } else {
+                                                                  $WIDTH = $HEIGHT/$ASPECT_RATIO;
+								  $x_size = $WIDTH -$IO2KORL -IO2KORR;
+                                                                  $area = get_area_II;
+								  $area_modified = $x_size*$y_size;
+								  $UTILIZATION = $area*100/$area_modified; 
+                                                                }
+
+} elsif ($HEIGHT == 0 && $WIDTH > 0 ) {
+                                $x_size = $WIDTH - $IO2KORR -$IO2KORL;
+                                if($ASPECT_RATIO eq "variable") { $area = get_area_II;
+                                                                  $area_modified = $area*100/$UTILIZATION;
+                                                                  $y_size = $area_modified/$x_size;
+                                                                  $HEIGHT = $y_size + $IO2KORT + $IO2KORB;
+								  $ASPECT_RATIO = $HEIGHT/$WIDTH;
+                                                                } else {
+                                                                  $HEIGHT = $WIDTH*$ASPECT_RATIO;
+                                                                  $y_size = $HEIGHT -$IO2KORT -IO2KORB;
+                                                                  $area = get_area_II;
+                                                                  $area_modified = $x_size*$y_size;
+                                                                  $UTILIZATION = $area*100/$area_modified;
+                                                                }
+
+
+} elsif ($HEIGHT > 0 && $WIDTH > 0 ) {
+                                $x_size = $WIDTH -$IO2KORR -$IO2KORL;
+                                $y_size = $HEIGHT -$IO2KORT -$IO2KORB;
+                                $area = get_area_II;
+                                $area_modified = $x_size*$y_size;
+                                if($ADVNC_UTILIZATION eq "variable"){
+				$UTILIZATION = $area*100/$area_modified;
+                                }else{
+				$UTILIZATION = $ADVNC_UTILIZATION;
+                                }
+				$ASPECT_RATIO = $HEIGHT/$WIDTH; 
+}
+
+$WIDTH = sprintf("%.3f",$WIDTH);
+$HEIGHT = sprintf("%.3f",$HEIGHT);
+print "INFO-PAR-FLP : 001 : CORE AREA = $area_modified\n";
+print "INFO-PAR-FLP : 002 : WIDTH = $WIDTH\n";
+print "INFO-PAR-FLP : 003 : HEIGHT = $HEIGHT\n";
+print "INFO-PAR-FLP : 004 : UTILIZATION = $UTILIZATION"; if($UTILIZATION > 100){print "\tWARN-PAR-FLP : 003 : cannot place the design\n";} else {print "\n";}
+print "INFO-PAR-FLP : 005 : ASPECT_RATIO = $ASPECT_RATIO\n";
+
+if ( $dieIsCentre == 0 ) {
+$WIDTH =  $WIDTH*$DEF_DATABASE_UNIT;    
+$HEIGHT = $HEIGHT*$DEF_DATABASE_UNIT;
+
+$DIE_ALREADY{dieArea}[0] = 0;
+$DIE_ALREADY{dieArea}[1] = 0;
+$DIE_ALREADY{dieArea}[2] = $WIDTH;
+$DIE_ALREADY{dieArea}[3] = $HEIGHT;
+
+                         } else {
+$WIDTH = $WIDTH*$DEF_DATABASE_UNIT;    
+$HEIGHT = $HEIGHT*$DEF_DATABASE_UNIT;
+$DIE_ALREADY{dieArea}[0] = (0-$WIDTH)/2;
+$DIE_ALREADY{dieArea}[1] = (0-$HEIGHT)/2;
+$DIE_ALREADY{dieArea}[2] = $WIDTH/2;
+$DIE_ALREADY{dieArea}[3] = $HEIGHT/2;
+
+                                }
+my $llx = $DIE_ALREADY{dieArea}[0];
+my $lly = $DIE_ALREADY{dieArea}[1];
+my $urx = $DIE_ALREADY{dieArea}[2];
+my $ury = $DIE_ALREADY{dieArea}[3];
+####################################################################
+# set floorplan values for the partition in the FLOORPLAN_ALREADY DB
+####################################################################
+
+$FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{$flplanName}}->dbFlplanSetOrigin($dieIsCentre);
+$FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{$flplanName}}->dbFlplanSetUtilization($UTILIZATION);
+$FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{$flplanName}}->dbFlplanSetSize($llx, $lly, $urx, $ury);
+$FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{$flplanName}}->dbFlplanSetAspectRatio($ASPECT_RATIO);
+$FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{$flplanName}}->dbgFlplanGetSize;
+#----------------------if site statement is not given in tech lef then set the site height and width------------------#
+&check_multiple_site_and_set_width_height;
+my $get_height = $GLOBAL->dbGlobalGetRowHeight;
+if($get_height != -1 && $SITE_WIDTH > 0 && $SITE_HEIGHT > 0){
+    print "WARN-PAR-FLP : 004 : site statement already exists in lef file So,we will not set site width and site height\n";
+}else{
+  if($SITE_WIDTH > 0 && $SITE_HEIGHT > 0){
+      $GLOBAL->dbGlobalSetRowHeight($SITE_HEIGHT);
+      $TECHNOLOGY_PHYSICAL{DEFAULT_SITENAME}{SIZE} = "$SITE_WIDTH $SITE_HEIGHT";
+      $TECHNOLOGY_PHYSICAL{DEFAULT_SITENAME}{TYPE} = SITE;
+      $TECHNOLOGY_PHYSICAL{DEFAULT_SITENAME}{CLASS} = CORE;
+  }else{
+   &set_site_width_height;
+  }
+}
+#---------------------------------------------------------------------------------------------------------------------#
+########################### generate the Rows for the floorplan ##########################################
+&dbgGenerateRows($partitionName);
+                                        }#if floorplan is NOT already set
+                                                       }# if correct arguments 
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "command $cmd took:",timestr($td),"\n";
+
+} #sub set_floorplan
+
+sub set_chip_height_width_x_y_grid
+{
+  my $WIDTH =$DIE_ALREADY{dieArea}[2] - $DIE_ALREADY{dieArea}[0];
+  my $HEIGHT =$DIE_ALREADY{dieArea}[3] - $DIE_ALREADY{dieArea}[1];
+  my @rows = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetRows;
+  my $tag = $rows[0];
+  my $x_space = (split(/\s+/, $tag))[7];
+  #my $numBelow  = floor($WIDTH/$x_space);
+  my $numBelow  = ceil($WIDTH/$x_space);
+  $WIDTH = $numBelow*$x_space;
+
+  my $row_height = $GLOBAL->dbGlobalGetRowHeight; 
+  $row_height = $row_height*$DEF_DATABASE_UNIT;
+  $numBelow  = floor($HEIGHT/$row_height);
+  #$numBelow  = ceil($HEIGHT/$row_height);
+  $HEIGHT = $numBelow*$row_height;
+
+  $DIE_ALREADY{dieArea}[0] = 0;
+  $DIE_ALREADY{dieArea}[1] = 0;
+  $DIE_ALREADY{dieArea}[2] = $WIDTH;
+  $DIE_ALREADY{dieArea}[3] = $HEIGHT;
+
+  my $llx = $DIE_ALREADY{dieArea}[0];
+  my $lly = $DIE_ALREADY{dieArea}[1];
+  my $urx = $DIE_ALREADY{dieArea}[2];
+  my $ury = $DIE_ALREADY{dieArea}[3];
+
+  my $area = get_area_II;
+  my $UTILIZATION = $area*100*$DEF_DATABASE_UNIT*$DEF_DATABASE_UNIT/($HEIGHT * $WIDTH);
+  my $ASPECT_RATIO = $HEIGHT/$WIDTH; 
+
+  $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanSetOrigin($dieIsCentre);
+  $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanSetUtilization($UTILIZATION);
+  $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanSetSize($llx, $lly, $urx, $ury);
+  $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanSetAspectRatio($ASPECT_RATIO);
+  $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbgFlplanGetSize;
+
+}# sub set_chip_height_width_x_y_grid
+
+
+sub dbgGenerateRows {
+
+$moduleName = $_[0];
+     print "INFO-PAR : 001 : generating rows from the lef technology on $moduleName \n";
+my @dieSize =  ();
+if ( exists $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$moduleName/_self_"}} ) {
+my $DBSCALEFACTOR = $DEF_DATABASE_UNIT;
+   @dieSize = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$moduleName/_self_"}}->dbFlplanGetSize;
+$guiMuDiellx = $dieSize[0]/$DBSCALEFACTOR;
+$guiMuDielly = $dieSize[1]/$DBSCALEFACTOR;
+$guiMuDieurx = $dieSize[2]/$DBSCALEFACTOR;
+$guiMuDieury = $dieSize[3]/$DBSCALEFACTOR;
+     }  else { print "ERR-PAR : 002 : Die Area not defined ..\n"; }
+
+
+
+     my $min_width_site = "" ;
+     my $height_min_width_site =  10000000 ;
+     my $min_width = 10000000 ;
+     foreach $tag ( keys %TECHNOLOGY_PHYSICAL ) {
+             if ( exists $TECHNOLOGY_PHYSICAL{$tag}{TYPE} ){
+                      if ( $TECHNOLOGY_PHYSICAL{$tag}{TYPE} eq "SITE" ){
+                           if ( $TECHNOLOGY_PHYSICAL{$tag}{CLASS} eq "CORE" || $TECHNOLOGY_PHYSICAL{$tag}{CLASS} eq "core" ) {
+                 ($width, $height) = (split(/\s+/,$TECHNOLOGY_PHYSICAL{$tag}{SIZE}))[0,1];
+                  if($min_width_site eq "") {
+                  $min_width_site = $tag;
+                  $min_width = $width;
+                  $height_min_width_site = $height;
+                  }else{
+                  if($min_width > $width) {
+                  $min_width_site = $tag;
+                  $min_width = $width;
+                  $height_min_width_site = $height;
+                  }
+                  }
+
+                                                             }# if core
+                                                                       }# if site
+                                                           }
+                                            }# for each layer
+                  $height = $GLOBAL->dbGlobalGetRowHeight;
+                  print "DBG-PAR : 003 : height = $height  width = $min_width\n" if ($DEBUG == 20);
+                  my $numberOfRows = int(($guiMuDieury - $guiMuDielly)/$height);
+                  print "INFO-PAR : 004 : no of rows = $numberOfRows\n";
+#--------------------------- find DO and STEP -------------------#
+#                  my @siteSize = $GLOBAL->dbGlobalGetSiteSize;
+                   $STEP = $min_width*$DEF_DATABASE_UNIT;
+                   $DO = int(($guiMuDieurx - $guiMuDiellx)/$min_width);
+                  my $orient = "N";
+                  my $llx = $dieSize[0];
+                  for (my $xx = 0 ; $xx < $numberOfRows; $xx++) {
+                     my $modulusXX = $xx%2;
+                     if ( $modulusXX == 0 ) { $orient = "N"; }
+                     else { $orient = "FS"; }
+#                     print "modulus $modulusXX\n";
+                     $lly = $height*$xx*$DEF_DATABASE_UNIT;
+                     my $rowName = "CORE_ROW_";
+                     $rowName = $rowName.$xx;
+# old line delete if posible                    #  $ROWS_ALREADY{$rowName} = $lly;
+                    my $rowdata = $rowName." ".$min_width_site."  ".$llx." ".$lly." ".$orient." ".$DO." 1 ".$STEP." 0 ";
+                    print "DBG-PAR : 005 : adding $rowdata for $moduleName \n" if ($DEBUG == 20);
+                    $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$moduleName/_self_"}}->dbFlplanAddRows($rowdata);
+                                                               }#for
+
+}#sub dbgGenerateRows
+#------------------------------------------------------------------------------------------------------------------------------#
+sub set_chipdimension_site_multiple{
+#****f* /set_chipdimension_site_multiple
+# NAME
+#  set_chipdimension_site_multiple
+# FUNCTION
+#   X dimension in multiple of site statement and Y dimension in multiple of row height
+# Assumptions
+#  
+# SYNOPSIS 
+#   
+# INPUTS
+#  no options 
+# OUTPUTS
+#  X and Y dimension 
+# ****
+  $width  = $WIDTH;
+  print "DBG-PAR : 001 : width $width \n" if($DEBUG);
+  $height = $HEIGHT;
+  print "DBG-PAR : 002 : height $height \n" if($DEBUG);
+  my @rows = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetRows;
+  my $first_row = $rows[0];
+  my $x_grid = (split(/\s+/,$first_row))[7];
+  my $numBelow =  floor ($width/$x_grid);
+  my $newX  = $numBelow*$x_grid;
+  my $cell_hght = $GLOBAL->dbGlobalGetRowHeight;
+     $cell_hght = $cell_hght*$DEF_DATABASE_UNIT;
+  my $num_Below = floor ($height/$cell_hght);
+  my $newY = $num_Below*$cell_hght;
+  print "INFO-PAR : 003 : chip X dimension $newX \n";
+  print "INFO-PAR : 004 : chip Y dimension $newY\n";
+}#sub set_chipdimension_site_multiple
+#------------------------------------------------------------------------------------------------------------------------------#
+1;

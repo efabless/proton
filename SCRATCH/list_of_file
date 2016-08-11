@@ -1,0 +1,60 @@
+#!/usr/bin/perl
+use Benchmark;
+my $t0 = new Benchmark;
+
+my $noOfArg = @ARGV; 
+if($ARGV[0] eq "-h" || $ARGV[0] eq "-help" || $ARGV[0] eq "-HELP"){
+   print "Usage : list_of_file -file <file name>\n";
+}else{
+  my $File_str;
+  for(my $xx=0; $xx<$noOfArg; $xx++){
+    if($ARGV[$xx] eq "-file"){$File_str = $ARGV[$xx+1];}
+  }
+
+open($write_fh,">list_of_file.txt");
+my @path_parts = split(/\//,$File_str);
+my $name = pop @path_parts;
+my $path = join "/", @path_parts;
+print $write_fh "$path/$name"."_tempslvr\n";
+&write_include_statments($path, $name);
+close($write_fh);
+
+sub write_include_statments{
+ my $path1 = $_[0];
+ my $file = $_[1];
+ if($path1 ne ""){
+   $file = $path1."/".$file;
+ }
+ my $read_fh = $file."_fh";
+ my $write_fh_new = $file."_tempslvr";
+ open($read_fh,"$file");
+ open($write_fh_new,">$file"."_tempslvr");
+ while(<$read_fh>){
+   chomp();
+   if($_ =~ /^\s*(\`|\.)include\s+/){
+      s/^\s*//;
+      my ($include_name,$include_file) = (split(/\s+/,$_))[0,1];
+      $include_file =~ s/\"//g;
+      my @path_parts_for_include = split(/\//,$include_file);
+      my $file_name = pop @path_parts_for_include;
+      print $write_fh_new "$include_name $file_name\n";
+      if($include_file !~ /^\//){
+        print $write_fh "$path1/$include_file"."_tempslvr\n";
+        &write_include_statments($path1, $include_file);
+      }else {
+        print $write_fh "$include_file"."_tempslvr\n";
+        &write_include_statments("", $include_file);
+      }
+   }else{
+     print $write_fh_new "$_\n";
+   }
+ }#while
+ close $read_fh;
+}#sub write_include_statments
+}
+
+#-------------------------------------------------------------------------------------------------#
+
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "script list_of_file took:",timestr($td),"\n";

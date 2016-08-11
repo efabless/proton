@@ -1,0 +1,573 @@
+#!/bin/perl -w
+
+$spacing =0;
+@temp_array=();
+%block_rowhash=();
+%row_db = ();
+$overlap = 0;
+$grid_place = 0;
+
+sub remove_overlap_block {
+
+#****f* /remove_overlap_block 
+# NAME
+#   remove_overlap_block
+# FUNCTION
+#    reads the placed database which has been snapped to row and removes overlapping of the cells. 
+#    The database can contain hard blocks also.
+#    remove_overlap_block has the following command line options and switches.
+# SYNOPSIS
+# remove_overlap_block [-spacing <spacing in microns>] [-maxfp <max filled percentage desired in row] <-debug>
+#
+# INPUTS
+#      options :
+#      	-spacing <spacing in microns needed between overlapping cells> : by default spacing is taken to be 0. 
+#       -gridsize <placement grid in microns> : by default gridsize is taken to be 0
+#       -maxfp <maximum filled percentage desired in row>  : by default filled percentage is taken to be 80.
+#       -bbox <{llx,lly,urx,ury}>  : Black box coordinates, by default the whole die area is taken;
+#       -hardblock <{llx,lly,urx,ury}>  : Hard block coordinates;
+#       -allow_overlap : This option is given when overlapping cells can be present on top of blackbox;
+#       -debug : This is optional to run the program in debug mode
+# OUTPUTS
+#      The placed database will have no overlapping cells
+#****
+
+%TEMP_ROW_DB = ();
+$spacing =0;
+$grid_place = 0;
+$maxfp = 100;
+my $noOfArguments = @_;
+my $debug = 0;
+my $cellHeight = $GLOBAL->dbGlobalGetRowHeight;
+@covg_area = @{$DIE_ALREADY{dieArea}};
+my @hard_block = ();
+$die_area = 1;
+$DBU = $GLOBAL->dbfGlobalGetDBU;
+$cellHeight *=$DBU;
+print "No of arguments: $noOfArguments\n";
+if($_[0] eq "-h" )  { 
+ 	print "Usage :  remove_overlap\n"; 
+        print "                       -spacing <spacing in microns needed between overlap cells>\n";
+        print "                  		note : by default spacing is taken to be 0\n";
+        print "                       -gridsize <placement grid in microns>\n";
+        print "                  		note : by default gridsize is taken to be 0\n";
+	print "                       -maxfp <maximum filled percentage desired in row>\n";
+        print "                  		note : by default filled percentage is taken to be 80\n";
+	print "                       -bbox <{llx,lly,urx,ury}>\n";
+        print "                  		note : by default the whole die area is taken\n";
+	print "                       -hardblock <{llx,lly,urx,ury}>\n";
+        print "                  		note : by default it is assumed to be not present\n";
+	print "                       -allow_overlap \n";
+        print "                       <-debug>\n";
+	
+  }
+  else {
+  for(my $i = 0; $i < $noOfArguments; $i++){ 
+  if($_[$i] eq "-spacing"){  
+    $spacing = $_[$i+1] * $DBU;
+  }
+  elsif ($_[$i] eq "-debug") {
+   $debug = 1;
+  }
+  elsif ($_[$i] eq "-gridsize") {
+   $grid_place = $_[$i+1] * $DBU ;
+  }
+  elsif ($_[$i] eq "-maxfp")  {
+   $maxfp = $_[$i+1];
+  }
+  elsif ($_[$i] eq "-allow_overlap")  {
+   $overlap = 1;
+  }
+  elsif ($_[$i] eq "-hardblock")  {
+	my $rect = $_[$i+1]; 
+	$rect =~ s/\{\s*//; 
+	$rect =~ s/\s*\}//; 
+	@hard_block = split(/\,/,$rect);
+	$hard_block[0] *= $DBU;
+	$hard_block[1] *= $DBU;
+	$hard_block[2] *= $DBU;
+	$hard_block[3] *= $DBU;
+	$hard_block[1] = (floor($hard_block[1]/$cellHeight))*$cellHeight;
+	$hard_block[3] = (ceil($hard_block[3]/$cellHeight))*$cellHeight;
+  }
+  elsif($_[$i] eq "-bbox"){  
+	$die_area = 0;
+	my $rect = $_[$i+1]; 
+	$rect =~ s/\{\s*//; 
+	$rect =~ s/\s*\}//; 
+	@covg_area = split(/\,/,$rect);
+	$covg_area[0] *= $DBU;
+	$covg_area[1] *= $DBU;
+	$covg_area[2] *= $DBU;
+	$covg_area[3] *= $DBU;
+
+}  
+} # for
+
+
+$covg_area[1] = (floor($covg_area[1]/$cellHeight))*$cellHeight;
+$covg_area[3] = (ceil($covg_area[3]/$cellHeight))*$cellHeight;
+
+print "\nINFO : Running overlap removal with hard_block\n" ;
+print "Spacing: $spacing , Maxfp: $maxfp, Covg area: @covg_area , Hard block: @hard_block \n" if ($debug);
+$Rw = $covg_area[2] - $covg_area[0];  
+if ($die_area ==1 ) {
+	$covg_area[3] = $covg_area[3] - $cellHeight;
+}
+&dbPlaceCreateRowInstDB(@covg_area,@hard_block);
+%TEMP_ROW_DB = %TEMP_DB;
+##############################################
+###Store fp of the rows#######################
+##############################################
+foreach $rowName ( keys %TEMP_ROW_DB ) { 
+	$y = $TEMP_ROW_DB{$rowName}->dbPlaceGetRowY;
+	#print "$rowName: $y , @hard_block\n" if $debug ;
+	$row_db{$rowName}{'active_area'} = calculate_active_area($rowName,@covg_area,@hard_block);
+	$row_db{$rowName}{'maxfp'} = calculate_maxFp($rowName,$maxfp,@covg_area);
+	$row_db{$rowName}{'fp'} = calculateFp_block($rowName,@covg_area);
+}
+
+@temp_array = sort { $a <=> $b } keys %temp;
+my $exit =0;
+my $flag =0;
+my $first_row = $temp_array[0]-$cellHeight;
+my ($covg_util,$width_avgfp) = &avgfp_block($first_row,@covg_area);
+print "Design area util : $covg_util\n "; 
+if ($covg_util > $maxfp) {
+	print "Please set the maximum utilization higher\n";
+	$exit = 1;
+	print "Existing design utilization is : $covg_util \n";
+}
+
+##############################################
+###Adjust fp of the rows######################
+##############################################
+foreach  (@temp_array) {
+	if ($flag == 1){
+		print "Error in moving cells to another row.\nPlease set the maximum utilization higher\n";
+	}
+	if (($exit == 0)&&($flag==0)) {
+	my $W_unused=0;
+	my $avg_fp_unused=0;
+	my $fp_unused=0;
+	my $count =0;
+	$flag = 0;
+	$rowName = $temp{$_};
+	$row_db{$rowName}{'fp'}= calculateFp_block($rowName,@covg_area);
+	$num_cells = $TEMP_ROW_DB{$rowName}->dbPlaceGetRowNI;
+	($avgfp,$width_avgfp) = avgfp_block($_,@covg_area);
+	print "$rowName , fp: $row_db{$rowName}{'fp'} , maxfp: $row_db{$rowName}{'maxfp'}, avgfp: $avgfp, Number of cells: $num_cells\n" if ($debug);
+if (($row_db{$rowName}{'fp'} > $row_db{$rowName}{'maxfp'}) && ($avgfp < $maxfp)) {
+######Move cells from rowi to rowi+1 ###########	
+	print "$rowName : case1\n" if ($debug);
+	while (($row_db{$rowName}{'fp'} >= $row_db{$rowName}{'maxfp'} )&&($flag == 0)) {
+		$avg_fp_unused = $maxfp-$avgfp;
+		$W_unused = ($avg_fp_unused/100) * $width_avgfp;
+		my @instList = $TEMP_ROW_DB{$rowName}->dbPlaceGetInstInRow;
+		$cell_move = pop(@instList);
+		$y = $TEMP_ROW_DB{$rowName}->dbPlaceGetRowY;
+		my @loc = $CADB{$cell_move}->dbCadbGetLoc;
+		######Cell width###########	
+		my $cellref =  $CADB{$cell_move}->dbCadbGetCellref;
+		$size = $MACROS_ATTRIBUTE_ALREADY{$cellref}{size};
+    		my ($width,$height)=(split(/\s+/,$size))[0,1];
+		$width = ($width *$DBU);
+		###########################
+		if ($width < $W_unused) {  
+			$TEMP_ROW_DB{$rowName}->dbPlaceDeleteInstInRow($cell_move);
+			unshift(@{$TEMP_ROW_DB{$temp{$y+$cellHeight}}{IL}},$cell_move);
+			$CADB{$cell_move}->dbCadbSetLoc($loc[0],$y+$cellHeight);
+			$W_unused = $W_unused - $width;
+		} else {
+			$TEMP_ROW_DB{$rowName}->dbPlaceDeleteInstInRow($cell_move);
+			unshift(@{$TEMP_ROW_DB{$temp{$y}}{IL}},$cell_move);	
+			$count += 1;
+		}
+		$row_db{$rowName}{'fp'} = calculateFp_block($rowName,@covg_area);
+		($avgfp,$width_avgfp) = avgfp($_,@covg_area);
+		$num_cells = $TEMP_ROW_DB{$rowName}->dbPlaceGetRowNI;
+		if ($count == $num_cells) {
+			$flag = 1;
+		}
+		print "$rowName , fp: $row_db{$rowName}{'fp'} , avgfp:$avgfp, W_unused:$W_unused, inst:$cell_move, cellref:$cellref, width:$width num_cells: $num_cells, count: $count , flag: $flag\n" if ($debug);
+	}
+}
+elsif (($row_db{$rowName}{'fp'} > $maxfp) && ($avgfp > $maxfp)) {
+	print "$rowName : case2\n" if ($debug);
+	$exit = 1;
+	print "Please set the maximum utilization per row higher\n";
+	$covg_util = &avgfp_block($first_row,@covg_area);
+	print "Existing design utilization is : $covg_util \n";
+}
+elsif (($row_db{$rowName}{'fp'} < $maxfp) && ($avgfp > $maxfp)) {
+	######Move cells from rowi+1 to rowi iteratively ###########
+	$num_cells = $TEMP_ROW_DB{$rowName}->dbPlaceGetRowNI;
+	print "$rowName : case3\n" if ($debug);
+	$y = $TEMP_ROW_DB{$rowName}->dbPlaceGetRowY;
+	$y1 = $y+$cellHeight;
+	while (($row_db{$rowName}{'fp'} < $maxfp) && ($avgfp > $maxfp)) {
+		$fp_unused = $maxfp-$row_db{$rowName}{'fp'};
+		$W_unused = ($fp_unused/100) * $Rw;
+		$num_cells_y1 = $TEMP_ROW_DB{$temp{$y1}}->dbPlaceGetRowNI;
+		if ($num_cells_y1 !=0) {
+			##Move from y1 to y##
+			my @instList = $TEMP_ROW_DB{$temp{$y1}}->dbPlaceGetInstInRow;
+			$cell_move = pop(@instList);
+			my @loc = $CADB{$cell_move}->dbCadbGetLoc;
+			######Cell width###########	
+			my $cellref =  $CADB{$cell_move}->dbCadbGetCellref;
+			$size = $MACROS_ATTRIBUTE_ALREADY{$cellref}{size};
+    			my ($width,$height)=(split(/\s+/,$size))[0,1];
+			$width = ($width *$DBU);
+			###########################
+			if ($width < $W_unused) { 
+				$TEMP_ROW_DB{$temp{$y1}}->dbPlaceDeleteInstInRow($cell_move);
+				unshift(@{$TEMP_ROW_DB{$temp{$y}}{IL}},$cell_move);	
+				$CADB{$cell_move}->dbCadbSetLoc($loc[0],$y);
+				$W_unused = $W_unused-$width;
+			} else {
+				$TEMP_ROW_DB{$temp{$y1}}->dbPlaceDeleteInstInRow($cell_move);
+				unshift(@{$TEMP_ROW_DB{$temp{$y}}{IL}},$cell_move);	
+				$count += 1;
+			}
+
+			$row_db{$rowName}{'fp'} = calculateFp_block($rowName,@covg_area);
+			($avgfp,$width_avgfp) = avgfp_block($_,@covg_area);
+			#print "$rowName , fp: $row_db{$rowName}{'fp'} , avgfp:$avgfp, W_unused:$W_unused, inst:$cell_move, cellref:$cellref, width:$width\n" if ($debug);
+			$num_cells = $TEMP_ROW_DB{$temp{$y1}}->dbPlaceGetRowNI;
+			if ($count == $num_cells) {
+				$flag = 1;
+			}
+		} else {
+			$y1 +=$cellHeight;
+			$num_cells = 0;
+			$count = 0;
+		}
+	}
+}
+elsif (($row_db{$rowName}{'fp'} < $maxfp) && ($avgfp < $maxfp)) {
+	######Do nothing ###########
+	print "$rowName : case4\n" if ($debug);
+}
+} #end if
+} #end foreach
+
+
+if ($exit == 0) {
+foreach ( @temp_array ) {
+	$rowName = $temp{$_};
+	$fp = $TEMP_ROW_DB{$rowName}->dbPlaceGetRowFP($fp);
+	print "$rowName , New fp: $fp\n" if ($debug);
+	my @instList = $TEMP_ROW_DB{$rowName}->dbPlaceGetInstInRow;
+	
+	#########################################################
+	####Sort each row in order of increasing X-coordinate####
+	#########################################################
+	foreach $inst(@instList) {
+		my @loc = $CADB{$inst}->dbCadbGetLoc;
+		$temp_hash{$inst} = $loc[0];
+	}
+	##Sorting based on value(X-cordinate)##
+	@Sorted_instList = sort {
+        	$temp_hash{$a} <=> $temp_hash{$b}
+        } keys %temp_hash;
+	@{$temp1{$rowName}{instList}} = @Sorted_instList;
+	%temp_hash = ();
+
+        ########################################################
+
+my $Swc =0;
+my $active_area = $row_db{$rowName}{'active_area'};
+$Swc = totalCellWidthInRow( $rowName,@{$temp1{$rowName}{instList}} ) - $spacing;
+$delta = $active_area - $Swc ;
+if ($delta >= 0 ) {
+	$delta_used = 0 ; 
+	$delta_used_new = 0 ; 
+	$W_used = $covg_area[0];
+	foreach $inst(@{$temp1{$rowName}{instList}}) {
+		my @loc = $CADB{$inst}->dbCadbGetLoc;
+		my $cellref =  $CADB{$inst}->dbCadbGetCellref;
+		$size = $MACROS_ATTRIBUTE_ALREADY{$cellref}{size};
+    		($width,$height)=(split(/\s+/,$size))[0,1];
+		$width = ($width *$DBU);
+		##In case of overlap
+		if ($loc[0] < ($W_used+$spacing)) {
+			$new_X = $W_used+$spacing; 
+			$new_X_aligned = alignCellToGrid($new_X, $W_used,@hard_block);   
+			$CADB{$inst}->dbCadbSetLoc($new_X_aligned,$loc[1]);
+			$W_used = $new_X_aligned + $width;
+			$delta_used = $new_X_aligned +$width;
+		}
+		##No overlap
+		else {
+			$delta_used_new = $delta_used + $loc[0]  - $W_used ;
+			if ( $delta_used_new <= $delta ) {
+				## keep cell position same;
+				$new_X = $loc[0];
+				$new_X_aligned = alignCellToGrid($new_X, $W_used,@hard_block); 
+				$CADB{$inst}->dbCadbSetLoc($new_X_aligned,$loc[1]);
+				$delta_used = $delta_used +$new_X_aligned - $W_used;
+				$W_used = $new_X_aligned + $width ;
+			}
+			else {
+				$new_X = $W_used + $delta - $delta_used;	
+				if ($new_X < ($W_used + $spacing)) {
+					if ($delta_used == 0) {
+						$new_X= $new_X;
+					}
+					else {$new_X = $W_used + $spacing;} 
+				}
+				$new_X_aligned = alignCellToGrid($new_X, $W_used,@hard_block);
+				$CADB{$inst}->dbCadbSetLoc($new_X_aligned,$loc[1]);
+				$delta_used = $delta_used + $new_X_aligned  - $W_used ;
+				$W_used = $new_X_aligned + $width;
+				print "W_used : $W_used delta_used: $delta_used and delta: $delta\n" if ($debug);
+			}
+		}
+	print "Inst: $inst , Delta : $delta, delta_used : $delta_used, W_used :$W_used, New X : $new_X, Width: $width\n" if ($debug); 
+	printf("Row:%-s Inst:%-8s Delta:%8.2f Delta_used:%8.2f W_used:%8.2f New_X:%8.2f Width:%8.2f Max_width=%8.2f\n",$rowName,$inst,$delta,$delta_used,$W_used,$new_X,$width,$covg_area[2]) if ($debug); 
+	}
+}
+
+}#end foreach 	
+
+#########################################################
+############For rows that have hard block################
+#########################################################
+
+foreach (sort {$a <=> $b } keys %block_rowhash ) {
+	$rowName = $temp{$_};
+	$fp = $TEMP_ROW_DB{$rowName}->dbPlaceGetRowFP($fp);
+	my @instList = $TEMP_ROW_DB{$rowName}->dbPlaceGetInstInRow;
+	
+	#########################################################
+	####Sort each row in order of increasing X-coordinate####
+	#########################################################
+	foreach $inst(@instList) {
+		my @loc = $CADB{$inst}->dbCadbGetLoc;
+		$temp_hash{$inst} = $loc[0];
+	}
+	##Sorting based on value(X-cordinate)##
+	@Sorted_instList = sort {
+        	$temp_hash{$a} <=> $temp_hash{$b}
+        } keys %temp_hash;
+	@{$temp1{$rowName}{instList}} = @Sorted_instList;
+	%temp_hash = ();
+
+        ########################################################
+
+my $Swc =0;
+$Swc = totalCellWidthInRow( $rowName,@{$temp1{$rowName}{instList}} ) - $spacing;
+my $active_area = $row_db{$rowName}{'active_area'};
+$delta = $active_area - $Swc ;
+if ($delta >= 0 ) {
+	$delta_used = 0 ; 
+	$delta_used_new = 0 ; 
+	$W_used = $covg_area[0];
+	foreach $inst(@{$temp1{$rowName}{instList}}) {
+		print "$inst in $rowName" if ($debug);
+		my @loc = $CADB{$inst}->dbCadbGetLoc;
+		my $cellref =  $CADB{$inst}->dbCadbGetCellref;
+		$size = $MACROS_ATTRIBUTE_ALREADY{$cellref}{size};
+    		($width,$height)=(split(/\s+/,$size))[0,1];
+		$width = ($width *$DBU);
+		##In case of overlap
+		if ($loc[0] < ($W_used+$spacing)) {
+			$new_X = $W_used+$spacing;
+			if ((($new_X +$width) <= $hard_block[0])||($W_used > $hard_block[2])) {  
+				$new_X = $new_X;
+				$new_X_aligned = alignCellToGrid($new_X, $W_used,@hard_block);
+				$delta_used = $delta_used +$new_X_aligned - $W_used;
+			} else {
+				$new_X = $hard_block[2] + $spacing;
+				$new_X_aligned = alignCellToGrid($new_X, $W_used,@hard_block)+ $grid_place;
+				$delta_used = $delta_used + ($hard_block[0]-$W_used)+($new_X_aligned-$hard_block[2]);	
+			} 
+			$CADB{$inst}->dbCadbSetLoc($new_X_aligned,$loc[1]);
+			$W_used = $new_X_aligned + $width ;
+		}
+		##No overlap
+		else {
+			$delta_used_new = $delta_used + $loc[0]  - $W_used ;
+			if ( $delta_used_new <= $delta ) {
+				## keep cell position same;
+				$new_X = $loc[0];
+				if (((($new_X +$width) <= $hard_block[0])||($W_used > $hard_block[2]))&&(($loc[0]<$hard_block[0])||($loc[0]>$hard_block[2]))) {  
+					$new_X = $new_X;
+					$new_X_aligned = alignCellToGrid($new_X, $W_used,@hard_block);
+					$delta_used = $delta_used +$new_X_aligned - $W_used;
+				} else {
+					$new_X = $hard_block[2] + $spacing;
+					$new_X_aligned = alignCellToGrid($new_X, $W_used,@hard_block)+ $grid_place;
+					$delta_used = $delta_used + ($hard_block[0]-$W_used)+($new_X_aligned-$hard_block[2]);
+				}
+				$W_used = $new_X_aligned + $width ;
+				$CADB{$inst}->dbCadbSetLoc($new_X_aligned,$loc[1]);
+			}
+			else {
+				$new_X = $W_used + $delta - $delta_used;	
+				if ($new_X < ($W_used + $spacing)) {
+					if ($delta_used == 0) {
+						$new_X= $new_X;
+						$new_X_aligned = alignCellToGrid($new_X, $W_used,@hard_block);
+						$delta_used = $delta_used + $new_X_aligned  - $W_used ;
+					}
+					else {$new_X = $W_used + $spacing;}
+					if (((($new_X +$width) <= $hard_block[0])||($W_used > $hard_block[2]))&&(($loc[0]<$hard_block[0])||($loc[0]>$hard_block[2]))) {  
+						$new_X = $new_X;
+						$new_X_aligned = alignCellToGrid($new_X, $W_used,@hard_block);
+						$delta_used = $delta_used +$new_X_aligned  - $W_used ;
+					} else {
+						$new_X = $hard_block[2] + $spacing;
+						$new_X_aligned = alignCellToGrid($new_X, $W_used,@hard_block)+ $grid_place;
+						$delta_used = $delta_used + ($hard_block[0]-$W_used)+($new_X_aligned-$hard_block[2]);	
+					} 
+				}
+				$CADB{$inst}->dbCadbSetLoc($new_X_aligned,$loc[1]);
+				$W_used = $new_X_aligned + $width;
+				#print "W_used : $W_used delta_used: $delta_used and delta: $delta\n" if ($debug);
+			}
+		}
+	#print "Inst: $inst , Delta : $delta, delta_used : $delta_used, W_used :$W_used, New X : $new_X, Width: $width\n" if ($debug); 
+	#printf("Row:%-s Inst:%-8s Delta:%8.2f Delta_used:%8.2f W_used:%8.2f New_X:%8.2f New_X_aligned:%8.2f Width:%8.2f Hard_block_0=%8.2f\n",$rowName,$inst,$delta,$delta_used,$W_used,$new_X,$new_X_aligned,$width,$covg_area[2]) if ($debug); 
+	printf("Row:%-s Inst:%-8s New_X:%8.2f New_X_aligned:%8.2f Hard_block_0=%8.2f Hard_block_2=%8.2f \n",$rowName,$inst,$new_X,$new_X_aligned,$hard_block[0],$hard_block[2]) if ($debug); 
+	}
+}#end if
+}#end foreach 
+
+
+}
+&adjustcellorient;
+&check_overlap_block(@covg_area,@hard_block);
+%TEMP_DB=();
+%temp = ();
+%row_db = ();
+%temp1 = ();
+@temp_array = ();
+@block_rowarray=();
+$overlap =0;
+
+} # end else
+}#sub remove_overlap_block
+
+sub check_overlap_block {
+my(@array) = @_;
+my @covg_area = ($array[0],$array[1],$array[2],$array[3]);
+my @hard_block = ($array[4],$array[5],$array[6],$array[7]);
+foreach ( sort {$a <=> $b } keys %temp ) {
+	$rowName = $temp{$_};
+	$pointer = 0;
+	foreach $inst(@{$temp1{$rowName}{instList}}) {
+		my @loc = $CADB{$inst}->dbCadbGetLoc;
+		my $cellref =  $CADB{$inst}->dbCadbGetCellref;
+		$size = $MACROS_ATTRIBUTE_ALREADY{$cellref}{size};
+    		($width,$height)=(split(/\s+/,$size))[0,1];
+		$width = ($width *$DBU);
+		if ($loc[0] < $pointer) {
+			print "Overlap found in $rowName\n";
+		}
+		if (($loc[0]+$width) > $covg_area[2]) {
+			print "$inst outside the coverage area\n";
+		}
+		$pointer = $loc[0] +$width +$spacing;
+	}#foreach
+} #foreach
+foreach (sort {$a <=> $b } keys %block_rowhash ) {
+$rowName = $temp{$_};
+	$pointer = 0;
+	foreach $inst(@{$temp1{$rowName}{instList}}) {
+		my @loc = $CADB{$inst}->dbCadbGetLoc;
+		my $cellref =  $CADB{$inst}->dbCadbGetCellref;
+		$size = $MACROS_ATTRIBUTE_ALREADY{$cellref}{size};
+    		($width,$height)=(split(/\s+/,$size))[0,1];
+		$width = ($width *$DBU);
+		if (($loc[0]>=$hard_block[0])&&($loc[0]<$hard_block[2])){
+			print "$inst over hard block in $rowName\n";
+		}
+	}#foreach
+
+}#end foreach
+
+} #sub check_overlap_block
+
+sub calculate_active_area {
+	my ($rowName,@array)=@_;
+	my @covg_area = ($array[0],$array[1],$array[2],$array[3]);
+	my @hard_block = ($array[4],$array[5],$array[6],$array[7]);
+	my $y = $TEMP_ROW_DB{$rowName}->dbPlaceGetRowY;
+	my $active_area;
+	$Rw = $covg_area[2] - $covg_area[0];
+	if (($y >= $hard_block[1])&&($y<$hard_block[3])) {
+		$active_area = $Rw - ($hard_block[2] - $hard_block[0]) ;
+		$block_rowhash{$y} = $rowName ;
+	} else {
+		$active_area = $Rw;
+	}
+	return($active_area);
+} # sub calculate_active_area
+
+sub calculate_maxFp {
+	my ($rowName,$maxfp,@covg_area)=@_;
+	$Rw = $covg_area[2] - $covg_area[0];
+	my $active_area = $row_db{$rowName}{'active_area'};
+	$fp = ($active_area/$Rw)*$maxfp - 1;
+	return($fp);
+} # sub calculate_maxFp
+
+sub totalCellWidthInRow { 
+	my ($rowName,@instList) = @_;
+	my $leastCount = $grid_place;
+	my $Swc =0;
+	foreach $inst(@instList) {
+		my $cellref =  $CADB{$inst}->dbCadbGetCellref;
+		$size = $MACROS_ATTRIBUTE_ALREADY{$cellref}{size};
+		($width,$height)=(split(/\s+/,$size))[0,1];
+		if ($grid_place != 0) {
+			$width = $leastCount * ceil((($width *$DBU) + $spacing)/$leastCount);
+		}else {
+			$width = ($width *$DBU) + $spacing;
+		}
+		$Swc += $width ;
+}
+return($Swc+$grid_place);
+} #sub 	totalCellWidthInRow
+
+
+sub calculateFp_block {
+	my ($rowName,@covg_area)=@_;
+	my @instList = $TEMP_ROW_DB{$rowName}->dbPlaceGetInstInRow;
+	$Swc=totalCellWidthInRow($rowName,@instList) - $spacing;
+	my $active_area = $row_db{$rowName}{'active_area'};
+	$fp = sprintf("%.2f",($Swc / $active_area) * 100);
+	$TEMP_ROW_DB{$rowName}->dbPlaceSetRowFP($fp);
+	return($fp);
+} # sub calculateFp_block
+
+sub avgfp_block {
+	my $cellHeight = $GLOBAL->dbGlobalGetRowHeight;
+	$cellHeight *= $DBU;
+	my ($rowNum,@covg_area) = @_;
+	my $sum_cells= 0;
+	my $sum_active_area = 0;
+	my $avg =0;
+	$Rw = $covg_area[2] - $covg_area[0];
+	my $count =0;
+	my $row_name;
+	$no_of_rows = @temp_array;
+	if ($rowNum == $temp_array[$no_of_rows - 1]) {
+		$rowNum = $rowNum - $cellHeight;
+	} 
+	for ($i = $TEMP_ROW_DB{$temp{$rowNum+$cellHeight}}->dbPlaceGetRowY ; $i<=$temp_array[$no_of_rows-1] ; $i = $i+$cellHeight) {
+		$row_name = $temp{$i};
+		my @instList = $TEMP_ROW_DB{$row_name}->dbPlaceGetInstInRow;
+		$Swc=totalCellWidthInRow($row_name,@instList) - $spacing;
+		$sum_cells += $Swc;
+		$sum_active_area += $row_db{$row_name}{'active_area'};		
+	}
+	if ($sum_active_area != 0) {
+		$avg = ($sum_cells/$sum_active_area)*100 ;
+		return($avg,$sum_active_area);
+	}
+} #sub avgfp_block
+
+1;

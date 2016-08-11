@@ -1,0 +1,751 @@
+package VNOM;
+
+# class 0 -> soft
+#       11 -> blackbox
+#       8 -> parametric RTL
+sub new {
+my $dd = {
+          name => "UND",
+          parents => [],
+          ins => InsDB::createEmpty(),
+          nets => NetsDB::createEmpty(),
+          outs => OutsDB::createEmpty(),
+          bidis => BidiDB::createEmpty(),
+          regs => RegDB::createEmpty(),
+          param => SpiceParamDB::createEmpty(),
+          clocks => [],
+          async => [],
+          pwr => [],
+          gnd => [],
+          Hchild   => HinstDB::createEmpty(),
+          Lchild   => LinstDB::createEmpty(),
+          SpiceElement => SpiceElementInstDB::createEmpty(), 
+          pnrType  => "UND",
+          area     => 0,
+          leafArea => 0,
+          hierArea => 0,
+          FPID     => 0,
+          conn     => [],
+          spiceconn => [],
+          class    => 0,
+          rtlArea => 0,
+          };
+bless $dd, 'VNOM';
+return $dd;
+}# sub new
+
+#-----------------------------------------#
+sub dbVNOMSetClass {
+my ($self, $t ) = @_;
+$self->{class} =  $t;
+}#sub dbVNOMSetClass
+
+sub dbVNOMGetClass {
+my ($self) = @_;
+my $t = $self->{class};
+return($t);
+}#sub dbVNOMGetClass
+
+
+#-----------------------------------------#
+sub dbVNOMAddConn {
+my ($self,$conn) = @_;
+push(@{$self->{conn}}, $conn);
+}#sub dbVNOMAddConn
+
+sub dbVNOMGetConn {
+my ($self) = @_;
+my @conn = @{$self->{conn}};
+return(@conn);
+}#sub dbVNOMGetConn
+
+sub dbVNOMWipeConn {
+my ($self) = @_;
+undef (@{$self->{conn}});
+}#sub dbVNOMWipeConn
+
+#-----------------------------------------#
+sub dbVNOMAddHierInst {
+my ($self, $inst ) = @_;
+${$self->{Hchild}}{$inst} = HinstDB::new();
+}#sub dbVNOMAddHierInst
+
+sub dbVNOMWipeSingleHierInst {
+my ($self, $inst ) = @_;
+delete (${$self->{Hchild}}{$inst}) ;
+}#sub dbVNOMWipeSingleHierInst
+
+sub dbVNOMGetHierInst {
+my ($self) = @_;
+my @inst = ();
+   foreach my $inst ( keys %{$self->{Hchild}} ) { push(@inst,$inst); }
+return(@inst);
+}#sub dbVNOMGetHierInst
+
+sub dbVNOMHasHierInst {
+my ($self, $inst) = @_;
+if ( exists ${$self->{Hchild}}{$inst} ) {
+  return 1;
+}
+return 0;
+}#sub dbVNOMHasHierInst
+
+sub dbVNOMWipeHierInst {
+my ($self) = @_;
+$self->{Hchild} = ();
+}#sub dbVNOMWipeHierInst
+
+sub dbVNOMSetHierInstCell {
+my ($self,$inst,$c ) = @_;
+if ( exists ${$self->{Hchild}}{$inst} ) {
+${$self->{Hchild}}{$inst}->{C} = $c;
+}
+}#sub dbVNOMSetHierInstCell
+
+sub dbVNOMGetHierInstCell {
+my ($self,$inst) = @_;
+if ( exists ${$self->{Hchild}}{$inst} ) {
+my $c = ${$self->{Hchild}}{$inst}->{C};
+return($c);
+}else{
+return("UND");
+}
+}#sub dbVNOMGetHierInstCell
+
+#-----------------------------------------#
+sub dbVNOMAddLeafInst {
+my ($self, $inst ) = @_;
+${$self->{Lchild}}{$inst} = LinstDB::new();
+}#sub dbVNOMAddLeafInst
+
+sub dbVNOMGetLeafInst {
+my ($self) = @_;
+my @inst = ();
+   foreach my $inst ( keys %{$self->{Lchild}} ) { push(@inst,$inst); }
+return(@inst);
+}#sub dbVNOMGetLeafInst
+
+sub dbVNOMHasLeafInst {
+my ($self, $inst) = @_;
+if ( exists ${$self->{Lchild}}{$inst} ) {
+  return 1;
+} else {
+return 0;
+}
+}#sub dbVNOMHasLeafInst
+
+sub dbVNOMWipeLeafInst {
+my ($self) = @_;
+$self->{Lchild} = ();
+}#sub dbVNOMWipeLeafInst
+
+sub dbVNOMSetLeafInstCell {
+my ($self,$inst,$c ) = @_;
+if ( exists ${$self->{Lchild}}{$inst} ) {
+${$self->{Lchild}}{$inst}->{C} = $c;
+}
+}#sub dbVNOMSetLeafInstCell
+
+sub dbVNOMGetLeafInstCell {
+my ($self,$inst) = @_;
+if ( exists ${$self->{Lchild}}{$inst} ) {
+my $c = ${$self->{Lchild}}{$inst}->{C};
+return($c);
+}else{
+return("UND");
+}
+}#sub dbVNOMGetLeafInstCell
+
+sub dbVNOMSetLeafInstOrient {
+my ($self,$inst,$o ) = @_;
+if ( exists ${$self->{Lchild}}{$inst} ) {
+${$self->{Lchild}}{$inst}->{O} = $o;
+}
+}#sub dbVNOMSetLeafInstOrient
+
+sub dbVNOMGetLeafInstOrient {
+my ($self,$inst) = @_;
+if ( exists ${$self->{Lchild}}{$inst} ) {
+my $o = ${$self->{Lchild}}{$inst}->{O};
+return($o);
+}else{
+return("N");
+}
+}#sub dbVNOMGetLeafInstOrient
+
+#-----------------------------------------#
+sub dbVNOMSetArea {
+my ($self, $a ) = @_;
+$self->{area} =  $a;
+}#sub dbVNOMSetArea
+
+sub dbVNOMGetArea {
+my ($self) = @_;
+my $a = $self->{area};
+return($a);
+}#sub dbVNOMGetArea
+
+sub dbVNOMHasLeafArea {
+my ($self) = @_;
+if ( $self->{leafArea} != 0 ) {
+  return 1;
+} else {
+  return 0;
+}
+}#sub dbVNOMHasLeafArea
+
+sub dbVNOMGetLeafArea {
+my ($self) = @_;
+my $a = $self->{leafArea};
+return($a);
+}#sub dbVNOMGetLeafArea
+
+sub dbVNOMSetLeafArea {
+my ($self, $a ) = @_;
+$self->{leafArea} =  $a;
+}#sub dbVNOMSetLeafArea
+
+sub dbVNOMHasHierArea {
+my ($self) = @_;
+if ( $self->{hierArea} != 0 ) {
+  return 1;
+} else {
+  return 0;
+}
+}#sub dbVNOMHasHierArea
+
+sub dbVNOMGetHierArea {
+my ($self) = @_;
+my $a = $self->{hierArea};
+return($a);
+}#sub dbVNOMGetHierArea
+
+sub dbVNOMSetHierArea {
+my ($self, $a ) = @_;
+$self->{hierArea} =  $a;
+}#sub dbVNOMSetHierArea
+
+#-----------------------------------------#
+sub dbVNOMSetFloorplanID {
+my ($self, $flplan) = @_;
+$self->{FPID} = $flplan;
+}#sub dbVNOMSetFloorplanID
+
+sub dbVNOMGetFloorplanID {
+my ($self) = @_;
+return ($self->{FPID});
+}#sub dbVNOMGetFloorplanID
+
+#-----------------------------------------#
+sub dbVNOMAddParent {
+my ($self, $p ) = @_;
+push(@{$self->{parents}}, $p);
+}#sub dbVNOMAddParent
+
+sub dbVNOMGetParent {
+my ($self) = @_;
+my @p = @{$self->{parents}};
+return(@p);
+}#sub dbVNOMGetParent
+
+sub dbVNOMHasParent {
+my ($self, $par) = @_;
+my @pars = @{$self->{parents}};
+foreach my $p ( @pars ) {
+  if ( $p eq $par ) {
+    return 1;
+  }
+}
+return 0;
+}#sub dbVNOMHasParent
+#-----------------------------------------#
+sub dbVNOMAddInput {
+my ($self, $in ) = @_;
+$self->{ins}{$in} = InsDB::new();
+}#sub dbVNOMAddInput
+
+sub dbVNOMGetInput {
+my ($self) = @_;
+my @in = ();
+   foreach my $in ( keys %{$self->{ins}} ) { push(@in,$in); }
+return(@in);
+}#sub dbVNOMGetInput
+
+sub dbVNOMHasInput {
+my ($self, $in ) = @_;
+return ( exists $self->{ins}{$in} );
+}#sub dbVNOMHasInput
+
+sub dbVNOMWipeInput {
+my ($self) = @_;
+$self->{ins} = ();
+}#sub dbVNOMWipeInput
+
+#-----------------------------------------#
+sub dbVNOMSetInputType {
+my ($self, $pin, $type ) = @_;
+if ( exists $self->{ins}{$pin} ){
+$self->{ins}{$pin}->{T} = $type;
+}
+}#sub dbVNOMSetInputType
+
+sub dbVNOMGetInputType {
+my ($self,$pin) = @_;
+if ( exists $self->{ins}{$pin} ){
+my $type =$self->{ins}{$pin}->{T};
+return($type);
+}else {
+ return("UND");
+}
+}#sub dbVNOMGetInputType
+
+#-----------------------------------------#
+sub dbVNOMSetInputBits {
+my ($self, $pin, $bits ) = @_;
+if ( exists $self->{ins}{$pin} ){
+$self->{ins}{$pin}->{W} = $bits;
+}
+}#sub dbVNOMSetInputBits
+
+sub dbVNOMGetInputBits {
+my ($self,$pin) = @_;
+if ( exists $self->{ins}{$pin} ){
+my $type =$self->{ins}{$pin}->{W};
+return($type);
+}else{
+return("UND");
+}
+}#sub dbVNOMGetInputBits
+
+sub dbVNOMRemoveInput {
+my ($self, $in ) = @_;
+delete $self->{ins}{$in};
+}#sub dbVNOMRemoveInput
+
+#-----------------------------------------#
+sub dbVNOMAddOutput {
+my ($self, $out ) = @_;
+$self->{outs}{$out} = OutsDB::new();
+}#sub dbVNOMAddOutput
+
+sub dbVNOMGetOutput {
+my ($self) = @_;
+my @out = ();
+   foreach my $out ( keys %{$self->{outs}} ) { push(@out,$out); }
+return(@out);
+}#sub dbVNOMGetOutput
+
+sub dbVNOMHasOutput {
+my ($self, $out ) = @_;
+return ( exists $self->{outs}{$out} );
+}#sub dbVNOMHasOutput
+
+sub dbVNOMWipeOutput {
+my ($self) = @_;
+$self->{outs} = ();
+}#sub dbVNOMWipeOutput
+
+#-----------------------------------------#
+sub dbVNOMSetOutputType {
+my ($self, $pin, $type ) = @_;
+if ( exists $self->{outs}{$pin} ){
+$self->{outs}{$pin}->{T} = $type;
+}
+}#sub dbVNOMSetOutputType
+
+sub dbVNOMGetOutputType {
+my ($self,$pin) = @_;
+if ( exists $self->{outs}{$pin} ){
+my $type =$self->{outs}{$pin}->{T};
+return($type);
+}else{
+return("UND");
+}
+}#sub dbVNOMGetOutputType
+
+#-----------------------------------------#
+sub dbVNOMSetOutputBits {
+my ($self, $pin, $bits ) = @_;
+if ( exists $self->{outs}{$pin} ){
+$self->{outs}{$pin}->{W} = $bits;
+}
+}#sub dbVNOMSetOutputBits
+
+sub dbVNOMGetOutputBits {
+my ($self,$pin) = @_;
+if ( exists $self->{outs}{$pin} ){
+my $type =$self->{outs}{$pin}->{W};
+return($type);
+}else{
+return("UND");
+}
+}#sub dbVNOMGetOutputBits
+
+sub dbVNOMRemoveOutput {
+my ($self, $out ) = @_;
+delete $self->{outs}{$out};
+}#sub dbVNOMRemoveOutput
+
+#-----------------------------------------#
+sub dbVNOMAddBidi {
+my ($self, $bidi ) = @_;
+$self->{bidis}{$bidi} = BidiDB::new();
+}#sub dbVNOMAddBidi
+
+sub dbVNOMGetBidi {
+my ($self) = @_;
+my @bidi = ();
+   foreach my $bidi ( keys %{$self->{bidis}} ) { push(@bidi,$bidi); }
+return(@bidi);
+}#sub dbVNOMGetBidi
+
+sub dbVNOMHasBidi {
+my ($self, $bidi ) = @_;
+return ( exists $self->{bidis}{$bidi} );
+}#sub dbVNOMHasBidi
+
+sub dbVNOMWipeBidi {
+my ($self) = @_;
+$self->{bidis} = ();
+}#sub dbVNOMWipeBidi
+
+#-----------------------------------------#
+sub dbVNOMSetBidiType {
+my ($self, $pin, $type ) = @_;
+if ( exists $self->{bidis}{$pin} ){
+$self->{bidis}{$pin}->{T} = $type;
+}
+}#sub dbVNOMSetBidiType
+
+sub dbVNOMGetBidiType {
+my ($self,$pin) = @_;
+if ( exists $self->{bidis}{$pin} ){
+my $type =$self->{bidis}{$pin}->{T};
+return($type);
+}else{
+return("UND");
+}
+}#sub dbVNOMGetBidiType
+
+#-----------------------------------------#
+sub dbVNOMSetBidiBits {
+my ($self, $pin, $bits ) = @_;
+if ( exists $self->{bidis}{$pin} ){
+$self->{bidis}{$pin}->{W} = $bits;
+}
+}#sub dbVNOMSetBidiBits
+
+sub dbVNOMGetBidiBits {
+my ($self,$pin) = @_;
+if ( exists $self->{bidis}{$pin} ){
+my $type =$self->{bidis}{$pin}->{W};
+return($type);
+}else{
+return("UND");
+}
+}#sub dbVNOMGetBidiBits
+
+sub dbVNOMRemoveBidi {
+my ($self, $bidi ) = @_;
+delete $self->{bidis}{$bidi};
+}#sub dbVNOMRemoveBidi
+
+#-----------------------------------------#
+sub dbVNOMGetPins {
+my ($self) = @_;
+my @pins = ();
+foreach my $pin ( $self->dbVNOMGetOutput ) {
+  if ( $self->dbVNOMGetOutputType($pin) == 0 ) {
+    push(@pins, $pin);
+  }
+  else {
+    my $bits = $self->dbVNOMGetOutputBits($pin);
+    if ( $bits =~ m/\[.+\]/ ) {
+      $pin .= $bits;
+      my @busPins = main::utilSplitBusBits($pin);
+      push(@pins, @busPins);
+    }
+  }
+}# foreach pin
+
+foreach my $pin ( $self->dbVNOMGetInput ) {
+  if ( $self->dbVNOMGetInputType($pin) == 0 ) {
+    push(@pins, $pin);
+  }
+  else {
+    my $bits = $self->dbVNOMGetInputBits($pin);
+    if ( $bits =~ m/\[.+\]/ ) {
+      $pin .= $bits;
+      my @busPins = main::utilSplitBusBits($pin);
+      push(@pins, @busPins);
+    }
+  }
+}# foreach pin
+
+foreach my $pin ( $self->dbVNOMGetBidi ) {
+  if ( $self->dbVNOMGetBidiType($pin) == 0 ) {
+    push(@pins, $pin);
+  }
+  else {
+    my $bits = $self->dbVNOMGetBidiBits($pin);
+    if ( $bits =~ m/\[.+\]/ ) {
+      $pin .= $bits;
+      my @busPins = main::utilSplitBusBits($pin);
+      push(@pins, @busPins);
+    }
+  }
+}# foreach pin
+
+return(@pins);
+}#sub dbVNOMGetPins
+
+sub dbVNOMRemovePin {
+my ($self, $pin ) = @_;
+if(exists $self->{ins}{$pin}){
+  delete $self->{ins}{$pin};
+}elsif(exists $self->{outs}{$pin}){
+  delete $self->{outs}{$pin};
+}elsif(exists $self->{bidis}{$pin}){
+  delete $self->{bidis}{$pin};
+}else{
+  print "Warning : No such pin $pin\n";
+}
+}#sub dbVNOMRemovePin
+
+#-----------------------------------------#
+sub dbVNOMAddNet {
+my ($self, $net ) = @_;
+$self->{nets}{$net} = NetsDB::new();
+}#sub dbVNOMAddNet
+
+sub dbVNOMGetNet {
+my ($self) = @_;
+my @net = ();
+   foreach my $net ( keys %{$self->{nets}} ) { push(@net,$net); }
+return(@net);
+}#sub dbVNOMGetNet
+
+sub dbVNOMHasNet {
+my ($self, $net ) = @_;
+return ( exists $self->{nets}{$net} );
+}#sub dbVNOMHasNet
+
+sub dbVNOMWipeNet {
+my ($self) = @_;
+$self->{nets} = ();
+}#sub dbVNOMWipeNet
+
+#-----------------------------------------#
+sub dbVNOMSetNetType {
+my ($self, $net, $type ) = @_;
+if ( exists $self->{nets}{$net} ){
+$self->{nets}{$net}->{T} = $type;
+}
+}#sub dbVNOMSetNetType
+
+sub dbVNOMGetNetType {
+my ($self,$net) = @_;
+if ( exists $self->{nets}{$net} ){
+my $type =$self->{nets}{$net}->{T};
+return($type);
+}else {
+ return("UND");
+}
+}#sub dbVNOMGetNetType
+
+#-----------------------------------------#
+sub dbVNOMSetNetBits {
+my ($self, $net, $bits ) = @_;
+if ( exists $self->{nets}{$net} ){
+$self->{nets}{$net}->{W} = $bits;
+}
+}#sub dbVNOMSetNetBits
+
+sub dbVNOMGetNetBits {
+my ($self,$net) = @_;
+if ( exists $self->{nets}{$net} ){
+my $type =$self->{nets}{$net}->{W};
+return($type);
+}else{
+return("UND");
+}
+}#sub dbVNOMGetNetBits
+
+#-----------------------------------------#
+sub dbVNOMAddReg {
+my ($self,$reg) = @_;
+$self->{regs}{$reg} = RegDB::new();
+}#sub dbVNOMAddReg
+
+sub dbVNOMGetReg {
+my ($self) = @_;
+my @reg = ();
+   foreach my $reg (keys %{$self->{regs}}){push(@reg,$reg);}
+return(@reg);
+}#sub dbVNOMGetReg
+#-----------------------------------------#
+sub dbVNOMSetRegDimension {
+my ($self,$reg_pin,$dim) = @_;
+if(exists $self->{regs}{$reg_pin} ){
+$self->{regs}{$reg_pin}->{D} = $dim;
+}
+}#sub dbVNOMSetDimension
+
+sub dbVNOMGetRegDimension {
+my($self,$reg_pin) = @_;
+if(exists $self->{regs}{$reg_pin}){
+my $dim = $self->{regs}{$reg_pin}->{D};
+return($dim);
+}else {
+return("UND");
+}
+}#sub dbVNOMGetRegDimension
+
+#-----------------------------------------#
+sub dbVNOMSetRegSize {
+my ($self,$reg_pin,$size) = @_;
+if( exists $self->{regs}{$reg_pin}){
+$self->{regs}{$reg_pin}->{S} = $size;
+}
+}#sub dbVNOMSetRegSize
+
+sub dbVNOMGetRegSize {
+my ($self,$reg_pin) = @_;
+if(exists $self->{regs}{$reg_pin}){
+my $size = $self->{regs}{$reg_pin}->{S};
+return($size);
+}else{
+return("UND")
+}
+}#sub dbVNOMGetRegSize 
+
+
+#-----------------------------------------#
+sub dbVNOMHasReg {
+my ($self, $reg_pin ) = @_;
+return ( exists $self->{regs}{$reg_pin} );
+}#sub dbVNOMHasReg
+#-----------------------------------------#
+sub dbVNOMHasRtlArea {
+my ($self) = @_;
+if ( $self->{rtlArea} != 0 ) {
+  return 1;
+} else {
+  return 0;
+}
+}#sub dbVNOMHasRtlArea
+sub dbVNOMSetRtlArea {
+my ($self, $a ) = @_;
+$self->{rtlArea} =  $a;
+}#sub dbVNOMSetRtlArea
+
+sub dbVNOMGetRtlArea {
+my ($self) = @_;
+my $a = $self->{rtlArea};
+return($a);
+}#sub dbVNOMGetRtlArea
+#-----------------------------------------#
+sub dbVNOMAddSpiceElementInst {
+my($self,$inst) = @_;
+${$self->{SpiceElement}}{$inst} = SpiceElementInstDB::new();
+}#sub dbVNOMAddSpiceElementInst
+
+sub dbVNOMGetSpiceElementInst {
+my ($self) = @_;
+my @inst = ();
+foreach my $inst(keys %{$self->{SpiceElement}}){push(@inst,$inst);}
+return(@inst);
+}#sub dbVNOMGetSpiceElementInst
+
+sub dbVNOMHasSpiceElementInst {
+my ($self,$inst) = @_;
+if(exists ${$self->{SpiceElement}}{$inst}){
+  return 1;
+}
+return 0;
+}#sub dbVNOMHasSpiceElementInst 
+
+sub dbVNOMSetSpiceElementInstCell {
+my ($self,$inst,$c) = @_;
+if(exists ${$self->{SpiceElement}}{$inst}){
+${$self->{SpiceElement}}{$inst}->{C} = $c;
+}
+}#sub dbVNOMSetSpiceElementInstCell
+
+sub dbVNOMGetSpiceElementInstCell {
+my ($self,$inst) = @_;
+if(exists ${$self->{SpiceElement}}{$inst}){
+my $c = ${$self->{SpiceElement}}{$inst}->{C};
+return($c);
+}else {
+return("UND");
+}
+}#sub dbVNOMGetSpiceElementInstCell
+
+#-----------------------------------------#
+sub dbVNOMSetSpiceElementValue {
+my ($self,$inst,$vl) = @_;
+if(exists ${$self->{SpiceElement}}{$inst}){
+${$self->{SpiceElement}}{$inst}->{Inst_Val} = $vl;
+} 
+}#sub dbVNOMSetSpiceElementValue 
+
+sub dbVNOMGetSpiceElementValue {
+my ($self,$inst) = @_;
+if(exists ${$self->{SpiceElement}}{$inst}){
+my $val = ${$self->{SpiceElement}}{$inst}->{Inst_Val};
+return($val);
+}else {
+return("UND");
+}
+}#sub dbVNOMGetSpiceElementValue 
+#-----------------------------------------#
+sub dbVNOMAddSpiceParameter {
+my ($self, $param ) = @_;
+$self->{param}{$param} = SpiceParamDB::new();
+}#sub dbVNOMAddSpiceParameter
+
+sub dbVNOMGetSpiceParameter {
+my ($self) = @_;
+my @param = ();
+foreach my $param ( keys %{$self->{param}} ) { push(@param,$param); }
+return(@param);
+}#sub dbVNOMGetSpiceParameter
+
+sub dbVNOMSetSpiceParameterType {
+my ($self, $pin, $p ) = @_;
+if ( exists $self->{param}{$pin} ){
+$self->{param}{$pin}->{T} = $p;
+}
+}#sub dbVNOMSetSpiceParameterType
+
+sub dbVNOMGetSpiceParameterType {
+my ($self,$pin) = @_;
+if ( exists $self->{param}{$pin} ){
+my $param = $self->{param}{$pin}->{T};
+return($param);
+}else {
+ return("UND");
+}
+}#sub dbVNOMGetSpiceParameterType
+
+sub dbVNOMSetSpiceParameterValue {
+my ($self, $param, $value ) = @_;
+if ( exists $self->{param}{$param} ){
+push(@{$self->{param}{$param}->{V}},$value);
+}
+}#sub dbVNOMSetSpiceParameterValue
+
+sub dbVNOMGetSpiceParameterValue {
+my ($self,$param) = @_;
+if ( exists $self->{param}{$param} ){
+my @value = @{$self->{param}{$param}->{V}};
+return(@value);
+}else{
+return("UND");
+}
+}#sub dbVNOMGetSpiceParameterValue
+#-----------------------------------------#
+
+
+1;

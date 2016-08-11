@@ -1,0 +1,2145 @@
+
+sub win_kill {
+$myproc->kill();
+$GLOBAL->dbGlobalSetGuiStatus(0);
+}#sub win_kill
+
+sub win {
+$myproc = Proc::Simple->new();
+$myproc->start(\&start_gui);
+}#sub win
+
+sub ui {
+$myproc = Proc::Simple->new();
+$myproc->start(\&start_gui);
+}#sub ui
+
+sub gui {
+$myproc = Proc::Simple->new();
+$myproc->start(\&start_gui);
+}#sub gui
+
+sub shift_banner {
+		my $newstr = substr($str, 1). substr($str, 0, 1);
+		$str = $newstr;
+}
+
+#############################################################################################################
+###################################### Preparing proton GUI #################################################
+#############################################################################################################
+
+sub start_gui {
+
+$top = MainWindow->new();
+$top->title (" Proton ");
+$top->geometry("700x590+0+0");
+$box = [0,0,540,540];
+  $guiCanvasHeight = 500;
+  $guiCanvasWidth = 500;
+$GLOBAL->dbGlobalSetGuiStatus(1);
+my $path2eq = $GLOBAL->dbfGlobalGetProtonHome;
+
+################ define some bitmaps #######
+my $bitmaps = [];
+   push @$bitmaps, pack('b8' x 5, "........",
+                                  "...11...",
+                                  "..1111..",
+                                  ".1111111.",
+                                  "........"); 
+   $top->DefineBitmap("uparrow" => 8,5, $bitmaps->[0]);
+   push @$bitmaps, pack('b8' x 8, "11111111",
+                                  "1......1",
+                                  "1......1",
+                                  "1......1",
+                                  "1......1",
+                                  "1......1",
+                                  "1......1",
+                                  "11111111"); 
+   $top->DefineBitmap("modulebox" => 8,8, $bitmaps->[1]);
+   push @$bitmaps, pack('b14' x 6, 
+                                 "......11111111",
+                                 "......1......1",
+                                 "......1.111111",
+                                 "1111111.1.....",
+                                 "1.......1.....",
+                                 "111111111....."); 
+   $top->DefineBitmap("netbox" => 14,6, $bitmaps->[2]);
+   push @$bitmaps, pack('b8' x 1, "....1111"); 
+   $top->DefineBitmap('hdots' => 8,1, $bitmaps->[3]);
+   push @$bitmaps, pack('b1' x 8, ".",".",".",".","1","1","1","1"); 
+   $top->DefineBitmap('vdots' => 1,8, $bitmaps->[4]);
+   push @$bitmaps, pack('b11' x 11, ".....1.....",
+                                    "....111....",
+                                    "...1.1.1...",
+                                    "..1..1..1..",
+                                    ".1...1...1.",
+                                    "11111111111",
+                                    ".1...1...1.",
+                                    "..1..1..1..",
+                                    "...1.1.1...",
+                                    "....111....",
+                                    ".....1.....",
+                                    ); 
+   $top->DefineBitmap('adderBitmap' => 11,11, $bitmaps->[5]);
+   push @$bitmaps, pack('b11' x 11, "....1111111",
+                                    "....1.....1",
+                                    "....1.....1",
+                                    "11111.....1",
+                                    "1.........1",
+                                    "1.........1",
+                                    "1.........1",
+                                    "1.........1",
+                                    "1.........1",
+                                    "1.........1",
+                                    "11111111111",
+                                    );
+   $top->DefineBitmap('rectilinearBitmap' => 11,11, $bitmaps->[6]);
+   push @$bitmaps, pack('b11' x 8, "11111111111",
+                                   "...........",
+                                   "...........",
+                                   "...........",
+                                    );
+   $top->DefineBitmap('fifoBitmap' => 11,8, $bitmaps->[7]);
+   push @$bitmaps, pack('b11' x 10,"11111111111",
+                                   "1....1....1",
+                                   "1....1....1",
+                                   "11111111111",
+                                   "1....1....1",
+                                   "1....1....1",
+                                   "11111111111",
+                                   "1....1....1",
+                                   "1....1....1",
+                                   "11111111111",
+                                    );
+   $top->DefineBitmap('gridBitmap' => 11,10, $bitmaps->[8]);
+##############################################################################################
+##   Menu frame 
+##############################################################################################
+use subs qw/design_menuitems /;
+use subs qw/help_menuitems /;
+use subs qw/analysis_menuitems /;
+$menubar = $top->Frame(-relief=>"ridge");
+$menubar->pack(-side=>'top', -fill=>'x');
+##############################################################################################
+##   CLI frame 
+##############################################################################################
+
+#-------------------- commented  cliframe due to adding Adjuster ------------------------#
+$cliframe = $top->Frame(-relief=>'flat')->pack(-side=>'bottom', -fill=>'both');
+$cliframe->Label(-text=>'tool_shell >')->pack(-side=>'left');
+$cmdLineText = $cliframe->Entry(-borderwidth=>0, -textvariable=>\$cmdVar,-highlightthickness=>0)->pack(-side=>'left', -fill=>'both',-expand=>1);
+#$cmdLineText = $top->Entry(-borderwidth=>1, -textvariable=>\$cmdVar)->pack(-side=>'bottom', -fill=>'both');
+$cmdLineText->bind("<Return>", sub {
+                                 # tie *STDOUT, ref $readOnlyText, $readOnlyText;
+                                 my ($cmd, @arguments) = split(/\s+/, $cmdVar);
+                                 my $noOfargs = @arguments;
+                                 if(exists $p2cmdArgs->{$cmd}){
+                                    print "$cmd found\n";
+                                    if( $p2cmdArgs->{$cmd} <= $noOfargs) {
+                                       &{$p2cmd->{$cmd}}(@arguments); 
+                                    }else {&{$p2cmd->{$cmd}}("HELP");}
+                                 }else{ print "$cmd not found\n";}
+                    });
+                 
+
+##############################################################################################
+##   Utility frame 
+##############################################################################################
+
+$utilitybar = $top->Frame(-relief=>"raised", -borderwidth=>1);
+ 
+$utilitybar->Label(-textvariable =>\$CURSORX, -text => 'X', -anchor=>'w',-relief=>'sunken')->pack(-fill=>'x', -side=>'left');
+$utilitybar->Label(-textvariable =>\$CURSORY, -text => 'X', -anchor=>'w',-relief=>'sunken')->pack(-fill=>'x', -side=>'left');
+$utilitybar->pack(-side=>'bottom', -fill=>'both');
+my $logVar = 0;
+$logButton = $utilitybar->Checkbutton(-text=>"log", -variable=>\$logVar,
+                                      -command=>sub{if($logVar == 1){
+                                                       $top->geometry("700x680"); 
+                                                       $readOnlyText=$top->Scrolled('ROText',-height=>5,-scrollbars=>"e");
+                                                       $readOnlyText->Subwidget('yscrollbar')->configure(-orient=>"vertical",-width=>10);
+                                                       #$readOnlyText->pack(-after=>$cmdLineText,-side=>'bottom', -fill=>'both', -expand=> 1);
+                                                       $readOnlyText->pack(-after=>$cliframe,-side=>'bottom', -fill=>'both', -expand=> 1);
+                                                       $adjRO = $top->Adjuster();
+                                                       $adjRO->packAfter($readOnlyText, -side => 'bottom');
+                                                       tie (*STDOUT, 'Tk::ROText', $readOnlyText);
+                                                    }else{$readOnlyText->packForget;$adjRO->packForget;
+                                                          $top->geometry("700x590");
+                                                    }})->pack(-side=>"right");  
+
+##############################################################################################
+#         File Menu                                                                          #
+##############################################################################################
+$Filebutton = $menubar->Menubutton(-text=>"File", -underline => 0,-relief=>"raised",-pady=>0);
+
+$Filemenu = $Filebutton->Menu();
+$Filebutton->configure(-menu=>$Filemenu);
+
+$Filemenu->command(
+   -command => \&popup_openConfig,
+    -label => "OpenConfig ",
+    -underline => 0); # O in Open
+$Filemenu->separator;
+$Filemenu->command(-label => "New",
+    -command => \&dbErr_gui_not_yet,
+    -underline => 0);  # N in New
+$Filemenu->separator;
+$Filemenu->command(-label => "Save",
+    -command => \&dbErr_gui_not_yet,
+    -underline => 0);  # "S" in Save
+$Filemenu->separator;
+$Filemenu->command(-label => "Run",
+    -command => \&dbfGuiRunTclScript,
+    -underline => 0);  # "M" in Mics
+$Filemenu->separator;
+$Filemenu->command(-label => "Misc",
+    -command => \&dbErr_gui_not_yet,
+    -underline => 0);  # "M" in Mics
+$Filemenu->separator;
+$Filemenu->command(-label => "Close",
+    -command => \&exit_choice,
+    -underline => 0);  # "C" in Convert
+$Filemenu->separator();
+$Filemenu->command(-label => "Exit proton",
+    -command => \&win_kill,
+    -underline => 0);  # "C" in Close
+
+
+$Filebutton->pack(-side=>'left',-fill=>"x", -expand=>1);
+
+##############################################################################################
+#         Library Menu                                                                          #
+##############################################################################################
+$librarybutton = $menubar->Menubutton(-text=>"Library", -underline => 0,-relief=>"raised",-pady=>0);
+$librarymenu = $librarybutton->Menu();
+$librarybutton->configure(-menu=>$librarymenu);
+
+$librarymenu->command(-label => "Import ",
+    -command => \&read_lef_popup,
+    -underline => 0); # O in Open
+$librarymenu->separator;
+$librarymenu->command(-label => "Display",
+    -command => \&popup_lefgui_layerPin,
+    -underline => 0);  # D in Display
+$librarymenu->separator;
+$librarymenu->command(-label => "Verify",
+    -command => \&dbErr_gui_not_yet,
+    -underline => 0);  # "x" in Exit
+$librarymenu->separator;
+$librarymenu->command(-label => "Export",
+    -command => \&write_lef_popup,
+    -underline => 0);  # "x" in Export
+$librarymenu->separator;
+$librarymenu->command(-label => "TimingBrowser",
+    -command => \&timing_report_browser,
+    -underline => 0);  # "x" in Export
+$librarymenu->separator;
+$librarymenu->command(-label => "Help",
+    -command => \&library_help_gui,
+    -underline => 0);  # "x" in Export
+
+$librarybutton->pack(-side=>'left',-fill=>'x', -expand=>1);
+##############################################################################################
+#         Design Menu                                                                          #
+##############################################################################################
+$designbutton2 = $menubar->Menubutton(qw/-text Design -underline 0 -relief raised -pady 0/,-menuitems => design_menuitems);
+$designbutton2->pack(-side=>'left',-fill=>'x', -expand=>1);
+
+sub design_menuitems {
+      [
+        [qw/cascade ~Import -menuitems/ =>
+         [
+           [qw/command/, 'Import DEF', qw/-command/ =>\&call_read_def], '',
+           [qw/command/, 'Import Verilog', qw/-command/ =>\&dbErr_gui_not_yet,],
+         ],
+       ],                                                      '',
+        [qw/cascade ~Browse -menuitems/ =>
+         [
+           [qw/command/, 'Browse Hierarchy', qw/-command/ =>\&macStyle_design_hierarchy_display,],
+           [qw/command/, 'Browse DEF', qw/-command/ =>\&popup_display_def_in_gui,],
+         ],
+       ],                                                      '',
+        [qw/cascade ~Export -accelerator Ctrl-n -menuitems/ =>
+         [ 
+           [qw/command/, 'Export Verilog', qw/-command/ =>\&write_verilog,], '',
+           [qw/command/, 'Export HPV', qw/-command/ =>\&write_hpv],           '',
+           [qw/command/, 'Export DEF', qw/-command/ =>\&call_write_def,],     '', 
+           [qw/command/, 'Export Floorplan', qw/-command/ =>\&dbErr_gui_not_yet],
+         ],
+       ],                                                      '',
+        [qw/cascade ~Write -accelerator Ctrl-n -menuitems/ =>
+         [
+           [qw/command/, 'Write ega', qw/-command/ =>\&write_ega,],             '',
+           [qw/command/, 'Write RTL', qw/-command/ =>\&create_writeRTL_Popup,], '',
+           [qw/command/, '~Create Netlist' , qw/-command/ => \&create_netlist], '',
+           [qw/command/, '~Generate Flat Verilog', qw/ -command/ => \&dbfTstGUIGenerateDesign], '',
+         ],
+       ],                                                      '',
+       [qw/command ~Display -command/ =>\&design_display],       '',
+       [qw/command ~DisplayFlopLevels -command/ =>\&create_popupToDisplay_flopLevels],       '',
+       #[qw/command/, '~FlatRouterDisplay', -command=>\&flat_route_display],      '',
+       #[qw/command/, '~HierRouterDisplay', -command=>\&route_hier],      '',
+        [qw/cascade ~Functions -accelerator Ctrl-n -menuitems/ =>
+         [
+           [qw/command ~FlipChip -command/ =>\&create_popupToDisplayBump],       '',
+           [qw/command ~Flip\Rotate -command/ => \&createPopup_toFlipOrRotateInst],   '',
+           [qw/command ~Query -command/ => \&createPopup_toQueryInstAndNets],   '',
+           [qw/command ~InstConnections -command/ => \&create_popup_toDtrawConnections],   '',
+           [qw/command/, '~Save Design', -command=>\&popup_save_design],         '',
+           [qw/command/, '~Restore Design', -command=>\&popup_get_design],      '',
+         ],
+       ],                                                      '',
+       [qw/command/, '~Options', -command=>\&create_popupHaving_displayOptions],      '',
+       [qw/command ~Cookie-Cut -command/ => \&call_popup_dbfTstGUICookieCut], '',
+       [qw/command ~Fractals -command/ => \&call_popup_dbfGUIFractals],       '',
+       [qw/command ~Help -command/ => \&design_help_gui],
+     ];
+ 
+   } #sub design_menuitems         
+
+##############################################################################################
+#         FloorPlan Menu                                                                          #
+##############################################################################################
+$floorplanbutton = $menubar->Menubutton(qw/-text FPlan -underline 0 -relief raised -pady 0/);
+$floorplanbutton->pack(-side=>'left',-fill=>'x', -expand=>1);
+$floorplanmenu = $floorplanbutton->Menu();
+$floorplanbutton->configure(-menu=>$floorplanmenu);
+
+     $floorplanmenu->command(
+    -command => \&flplan_popup,
+    -label => "SetFlplan",
+    -underline => 0); # D in Display
+
+     $floorplanmenu->command(
+    -command => \&flplan_parameter_popup,
+    -label => "SetFlplan Parameters",
+    -underline => 0); # D in Display
+##############################################################################################
+#         timing Menu                                                                        #
+##############################################################################################
+
+$timingbutton = $menubar->Menubutton(-text=>"Timing", -underline => 0,-relief=>"raised",-pady=>0);
+$timingmenu = $timingbutton->Menu();
+$timingbutton->configure(-menu=>$timingmenu);
+
+     $timingmenu->command(-command => \&dbErr_gui_not_yet,
+    -label => "load",
+    -underline => 0); # L in Lef
+$timingmenu->separator;
+
+     $timingmenu->command(
+    -command => \&gui_hilite_sta_path,
+    -label => "Display",
+    -underline => 0); # D in Display
+$timingmenu->separator;
+     $timingmenu->command(
+    -command => \&gui_display_data_flow,
+    -label => "Data Flow",
+    -underline => 0); # D in Display
+$timingmenu->separator;
+     $timingmenu->command(
+    -command => \&call_display_worst_timing_path,
+    -label => "Worst Path",
+    -underline => 0); # W in Display
+$timingmenu->separator;
+
+$timingbutton->pack(-side=>'left',-fill=>'x', -expand=>1);
+
+##############################################################################################
+#         place  Menu                                                                        #
+##############################################################################################
+
+$placebutton = $menubar->Menubutton(-text=>"Place", -underline => 0,-relief=>"raised",-pady=>0);
+$placemenu = $placebutton->Menu();
+$placebutton->configure(-menu=>$placemenu);
+
+     $placemenu->command(
+    -command => \&create_hPlace_popup,
+    -label => "mpl_hierPlace",
+    -underline => 0); # D in Display
+$placemenu->separator;
+     $placemenu->command(
+    -command => \&place_graph_plan_4_pseudo,
+    -label => "plan4_hierPlace",
+    -underline => 0); # D in Display
+$placemenu->separator;
+     $placemenu->command(
+    -command => \&place_graph,
+    -label => "plan1_flatPlace",
+    -underline => 0); # D in Display
+$placemenu->separator;
+     $placemenu->command(
+    -command => \&gui_hilite_sta_path,
+    -label => "Place random",
+    -underline => 0); # D in Display
+$placemenu->separator;
+     $placemenu->command(
+    -command => \&gui_place_data_flow,
+    -label => "Data Flow",
+    -underline => 0); # D in Display
+$placemenu->separator;
+     $placemenu->command(
+    -command => \&dbPlaceShowDFM,
+    -label => "Data Flow Movie",
+    -underline => 0); # D in Display
+$placemenu->separator;
+
+$placebutton->pack(-side=>'left',-fill=>'x', -expand=>1);
+
+##############################################################################################
+#         route  Menu                                                                        #
+##############################################################################################
+
+$routebutton = $menubar->Menubutton(-text=>"Route", -underline => 0,-relief=>"raised",-pady=>0);
+$routemenu = $routebutton->Menu();
+$routebutton->configure(-menu=>$routemenu);
+
+     $routemenu->command(
+    -command => \&groute_new,
+    -label => "gRoute",
+    -underline => 0); # D in Display
+$routemenu->separator;
+
+     $routemenu->command(
+    -command => sub {\&display_congestion_map(1,1)},
+    -label => "Display Congestion Map",
+    -underline => 0); # D in Display
+$routemenu->separator;
+
+     $routemenu->command(
+    -command => \&flat_route_display,
+    -label => "FlatRouterDisplay",
+    -underline => 0); # D in Display
+$routemenu->separator;
+
+     $routemenu->command(
+    -command => \&route_hier,
+    -label => "HierRouterDisplay",
+    -underline => 0); # D in Display
+$routemenu->separator;
+
+$routebutton->pack(-side=>'left',-fill=>'x', -expand=>1);
+##############################################################################################
+#         Output Menu                                                                        #
+##############################################################################################
+$outputbutton = $menubar->Menubutton(-text=>"Output",-underline => 0,-relief=>"raised",-pady=>0);
+$outputmenu = $outputbutton->Menu();
+$outputbutton->configure(-menu=>$outputmenu);
+
+     $outputmenu->command(-command => \&write_lef,
+    -label => "Lef",
+    -underline => 0); # L in Lef
+$outputmenu->separator;
+     $outputmenu->command(-command => \&write_lib,
+    -label => "Lib",
+    -underline => 0); # L in Lef
+$outputmenu->separator;
+$outputmenu->command(-command => \&popup_lib_plot,
+    -label => "Libplot",
+    -underline => 0); # L in Lef
+$outputmenu->separator;
+$outputbutton->pack(-side=>'left',-fill=>'x', -expand=>1);
+##############################################################################################
+#         Utilities Menu                                                                         #
+##############################################################################################
+$outputbutton = $menubar->Menubutton(-text=>"Util",-underline => 0,-relief=>"raised",-pady=>0);
+$outputmenu = $outputbutton->Menu();
+$outputbutton->configure(-menu=>$outputmenu);
+
+     $outputmenu->command(-command => \&dump_pdf,
+    -label => "Screenshot",
+    -underline => 0); # L in Lef
+$outputmenu->separator;
+
+     $outputmenu->command(-command => \&write_lib,
+    -label => "Others",
+    -underline => 0); # L in Lef
+$outputmenu->separator;
+
+     $outputmenu->command(-command => \&dbfTstgenCreateModule,
+    -label => "Rect",
+    -underline => 0); # L in Lef
+$outputmenu->separator;
+$outputbutton->pack(-side=>'left',-fill=>'x', -expand=>1);
+
+##############################################################################################
+#         CreateDesign Menu                                                                         #
+##############################################################################################
+$QAbutton = $menubar->Menubutton(-text=>"CreateDesign",-underline => 0,-relief=>"raised",-pady=>0);
+$QAmenu = $QAbutton->Menu();
+$QAbutton->configure(-menu=>$QAmenu);
+
+     $QAmenu->command(-command => \&popUp_dbTstGUICreateTopModule,
+    -label => "Create Top Module",
+    -underline => 0); # L in Lef
+$QAmenu->separator;
+
+     $QAmenu->command(-command => \&create_popUpDesignEntryWidget,
+    -label => "Design Widget",
+    -underline => 0);
+$QAmenu->separator;
+
+     $QAmenu->command(-command => \&popUp_CreateConnections,
+    -label => "Connetors",
+    -underline => 0); # L in Lef
+$QAmenu->separator;
+
+     $QAmenu->command(-command => \&dbTstGUICreateModule,
+    -label => "Create Module",
+    -underline => 0); # L in Lef
+$QAmenu->separator;
+
+     $QAmenu->command(-command => \&call_popup_edit_module,
+    -label => "Edit Module",
+    -underline => 0); # L in Lef
+$QAmenu->separator;
+
+     $QAmenu->command(-command => \&call_popup_commit_module,
+    -label => "Commit Module",
+    -underline => 0); # L in Lef
+$QAmenu->separator;
+
+     $QAmenu->command(-command => \&create_popup_write_verilog,
+    -label => "Write Verilog",
+    -underline => 0); # L in Lef
+$QAmenu->separator;
+
+     $QAmenu->command(-command => \&call_popup_downHier,
+    -label => "Down Hier",
+    -underline => 0); # L in Lef
+$QAmenu->separator;
+
+     $QAmenu->command(-command => \&call_popup_upHier,
+    -label => "Up Hier",
+    -underline => 0); # L in Lef
+$QAmenu->separator;
+
+     $QAmenu->command(-command => \&popupToCreateFloorplanWidget,
+    -label => "Floorplan Widget",
+    -underline => 0); # L in Lef
+$QAmenu->separator;
+
+     $QAmenu->command(-command => \&create_ruler_popup,
+    -label => "Ruler",
+    -underline => 0); # L in Lef
+$QAmenu->separator;
+
+     $QAmenu->command(-command => \&dbfTstGUICreatePlacementBlockage,
+    -label => "Create Placement Blockage",
+    -underline => 0); # L in Lef
+$QAmenu->separator;
+
+     $QAmenu->command(-command => \&popup_createRoutingBlkg,
+    -label => "Create Routing Blockage",
+    -underline => 0); # L in Lef
+$QAmenu->separator;
+
+     $QAmenu->command(-command => \&create_pin2pin_connection,
+    -label => "Create Pin2Pin connection",
+    -underline => 0); # L in Lef
+$QAmenu->separator;
+
+     $QAmenu->command(-command => \&proto_help_gui,
+    -label => "Help",
+    -underline => 0); # L in Lef
+
+$QAbutton->pack(-side=>'left',-fill=>'x', -expand=>1);
+
+##############################################################################################
+#         KB Menu                                                                         #
+##############################################################################################
+$KBbutton = $menubar->Menubutton(-text=>"KB",-underline => 0,-relief=>"raised",-pady=>0);
+$KBmenu = $KBbutton->Menu();
+$KBbutton->configure(-menu=>$KBmenu);
+
+$KBmenu->command(-command => \&call_read_def,
+    -label => "Register Testcase",
+    -underline => 0); # L in Lef
+$KBmenu->separator;
+
+$KBmenu->command(-command => \&call_read_def,
+    -label => "Refresh",
+    -underline => 0); # L in Lef
+$KBmenu->separator;
+
+$KBmenu->command(-command => \&call_read_def,
+    -label => "Customize Display",
+    -underline => 0); # L in Lef
+$KBmenu->separator;
+
+$KBmenu->command(-command => \&gui_kb_display,
+    -label => "Delete Testcase",
+    -underline => 0); # L in Lef
+$KBmenu->separator;
+
+$KBmenu->command(-command => \&gui_kb_display,
+    -label => "Plot",
+    -underline => 0); # L in Lef
+$KBmenu->separator;
+
+$KBbutton->pack(-side=>'left',-fill=>'x', -expand=>1);
+
+##############################################################################################
+#         Analysis Menu                                                                         #
+##############################################################################################
+$ANLSbutton = $menubar->Menubutton(qw/-text Analysis -underline 0 -relief raised -pady 0/,-menuitems => analysis_menuitems);
+$ANLSbutton->pack(-side=>'left',-fill=>'x', -expand=>1);
+
+sub analysis_menuitems {
+      [
+        [qw/cascade ~DisplayDataFlow -menuitems/ =>
+         [
+           [qw/command/, 'Matrix', qw/-command/ =>\&dbfPlacementDataFlowGui], '',
+           [qw/command/, '2D Display', qw/-command/ =>\&smatrix_2d_display],  '',
+           [qw/command/, '3D Display', qw/-command/ =>\&smatrix_3d_display],
+         ],
+       ],                                                      '',
+        [qw/cascade ~wirelength -menuitems/ =>
+         [
+           [qw/command/, 'byNetLen', qw/-command/ =>\&create_gui_to_displayWL_byNetLen], '',
+           [qw/command/, 'byNetType', qw/-command/ =>\&create_gui_to_displayWL_byNetType],  '',
+         ],
+       ],                                                      '',
+        [qw/command ~DisplayPlacement -command/ =>\&dbfPlacementDBGui], '',
+        [qw/command ~DisplayHierConn -command/ =>\&display_hier_smatrix]
+     ]
+}#sub analysis_menuitems
+
+##############################################################################################
+#         XLS/HTML Menu                                                                         #
+##############################################################################################
+$WRITEbutton = $menubar->Menubutton(-text=>"xls/html",-underline => 0,-relief=>"raised",-pady=>0);
+$WRITEmenu = $WRITEbutton->Menu();
+$WRITEbutton->configure(-menu=>$WRITEmenu);
+
+$WRITEmenu->command(-command => \&call_write_excel,
+    -label => "Write Excel",
+    -underline => 0); # L in Lef
+$WRITEmenu->separator;
+
+$WRITEmenu->command(-command => \&call_write_html,
+    -label => "Write HTML",
+    -underline => 0); # L in Lef
+$WRITEmenu->separator;
+
+$WRITEbutton->pack(-side=>'left',-fill=>'x', -expand=>1);
+
+##############################################################################################
+#         Help Menu                                                                          #
+##############################################################################################
+$helpbutton = $menubar->Menubutton(qw/-text Help -underline 0 -relief raised -pady 0/,-menuitems => help_menuitems);
+$helpbutton->pack(-side=>'left',-fill=>'x', -expand=>1);
+
+sub help_menuitems {
+      [
+       [qw/command ~Design -command/ =>\&design_help_gui],       '',
+       [qw/command ~Library -command/ => \&library_help_gui],   '',
+       [qw/command ~Prototype -command/ => \&proto_help_gui],   '',
+       [qw/command ~HierView  -command/ => \&hierView_help_gui],
+     ];
+ 
+}#sub help_menuitems         
+##############################################################################################
+$Synthesisbutton = $menubar->Menubutton(-text=>"Synthesis", -underline => 0,-relief=>"raised",-pady=>0); 
+$Synthesismenu = $Synthesisbutton->Menu();
+$Synthesisbutton->configure(-menu=>$Synthesismenu);
+
+$Synthesismenu->command(
+   -command => \&popup_openConfig,
+    -label => "jroute ",
+    -underline => 0); # jroute
+$Synthesismenu->separator;
+
+$Synthesismenu->command(
+   -command => \&popup_yosys_binary,
+    -label => "yosys ",
+    -underline => 0); # yosys
+$Synthesismenu->separator;
+
+$Synthesismenu->command(
+   -command => \&popup_iverilog_binary,
+    -label => "iverilog ",
+    -underline => 0); # iverilog
+$Synthesismenu->separator;
+
+$Synthesisbutton->pack(-side=>'left',-fill=>"x", -expand=>1);
+
+##############################################################################################
+####################### Menubar completes here ###############################################
+
+##############################################################################################
+#   The interactive gui here Frame first                                                    #
+##############################################################################################
+$centerFrame = $top->Frame()->pack(-side => 'left',-fill=>'both',-expand=>1);
+
+##############################################################################################
+##   Canvas in the center frame 
+##############################################################################################
+$book = $centerFrame->NoteBook(-tabpady=>0,-tabpadx=>0,-relief=>"raised",-font=> "Times 10 italic", -borderwidth=>2)->pack( -side=>"top",-fill=>'both',-expand=>1);
+$tab1 = $book->add( "Sheet 1", -label=>"Design",-raisecmd=>\&activate_DesignTab ,-justify => "center" );
+$tab2 = $book->add( "Sheet 2", -label=>"Library", -raisecmd=>\&activate_LibraryTab , -justify => "center" );
+$tab3 = $book->add( "Sheet 3", -label=>"Command Script",-justify => "center" );
+#$tab4 = $book->add( "Sheet 4", -label=>"",-justify => "center" );
+$tab5 = $book->add( "Sheet 5", -label=>"eFarm",-justify => "center" );
+$tab6 = $book->add( "Sheet 6", -label=>"KB", -raisecmd=>\&activate_kbTab,-justify => "center" );
+$tab7 = $book->add( "Sheet 7", -label=>"Analysis", -raisecmd=>\&activate_AnalysisTab,-justify => "center" );
+$tab8 = $book->add( "Sheet 8", -label=>"DesignStat", -raisecmd=>\&activate_DesignStatTab,-justify => "center" );
+#$tab9 = $book->add( "Sheet 9", -label=>"Hier-View", -raisecmd=>\&activate_HierViewTab,-justify => "center" );
+$tab9 = $book->add( "Sheet 9", -label=>"Hier-View", -createcmd=>\&activate_HierViewTab,-justify => "center" );
+$tab10 = $book->add( "Sheet 10", -label=>"rtl-edit",-justify => "center" );
+$tab11 = $book->add( "Sheet 11", -label=>"FlatView", -raisecmd=>\&activate_flatViewTab,-justify => "center" );
+$tab12 = $book->add( "Sheet 12", -label=>"Specify",-justify => "center" );
+
+&design_canvas;
+&library_canvas;
+&kb_canvas;
+#&script_canvas;
+#&check_canvas;
+&efarm_canvas;
+&analysis_canvas;
+&designStat_canvas;
+&hierview_canvas;
+&rtledit_canvas;
+&create_design_worldCanv;
+&prepare_specify_tab;
+
+sub hierview_canvas {
+use Tk::WorldCanvas;
+my $path2eq = $GLOBAL->dbfGlobalGetProtonHome;
+
+my $hierLeftFrame = $tab9->Frame()->pack(-side => 'left',-fill=>'y');
+
+$hier_canvas = $tab9->Scrolled('WorldCanvas', -scrollbars=>'se',-bg =>'black',-width =>540, -height =>540)->pack(qw/-side left -expand 1 -fill both/);
+$hier_canvas->Subwidget('xscrollbar')->configure(-takefocus => 0);
+$hier_canvas->Subwidget('yscrollbar')->configure(-takefocus => 0);
+$hier_canvas->configure(-confine => 1);
+$hier_canvas->CanvasBind('<Motion>', sub {&dbfGuiShowWorldCanvasCoords($hier_canvas);});
+
+#----------------------- Making widgets in hier-view left frame ---------------------------------#
+my $display_hierpin = 0;
+my $pinRect_image = $hierLeftFrame->Photo(-file=> "$path2eq/ETC/ptnPinGuide.gif");
+my $hierpinButton = $hierLeftFrame->Checkbutton(-variable =>\$display_hierpin,-image=>$pinRect_image,-indicatoron => 0,
+                                                -command=> sub{if($display_hierpin == 0){ 
+                                                                 $hier_canvas->delete("HIERPINS"); 
+                                                               }else {&display_hier_inst_pin;} 
+                                                })->pack(-side=>"top");
+my $hierpin_baloon = $hierLeftFrame->Balloon();
+   $hierpin_baloon->attach($hierpinButton, -balloonmsg => 'Pins');
+#---------------------------------------------------------------------#
+
+my $display_nets = 0;
+my $Net_image = $hierLeftFrame->Photo(-file=> "$path2eq/ETC/show_net.gif");
+my $NetButton = $hierLeftFrame->Checkbutton(-variable =>\$display_nets,-image=>$Net_image,-indicatoron => 0,
+                                                -command=> sub{if($display_nets == 0){ 
+                                                                 $hier_canvas->delete("HIER_NET"); 
+                                                               }else {&display_hierarchy;} 
+                                                })->pack(-side=>"top");
+my $net_baloon = $hierLeftFrame->Balloon();
+   $net_baloon->attach($NetButton, -balloonmsg => 'Nets');
+
+#---------------------------------------------------------------------#
+
+my $display_routing = 0;
+my $routingNet_image = $hierLeftFrame->Photo(-file=> "$path2eq/ETC/trim.gif");
+my $routingButton = $hierLeftFrame->Checkbutton(-variable =>\$display_routing,-image=>$routingNet_image,-indicatoron => 0,
+                                                -command=> sub{if($display_routing == 0){ 
+                                                                 $hier_canvas->delete("HIER_ROUTING_NET"); 
+                                                               }else {&display_hierarchy;} 
+                                                })->pack(-side=>"top");
+my $routing_baloon = $hierLeftFrame->Balloon();
+   $routing_baloon->attach($routingButton, -balloonmsg => 'RoutingNets');
+#---------------------------------------------------------------------#
+
+my $display_instanceName = 0;
+my $instanceName_image = $hierLeftFrame->Photo(-file=> "$path2eq/ETC/reportSlt.gif");
+my $instanceNameButton = $hierLeftFrame->Checkbutton(-variable =>\$display_instanceName,-image=>$instanceName_image,-indicatoron => 0,
+                                                -command=> sub{if($display_instanceName == 0){ 
+                                                                 $hier_canvas->delete("TEMP_TEXT"); 
+                                                               }else {&display_hier_inst_name;} 
+                                                })->pack(-side=>"top");
+my $instanceName_baloon = $hierLeftFrame->Balloon();
+   $instanceName_baloon->attach($instanceNameButton, -balloonmsg => 'InstanceName');
+#----------------------- Making widgets in hier-view right frame ---------------------------------#
+
+my $rightFrame = $tab9->Frame()->pack(-side => 'left',-fill=>'y');
+my $cut_image = $rightFrame->Photo(-file=> "$path2eq/ETC/cut.gif");
+my $cutButton = $rightFrame->Button(-image=> $cut_image,-command=>sub{&rectilinearCut_widget($hier_canvas);})->pack(-side=>'top');
+my $cut_baloon = $rightFrame->Balloon();
+   $cut_baloon->attach($cutButton, -balloonmsg => 'rectilinear cut');
+
+#---------------------------------------------------------------------#
+my $move_image = $rightFrame->Photo(-file => "$path2eq/ETC/move.gif");               
+my $moveButton = $rightFrame->Button(-image=> $move_image,-command=>sub{&moveResizeInstance_widget($hier_canvas);})->pack(-side=>'top');
+my $move_baloon = $rightFrame->Balloon();
+   $move_baloon->attach($moveButton, -balloonmsg => 'move/resize');
+
+#---------------------------------------------------------------------#
+my $undo_image = $rightFrame->Photo(-file => "$path2eq/ETC/undo.gif");               
+my $undoButton = $rightFrame->Button(-image=> $undo_image,-command=>sub{&perform_redo_undo("undo",$hier_canvas);})->pack(-side=>'top');
+my $undo_baloon = $rightFrame->Balloon();
+   $undo_baloon->attach($undoButton, -balloonmsg => 'Undo');
+
+#---------------------------------------------------------------------#
+my $redo_image = $rightFrame->Photo(-file => "$path2eq/ETC/redo.gif");               
+my $redoButton = $rightFrame->Button(-image=> $redo_image,-command=>sub{&perform_redo_undo("redo",$hier_canvas);})->pack(-side=>'top');
+my $redo_baloon = $rightFrame->Balloon();
+   $redo_baloon->attach($redoButton, -balloonmsg => 'Redo');
+
+#---------------------------------------------------------------------#
+my $uphier_image = $rightFrame->Photo(-file => "$path2eq/ETC/hierup.gif");               
+my $uphierButton = $rightFrame->Button(-image=> $uphier_image,-command=>sub{&upHier;$hier_canvas->delete('all');&display_hierarchy;})->pack(-side=>'top');
+my $uphier_baloon = $rightFrame->Balloon();
+   $uphier_baloon->attach($uphierButton, -balloonmsg => 'Up Hierarchy');
+
+#---------------------------------------------------------------------#
+my $downhier_image = $rightFrame->Photo(-file => "$path2eq/ETC/hierdown.gif");               
+my $downhierButton = $rightFrame->Button(-image=> $downhier_image,-command=>sub{&call_popup_downHier();})->pack(-side=>'top');
+my $downhier_baloon = $rightFrame->Balloon();
+   $downhier_baloon->attach($downhierButton, -balloonmsg => 'Down Hierarchy');
+
+#---------------------------------------------------------------------#
+my $refresh_image = $rightFrame->Photo(-file => "$path2eq/ETC/redraw.gif");               
+my $refreshButton = $rightFrame->Button(-image=> $refresh_image,-command=>sub{&activate_HierViewTab();})->pack(-side=>'top');
+my $refresh_baloon = $rightFrame->Balloon();
+   $refresh_baloon->attach($refreshButton, -balloonmsg => 'Refresh');
+
+#---------------------------------------------------------------------#
+}#sub hierview_canvas
+
+sub design_canvas {
+#------------------------------------------------------------------------------#
+# add three two frames in the tab1 and the canvas                              #
+#------------------------------------------------------------------------------#
+$designLeftFrame = $tab1->Frame()->pack(-side => 'left', -anchor=>'n');
+$design_canvas  = $tab1->Scrolled(qw/Canvas -bg black -xscrollincrement 40 -yscrollincrement 40 -confine 1 -scrollbars se/, -width => 400, -height => 300, -scrollregion => $box,);
+$design_canvas->Subwidget("xscrollbar")->configure(-width=>12);
+$design_canvas->Subwidget("yscrollbar")->configure(-width=>12);
+$design_canvas->pack(qw/-fill both -expand 1 -side left/);
+#######################  setting up some canvas specific functions ##############
+$design_canvas->CanvasBind('<Motion>', sub {});
+&read_parameters("parameters_file");
+
+#--------------move/resize/redo/undo buttons ------------------#
+my $designRightFrame = $tab1->Frame()->pack(-side => 'left', -anchor=>'n');
+#$designRightFrame1 = $tab1->Frame()->pack(-side => 'left', -anchor=>'n');
+#$designRightFrame2 = $tab1->Frame()->pack(-side => 'left', -anchor=>'n');
+
+my $cut_image = $designRightFrame->Photo(-file=> "$path2eq/ETC/cut.gif");
+my $cutButton = $designRightFrame->Button(-image=> $cut_image,-command=>sub{})->pack(-side=>'top');
+my $cut_baloon = $designRightFrame->Balloon();
+   $cut_baloon->attach($cutButton, -balloonmsg => 'rectilinear cut');
+
+#----------------------------------------------------------------------#
+my $move_image = $designRightFrame->Photo(-file       => "$path2eq/ETC/move.gif");               
+my $moveButton = $designRightFrame->Button(-image=> $move_image,-command=>sub{&moveOrResize_Instance_byWidgetIn_designCanvas($design_canvas);})->pack(-side=>'top');
+my $move_baloon = $designRightFrame->Balloon();
+   $move_baloon->attach($moveButton, -balloonmsg => 'move/resize');
+
+#----------------------------------------------------------------------#
+my $undo_image = $designRightFrame->Photo(-file       => "$path2eq/ETC/undo.gif");               
+my $undoButton = $designRightFrame->Button(-image=> $undo_image,-command=>sub{})->pack(-side=>'top');
+my $undo_baloon = $designRightFrame->Balloon();
+   $undo_baloon->attach($undoButton, -balloonmsg => 'Undo');
+
+#----------------------------------------------------------------------#
+my $redo_image = $designRightFrame->Photo(-file       => "$path2eq/ETC/redo.gif");               
+my $redoButton = $designRightFrame->Button(-image=> $redo_image,-command=>sub{})->pack(-side=>'top');
+my $redo_baloon = $designRightFrame->Balloon();
+   $redo_baloon->attach($redoButton, -balloonmsg => 'Redo');
+
+#----------------------------------------------------------------------#
+my $stWire_image = $designRightFrame->Photo(-file       => "$path2eq/ETC/swap-conponents.gif");               
+my $stWireButton = $designRightFrame->Button(-image=> $stWire_image,-command=>sub{&create_help_forConnection_widgets("StraightWire");&dbTstGUICreateStraightWires("","","straightWire")})->pack(-side=>'top');
+my $stWire_baloon = $designRightFrame->Balloon();
+   $stWire_baloon->attach($stWireButton, -balloonmsg => 'StraightWire');
+
+#----------------------------------------------------------------------#
+my $zWire_image = $designRightFrame->Photo(-file       => "$path2eq/ETC/addWire.gif");               
+my $zWireButton = $designRightFrame->Button(-image=> $zWire_image,-command=>sub{&create_help_forConnection_widgets("ZWire");&dbTstGUICreateZWires("","","zWire")})->pack(-side=>'top');
+my $zWire_baloon = $designRightFrame->Balloon();
+   $zWire_baloon->attach($zWireButton, -balloonmsg => 'ZWire');
+
+#----------------------------------------------------------------------#
+my $rWire_image = $designRightFrame->Photo(-file       => "$path2eq/ETC/budget.gif");               
+my $rWireButton = $designRightFrame->Button(-image=> $rWire_image,-command=>sub{&create_help_forConnection_widgets("RoutingWire");&dbTstGUICreateRoutingWires("","","routingWire")})->pack(-side=>'top');
+my $rWire_baloon = $designRightFrame->Balloon();
+   $rWire_baloon->attach($rWireButton, -balloonmsg => 'RoutingWire');
+
+#----------------------------------------------------------------------#
+my $stBus_image = $designRightFrame->Photo(-file       => "$path2eq/ETC/stretchWire.gif");               
+my $stBusButton = $designRightFrame->Button(-image=> $stBus_image,-command=>sub{&create_help_forConnection_widgets("StraightBus");&dbTstGUICreateStraightBus("","","straightBus")})->pack(-side=>'top');
+my $stBus_baloon = $designRightFrame->Balloon();
+   $stBus_baloon->attach($stBusButton, -balloonmsg => 'StraightBus');
+
+#----------------------------------------------------------------------#
+my $zBus_image = $designRightFrame->Photo(-file       => "$path2eq/ETC/addBusGuide.gif");               
+my $zBusButton = $designRightFrame->Button(-image=> $zBus_image,-command=>sub{&create_help_forConnection_widgets("ZBus");&dbTstGUICreateZBus("","","zBus")})->pack(-side=>'top');
+my $zBus_baloon = $designRightFrame->Balloon();
+   $zBus_baloon->attach($zBusButton, -balloonmsg => 'ZBus');
+
+#----------------------------------------------------------------------#
+my $rBus_image = $designRightFrame->Photo(-file       => "$path2eq/ETC/p2pRoute.gif");               
+my $rBusButton = $designRightFrame->Button(-image=> $rBus_image,-command=>sub{&create_help_forConnection_widgets("RoutingBus");&dbTstGUICreateRoutingBus("","","routingBus")})->pack(-side=>'top');
+my $rBus_baloon = $designRightFrame->Balloon();
+   $rBus_baloon->attach($rBusButton, -balloonmsg => 'RoutingBus');
+
+#----------------------------------------------------------------------#
+#my $resize = $designRightFrame->Photo(-file       => "$path2eq/ETC/art_tool4_magnify1b.gif");
+my $resize = $designRightFrame->Photo(-file       => "$path2eq/ETC/metalSplit.gif");
+my $resizeButton = $designRightFrame->Button(-text => "ReSIZE",-image=> $resize, -command => \&dbfGuiResizeModules,)->pack(-side=>"top");
+my $resize_baloon = $designRightFrame->Balloon();
+   $resize_baloon->attach($resizeButton, -balloonmsg => 'ReSize');
+
+#----------------------------------------------------------------------#
+#my $zoom = $designRightFrame->Photo(-file       => "$path2eq/ETC/b5_magnify2.gif");
+#my $zoom = $designRightFrame->Photo(-file       => "$path2eq/ETC/zoom_hilited.gif");
+my $zoom = $designRightFrame->Photo(-file       => "$path2eq/ETC/zoom_selected.gif");
+my $zoomButton = $designRightFrame->Button(-text => "Zoom",-image=> $zoom, -command => \&dbfGuiZoom,)->pack(-side=>"top");
+my $zoom_balloon = $designRightFrame->Balloon();
+   $zoom_balloon->attach($zoomButton, -balloonmsg => 'Zoom');
+
+#----------------------------------------------------------------------#
+my $zoomin = $designRightFrame->Photo(-file       => "$path2eq/ETC/zoomin.gif");
+my $zoominButton = $designRightFrame->Button(-text => "Zoom In",-image=> $zoomin,-command => \&dbfGuiZoomIn,)->pack(-side=>"top");
+my $zoomin_balloon = $designRightFrame->Balloon();
+   $zoomin_balloon->attach($zoominButton, -balloonmsg => 'Zoom In');
+
+#----------------------------------------------------------------------#
+my $zoomout = $designRightFrame->Photo(-file       => "$path2eq/ETC/zoomout.gif");
+my $zoomoutButton = $designRightFrame->Button(-text => "Zoom Out",-image=> $zoomout,-command => \&dbfGuiZoomOut,)->pack(-side=>"top");
+my $zoomout_baloon = $designRightFrame->Balloon();
+   $zoomout_baloon->attach($zoomoutButton, -balloonmsg => 'Zoom Out');
+
+#----------------------------------------------------------------------#
+my $zoomfit = $designRightFrame->Photo(-file       => "$path2eq/ETC/fit.gif");
+my $zoomfitButton = $designRightFrame->Button(-text => "Zoom Fit",-image=> $zoomfit,-command => \&dbfGuiZoom,)->pack(-side=>"top");
+my $zoomfit_baloon = $designRightFrame->Balloon();
+   $zoomfit_baloon->attach($zoomfitButton, -balloonmsg => 'Zoom Fit');
+
+#----------------------------------------------------------------------#
+
+}#sub design_canvas
+
+
+sub library_canvas {
+#-------------------------------------------------------#
+# tab2 has 6 notebook tabs  one for library list        #
+# one for layout view and one for timing view           #
+#-------------------------------------------------------#
+$libBook = $tab2->NoteBook(-tabpady=>0,-tabpadx=>0,-relief=>"raised",-font=> "Times 10 italic")->pack(-side=>"top",-fill=>'both',-expand=>1);
+$basicTab = $libBook->add( "Sheet 1", -label=>"tech",-raisecmd=>\&activate_basicViewTab,-justify => "center" );
+$lefTab = $libBook->add( "Sheet 2", -label=>"lef-view",-raisecmd=>\&activate_lefViewTab,-justify => "center" );
+$gdsTab = $libBook->add( "Sheet 3", -label=>"gds-view",-raisecmd=>\&activate_gdsViewTab,-justify => "center" );
+$synTab = $libBook->add( "Sheet 4", -label=>"synlib-view",-raisecmd=>\&activate_libViewTab,-justify => "center" );
+$rtlTab = $libBook->add( "Sheet 5", -label=>"rtls",-justify => "center" );
+$netlistTab = $libBook->add( "Sheet 6", -label=>"netlists",-justify => "center" );
+
+$libFrame1 = $lefTab->Frame()->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'both');
+#-------------------- commented  libFrame2 due to adding Adjuster ------------------------#
+#$libFrame2 = $lefTab->Frame()->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+#$libFrame3 = $lefTab->Frame()->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+
+$libFrame4 = $basicTab->Frame()->pack(-side => 'top', -fill=>'x');
+$libFrame5 = $basicTab->Frame()->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'both');
+$libFrame6 = $basicTab->Frame()->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'both');
+
+$libFrame7 = $synTab->Frame()->pack(-side => 'top',-fill=>'x');
+$libFrame8 = $synTab->Frame()->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'both');
+#$libFrame9 = $synTab->Frame()->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+
+$libFrame10 = $gdsTab->Frame()->pack(-side => 'top', -fill=>'x');
+$libFrame10_1 = $gdsTab->Frame()->pack(-side => 'top', -fill=>'x');
+$libFrame11 = $gdsTab->Frame()->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'both');
+
+$libFrame12 = $rtlTab->Frame()->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+$libFrame13 = $rtlTab->Frame()->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+
+$libFrame14 = $netlistTab->Frame()->pack(-side => 'left',-anchor=>'w', -expand=>1, -fill=>'y');
+$libFrame15 = $netlistTab->Frame()->pack(-side => 'left',-anchor=>'w', -expand=>1, -fill=>'y');
+
+#-------------------------------------------------------#
+# libFrame2 contains gui for lef layout                 #
+#-------------------------------------------------------#
+#$DisplayLefMenuBar = $libFrame1->Frame(-relief=>"raised", -borderwidth=>1,-background=>"red");
+&read_lef_gui;
+#------------------------------------------------------------------------------#
+$adjLEF = $libFrame1->Adjuster();
+$adjLEF->packAfter($lefFileList, -side => 'top');
+
+$LefCanvas = $libFrame1->Scrolled('WorldCanvas', -scrollbars=>'se',-bg =>'black',-width=>800, -height=>300)->pack(qw/-expand 1 -fill both -side top/);
+$LefCanvas->Subwidget('xscrollbar')->configure(-takefocus => 0);
+$LefCanvas->Subwidget('yscrollbar')->configure(-takefocus => 0);
+$LefCanvas->configure(-confine => 1);
+$LefCanvas->CanvasBind('<Motion>', sub {&dbfGuiShowLefCanvasCoords($LefCanvas)});
+#-------------------------------------------------------------------------------#
+# libFrame5 contains gui for layer display                                       #
+#-------------------------------------------------------------------------------#
+
+$RlibFrame4= $libFrame4->Frame()->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+$RlibFrame4->Label(-text=> "ROUTING LAYERS            ->",-font=>"Times 10")->pack(-side => 'left');
+$ClibFrame4= $libFrame4->Frame()->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+$ClibFrame4->Label(-text=> "CUT LAYERS                       ->",-font=>"Times 10")->pack(-side => 'left');
+$MlibFrame4= $libFrame4->Frame()->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+$MlibFrame4->Label(-text=> "MASTERSLICE LAYERS  ->",-font=>"Times 10")->pack(-side => 'left');
+
+$basicCanvas = $libFrame5->Scrolled('WorldCanvas', -scrollbars=>'se',-bg =>'black',-width=>600, -height=>200)->pack(qw/-side top -anchor n -expand 1 -fill both/);
+$basicCanvas->Subwidget('xscrollbar')->configure(-takefocus => 0,-width=>10,-borderwidth=>1);
+$basicCanvas->Subwidget('yscrollbar')->configure(-takefocus => 0,-width=>10,-borderwidth=>1);
+$basicCanvas->configure(-confine => 1);
+
+&read_basic_gui; 
+
+##############################################################  Create Via Canvas ##############################################################
+
+$basic_Left_Frame = $libFrame6->Frame(-relief=>"raised", -borderwidth=>1)->pack(-side =>'left', -fill =>'y');
+$basic_Right_Frame = $libFrame6->Frame(-relief=>"raised", -borderwidth=>1)->pack(-side =>'left', -fill =>'both', -expand=>1);
+
+$Via_menubar = $basic_Left_Frame->Frame(-relief=>"raised", -borderwidth=>1)->pack(-side =>'top', -fill =>'x');
+
+$layer_menubar = $basic_Left_Frame->Frame(-relief=>"raised", -borderwidth=>1)->pack(-side =>'top', -fill =>'x');
+
+$RoutingLayerMenu = $layer_menubar->Menubutton(-text=>"RoutingLayer",-relief=>"raised",-pady=>0)->pack(-side=>"left", -anchor=>'n');
+
+$CutLayerMenu = $layer_menubar->Menubutton(-text=>"CutLayer",-relief=>"raised",-pady=>0)->pack(-side=>"left", -anchor=>'n');
+
+
+$basicViaCanvas  = $basic_Right_Frame->Scrolled(qw/Canvas -bg black -xscrollincrement 20 -yscrollincrement 20 -scrollbars se/, -width => 490, -height => 100, -scrollregion => [0, 0, 490, 100]);
+$basicViaCanvas->Subwidget("xscrollbar")->configure(-width=>10,-borderwidth=>1);
+$basicViaCanvas->Subwidget("yscrollbar")->configure(-width=>10,-borderwidth=>1);
+$basicViaCanvas->pack(qw/-expand 1 -side bottom -fill both/);
+
+&dropdown_entry;
+&layer_display;
+
+#####################################################################   Create Syn Canvas  #####################################################################
+
+$syngui_menubar = $libFrame7->Frame(-relief=>"raised", -borderwidth=>1)->pack(-side =>'top', -fill =>'x');
+
+$syngui_menubar->Label(-text => "cellName",-font=>"Times 10 italic")->pack(-side =>'left', -anchor => 'w');
+$syngui_menubar->Entry(-textvariable => \$MACRO_TO_DISPLAY)->pack(-side =>'left', -anchor => 'w', -fill => 'x', -expand=> '1' );
+
+$syngui_menubar->Label(-text => "OutPin",-font=>"Times 10 italic")->pack(-side =>'left');
+my $outputPin = "select OutPin";
+$dropdown = $syngui_menubar->BrowseEntry(-textvariable => \$outputPin,-width=>10,-listwidth=>30)->pack(-side =>'left');
+
+$syngui_menubar->Label(-text => "InPin",-font=>"Times 10 italic")->pack(-side =>'left');
+my $inputPin = "select InPin";
+$dropdown1 = $syngui_menubar->BrowseEntry(-textvariable => \$inputPin,-width=>10,-listwidth=>30)->pack(-side =>'left');
+
+$syngui_menubar->Radiobutton(-variable =>\$delayVar,
+  		     -value => "-rise",
+  		     -text => "riseDelay",
+                                          )->pack(-side =>"left");
+$syngui_menubar->Radiobutton(-variable =>\$delayVar,
+  		     -value => "-fall",
+                     -text => "fallDelay",
+                                          )->pack(-side =>"left");
+
+$PlotButton=$syngui_menubar->Button(-text=>"Plot",
+                                   -relief=>"raised", 
+                                   -pady=>0,
+                                   -command=>sub {$synCanvas->delete("all");
+                          &plot_lib_data(-cell,$MACRO_TO_DISPLAY,-InPin,$inputPin,-OutPin,$outputPin, $delayVar);}
+                                   )->pack(-side=>"right");
+
+$synCanvas = $libFrame8->Scrolled('WorldCanvas', -scrollbars=>'se',-bg =>'black',-width=>800, -height=>400)->pack(qw/-expand 1 -fill both -side top/);
+$synCanvas->Subwidget('xscrollbar')->configure(-takefocus => 0);
+$synCanvas->Subwidget('yscrollbar')->configure(-takefocus => 0);
+$synCanvas->configure(-confine => 1);
+$synCanvas->CanvasBind('<Motion>', sub {});
+
+###################################################### Create gdsViewer Canvas ###################################################
+
+$gdsgui_menubar = $libFrame10->Frame(-relief=>"raised", -borderwidth=>1)->pack(-side =>'top', -fill =>'x');
+
+$gdsCanvas = $libFrame11->Scrolled('WorldCanvas', -scrollbars=>'se',-bg =>'black',-width=>540, -height=>540)->pack(qw/-expand 1 -fill both -side top/);
+$gdsCanvas->Subwidget('xscrollbar')->configure(-takefocus => 0);
+$gdsCanvas->Subwidget('yscrollbar')->configure(-takefocus => 0);
+$gdsCanvas->configure(-confine => 1);
+$gdsCanvas->CanvasBind('<Motion>', sub {&dbfGuiShowGdsCanvasCoords($gdsCanvas)});
+
+$gdsgui_menubar->Label(-text => "FileName",-font=>"Times 10 italic")->pack(-side =>'left', -anchor => 'w');
+$gdsgui_menubar->Entry(-textvariable => \$gdsfile)->pack(-side =>'left', -anchor => 'w', -fill => 'x' );
+
+my $image = $top->Getimage('folder');
+my $Browsebutton = $gdsgui_menubar->Button(-image=>$image,-command =>sub {&gdsfilelist_popup;})->pack(-side => 'left'); 
+$displayVar = "display1";
+
+
+$gdsgui_menubar->Radiobutton(-variable =>\$displayVar,
+  		             -value => "display2",
+                             -text => "Display2",
+                             -padx=>0, -pady=>0,
+                             -command => sub {
+                                              $gdsCanvas->delete("all");
+                                              &gds_display($displayVar);
+                                                   } )->pack(-side =>"right");
+
+
+$gdsgui_menubar->Radiobutton(-variable =>\$displayVar,
+  		             -value => "display1",
+  		             -text => "Display1",
+                             -padx=>0, -pady=>0,
+                             -command => sub {
+                                              $gdsCanvas->delete("all");
+                                              &gds_display($displayVar);
+                                                   } )->pack(-side =>"right");
+
+$gdsgui_menubar->Checkbutton(-text=>'pinText',-relief=>"groove", -pady =>0, -padx=>0,
+                             -variable =>\$gdsVar,
+                             -command=> sub{ if($gdsVar == 0) { $gdsCanvas->delete("GDSPINTEXT"); }
+                                                       else { &gds_display($displayVar);}
+                                      })->pack(-side=>"right", -anchor=>'w');
+
+
+$gdsReadButton=$gdsgui_menubar->Button(-text=>"ReadGDS",
+                                          -relief=>"raised", 
+                                          -pady=>0,-padx=>0,
+                                          -highlightthickness=>0,  
+                                          -command=>sub {&read_gds($gdsfile);}
+                                           )->pack(-side=>"left");
+
+$gdsDisplayButton=$gdsgui_menubar->Button(-text=>"DisplayGDS",
+                                          -relief=>"raised", 
+                                          -pady=>0,-padx=>0,
+                                          -highlightthickness=>0,  
+                                          -command=>sub {$gdsCanvas->delete("all");
+                                           &gds_display($displayVar);}
+                                           )->pack(-side=>"left");
+
+
+$moduleHierList = $libFrame14->Scrolled('Tree',
+                        -header => 1,
+                        -columns => 50,
+                        -width => 130,
+                        -height => 6,
+                        -padx => 0,
+                        -pady => 0,
+                        -scrollbars => 'osoe',
+                        -relief => "sunken",
+                        -borderwidth => 1,
+                        -selectmode => 'single',
+                        -browsecmd  => sub {
+                                           }
+                              )
+                      ->pack(-side => 'top',-expand => 1, -fill => 'both');
+$moduleHierList->autosetmode();
+$moduleHierList->Subwidget("xscrollbar")->configure(-width=>10);
+$moduleHierList->Subwidget("yscrollbar")->configure(-width=>10);
+
+}#sub library_canvas
+
+
+################################
+
+sub rtledit_canvas {
+my $rtl_tab_top_frame = $tab10->Frame()->pack(-side => 'top',-anchor=>'n');
+my $rtl_tab_mid_frame = $tab10->Frame()->pack(-side => 'top',-anchor=>'n');
+my $rtl_tab_bottom_frame = $tab10->Frame()->pack(-side => 'top',-anchor=>'n');
+
+$label1 =  $rtl_tab_top_frame->Button(-text => "commit RTL", -command => \&dbfQaGUIcommitRtl)->pack(-side => "left");
+
+$rtl_tab2  = $rtl_tab_bottom_frame->Scrolled("Text",height=>18,-padx=>0, -pady=>0)->pack();
+$rtl_tab2->Subwidget("xscrollbar")->configure(-width=>10,-borderwidth=>0);
+$rtl_tab2->Subwidget("yscrollbar")->configure(-width=>10, -borderwidth=>0);
+}#sub rtledit_canvas
+
+sub script_canvas {
+my $script_tab_top_frame = $tab3->Frame()->pack(-side => 'top',-anchor=>'n');
+my $script_tab_mid_frame = $tab3->Frame()->pack(-side => 'top',-anchor=>'n');
+my $script_tab_bottom_frame = $tab3->Frame()->pack(-side => 'top',-anchor=>'n');
+
+$label1 =  $script_tab_top_frame->Button(-text => "Read Script", -command => \&dbfQaGUIReadRunScript)->pack(-side => "left");
+$label2 =  $script_tab_top_frame->Button(-text => "Gen Script", -command => \&dbfQaGUIModifyRunScript)->pack(-side => "left");
+
+$script_tab1  = $script_tab_mid_frame->Scrolled("Text",height=>18,-padx=>0, -pady=>0, -width=> 100, -height=>100)->pack();
+$script_tab1->Subwidget("xscrollbar")->configure(-width=>10,-borderwidth=>0);
+$script_tab1->Subwidget("yscrollbar")->configure(-width=>10, -borderwidth=>0);
+$script_tab2  = $script_tab_bottom_frame->Scrolled("Text",height=>18,-padx=>0, -pady=>0)->pack();
+$script_tab2->Subwidget("xscrollbar")->configure(-width=>10,-borderwidth=>0);
+$script_tab2->Subwidget("yscrollbar")->configure(-width=>10, -borderwidth=>0);
+}#sub script_canvas
+
+sub check_canvas {
+$pwr_canvas  = $tab4->Scrolled(qw/Canvas -bg black -xscrollincrement 50 -yscrollincrement 50 -confine 1 -scrollbars se/, -width => $guiCanvasWidth, -height => $guiCanvasHeight, -scrollregion => $box,);
+$pwr_canvas->Subwidget("xscrollbar")->configure(-width=>12,-borderwidth=>1);
+$pwr_canvas->Subwidget("yscrollbar")->configure(-width=>12,-borderwidth=>1);
+$pwr_canvas->pack(qw/-fill both -expand 1 -side top/);
+$pwr_canvas->CanvasBind('<Motion>', sub {});
+}#sub check_canvas
+
+sub efarm_canvas {
+$efarmFrame1 = $tab5->Frame()->pack(-side => 'top',-anchor=>'n', -fill=>'x');
+$efarmFrame2 = $tab5->Frame()->pack(-side => 'top',-anchor=>'n');
+$efarmFrame3 = $tab5->Frame()->pack(-side => 'top',-anchor=>'n');
+#-----------------------#
+$efarmFrame1_1 = $efarmFrame1->Frame(-background=>"")->pack(-side => 'left',-anchor=>'nw');
+$efarmFrame1_2 = $efarmFrame1->Frame(-background=>"")->pack(-side => 'left',-expand=>1,-anchor=>'s');
+$efarmFrame1_1->Checkbutton(-text=>"Start reportd on all Slaves  ",
+                        #-relief=>"groove",
+                        -padx=>0,-pady=>0,
+                        -variable=>\$SlaveVar, 
+                        -command=> sub{&popup_start_report_allSlave; })->pack(-side=>"top",-anchor=>'nw');
+$efarmFrame1_1->Checkbutton(-text=>"Start controld on all Master",
+                        #-relief=>"groove",
+                        -padx=>0,-pady=>0,
+                        -variable =>\$MasterVar,
+                        -command=> sub{&popup_start_control_allMaster; }
+                        )->pack(-side=>"top");
+
+$StartSchedButton=$efarmFrame1_2->Button(-text=>"StartScheduler",
+                                   #-relief=>"raised", 
+                                   -padx=>0,-pady=>0,
+                                   -command=>sub {&popup_gui_StartScheduler;}
+                                   )->pack(-side=>"left");
+
+$RegButton=$efarmFrame1_2->Button(-text=>"RegisterMachine",
+                                   #-relief=>"raised", 
+                                   -padx=>0,-pady=>0,
+                                   -command=>sub {&popup_gui_RegMac;}
+                                   )->pack(-side=>"left");
+
+$DelButton=$efarmFrame1_2->Button(-text=>"DeleteMachine",
+                                   #-relief=>"raised", 
+                                   -padx=>0,-pady=>0,
+                                   -command=>sub {&popup_gui_DelMac;}
+                                   )->pack(-side=>"left"); 
+$RefreshButton=$efarmFrame1_2->Button(-text=>"Refresh",
+                                   #-relief=>"raised", 
+                                   -padx=>0,-pady=>0,
+                                   -command=>sub {$MacList->delete("all");
+                                                 #for (my $i=0; $i<$n; $i++){$MacList->headerDelete($i);}
+                                                  &populate_header_Items;}
+                                   )->pack(-side=>"left"); 
+
+&populate_headers;
+}#sub efarm_canvas
+#-------------------------------------------------------------------------------------------#
+sub kb_canvas {
+$kbFrame1 = $tab6->Frame()->pack(-side => 'top',-anchor=>'n');
+$kbFrame2 = $tab6->Frame()->pack(-side => 'top',-anchor=>'n');
+my $side = "top";
+
+#-----------------------#
+sub icmd { my ($path, $state) = @_;
+#           print "path os $path, state is $state\n";
+            $hlist->addchild($path);
+#            $hlist->indicatorConfigure($path-itemtype => 'image',
+#                      -image => $kbFrame2->Getimage('line'));
+         }
+#                        -indicator => 1,
+#                        -indicatorcmd => \&icmd,
+#                        -selectmode => 'single',
+$hlist = $kbFrame2->Scrolled('Tree',
+                        -header => 1,
+                        -columns => 60,
+                        -width => 130,
+                        -height => 6,     
+                        -padx => 0,
+                        -pady => 0,
+                        -scrollbars => 'osoe',
+                        -relief => "sunken",
+                        -borderwidth => 3,
+                        -selectmode => 'single',
+                        -browsecmd  => sub {
+                         $dbSelecttest = shift;
+                         &call_TestCase($dbSelecttest);},
+                        -command=>sub {if($toggle_runTestcase == 1){
+                                          &popup_runTestcase;
+                                       }else{&gui_kb_display}
+                                       },
+                              )
+                      ->pack(-side => $side,-expand => 1, -fill => 'both');
+$hlist->autosetmode();
+$hlist->Subwidget("xscrollbar")->configure(-width=>10);
+$hlist->Subwidget("yscrollbar")->configure(-width=>10);
+if ($KB_DATABASE eq "UND" ) { } else {
+&fill_kb_tab($hlist);
+                            }
+
+my $adj = $kbFrame2->Adjuster();
+$adj->packAfter($hlist, -side => $side);
+
+$KbCanvas  = $kbFrame2->Scrolled(qw/Canvas -bg black -xscrollincrement 50 -yscrollincrement 50 -scrollbars se/, -width =>625, -height => 300);
+$KbCanvas->Subwidget("xscrollbar")->configure(-width=>10,-borderwidth=>1);
+$KbCanvas->Subwidget("yscrollbar")->configure(-width=>10,-borderwidth=>1);
+$KbCanvas->pack(-expand => 1, -side => $side, -fill => 'both');
+
+#-----------------------#
+
+#-----------------------#
+ $toggle_default_showAll = 1;
+ $kbColumn = $kbFrame1->Button(-borderwidth=>2,
+                             -relief=>'groove',
+                             -padx=>0, -pady=>0,
+                             -text=>'ShowAll',
+                             -font=>"times 8 italic",
+                             -command=>sub{
+                                           &toggle_default_showAll;
+                                          })->pack(-anchor=>'w', -side=>'left');
+my $kbQL = $kbFrame1->Label(-text=>"Find",-relief=>'raised',-padx=>0, -pady=>0,-font=>"times 10 italic")->pack(-anchor=>'w', -side=>'left');
+my $kbQE = $kbFrame1->Entry(-textvariable=>\$KBQVAR, -relief=>'sunken',-width=>5)->pack(-anchor=>'w', -side=>'left');
+$kbQE->bind('<KeyRelease>',sub {&find_Testcases($KBQVAR, $hlist); 1;});
+
+
+ $toggle_runTestcase = 1;
+ $kbRun_Plot = $kbFrame1->Button(-borderwidth=>2,
+                             -relief=>'groove',
+                             -padx=>0, -pady=>0,
+                             -text=>'GraphMode',
+                             -font=>"times 8 italic",
+                             -command=>sub{
+                                           &toggle_RunTestAndPlotGraph;
+                                          })->pack(-anchor=>'w', -side=>'left');
+
+my $kbInit = $kbFrame1->Button(-borderwidth=>2,
+                             -relief=>'groove',
+                             -padx=>0, -pady=>0,
+                             -text=>'Initialize',
+                             -font=>"times 8 italic",
+                             -command=>sub{
+                                          &initKB;
+                                          })->pack(-anchor=>'w', -side=>'left');
+
+my $kbQC = $kbFrame1->Button(-borderwidth=>2, 
+                             -relief=>'groove', 
+                             -padx=>0, -pady=>0,
+                             -text=>'Register Testcase', 
+                             -font=>"times 8 italic",
+                             -command=>sub{ 
+                                          #&register_testcase(-name,NONE, -path,"" );
+                                          &popup_register_testcase;
+                                          })->pack(-anchor=>'w', -side=>'left');
+
+
+my $kbRUN =  $kbFrame1->Button(-borderwidth=>2,
+                             -relief=>'groove',
+                             -padx=>0, -pady=>0,
+                             -text => "MakeBuild",
+                             -font=>"times 8 italic", 
+                             -command => sub {
+                                              &make_RealTimeBuild; 
+                                             })->pack(-anchor=>'e', -side =>'right');
+
+my $kbRUN =  $kbFrame1->Button(-borderwidth=>2,
+                             -relief=>'groove',
+                             -padx=>0, -pady=>0,
+                             -text => "RunAll", 
+                             -font=>"times 8 italic",
+                             -command => sub {
+                                              &popup_runAllTestcase; 
+                                             })->pack(-anchor=>'e', -side =>'right');
+
+my $kbPS =  $kbFrame1->Button(-borderwidth=>2,
+                             -relief=>'groove',
+                             -padx=>0, -pady=>0,
+                             -text => "Snapshot", 
+                             -font=>"times 8 italic",
+                             -command => sub {
+                                              &popup_kb_snapshot; 
+                                             })->pack(-anchor=>'e', -side =>'right');
+
+my $kbRF =  $kbFrame1->Button(-borderwidth=>2,
+                             -relief=>'groove',
+                             -padx=>0, -pady=>0,
+                             -text => "ColumnOrder", 
+                             -font=>"times 8 italic",
+                             -command => sub {
+                                              &popup_column_displayOrder; 
+                                             })->pack(-anchor=>'e', -side =>'right');
+
+my $kbRS =  $kbFrame1->Button(-borderwidth=>2,
+                             -relief=>'groove',
+                             -padx=>0, -pady=>0,
+                             -text => "Reset Status", 
+                             -font=>"times 8 italic",
+                             -command => \&reset_status_all)->pack(-anchor=>'e', -side =>'right');
+#my $kbU =  $kbFrame1->Button(-borderwidth=>2,
+#                             -relief=>'groove',
+#                             -padx=>0, -pady=>0,
+#                             -text => "Update Golden", 
+#                             -command => \&dbfUpdateGolden)->pack(-anchor=>'e', -side =>'right');
+my $kbRF =  $kbFrame1->Button(-borderwidth=>2,
+                             -relief=>'groove',
+                             -padx=>0, -pady=>0,
+                             -text => "Refresh",
+                             -font=>"times 8 italic", 
+                             -command => sub {
+                                              &dbfRefreshKBView($hlist); 
+                                             })->pack(-anchor=>'e', -side =>'right');
+my $kbGolden =  $kbFrame1->Button(-borderwidth=>2,
+                             -relief=>'groove',
+                             -padx=>0, -pady=>0,
+                             -text => "SetGolden",
+                             -font=>"times 8 italic",  
+                             -command => sub {
+                                              &popup_setGoldenValue; 
+                                             })->pack(-anchor=>'e', -side =>'right');
+}#sub kb_canvas
+#--------------------------------------------------------------------------------------------#
+# Adding the analysis canvas
+#--------------------------------------------------------------------------------------------#
+sub analysis_canvas {
+$analysis_canvas1;
+$analysisBook = $tab7->NoteBook(-tabpady=>0,-tabpadx=>0,-relief=>"raised",-font=> "Times 8 italic")->pack( -fill=>'both',-expand=>1);
+$analysisTab = $analysisBook->add("Sheet 1", -label=>"Analysis", -raisecmd=>\&activate_analysis_Tab);
+$gcellTab = $analysisBook->add("Sheet 2", -label=>"gCell", -raisecmd=>\&activate_gcellViewTab);
+$hierAreaTab = $analysisBook->add("Sheet 3", -label=>"hierArea", -raisecmd=>\&activate_hierAreaTab);
+
+########################################---- Prepare analysis tab => analysisTab ---#####################################
+$tab7_V = $analysisTab->DynaTabFrame ( -raisecolor => 'green', -tabcolor => 'yellow', -tabcurve => 0, -tablock => undef,
+        -tabpadx => 0, -tabpady => 0, -tabrotate => 1, -tabside => 'en', -tabscroll => undef, -textalign => 0,
+        -tiptime => 600, -tipcolor => 'yellow',-raisecmd=>\&active_dynaTab)->pack (-side => 'top', -expand => 1, -fill => 'both');
+
+$frames{'Tab4'} = $tab7_V->add( -caption => 'hier_conn');
+$frames{'Tab3'} = $tab7_V->add( -caption => '3D', -label => '3',);
+$frames{'Tab2'} = $tab7_V->add( -caption => 'Timing', -label => '2',);
+$frames{'Tab1'} = $tab7_V->add( -caption => 'Data Flow', -label => '1',);
+
+
+#---------------------------------------------#
+$analysis_canvas1 = $frames{'Tab1'}->Scrolled('WorldCanvas', -scrollbars=>'se',-bg =>'white',-width=>500, -height=>500)->pack(qw/-side left -expand 1 -fill both/);
+$analysis_canvas1->Subwidget('xscrollbar')->configure(-takefocus => 0);
+$analysis_canvas1->Subwidget('yscrollbar')->configure(-takefocus => 0);
+$analysis_canvas1->configure(-confine => 1);
+$analysis_canvas1->CanvasBind('<Motion>', sub {&dbfGuiShowWorldCanvasCoords($analysis_canvas1);});
+
+#---------------------------------------------#
+$analysis_canvas3  = $frames{'Tab3'}->Scrolled(qw/Canvas -bg white -xscrollincrement 50 -yscrollincrement 50 -confine 1 -scrollbars se/,-width => 400, -height => 300, -scrollregion => [0,0,500,500]);
+$analysis_canvas3->Subwidget("xscrollbar")->configure(-width=>15);
+$analysis_canvas3->Subwidget("yscrollbar")->configure(-width=>15);
+$analysis_canvas3->pack(qw/-fill both -expand 1 -side left/);
+&zoom_analysis_canvas3;
+#$analysis_canvas3->CanvasBind('<Motion>', sub {  });
+
+#---------------------------------------------#
+$analysis_canvas2 = $frames{'Tab2'}->Scrolled('WorldCanvas', -scrollbars=>'se',-bg =>'white',-width=>500, -height=>500)->pack(qw/-side left -expand 1 -fill both/);
+$analysis_canvas2->Subwidget('xscrollbar')->configure(-takefocus => 0);
+$analysis_canvas2->Subwidget('yscrollbar')->configure(-takefocus => 0);
+$analysis_canvas2->configure(-confine => 1);
+$analysis_canvas2->CanvasBind('<Motion>', sub {&dbfGuiShowWorldCanvasCoords($analysis_canvas2);});
+
+#---------------------------------------------#
+$analysis_canvas4 = $frames{'Tab4'}->Scrolled('WorldCanvas', -scrollbars=>'se',-bg =>'white',-width=>520, -height=>520)->pack(qw/-side left -expand 1 -fill both/);
+$analysis_canvas4->Subwidget('xscrollbar')->configure(-takefocus => 0);
+$analysis_canvas4->Subwidget('yscrollbar')->configure(-takefocus => 0);
+$analysis_canvas4->configure(-confine => 1);
+$analysis_canvas4->CanvasBind('<Motion>', sub {&dbfGuiShowWorldCanvasCoords($analysis_canvas4);});
+
+########################################---- Prepare gcell tab => gcellTab ---#####################################
+my $topGcellFrame = $gcellTab->Frame()->pack(-side=>'top',-expand=>1,-fill=>'x');
+my $bottomGcellFrame = $gcellTab->Frame()->pack(-side=>'top',-expand=>1,-fill=>'both');
+
+my $netdisplay = "local";
+$gcell_canvas = $bottomGcellFrame->Scrolled('WorldCanvas', -scrollbars=>'se',-bg =>'black',-width => 400, -height => 400)->pack(qw/-expand 1 -fill both/);
+$gcell_canvas->Subwidget('xscrollbar')->configure(-takefocus => 0);
+$gcell_canvas->Subwidget('yscrollbar')->configure(-takefocus => 0);
+$gcell_canvas->configure(-confine => 1);
+
+my $localNetButton = $topGcellFrame->Radiobutton(-text=>"Local Nets",-variable =>\$netdisplay, -value =>"local", -pady=>0,-padx=>0, -font=>"Times 10 normal",-command=> sub{$gcell_canvas->delete('all');&display_gcell($gcell_canvas, $netdisplay);})->pack(-side=>"right");
+
+my $semilocalNetButton = $topGcellFrame->Radiobutton(-text=>"Semi Local Nets",-variable =>\$netdisplay,-value=>"semilocal", -pady=>0,-padx=>0, -font=>"Times 10 normal",-command=> sub{$gcell_canvas->delete('all');&display_gcell($gcell_canvas, $netdisplay);})->pack(-side=>"right");
+
+my $semiglobalNetButton = $topGcellFrame->Radiobutton(-text=>"Semi Global Nets",-variable =>\$netdisplay,-value=>"semiglobal", -pady=>0,-padx=>0, -font=>"Times 10 normal",-command=> sub{$gcell_canvas->delete('all');&display_gcell($gcell_canvas, $netdisplay);})->pack(-side=>"right");
+
+my $globalNetButton = $topGcellFrame->Radiobutton(-text=>"Global Nets",-variable =>\$netdisplay,-value=>"global", -pady=>0,-padx=>0, -font=>"Times 10 normal",-command=> sub{$gcell_canvas->delete('all');&display_gcell($gcell_canvas, $netdisplay);})->pack(-side=>"right");
+
+my $gcellDisplayButton = $topGcellFrame->Button(-text=> "Display",-padx=>0, -pady=>0,-relief=>'groove',-command=> sub{$gcell_canvas->delete('all');&display_gcell($gcell_canvas, $netdisplay);})->pack(-side=>'left');
+
+my $legendDisplayButton = $topGcellFrame->Button(-text=> "Legend",-padx=>0, -pady=>0,-relief=>'groove',-command=> sub{&display_legends;})->pack(-side=>'left');
+
+########################################---- Prepare hierArea tab => hierAreaTab ---#####################################
+my $topHAreaFrame = $hierAreaTab->Frame()->pack(-side=>'top');
+my $bottomHAreaFrame = $hierAreaTab->Frame()->pack(-side=>'top',-expand=>1,-fill=>'both');
+
+$hierAreaCanv = $bottomHAreaFrame->Scrolled('WorldCanvas', -scrollbars=>'se',-bg =>'black',-width => 400, -height => 400)->pack(qw/-expand 1 -fill both/);
+$hierAreaCanv->Subwidget('xscrollbar')->configure(-takefocus => 0);
+$hierAreaCanv->Subwidget('yscrollbar')->configure(-takefocus => 0);
+$hierAreaCanv->configure(-confine => 1);
+
+my $displayButton = $topHAreaFrame->Button(-text=>"Display", -command=>sub{&display_hierArea($hierAreaCanv);})->pack(-side=>'left'); 
+
+}#sub analysis_canvas
+
+
+sub designStat_canvas {
+$statBook = $tab8->NoteBook(-tabpady=>0,-tabpadx=>0,-relief=>"raised",-font=> "Times 10 italic")->pack( -fill=>'both');
+$netTab = $statBook->add( "Sheet 1", -label=>"netStat");
+}#sub designStat_canvas
+
+my $var9 = 0;
+my $var7  = 1;
+##############################################################################################
+##   Display control in left frame
+##############################################################################################
+
+my $instance_image = $leftFrame->Photo(-file=> "$path2eq/ETC/fplan_mode.gif");
+my $instanceButton = $leftFrame->Checkbutton(-variable =>\$var1,-image=>$instance_image,-indicatoron => 0,
+                                             -command=> sub{ if($var1 == 0){}
+                                                             else {
+                                                               my $to_open_instance_popup = $GLOBAL->dbfGlobalGetInstancepopup;
+                                                               if($to_open_instance_popup == 0){
+                                                                 &design_display_popup;}
+                                                             }
+                                             })->pack(-side=>"top",-anchor=>'w');
+my $instance_baloon = $leftFrame->Balloon();
+   $instance_baloon->attach($instanceButton, -balloonmsg => 'Instance');
+
+#----------------------------------------------------------------------------#
+
+my $net_image = $leftFrame->Photo(-file=> "$path2eq/ETC/show_net.gif");
+my $netButton = $leftFrame->Checkbutton(-variable =>\$var2,-image=>$net_image,-indicatoron => 0,
+                                        -command=> sub{if($var2 == 0) {$design_worldcanvas->delete("NETTAG");}
+                                                       else {&design_nets_display;}
+                                        })->pack(-side=>"top", -anchor=>'w');
+my $net_baloon = $leftFrame->Balloon();
+   $net_baloon->attach($netButton, -balloonmsg => 'Nets');
+
+#----------------------------------------------------------------------------#
+                
+my $spnet_image = $leftFrame->Photo(-file=> "$path2eq/ETC/trim.gif");
+my $spnetButton = $leftFrame->Checkbutton(-variable =>\$var3,-image=>$spnet_image,-indicatoron => 0,
+                                          -command=> sub{if($var3 == 0){$design_worldcanvas->delete(SPNETTAG);}
+                                                         else {&SpecialNets_display;}
+                                          })->pack(-side=>"top", -anchor=>'w');
+my $spnet_baloon = $leftFrame->Balloon();
+   $spnet_baloon->attach($spnetButton, -balloonmsg => 'SpecialNets');
+
+#----------------------------------------------------------------------------#
+my $instanceName_image = $leftFrame->Photo(-file=> "$path2eq/ETC/reportSlt.gif");
+my $instanceNameButton = $leftFrame->Checkbutton(-variable =>\$var4,-image=>$instanceName_image,-indicatoron => 0,
+                                                 -command=> sub{if($var4 == 0){$design_worldcanvas->delete("INSTANCETEXT");}
+                                                                 else {&display_instance_name;}
+                                                  })->pack(-side=>"top", -anchor=>'w');
+my $instanceName_baloon = $leftFrame->Balloon();
+   $instanceName_baloon->attach($instanceNameButton, -balloonmsg => 'InstanceName');
+
+#----------------------------------------------------------------------------#
+my $pinRect_image = $leftFrame->Photo(-file=> "$path2eq/ETC/ptnPinGuide.gif");
+my $pinRectButton = $leftFrame->Checkbutton(-variable =>\$var11,-image=>$pinRect_image,-indicatoron => 0,
+                                            -command=> sub{ if($var11 == 0) {
+                                                               #$design_worldcanvas->delete(PINRECT);
+                                                             }else {
+                                                               my $open_pinRect_popup = $GLOBAL->dbfGlobalGetPinRectPopup;
+                                                               if($open_pinRect_popup == 0){&pinRectDisplayPopUp}
+                                                             }
+                                            })->pack(-side=>"top", -anchor=>'w');
+my $pinRect_baloon = $leftFrame->Balloon();
+   $pinRect_baloon->attach($pinRectButton, -balloonmsg => 'PinRects');
+
+#----------------------------------------------------------------------------#
+my $obsRect_image = $leftFrame->Photo(-file=> "$path2eq/ETC/obstruct.gif");
+my $obsRectButton = $leftFrame->Checkbutton(-variable =>\$var13,-image=>$obsRect_image,-indicatoron => 0,
+                                            -command=> sub{if($var13 == 0) {
+                                                               $design_worldcanvas->delete(OBSRECT);
+                                                            }else {&Inst_obsRect_display;}
+                                            })->pack(-side=>"top", -anchor=>'w');
+my $obsRect_baloon = $leftFrame->Balloon();
+   $obsRect_baloon->attach($obsRectButton, -balloonmsg => 'ObsRects');
+
+#----------------------------------------------------------------------------#
+my $pinText_image = $leftFrame->Photo(-file=> "$path2eq/ETC/pinSelected.gif");
+my $pinTextButton = $leftFrame->Checkbutton(-variable =>\$var12,-image=>$pinText_image,-indicatoron => 0,
+                                            -command=> sub{ if($var12 == 0){$design_worldcanvas->delete("PINTEXT");
+                                                            }else {
+                                                              my $class = "all";
+                                                              if($hardMacroVar == 1){$class = "BLOCK";}
+                                                              elsif($stdCellVar == 1){$class = "CORE";}
+                                                              else{$class = "NONE";}
+                                                              &Inst_pinRect_display(1,$class);
+                                                            } 
+                                            })->pack(-side=>"top", -anchor=>'w');
+my $pinText_baloon = $leftFrame->Balloon();
+   $pinText_baloon->attach($pinTextButton, -balloonmsg => 'PinName');
+
+#----------------------------------------------------------------------------#
+my $port_image = $leftFrame->Photo(-file=> "$path2eq/ETC/ptnFeed.gif");
+my $portButton = $leftFrame->Checkbutton(-variable => \$var5,-image=>$port_image,-indicatoron => 0,
+                                         -command=> sub{if($var5 == 0){$design_worldcanvas->itemconfigure("PORTS", -fill=>"",-outline=>"");}
+                                                        else {$design_worldcanvas->itemconfigure("PORTS", -fill=>"yellow3",-outline=>"yellow3");}
+                                          })->pack(-side=>"top", -anchor=>'w');
+my $port_baloon = $leftFrame->Balloon();
+   $port_baloon->attach($portButton, -balloonmsg => 'Ports');
+
+#----------------------------------------------------------------------------#
+my $rows_image = $leftFrame->Photo(-file=> "$path2eq/ETC/bboxAllBBox.gif");
+my $rowsButton = $leftFrame->Checkbutton(-variable =>\$var6,-image=>$rows_image,-indicatoron => 0,
+                                         -command=> sub{ if($var6 == 0){ $design_worldcanvas->itemconfigure("ROWS",-fill=>"");}
+                                                         else{$design_worldcanvas->itemconfigure("ROWS", -fill=>"grey41"); } 
+                                         })->pack(-side=>"top", -anchor=>'w');
+my $rows_baloon = $leftFrame->Balloon();
+   $rows_baloon->attach($rowsButton, -balloonmsg => 'Rows');
+
+#----------------------------------------------------------------------------#
+my $bump_image = $leftFrame->Photo(-file=> "$path2eq/ETC/addVia.gif");
+my $bumpButton = $leftFrame->Checkbutton(-variable =>\$var7,-image=>$bump_image,-indicatoron => 0,
+                                         -command=> sub{if($var7 == 0){$design_worldcanvas->itemconfigure("BUMPNET", -fill=>""); }
+                                                        else {$design_worldcanvas->itemconfigure("BUMPNET", -fill=>"white");} 
+                                          })->pack(-side=>"top", -anchor=>'w');
+my $bump_baloon = $leftFrame->Balloon();
+   $bump_baloon->attach($bumpButton, -balloonmsg => 'BumpNet');
+
+#----------------------------------------------------------------------------#
+my $track_image = $leftFrame->Photo(-file=> "$path2eq/ETC/grid-snap.gif");
+my $trackButton = $leftFrame->Checkbutton(-image=>$track_image,-indicatoron => 0,
+                                          -command=> sub{ print "Track visible\n"; 
+                                         })->pack(-side=>"top", -anchor=>'w');
+my $track_baloon = $leftFrame->Balloon();
+   $track_baloon->attach($trackButton, -balloonmsg => 'Track');
+
+#----------------------------------------------------------------------------#
+my $pCell_image = $leftFrame->Photo(-file=> "$path2eq/ETC/place_mode.gif");
+my $pCellButton = $leftFrame->Checkbutton(-variable => \$var8,-image=>$pCell_image,-indicatoron => 0,
+                                          -command=> sub{if($var8 == 1) { &dbPlaceGuiDisplayGrid; }
+                                                         else { &dbPlaceGuiClearGrid; }
+                                       })->pack(-side=>"top", -anchor=>'w');
+my $pCell_baloon = $leftFrame->Balloon();
+   $pCell_baloon->attach($pCellButton, -balloonmsg => 'Pcell');
+
+#----------------------------------------------------------------------------#
+my $gCell_image = $leftFrame->Photo(-file=> "$path2eq/ETC/cioPlan.gif");
+my $gCellButton = $leftFrame->Checkbutton(-image=>$gCell_image,-indicatoron => 0,
+                                          -command=> sub{ print "Gcell display ON\n"; 
+                                         })->pack(-side=>"top", -anchor=>'w');
+my $gCell_baloon = $leftFrame->Balloon();
+   $gCell_baloon->attach($gCellButton, -balloonmsg => 'Gcell');
+
+#----------------------------------------------------------------------------#
+my $vCong_image = $leftFrame->Photo(-file=> "$path2eq/ETC/distribute-vertical.gif");
+my $vCongButton = $leftFrame->Checkbutton(-variable =>\$var9,-image=>$vCong_image,-indicatoron => 0,
+                                          -command=> sub{ if($var9 == 0){$design_canvas->delete(VCONG);}
+                                                          else {&display_congestion_map(1,0);} 
+                                          })->pack(-side=>"top", -anchor=>'w');
+my $vCong_baloon = $leftFrame->Balloon();
+   $vCong_baloon->attach($vCongButton, -balloonmsg => 'VerticalCong');
+
+#----------------------------------------------------------------------------#
+my $hCong_image = $leftFrame->Photo(-file=> "$path2eq/ETC/distribute-horizontal.gif");
+my $hCongButton = $leftFrame->Checkbutton(-variable =>\$var10,-image=>$hCong_image,-indicatoron => 0,
+                                          -command=> sub{ if($var10 == 0){$design_canvas->delete(HCONG);} 
+                                                          else {&display_congestion_map(0,1);}
+                                          })->pack(-side=>"top", -anchor=>'w');
+my $hCong_baloon = $leftFrame->Balloon();
+   $hCong_baloon->attach($hCongButton, -balloonmsg => 'HorizontalCong');
+
+#----------------------------------------------------------------------------#
+my $description_image = $leftFrame->Photo(-file=> "$path2eq/ETC/save_cktree.gif");
+my $descriptionButton = $leftFrame->Checkbutton(-variable =>\$var14,-image=>$description_image,-indicatoron => 0,
+                        -command=> sub{ if($var14 == 0) {&closeDisplay_descriptionBox;}
+
+                                      else {&description_box_binding;}
+                                        }
+                        )->pack(-side=>"top", -anchor=>'w');
+my $description_baloon = $leftFrame->Balloon();
+   $description_baloon->attach($descriptionButton, -balloonmsg => 'Description');
+
+#----------------------------------------------------------------------------#
+
+##############################################################################################
+##   right query frame 
+## sub divide the right frame into three sub frames
+## The center sub frame has multiple tabs, one each for module/nets
+##############################################################################################
+#my $topLeftFrame = $designLeftFrame->Frame(-label => "query",-background=>"cyan",-foreground=>"blue")->pack(-side => 'top',-anchor=>'n');
+my $topLeftFrame = $designLeftFrame->Frame()->pack(-side => 'top',-anchor=>'n');
+   $topLeftFrame->Label(-text=> "Query")->pack(-side => 'top');
+my $centerLeftFrame = $designLeftFrame->Frame()->pack(-side => 'top', -anchor=>'n');
+$topLeftFrame->Checkbutton(-text=>"Module",
+                        -variable =>\$queryVar1,
+                        -command=> sub{ if ($queryVar1 == 1 ) { &dbfGuiQueryModules; }
+                                        else { }
+                                      }
+                        )->pack(-side=>"top",-anchor=>'w');
+$topLeftFrame->Checkbutton(-text=>"Net       ",
+                            -command=> sub{ print "net visible\n"; })->pack(-side=>"top", -anchor=>'w');
+$topLeftFrame->Checkbutton(-text=>"SNet    ",
+                            -command=> sub{ print "net visible\n"; })->pack(-side=>"top", -anchor=>'w');
+
+$querybook = $centerLeftFrame->NoteBook()->pack( -fill=>'y');
+$querytab1 = $querybook->add( "Sheet 1", -bitmap => "modulebox");
+$querytab2 = $querybook->add( "Sheet 2", -bitmap=> "netbox");
+$querytab3 = $querybook->add( "Sheet 3", -label=>"other");
+
+$centerLeftFrame->Label(-text => "Module", -textvariable => \$moduleName,)->pack(-side=>"top", -anchor=>'w');
+#-----------------------------------------------------------------#
+# the module query tab
+#-----------------------------------------------------------------#
+
+$querytab1->Entry(-textvariable => \$QMOD_TYPE,-borderwidth =>0, -relief => 'flat', -font => "cuorier 8 normal")->pack(-side=>"bottom", -anchor=>'w');
+$querytab1->Entry(-textvariable => \$QMOD_VD,-borderwidth =>0, -relief => 'flat', -font => "cuorier 8 normal",)->pack(-side=>"bottom", -anchor=>'w');
+$querytab1->Entry(-textvariable => \$QMOD_TOTAL,-borderwidth =>0, -relief => 'flat', -font => "cuorier 8 normal")->pack(-side=>"bottom", -anchor=>'w');
+$querytab1->Entry(-textvariable => \$QMOD_OUTS,-borderwidth =>0, -relief => 'flat', -font => "cuorier 8 normal")->pack(-side=>"bottom", -anchor=>'w');
+$querytab1->Entry(-textvariable => \$QMOD_INS,-borderwidth =>0, -relief => 'flat', -font => "cuorier 8 normal",)->pack(-side=>"bottom", -anchor=>'w');
+$querytab1->Entry(-textvariable => \$QMOD_COORDS_STR,-borderwidth =>0,-relief => 'flat', -font => "cuorier 8 normal")->pack(-side=>"bottom", -anchor=>'w');
+$querytab1->Entry(-textvariable => \$QMOD_MODULE,-borderwidth =>0, -relief => 'flat', -font => "cuorier 8 normal")->pack(-side=>"bottom", -anchor=>'w');
+
+$querytab1->Scale(-orient => 'horizontal', -showvalue => 1, -width => 3, -relief => 'flat', -sliderlength => 10,-troughcolor => 'red', -label => "TC", -variable => \$QMOD_TC, -to => 10, -font =>"Times 8 bold",  -borderwidth =>1,-length=>70)->pack(-side=>'top');
+$querytab1->Scale(-orient => 'horizontal', -showvalue => 1, -width => 3, -relief => 'flat', -sliderlength => 10,-troughcolor => 'blue', -label => "RC", -variable => \$QMOD_RC, -to => 10, -font =>"Times 8 bold",-borderwidth => 1,-length=>70)->pack(-side=>'top');
+$querytab1->Scale(-orient => 'horizontal', -showvalue => 1, -width => 3, -relief => 'flat', -sliderlength => 10,-troughcolor => 'green', -label => "PC", -variable => \$QMOD_PC, -to => 10,-font =>"Times 8 bold",-borderwidth => 1,-length=>70)->pack(-side=>'top');
+$querytab1->Scale(-orient => 'horizontal', -showvalue => 1, -width => 3, -relief => 'flat', -sliderlength => 10,-troughcolor => 'black', -label => "PwrC", -variable => \$QMOD_PwrC, -to => 10, -font =>"Times 8 bold",-borderwidth => 1,-length=>70)->pack(-side=>'top');
+
+#---------------------------------------------------#
+# piping the command output to commandline frame
+#tie *STDOUT, ref $readOnlyText, $readOnlyText;
+#tie (*STDOUT, 'Tk::ROText', $readOnlyText);
+
+############################## Main Event ####################################################
+MainLoop();
+}# sub start_gui
+
+###########################################################################################################
+#*************************************** proton GUI completed ********************************************#
+###########################################################################################################
+
+
+sub exit_choice {
+
+    print "You chose the Exit choice!\n";
+    print "Exiting the proton system ....\n";
+    $GLOBAL->dbGlobalSetGuiStatus(0);
+    exit;
+}#sub exit_choice
+
+sub dump_pdf {
+print "writing out the screenshot in jpeg and png format\n";
+#$design_canvas->postscript(-file => "ps.out");
+my $active_canvas = $GLOBAL->dbGlobalGetActiveCanvas; 
+#print "active canvas $active_canvas\n";
+   if($active_canvas eq "design_canvas"){$canvas = $design_canvas;}
+elsif($active_canvas eq "basic_view"){$canvas = $basicCanvas;}
+elsif($active_canvas eq "lef_view"){$canvas = $LefCanvas;}
+elsif($active_canvas eq "gds_view"){$canvas = $gdsCanvas;}
+elsif($active_canvas eq "lib_view"){$canvas = $synCanvas;}
+elsif($active_canvas eq "kb_view"){$canvas = $KbCanvas;}
+elsif($active_canvas eq "analysis_view"){$canvas = $analysis_canvas1 if($analysis_canvas1); $canvas = $analysis_canvas2 if($analysis_canvas2);}
+elsif($active_canvas eq "gcell_view"){$canvas = $gcell_canvas;}
+elsif($active_canvas eq "hierArea_view"){$canvas = $hierAreaCanv;}
+elsif($active_canvas eq "netStat_view"){$canvas = $netstat_canvas;}
+elsif($active_canvas eq "hier_view"){$canvas = $hier_canvas;}
+elsif($active_canvas eq "flat_view"){$canvas = $design_worldcanvas;}
+
+my $image = $top->Photo( -format => 'Window', -data => oct($canvas->id) );
+$image->write('snapshot.jpeg', -format=>'JPEG');
+$image->write('snapshot.png', -format=>'PNG');
+}#sub dump_pdf
+
+sub dbErr_gui_not_yet {
+print "This GUI menu is not yet implemented \n";
+}#sub dbErr_gui_not_yet
+
+sub dbfGuiShowWorldCanvasCoords {
+my $canvas = $_[0];
+my @xy = $canvas->eventLocation();
+my $x = $xy[0];
+my $y = $xy[1];
+my $mufx = $GLOBAL->dbGlobalGetMicronFactor;
+$CURSORX = sprintf("%.2f", (($x-20)/$mufx));
+$CURSORY = sprintf("%.2f", (($y-20)/$mufx));
+#print "$x,$y\n";
+}#sub dbfGuiShowWorldCanvasCoords
+
+sub dbfGuiZoom {
+############################## Zoom In / Out and Fit functions ###############################
+        my $zoomRect;
+        my @zoomRectCoords;
+
+        $design_canvas->CanvasBind('<3>' => sub {
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+
+            @zoomRectCoords = ($x, $y, $x, $y);
+
+            $zoomRect = $design_canvas->createRectangle(
+                                            @zoomRectCoords,
+                                            -outline => 'red',
+                                            );
+        });
+                $design_canvas->CanvasBind('<B3-Motion>' => sub {
+            @zoomRectCoords[2,3] = ($design_canvas->canvasx($Tk::event->x),
+                                    $design_canvas->canvasy($Tk::event->y));
+
+            $design_canvas->coords($zoomRect => @zoomRectCoords);
+        });
+                $design_canvas->CanvasBind('<B3-ButtonRelease>' => sub {
+            # Delete the rectangle.
+            $design_canvas->delete($zoomRect);
+
+            # Was the rectangle big enough?
+            return if
+                abs($zoomRectCoords[0] - $zoomRectCoords[2]) < 10 ||
+                    abs($zoomRectCoords[1] - $zoomRectCoords[3]) < 10;
+
+            # Let's find the zooming factor.
+            my $dx = $design_canvas->width  /abs($zoomRectCoords[0] - $zoomRectCoords[2]);
+            my $dy = $design_canvas->height /abs($zoomRectCoords[1] - $zoomRectCoords[3]);
+
+            my $scale = [$dx => $dy] -> [$dy <= $dx];
+            # Let's scale everything up.
+            $design_canvas->Subwidget('scrolled')->scale('all' => 0, 0, $scale, $scale);
+
+            # Modify the bounding box.
+            $_ *= $scale for @$box;
+
+            # Resize the scrollregion.
+            $design_canvas->configure(-scrollregion => $box);
+
+            # Now we change the view to center on correct area.
+            $design_canvas->xviewMoveto($zoomRectCoords[0] * $scale / $box->[2]);
+            $design_canvas->yviewMoveto($zoomRectCoords[1] * $scale / $box->[3]);
+        });
+
+        $design_canvas->CanvasBind('<2>' => sub {
+            my $scale = $guiCanvasWidth/$box->[2];
+
+            $design_canvas->Subwidget('scrolled')->scale('all', 0, 0, $scale, $scale);
+            $box = [0, 0, $guiCanvasWidth, $guiCanvasHeight];
+            $design_canvas->configure(-scrollregion => $box);
+        });
+######################################################################################
+
+
+}#sub dbfGuiZoom
+
+sub dbfGuiRunTclScript {
+my $types = [ ['Tcl files', '.tcl'],
+              ['All Files',   '*'],];
+  my $open = $top->getOpenFile(-filetypes => $types,
+                               -title => "run script",
+                              -defaultextension => '.tcl');
+  print qq{You chose to execute "$open"\n} if $open;
+  source($open);
+
+}#sub dbfGuiRunTclScript
+
+sub dbfGuiResizeModules {
+print "Resize mode on\n" if ($DEBUG > 20);
+    my $dx   = 0;
+    my $dy   = 0;
+    my $mode = 0;    
+# 0 => move
+# 1 => resize
+    my $pct  = 0.2;
+    my $oldx = 0;
+    my $oldy = 0;
+    my $rect;
+
+    $design_canvas->CanvasBind('<1>' , sub {
+                    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+                    my $id      = $design_canvas->find(qw/withtag current/);
+                    my @coords  = $design_canvas->coords($id);
+
+                    my $width   = $coords[2] - $coords[0];
+                    my $height  = $coords[3] - $coords[1];
+
+                    if      ($x < $coords[0] + 0.2 * $width) {
+                        $dx = 1;
+                    } elsif ($x > $coords[2] - 0.2 * $width) {
+                        $dx = -1;
+                    } else {
+                        $dx = 0;
+                    }
+
+                    if      ($y < $coords[1] + 0.2 * $height) {
+                        $dy = 1;
+                    } elsif ($y > $coords[3] - 0.2 * $height) {
+                        $dy = -1;
+                    } else {
+                        $dy = 0;
+                    }
+
+                    $mode = ($dx || $dy) ? 1 : 0;
+                    $oldx = $x;
+                    $oldy = $y;
+                    $rect = $id;
+
+                    if ($mode) {
+                        $design_canvas->createRectangle(@coords,
+                                               -outline => 'red',
+                                               -tags    => ['TEMP'],
+                                               );
+                    }
+
+                });
+
+    $design_canvas->CanvasBind('<B1-Motion>' => sub {
+                    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+                    my $id      = $design_canvas->find(qw/withtag current/);
+
+                    if ($mode) {  # resize
+                        my @coords = $design_canvas->coords('TEMP');
+
+                        if    ($dx ==  1) { $coords[0] = $x }
+                        elsif ($dx == -1) { $coords[2] = $x }
+
+                        if    ($dy ==  1) { $coords[1] = $y }
+                        elsif ($dy == -1) { $coords[3] = $y }
+
+                        $design_canvas->coords('TEMP', @coords);
+                    } else {      # move
+                        $design_canvas->move($id => $x - $oldx, $y - $oldy);
+                        $oldx = $x;
+                        $oldy = $y;
+                    }
+                });
+
+    $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+        my @coords = $design_canvas->coords('TEMP');
+
+        # Delete the rectangle.
+        $design_canvas->delete('TEMP');
+
+        $design_canvas->coords($rect => @coords);
+    });
+}# sub dbfGuiResizeModules
+
+
+sub dbfGuiQueryModules {
+&dbfGuiResetCanvasBind;
+    my $coords_str = "";
+    $design_canvas->CanvasBind('<1>' => sub {
+        my $id      = $design_canvas->find(qw/withtag current/);
+        my @coords  = $design_canvas->coords($id);
+#        print join ",", @coords; print "\n";
+        my @ll = dbfGuiGui2Micron($coords[0],$coords[3]);
+        my @ur = dbfGuiGui2Micron($coords[2],$coords[1]);
+        my @tagList = $design_canvas->gettags($id);
+        $Q_MODULE = $tagList[1];
+#        print join ",", @tagList; print "\n";
+        if ( exists $PSEUDO_MODULE_ALREADY{$Q_MODULE} ) {
+             @bbox = $PSEUDO_MODULE_ALREADY{$Q_MODULE}->dbaTstgenGetSize;
+             $QMOD_COORDS_STR = $bbox[0].",".$bbox[1].",".$bbox[2].",".$bbox[3];
+             $QMOD_INS = $PSEUDO_MODULE_ALREADY{$Q_MODULE}->dbaTstgenGetInCount;
+             $QMOD_OUTS = $PSEUDO_MODULE_ALREADY{$Q_MODULE}->dbaTstgenGetOutCount;
+             $QMOD_SEQ = $PSEUDO_MODULE_ALREADY{$Q_MODULE}->dbaTstgenGetSeqComps;
+             $QMOD_COMB = $PSEUDO_MODULE_ALREADY{$Q_MODULE}->dbaTstgenGetCombComps;
+             $QMOD_TOTAL = $PSEUDO_MODULE_ALREADY{$Q_MODULE}->dbaTstgenGetTotalComps;
+             $QMOD_TC = $PSEUDO_MODULE_ALREADY{$Q_MODULE}->dbaTstgenGetTimingComplexity;
+             $QMOD_RC = $PSEUDO_MODULE_ALREADY{$Q_MODULE}->dbaTstgenGetRoutingComplexity;
+             $QMOD_PC = $PSEUDO_MODULE_ALREADY{$Q_MODULE}->dbaTstgenGetTimingComplexity;
+             $QMOD_PwrC = $PSEUDO_MODULE_ALREADY{$Q_MODULE}->dbaTstgenGetTimingComplexity;
+             $QMOD_VD = $PSEUDO_MODULE_ALREADY{$Q_MODULE}->dbaTstgenGetVoltageDomain;
+             $QMOD_TYPE = $PSEUDO_MODULE_ALREADY{$Q_MODULE}->dbaTstgenGetType;
+             $QMOD_MODULE = $Q_MODULE;
+                                                        }
+    });
+    $design_canvas->CanvasBind('<3>' => sub {
+        my $id      = $design_canvas->find(qw/withtag current/);
+        my @tagList = $design_canvas->gettags($id);
+        my $x = $design_canvas->canvasx($Tk::event->x);
+        my $y = $design_canvas->canvasy($Tk::event->y);
+        my $moduleInst = $tagList[1];
+        print "querying $moduleInst\n";
+        if ( exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$moduleInst} ) {
+        $Q_MODULE = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$moduleInst}->dbPimDBGetInstCellref;
+        &dbfGuiPopupProp($Q_MODULE,$moduleInst,$x,$y);
+                                                                      }
+        elsif (  exists $PSEUDO_MODULE_ALREADY{$moduleInst} ) {
+        # TODO : add a check that the module is really the current top : Rajeev
+        &dbfGuiPopupProp($moduleInst,$x,$y);
+                                                              }
+                                             });
+}#sub dbfGuiQueryModules
+
+sub dbfGuiResetCanvasBind {
+print "INFO-GUI-001 : resetting the canvas bindings\n" if ($DEBUG > 21);
+$design_canvas->CanvasBind('<1>' =>"");
+$design_canvas->CanvasBind('<B1-Motion>' =>"");
+$design_canvas->CanvasBind('<B1-ButtonRelease>' =>"");
+$design_canvas->CanvasBind('<2>' => "");
+$design_canvas->CanvasBind('<Shift-Button-1>' => "");
+$design_canvas->CanvasBind('<Control-Button-1>' => "");
+$design_canvas->CanvasBind('<Motion>' => "");
+#$design_canvas->CanvasBind('<3>' => "");
+$design_canvas->delete(YELLOWBOX);
+}#sub dbfGuiResetCanvasBind
+
+
+
+sub dbfGuiZoomIn {
+#### Zoom In #####
+        my $zoomRect;
+        my @zoomRectCoords;
+
+            my $scale = 2;
+            # Let's scale everything up.
+            $design_canvas->Subwidget('scrolled')->scale('all' => 0, 0, $scale, $scale);
+
+            # Modify the bounding box.
+            $_ *= $scale for @$box;
+
+            # Resize the scrollregion.
+            $design_canvas->configure(-scrollregion => $box);
+
+}#sub dbfGuiZoomIn
+
+sub dbfGuiZoomOut {
+#### Zoom In #####
+        my $zoomRect;
+        my @zoomRectCoords;
+
+            my $scale = 0.5;
+            # Let's scale everything up.
+            $design_canvas->Subwidget('scrolled')->scale('all' => 0, 0, $scale, $scale);
+
+            # Modify the bounding box.
+            $_ *= $scale for @$box;
+
+            # Resize the scrollregion.
+            $design_canvas->configure(-scrollregion => $box);
+
+}#sub dbfGuiZoomOut
+
+############################---------kb_gui---------###########################
+sub gui_kb_display {
+my $popupgui = MainWindow->new();
+$popupgui->title ("Plot :: data fields ");
+$ref = "RID";
+$kb_gui_menubar = $popupgui->Frame(-relief=>"raised", -borderwidth=>2);
+$kb_gui = $kb_gui_menubar->pack(-side =>'top', -fill =>'x');
+$kb_Frame1= $kb_gui->Frame()->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+$kb_Frame2= $kb_gui->Frame()->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+$kb_Frame3= $kb_gui->Frame()->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+$kb_Frame4= $kb_gui->Frame()->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+$kb_Frame5= $kb_gui->Frame()->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+$kb_Frame6= $kb_gui->Frame()->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+
+$kb_Frame1->Label(-text => "TestName -")->pack(-side =>'left', -anchor => 'w');
+#$kb_Frame1->Entry(-textvariable =>\$test )->pack(-side =>'left', -anchor => 'w',
+$kb_Frame1->Entry(-textvariable =>\$SelectedTestName )->pack(-side =>'left', -anchor => 'w',
+                                                    -fill => 'x', -expand=> '1' );
+$kb_Frame2->Label(-text => "DataField   -")->pack(-side =>'left', -anchor => 'w');
+$kb_Frame2->Entry(-textvariable =>\$data )->pack(-side =>'left', -anchor => 'w',
+                                                    -fill => 'x', -expand=> '1' );
+$kb_Frame3->Label(-text => "RefField     -")->pack(-side =>'left', -anchor => 'w');
+$kb_Frame3->Entry(-textvariable =>\$ref )->pack(-side =>'left', -anchor => 'w',
+                                                    -fill => 'x', -expand=> '1' );
+$kb_Frame4->Label(-text => "Limit           -")->pack(-side =>'left', -anchor => 'w');
+$kb_Frame4->Entry(-textvariable =>\$Limit )->pack(-side =>'left', -anchor => 'w',
+                                                    -fill => 'x', -expand=> '1' );
+$kb_Frame5->Label(-text => "Offset          -")->pack(-side =>'left', -anchor => 'w');
+$kb_Frame5->Entry(-textvariable =>\$Offset )->pack(-side =>'left', -anchor => 'w',
+                                                    -fill => 'x', -expand=> '1' );
+$kb_Frame6->Label(-text => "Order         -")->pack(-side =>'left', -anchor => 'w');
+$kb_Frame6->Radiobutton(-variable =>\$Order,
+  		     -value => "ASC",
+  		     -text => "ASCENDING",
+                                          )->pack(-side =>"left");
+$kb_Frame6->Radiobutton(-variable =>\$Order,
+  		     -value => "DESC",
+                     -text => "DESCENDING",
+                                          )->pack(-side =>"left");
+
+$displayOK = $kb_gui->Button ( -text=>"Display",
+                                   -command => sub{$KbCanvas->delete("all");
+                                                    &call_kb_gui;}
+                             );
+$displayOK->pack( -side=> 'bottom', -expand => '1');
+
+}#sub gui_kb_display
+
+sub call_kb_gui {
+#&plot_graph(-testName,$test,-dataField,$data,-refField,$ref,-limit,$Limit,-offset,$Offset,-order,$Order);
+&plot_graph(-testName,$SelectedTestName,-dataField,$data,-refField,$ref,-limit,$Limit,-offset,$Offset,-order,$Order);
+}# sub call_kb_gui
+
+###############################################################################
+sub call_popUpDesignEntryWidgets {
+$designEntryWidgets = MainWindow->new();
+$designEntryWidgets->title("Design Elements");
+local $tabs = $designEntryWidgets->DynaTabFrame ( -raisecolor => 'green', -tabcolor => 'yellow', -tabcurve => 0, -tablock => undef,
+        -tabpadx => 0, -tabpady => 0, -tabrotate => 1, -tabside => 'nw', -tabscroll => undef, -textalign => 1,
+        -tiptime => 600, -tipcolor => 'yellow')->pack (-side => 'top', -expand => 1, -fill => 'both');
+
+$frames{'Tab2'} = $tabs->add( -caption => 'Functional', -label => 'Functional',);
+$frames{'Tab1'} = $tabs->add( -caption => 'Layout', -label => 'Layout',);
+#----------------- Layout Components ----------------#
+my $buttonL1 = $frames{'Tab1'}->Button(-bitmap => 'rectilinearBitmap', -command => \&dbTstGUICreateModule,-foreground=>"red");
+$buttonL1->grid(-row=>0, -column=>0 , -sticky =>news);
+#----------------- Layout Components ----------------#
+my $button1 = $frames{'Tab2'}->Button(-bitmap => 'modulebox', -command => \&dbTstGUICreateModule,-foreground=>"red");
+my $button1 = $frames{'Tab2'}->Button(-bitmap => 'modulebox', -command => \&dbTstGUICreateModule,-foreground=>"red");
+my $button2 = $frames{'Tab2'}->Button(-bitmap => 'adderBitmap');
+my $button3 = $frames{'Tab2'}->Button(-bitmap => 'modulebox');
+my $button4 = $frames{'Tab2'}->Button(-bitmap => 'modulebox');
+my $button5 = $frames{'Tab2'}->Button(-bitmap => 'modulebox');
+my $button6 = $frames{'Tab2'}->Button(-bitmap => 'modulebox');
+my $button7 = $frames{'Tab2'}->Button(-bitmap => 'modulebox');
+my $button8 = $frames{'Tab2'}->Button(-bitmap => 'modulebox');
+my $button9 = $frames{'Tab2'}->Button(-bitmap => 'modulebox');
+my $button10 = $frames{'Tab2'}->Button(-bitmap => 'modulebox');
+$button1->grid(-row=>0, -column=>0 , -sticky =>news);
+$button2->grid(-row=>0, -column=>1 , -sticky =>news);
+$button3->grid(-row=>0, -column=>2 , -sticky =>news);
+$button4->grid(-row=>0, -column=>3 , -sticky =>news);
+$button5->grid(-row=>0, -column=>4 , -sticky =>news);
+$button6->grid(-row=>0, -column=>5 , -sticky =>news);
+$button7->grid(-row=>1, -column=>0 , -sticky =>news);
+$button8->grid(-row=>2, -column=>0 , -sticky =>news);
+$button9->grid(-row=>3, -column=>0 , -sticky =>news);
+$button10->grid(-row=>4, -column=>0 , -sticky =>news);
+}# sub call_popUpDesignEntryWidgets
+
+
+sub zoom_analysis_canvas3{
+my $box = [0,0,500,500];
+my $guiCanvasWidth = 500;
+my $guiCanvasHeight = 500;
+       my $zoomRect;
+        my @zoomRectCoords;
+        $analysis_canvas3->CanvasBind('<3>' => sub {
+            my $x = $analysis_canvas3->canvasx($Tk::event->x);
+            my $y = $analysis_canvas3->canvasy($Tk::event->y);
+
+            @zoomRectCoords = ($x, $y, $x, $y);
+
+            $zoomRect = $analysis_canvas3->createRectangle(
+                                            @zoomRectCoords,
+                                            -outline => 'red',
+                                            );
+        });
+                $analysis_canvas3->CanvasBind('<B3-Motion>' => sub {
+            @zoomRectCoords[2,3] = ($analysis_canvas3->canvasx($Tk::event->x),
+                                    $analysis_canvas3->canvasy($Tk::event->y));
+
+            $analysis_canvas3->coords($zoomRect => @zoomRectCoords);
+        });
+                $analysis_canvas3->CanvasBind('<B3-ButtonRelease>' => sub {
+            # Delete the rectangle.
+            $analysis_canvas3->delete($zoomRect);
+
+            # Was the rectangle big enough?
+            return if
+                abs($zoomRectCoords[0] - $zoomRectCoords[2]) < 10 ||
+                    abs($zoomRectCoords[1] - $zoomRectCoords[3]) < 10;
+
+            # Let's find the zooming factor.
+            my $dx = $analysis_canvas3->width  /abs($zoomRectCoords[0] - $zoomRectCoords[2]);
+            my $dy = $analysis_canvas3->height /abs($zoomRectCoords[1] - $zoomRectCoords[3]);
+
+            my $scale = [$dx => $dy] -> [$dy <= $dx];
+
+            # Let's scale everything up.
+            $analysis_canvas3->Subwidget('scrolled')->scale('all' => 0, 0, $scale, $scale);
+            # Modify the bounding box.
+            $_ *= $scale for @$box;
+
+            # Resize the scrollregion.
+            $analysis_canvas3->configure(-scrollregion => $box);
+
+            # Now we change the view to center on correct area.
+            $analysis_canvas3->xviewMoveto($zoomRectCoords[0] * $scale / $box->[2]);
+            $analysis_canvas3->yviewMoveto($zoomRectCoords[1] * $scale / $box->[3]);
+        });
+
+            $analysis_canvas3->CanvasBind('<2>' => sub {
+             my $scale = $guiCanvasWidth/$box->[2];
+
+            $analysis_canvas3->Subwidget('scrolled')->scale('all' => 0, 0, $scale, $scale);
+            $box = [0, 0, $guiCanvasWidth, $guiCanvasHeight];
+            $analysis_canvas3->configure(-scrollregion => $box);
+        });
+
+}#sub zoom_analysis_canvas3
+
+
+1;
+

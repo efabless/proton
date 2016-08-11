@@ -1,0 +1,155 @@
+sub dbfTstGUICookieCut {
+        $design_canvas->CanvasBind('<1>' => sub {
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+
+            @CookieCutCoords = ($x, $y, $x, $y);
+
+            $CookieCutBBox = $design_canvas->createRectangle(
+                                            @CookieCutCoords,
+                                            -outline => 'white',
+                                            );
+        });
+                $design_canvas->CanvasBind('<B1-Motion>' => sub {
+            @CookieCutCoords[2,3] = ($design_canvas->canvasx($Tk::event->x),
+                                    $design_canvas->canvasy($Tk::event->y));
+            $design_canvas->coords($CookieCutBBox => @CookieCutCoords);
+        });
+            $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+            @ll = dbfGuiGui2Micron($CookieCutCoords[0],$CookieCutCoords[1]);
+            @ur = dbfGuiGui2Micron($CookieCutCoords[2],$CookieCutCoords[3]);
+        });
+return($ll[0],$ur[1],$ur[0],$ll[1]);
+}# sub dbfTstGUICookieCut
+
+sub call_popup_dbfTstGUICookieCut {
+my $VAR1 = 0;
+my $VAR2 = 0;
+my $VAR3 = 0;
+my $llx = 0; my $lly = 0; my $urx = 0; my $ury = 0;
+my $bbox = $llx."\,".$lly."\,".$urx."\,".$ury;
+$popupgui = MainWindow->new();
+$popupgui->title ("Cookie-cut");
+my $book = $popupgui->NoteBook()->pack( -fill=>'both');
+
+my $tab1 = $book->add( "Sheet 1", -label=>"basic");
+my $tab2 = $book->add( "Sheet 2", -label=>"adv");
+
+my $areaFrame = $tab1->Frame(-relief=>"raised", -borderwidth=>2)->pack(-side=>'top');
+my $optionFrame = $tab1->Frame(-relief=>"raised", -borderwidth=>2)->pack(-side=>'top');
+my $buttonFrame = $tab1->Frame(-relief=>"raised", -borderwidth=>2)->pack(-side=>'top');
+my $optionFrame1 = $tab2->Frame(-relief=>"raised", -borderwidth=>2)->pack(-side=>'top');
+my $buttonFrame1 = $tab2->Frame(-relief=>"raised", -borderwidth=>2)->pack(-side=>'bottom');
+#----------------------------------------------------------------------#
+####################     TAB2 => BASIC TAB     #########################
+#----------------------------------------------------------------------#
+sub hashValueAscendingNum {
+   $RML{$a} <=> $RML{$b};
+}
+
+my @selLayers = ();
+my @key = sort hashValueAscendingNum (keys(%RML));
+my $n = @key;
+for (my $i = 0; $i<$n;$i++) 
+         {
+                  $optionFrame1->Checkbutton(-text => $key[$i],-variable => \$selLayers[$i], -onvalue => 1, -offvalue => 0,
+                                       -command => sub{ print "vr are ";
+                                                        print join ",", @selLayers;
+                                                        print "\n";
+                                                        
+                                                        }
+        
+                               )->pack(-side => 'left', -anchor =>'w', -fill=>'x' );
+   #  print " s L $selLayers[$i]\n"; 
+             
+                }#for all metal layers
+#----------------------------------------------------------------------#
+$selectAllbutton = $buttonFrame1->Button(-text=>'All', -command =>sub { my $n = @selLayers;
+                                                                        for(my $i = 0 ; $i < $n; $i++){
+                                                                               $selLayers[$i] = 1 ;}
+                                                                        print "vr are ";
+                                                                        print join ",", @selLayers;
+                                                                        print "\n";
+                                                                                     
+                                                                      })->pack(-side => 'left');
+$selectNonebutton = $buttonFrame1->Button(-text=>'None', -command =>sub { my $n = @selLayers;
+                                                                        for(my $i = 0 ; $i < $n; $i++){
+                                                                               $selLayers[$i] = 0;}
+                                                                        print "vr are ";
+                                                                        print join ",", @selLayers;
+                                                                        print "\n";
+                                                                                            
+                                                                      })->pack(-side => 'left');
+
+#----------------------------------------------------------------------#
+################         TAB1 => ADV TAB             ###################
+#----------------------------------------------------------------------#
+$areaButton = $areaFrame->Button(-text=>'Area', -command=>sub {
+        $design_canvas->CanvasBind('<1>' => sub {
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+
+            @CookieCutCoords = ($x, $y, $x, $y);
+
+            $CookieCutBBox = $design_canvas->createRectangle(
+                                            @CookieCutCoords,
+                                            -outline => 'white',
+                                            );
+        });
+                $design_canvas->CanvasBind('<B1-Motion>' => sub {
+            @CookieCutCoords[2,3] = ($design_canvas->canvasx($Tk::event->x),
+                                    $design_canvas->canvasy($Tk::event->y));
+            $design_canvas->coords($CookieCutBBox => @CookieCutCoords);
+        });
+            $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+            @ll = dbfGuiGui2Micron($CookieCutCoords[0],$CookieCutCoords[1]);
+            @ur = dbfGuiGui2Micron($CookieCutCoords[2],$CookieCutCoords[3]);
+            $llx = $ll[0]; $lly = $ur[1]; $urx = $ur[0]; $ury = $ll[1];
+            $bbox = $llx."\,".$lly."\,".$urx."\,".$ury;
+        });
+                                                              })->pack(-side => 'left');
+$areaEntry = $areaFrame->Entry(-textvariable => \$bbox)->pack(-side => 'left');
+
+#----------------------------------------------------------------------#
+$optionFrame->Checkbutton(-text=>'keep orig die', -variable => \$VAR1, 
+                       -command=> sub{
+                                      if($VAR1 == 0) { $VAR2 = 0 ; $VAR3 = 0; }
+                                      else { $VAR2 = 1; $VAR3 = 1; } 
+                                     }
+
+                         )->pack(-side => 'left', -anchor =>'w', -fill=>'x');
+$optionFrame->Checkbutton(-text=>'add plc blkg',  -variable => \$VAR2 )->pack(-side => 'left', -anchor =>'w', -fill=>'x');
+$optionFrame->Checkbutton(-text=>'add rt blkg',   -variable => \$VAR3 )->pack(-side => 'left', -anchor =>'w', -fill=>'x');
+#----------------------------------------------------------------------#
+$applyButton = $buttonFrame->Button(-text=>'Apply', -command=>sub {
+              
+              if ( $VAR1 == 0 ) {
+              &extractDesign("-bbox", "{$ll[0],$ur[1],$ur[0],$ll[1]}");
+                                                           }
+              elsif ( $VAR1 == 1 && $VAR2 == 1 && $VAR3 == 1 ) {
+                                                                        
+   &extractDesign("-bbox", "{$ll[0],$ur[1],$ur[0],$ll[1]}", "-keepOrigDie", "-addPlcBlkg", "-addRtBlkg{m1}");
+                                        }
+
+              elsif ( $VAR1 == 1 && $VAR2 == 1 && $VAR3 == 0 ) {
+              &extractDesign("-bbox", "{$ll[0],$ur[1],$ur[0],$ll[1]}", "-keepOrigDie", "-addPlcBlkg");
+                                                           }
+              elsif ( $VAR1 == 1 && $VAR2 == 0 && $VAR3 == 1 ) 
+                       { 
+ &extractDesign("-bbox", "{$ll[0],$ur[1],$ur[0],$ll[1]}", "-keepOrigDie",  "-addRtBlkg{$m1,$m2,$m3,$m4}");
+
+                       }
+                                                              })->pack(-side => 'left');
+
+$cancelButton = $buttonFrame->Button(-text=>'Cancel', -command=>sub {
+              $popupgui->destroy();
+                                                                 })->pack(-side => 'right');
+
+
+#----------------------------------------------------------------------#
+
+
+}#sub call_popup_dbfTstGUICookieCut
+
+
+1;

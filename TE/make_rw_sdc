@@ -1,0 +1,343 @@
+%ClockDB_hash = ();
+sub write_sdc {
+#------------------------------------------------------#
+# add delays to each begin/end point in the S-Matrix
+# this can be added via a timing report and also via
+# internal STA
+# currently i will add those delays via a random
+# selection of delay between 30% to 70% of the clock period
+# the logic used is the following
+# if there exist a timing path between I/O to flops,
+# i will add the delay
+#
+#Clock uncertainty taken to be 5% of the clock period
+#Clock latency taken to be 1% of the clock period
+#Input and output delay 0 for floating pins 
+#------------------------------------------------------#
+my $noOfArguments = @_;
+my $DEBUG = 0;
+
+if( $noOfArguments < 2 || $_[0] eq '-h') {
+        print "Usage : write_sdc \n";
+        print "                             -output <output sdc file> \n";
+        print "                             <-debug>\n";
+}
+else { # if correct no. of inputs
+        print "INFO-TE-SDC : 001 : writing the sdc !\n";
+        for(my $i = 0; $i < $noOfArguments; $i++){
+	if ($_[$i] eq "-output") { $OUTPUT_SDC_FILE  = $_[$i+1] ; }
+        elsif($_[$i] eq "-debug"){$DEBUG = 1;}
+
+        } #for
+}
+
+open (WRITE_SDC, ">$OUTPUT_SDC_FILE");
+print WRITE_SDC "#SDC FILE written from proton verion-$TOOL_VERSION\n";
+my @clockPortList = ();
+my $clock_name;
+######  get all the clock ports #####
+foreach my $portName ( keys %{$PORTS_ALREADY{$moduleName}} ) {
+	my $pinType =  $PORTS_ALREADY{$moduleName}{$portName}->dbPortGetSignal;
+        if ( $pinType eq "CLOCK" ) { push(@clockPortList,$portName); }
+}
+
+foreach $clock(@clockPortList) {
+	my $clock_period = $ClockDB{$clock}->dbClockGetClkP;
+	my $tran = $clock_period/2;
+	my $clock_uncertainty = $ClockDB{$clock}->dbClockGetClkU;
+	my $clock_latency = $ClockDB{$clock}->dbClockGetLatency;
+	$clock_name = $ClockDB{$clock}->dbClockGetClkName;
+
+	print WRITE_SDC "#############Clock constraints############################# \n";
+	print WRITE_SDC "create_clock $clock -period $clock_period -waveform \{0 $tran\} -name $clock_name \n";
+	print WRITE_SDC "set_clock_uncertainty $clock_uncertainty \[get_clocks $clock_name\] \n";
+	print WRITE_SDC "set_clock_latency $clock_latency -source \[get_clocks $clock_name\] \n";
+
+}
+
+print WRITE_SDC "\n";
+print WRITE_SDC "#############Input port constraints############################# \n";
+
+my @inputPort = $PLACE{$TOP_MODULE}->dbPlaceGetInPortList;
+
+foreach my $port(@inputPort) {
+	$tran = $PORTS_ALREADY{$moduleName}{$port}->dbPortGetTran ;
+	$drcell = $PORTS_ALREADY{$moduleName}{$port}->dbPortGetDrivingCell ;
+	if ($tran == -1) {
+#	if ($drcell eq "UND") { $drcell = "BUFX1";}
+	print WRITE_SDC "set_driving_cell $drcell $port \n";
+	} else {
+	print WRITE_SDC "set_input_transition $tran $port\n";
+	}
+}
+
+foreach my $port ( @inputPort ) {
+           my $InstNum = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByName($port);
+           my @fanOuts = $PLACE{$TOP_MODULE}->dbPlaceGetFanOuts($InstNum);
+           my $maxdly = 0;
+           my $noOfFanOuts = @fanOuts;
+           if ( exists $PORTS_ALREADY{$moduleName}{$port}) {
+                        $clock_name = $PORTS_ALREADY{$moduleName}{$port}->dbPortGetClk;
+			$clock_port = $ClockDB_hash{$clock_name};
+			$delay = $PORTS_ALREADY{$moduleName}{$port}->dbPortGetDelay;	
+			print WRITE_SDC "set_input_delay $delay -clock $clock_name $port\n";
+	   	
+	   } elsif ($noOfFanOuts == 0 ) { 
+                     print WRITE_SDC "set_input_delay 0 -clock $clock_name $port\n";
+	   } else {
+           foreach my $yy ( @fanOuts ) {
+                   my $val = $PLACE{$TOP_MODULE}->dbPlaceGetSlackVal($yy,$InstNum);
+                   if ( $val > $maxdly ) { $maxdly = $val; }
+                                      }# foreach fanOuts
+                   # print "$yy, $InstNum : $val\n";
+                     my $indly = sprintf("%.2f",$clock_period - $maxdly);
+                     print WRITE_SDC "set_input_delay $indly -clock $clock $port\n";
+                                              }
+                                       }# foreach input port
+
+
+print WRITE_SDC "\n";
+print WRITE_SDC "#############Output port constraints############################# \n";
+
+my @outputPort = $PLACE{$TOP_MODULE}->dbPlaceGetOutPortList;
+           foreach $port ( @outputPort ) {
+           my $InstNum = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByName($port);
+           my @fanIns = $PLACE{$TOP_MODULE}->dbPlaceGetFanIns($InstNum);
+           my $maxdly = 0;
+           my $noOfFanIns = @fanIns;
+	   if ( exists $PORTS_ALREADY{$moduleName}{$port}) {
+                        $clock_name = $PORTS_ALREADY{$moduleName}{$port}->dbPortGetClk;
+			$delay = $PORTS_ALREADY{$moduleName}{$port}->dbPortGetDelay;	
+			print WRITE_SDC "set_output_delay $delay -clock $clock_name $port\n";
+	   	
+	   } elsif ($noOfFanOuts == 0 ) { 
+                     print WRITE_SDC "set_output_delay 0 -clock $clock_name $port\n";
+	   } else {
+           foreach my $yy ( @fanIns ) {
+                   my $val = $PLACE{$TOP_MODULE}->dbPlaceGetSlackVal($yy,$InstNum);
+                   if ( $val > $maxdly ) { $maxdly = $val; }
+                                      }# foreach fanIns
+
+                   # print "$yy, $InstNum : $val\n";
+                     my $outdly = sprintf("%.2f",$clock_period - $maxdly);
+                     print WRITE_SDC "set_output_delay $outdly -clock clk $port\n";
+           }
+           }# foreach output port
+
+           foreach $port ( @outputPort ) {
+	   my $load = $PORTS_ALREADY{$moduleName}{$port}->dbPortGetLoad;
+	   print WRITE_SDC "set_load $load $port\n";
+	   }
+
+}# sub write_sdc
+
+sub read_sdc {
+
+my $noOfArguments = @_;
+my $DEBUG = 0;
+
+if( $noOfArguments < 2 || $_[0] eq '-h') {
+        print "Usage : read_sdc \n";
+        print "                             -sdc <sdc filename> \n";
+        print "                             <-debug>\n";
+}
+else { # if correct no. of inputs
+        print "INFO-TE-SDC : 001 : Begin reading the sdc !\n";
+        for(my $i = 0; $i < $noOfArguments; $i++){
+	if ($_[$i] eq "-sdc") { $SDC_FILE  = $_[$i+1] ; }
+        elsif($_[$i] eq "-debug"){$DEBUG = 1;}
+
+        } #for
+
+
+open (READ_SDC, "$SDC_FILE");
+
+while(<READ_SDC>) {
+my $clock_port;
+my $clock_name;
+my $clock_period;
+chomp();
+$_ =~ s/^\s+//; # removing any empty space in the begining of line
+
+##########################################################
+##########Reading clock parameters########################
+##########################################################
+if ($_ =~ /^\s*create_clock\s*/) { 
+	@line = split(/\s+/, $_);
+	my $words = @line;
+	for(my $i = 0; $i < $words; $i++){
+	if ($line[$i] eq "create_clock") { 
+		$clock_port = $line[$i+1];
+		$clock_name = $clock_port;
+		$PORTS_ALREADY{$moduleName}{$clock_port} -> dbPortSetSignal(CLOCK);
+	        $ClockDB{$clock_port}  = TimingClockDB::new();
+	    $ClockDB_hash{$clock_port} = $clock_port;
+	}
+	if ($line[$i] eq "-period") {
+	 	$clock_period = $line[$i+1] ;
+		$ClockDB{$clock_port}->dbClockSetClkP($clock_period);
+		$ClockDB{$clock_port}->dbClockSetClkName($clock_name) ;	
+		$ClockDB{$clock_port}->dbClockSetClkU(0.05);
+		$ClockDB{$clock_port}->dbClockSetLatency(0.01);
+	}	
+	if ($line[$i] eq "-name") { 
+		$clock_name = $line[$i+1];
+		$ClockDB{$clock_port}->dbClockSetClkName($clock_name) ;	
+	    $ClockDB_hash{$clock_name} = $clock_port;
+	}
+	} #end for
+		my @inputPort = $PLACE{$TOP_MODULE}->dbPlaceGetInPortList;
+           	foreach $port ( @inputPort ) {
+		$PORTS_ALREADY{$moduleName}{$port}->dbPortSetDrivingCell(BUFX1);
+		$PORTS_ALREADY{$moduleName}{$port}->dbPortSetClk($clock_name);
+		$PORTS_ALREADY{$moduleName}{$port}->dbPortSetDelay(0.1);
+		}
+
+		my @outputPort = $PLACE{$TOP_MODULE}->dbPlaceGetOutPortList;
+        	foreach $port ( @outputPort ) {
+		$PORTS_ALREADY{$moduleName}{$port}->dbPortSetLoad(0);
+		$PORTS_ALREADY{$moduleName}{$port}->dbPortSetClk($clock_name);
+		$PORTS_ALREADY{$moduleName}{$port}->dbPortSetDelay(0.1);
+		}
+
+}
+
+elsif ($_ =~ /^\s*set_clock_uncertainty\s*/) {
+	my $clku;
+	my @line = split(/\s+/, $_);
+	my $words = @line;
+	for(my $i = 0; $i < $words; $i++){
+	if ($line[$i] eq "set_clock_uncertainty") { $clku = $line[$i+1];}
+	if ($line[$i] =~ /get_clocks/) { 
+		$clock_name = $line[$i+1];
+		$clock_name =~ s/]//;
+		$clock_port = $ClockDB_hash{$clock_name};
+		$ClockDB{$clock_port}->dbClockSetClkU($clku);
+		}
+		
+
+	}#end for	
+}
+
+elsif ($_ =~ /^\s*set_clock_latency\s*/) {
+	my $latency;
+	my @line = split(/\s+/, $_);
+	my $words = @line;
+	for(my $i = 0; $i < $words; $i++){
+	if ($line[$i] eq "set_clock_latency") { $latency = $line[$i+1];}
+	if ($line[$i] =~ /get_clocks/) { 
+		$clock_name = $line[$i+1];
+		$clock_name =~ s/]//;
+		$clock_port = $ClockDB_hash{$clock_name};
+		$ClockDB{$clock_port}->dbClockSetLatency($latency);
+		}
+		
+
+	}#end for	
+}
+
+###############################################################
+############Reading ports definition###########################
+###############################################################
+elsif (($_ =~ /^\s*set_input_delay\s*/)||($_ =~ /^\s*set_output_delay\s*/)) {
+	my $delay;
+	my $port;
+	my $clock_name;
+	my @line = split(/\s+/, $_);
+	my $words = @line;
+	for(my $i = 0; $i < $words; $i++){
+	if ($line[$i] =~ /set_(in|out)put_delay/) {
+		$delay = $line[$i+1];
+		$i++;
+	}
+	elsif ($line[$i] eq "-clock") {
+		$clock_name =   $line[$i+1];
+		$port = $line[$i+2];
+		$i=$i+2;
+		$PORTS_ALREADY{$moduleName}{$port}->dbPortSetClk($clock_name);
+		$PORTS_ALREADY{$moduleName}{$port}->dbPortSetDelay($delay);
+	}
+	} #end for
+} #end elsif
+
+elsif (($_ =~ /^\s*set_load\s*/)) {
+	my $port;
+	my $load;
+	my @line = split(/\s+/, $_);
+	my $words = @line;
+	for(my $i = 0; $i < $words; $i++){
+	if ($line[$i] =~ /set_load/) {
+		$load = $line[$i+1];
+		$i++;
+	}
+	elsif ($line[$i] =~ /all_outputs/) {
+		my @outputPort = $PLACE{$TOP_MODULE}->dbPlaceGetOutPortList;
+           	foreach $port ( @outputPort ) {
+		$PORTS_ALREADY{$moduleName}{$port}->dbPortSetLoad($load);
+		}
+	}
+	else {
+		$port= $line[$i];
+		$PORTS_ALREADY{$moduleName}{$port}->dbPortSetLoad($load);
+	}
+	} #end for
+} #end elsif
+
+
+
+elsif (($_ =~ /^\s*set_input_transition\s*/)) {
+	my $port;
+	my $tran;
+	my @line = split(/\s+/, $_);
+	my $words = @line;
+	for(my $i = 0; $i < $words; $i++){
+	if ($line[$i] =~ /set_input_transition/) {
+		$tran = $line[$i+1];
+		$i++;
+	}
+	elsif ($line[$i] =~ /all_inputs/) {
+		my @inputPort = $PLACE{$TOP_MODULE}->dbPlaceGetInPortList;
+           	foreach $port ( @inputPort ) {
+		$PORTS_ALREADY{$moduleName}{$port}->dbPortSetTran($tran);
+		}
+	}
+	else {
+		$port= $line[$i];
+		$PORTS_ALREADY{$moduleName}{$port}->dbPortSetTran($tran);
+	}
+	} #end for
+} #end elsif
+
+elsif (($_ =~ /^\s*set_driving_cell\s*/)) {
+	my $port;
+	my $drcell;
+	my @line = split(/\s+/, $_);
+	my $words = @line;
+	for(my $i = 0; $i < $words; $i++){
+	if ($line[$i] =~ /set_driving_cell/) {
+		$drcell = $line[$i+1];
+		$i++;
+	}
+	elsif ($line[$i] =~ /all_inputs/) {
+		my @inputPort = $PLACE{$TOP_MODULE}->dbPlaceGetInPortList;
+           	foreach $port ( @inputPort ) {
+		$PORTS_ALREADY{$moduleName}{$port}->dbPortSetDrivingCell($drcell);
+		}
+	}
+	else {
+		$port= $line[$i];
+		$PORTS_ALREADY{$moduleName}{$port}->dbPortSetDrivingCell($drcell);
+	}
+	} #end for
+} #end elsif
+
+
+
+
+}#end of while
+print "INFO-TE-SDC : 002 : End reading the sdc !\n";
+
+} #if correct no of arguments
+}#sub read_sdc
+
+1;

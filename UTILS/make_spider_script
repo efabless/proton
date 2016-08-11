@@ -1,0 +1,209 @@
+
+sub write_config_file {
+my $noOfArguments = @_;
+print "INFO-UTS-WR_CONFG_FILE : 001 : no @_\n";
+if( $noOfArguments eq '-h' || $noOfArguments eq '-help' ) { 
+  print "Usage : write_config_file \n";
+  print "                  -path <pathName for files to search [default path is \".\"]> \n";
+  print "                  -fname <output file name [default name is \"config_file\"]> \n";
+  print "                  --all <all lef, def, verilog, lib, sdc, rtl files> \n";
+  print "                  --lef <all lef files> \n";
+  print "                  --def <all def files> \n";
+  print "                  --lib <all lib files> \n";
+  print "                  --v   <all v files> \n";
+  print "                  --sdc <all sdc files> \n";
+  print "                  --rtl <all rtl files> \n";
+  print "                  -top <TOP_MODULE name or CELL_NAME> \n";
+} else { # if correct no. of inputs
+
+  my $read_all = 0;
+  my $read_lef = 0;
+  my $read_def = 0;
+  my $read_lib = 0;
+  my $read_verilog = 0;
+  my $read_sdc = 0;
+  my $read_rtl = 0;
+  my $tp = 0;
+  my $config_file = "config_file";
+  my $pathName = ".";
+  my $top_module = "";
+  for(my $i = 0; $i <= $noOfArguments; $i++) {
+    if($_[$i] eq "-path")       { $pathName = $_[$i+1];}
+    if($_[$i] eq "-fname")      { $config_file = $_[$i+1]; }
+    if($_[$i] eq "--all")       { $read_all=1; $read_lef=1; $read_def=1; $read_lib=1; $read_verilog=1; $read_sdc=1; $read_rtl=1; }
+    if($_[$i] eq "--lef")       { $read_lef=1; }
+    if($_[$i] eq "--def")       { $read_def=1; }
+    if($_[$i] eq "--lib")       { $read_lib=1; }
+    if($_[$i] eq "--v")         { $read_verilog=1; }
+    if($_[$i] eq "--sdc")       { $read_sdc=1; }
+    if($_[$i] eq "--rtl")       { $read_rtl=1; }
+    if($_[$i] eq "-top")        { $top_module = $_[$i+1]; $tp=1; }
+  }
+   print "INFO-UTS-WR_CONFG_FILE : 002 : pathname $pathName\n";
+  open (WRITE, ">$config_file");
+    
+    if($read_all == 1 || $read_lef == 1){
+      my @leffiles = `find -L $pathName -name \\*\\.lef`;
+      #print "NAMES @leffiles\n";
+      foreach my $file(@leffiles){
+        print WRITE "LEF: $file";
+      }
+    }
+    if($read_all == 1 || $read_lib == 1){
+      my @libfiles = `find -L $pathName -name \\*\\.lib`;
+      #print "NAMES @libfiles\n";
+      foreach my $file(@libfiles){
+        print WRITE "LIB: $file";
+      }
+    }
+    if($read_all == 1 || $read_def == 1){
+      my @deffiles = `find -L $pathName -name \\*\\.def`;
+      #print "NAMES @deffiles\n";
+      foreach my $file(@deffiles){
+        print WRITE "DEF: $file";
+      }
+    }
+    if($read_all == 1 || $read_verilog == 1){
+      my @verilogfiles = `find -L $pathName -name \\*\\.v`;
+      #print "NAMES @verilogfiles\n";
+      foreach my $file(@verilogfiles){
+        open(READ, "$file");
+        my $skip_comment = 0;
+        my $read_rtl = 0;
+        while(<READ>){ 
+          chomp($_);
+          if ($_ =~ /\/\*(.*)\*\//){
+            $_ =~s/\/\*(.*)\*\///;
+          }
+          if (($skip_comment == 1) && ($_ !~ /\*\//)){
+            next;
+          }
+          if (($_ =~ /\/\*/) && ($_ !~ /\*\//) ){
+            $skip_comment = 1; 
+            $_ =~s/\/\*(.*)//;
+          }
+          if (($skip_comment == 1) && ($_ =~ /\*\//)){
+            $_ =~s/(.*)\*\///;
+            $skip_comment = 0;
+          }
+          if($_ =~ /\/\//){
+            $_ =~s/\/\/(.*)//;
+          }
+          if($_ =~ /^\s*always/){
+            print WRITE "RTL: $file";
+            $read_rtl = 1;
+            last;
+          }
+        }
+        close(READ);
+        if($read_rtl == 0){
+          print WRITE "NETLIST: $file";
+          next;
+        }
+      }
+    }
+    if($read_all == 1 || $read_verilog == 1){
+      my @verilogfiles = `find -L $pathName -name \\*\\.gv`;
+      #print "NAMES @verilogfiles\n";
+      foreach my $file(@verilogfiles){
+        open(READ, "$file");
+        my $skip_comment = 0;
+        my $read_rtl = 0;
+        while(<READ>){ 
+          chomp($_);
+          if ($_ =~ /\/\*(.*)\*\//){
+            $_ =~s/\/\*(.*)\*\///;
+          }
+          if (($skip_comment == 1) && ($_ !~ /\*\//)){
+            next;
+          }
+          if (($_ =~ /\/\*/) && ($_ !~ /\*\//) ){
+            $skip_comment = 1; 
+            $_ =~s/\/\*(.*)//;
+          }
+          if (($skip_comment == 1) && ($_ =~ /\*\//)){
+            $_ =~s/(.*)\*\///;
+            $skip_comment = 0;
+          }
+          if($_ =~ /\/\//){
+            $_ =~s/\/\/(.*)//;
+          }
+          if($_ =~ /^\s*always/){
+            print WRITE "RTL: $file";
+            $read_rtl = 1;
+            last;
+          }
+        }
+        close(READ);
+        if($read_rtl == 0){
+          print WRITE "NETLIST: $file";
+          next;
+        }
+      }
+    }
+    if($read_all == 1 || $read_verilog == 1){
+      my @verilogfiles = `find -L $pathName -name \\*\\.vg`;
+      #print "NAMES @verilogfiles\n";
+      foreach my $file(@verilogfiles){
+        open(READ, "$file");
+        my $skip_comment = 0;
+        my $read_rtl = 0;
+        while(<READ>){ 
+          chomp($_);
+          if ($_ =~ /\/\*(.*)\*\//){
+            $_ =~s/\/\*(.*)\*\///;
+          }
+          if (($skip_comment == 1) && ($_ !~ /\*\//)){
+            next;
+          }
+          if (($_ =~ /\/\*/) && ($_ !~ /\*\//) ){
+            $skip_comment = 1; 
+            $_ =~s/\/\*(.*)//;
+          }
+          if (($skip_comment == 1) && ($_ =~ /\*\//)){
+            $_ =~s/(.*)\*\///;
+            $skip_comment = 0;
+          }
+          if($_ =~ /\/\//){
+            $_ =~s/\/\/(.*)//;
+          }
+          if($_ =~ /^\s*always/){
+            print WRITE "RTL: $file";
+            $read_rtl = 1;
+            last;
+          }
+        }
+        close(READ);
+        if($read_rtl == 0){
+          print WRITE "NETLIST: $file";
+          next;
+        }
+      }
+    }
+    if($read_all == 1 || $read_sdc == 1){
+      my @sdcfiles = `find -L $pathName -name \\*\\.sdc`;
+      #print "NAMES @sdcfiles\n";
+      foreach my $file(@sdcfiles){
+        print WRITE "SDC: $file";
+      }
+    }
+    if($read_all == 1 || $read_rtl == 1){
+      my @rtlfiles = `find -L $pathName -name \\*\\.rtl`;
+      #print "NAMES @rtlfiles\n";
+      foreach my $file(@rtlfiles){
+        print WRITE "RTL: $file";
+      }
+    }
+    if($tp == 1){
+      if(defined $top_module){
+        print WRITE "TOP: $top_module";
+      }
+    }
+  close WRITE;
+
+  }#else
+}#sub write_config_file
+
+
+1;
+

@@ -1,0 +1,1688 @@
+
+sub activate_HierViewTab {
+$hier_canvas->CanvasFocus;
+$GLOBAL->dbGlobalSetActiveCanvas("hier_view");
+$hier_canvas->delete('all');
+&display_hierarchy;
+&show_proto_text($hier_canvas);
+&move_Instance_hierCanvas($hier_canvas);
+&resize_instance_hierCanvas($hier_canvas,"HIER_MOD");
+&escape_undo_hier_instance($hier_canvas);
+&createPopup_upHier_hierCanvas($hier_canvas);
+&createPopup_downHier_hierCanvas($hier_canvas);
+&createPopup_editMod_hierCanvas($hier_canvas);
+&createPopup_commitMod_hierCanvas($hier_canvas);
+&rectilinearCut_hierCanvas($hier_canvas);
+&create_popup_with_multipleChoice($hier_canvas);
+&call_display_pseudo_flyLines($hier_canvas);
+&addBind_for_pinPlaceInHierView($hier_canvas);
+}#sub activate_HierViewTab
+
+sub unplacedHashValueAsDecendingNum {
+   $UNPLACED_HINST_HEIGHT{$b} <=> $UNPLACED_HINST_HEIGHT{$a};
+}#sub unplacedHashValueAsDecendingNum
+
+sub display_hierarchy {
+&dbfTstGenUpdateDesignLib;
+my $box = [0, 0, 540, 540];
+@REDO_UNDO_ARRAY = ();
+print "Displaying the hierarchical view of the design\n";
+if(exists $PSEUDO_MODULE_ALREADY{$TOP_MODULE} ) {
+   print "$TOP_MODULE is the current top module\n";
+     my @size = $PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenGetSize;   
+     my $xMulFact = 500/($size[2] - $size[0]);
+     my $yMulFact = 500/($size[3] - $size[1]);
+   if($xMulFact < $yMulFact){
+      $MICRONFACTOR = $xMulFact;
+   }else {
+      $MICRONFACTOR = $yMulFact;
+   } 
+     $GLOBAL->dbGlobalSetMicronFactor($MICRONFACTOR);
+        $size[0] = 20 + $size[0]*$MICRONFACTOR;      
+        $size[1] = 20 + $size[1]*$MICRONFACTOR;      
+        $size[2] = 20 + $size[2]*$MICRONFACTOR;      
+        $size[3] = 20 + $size[3]*$MICRONFACTOR;      
+     print join ",", @size;
+     $hier_canvas->createRectangle($size[0]-20,$size[1]-20,$size[2]+20,$size[3]+20, -outline=>"black"); 
+     my $top_rect = $hier_canvas->createRectangle($size[0],$size[1],$size[2],$size[3],-width=>3,-outline=>"green"); 
+        $hier_canvas->itemconfigure($top_rect, -tags =>'HIER_TOP' );
+        $hier_canvas->addtag($TOP_MODULE , "withtag", $top_rect);
+     foreach my $instance ( keys %{$PSEUDO_VINST_ALREADY{$TOP_MODULE}} ) {
+       if($instance eq "PIN"){ 
+       }else{ 
+         my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$instance}->dbPimDBGetInstCellref;
+         my $class = $DLDB{$cellref}->dbDldbGetClass if(exists $DLDB{$cellref});
+         my $color = "red";
+         if($class == 0){$color = "orange";}# soft module 
+         elsif($class == 10){$color = "OliveDrab1"}#hard macro     
+         my @loc = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$instance}->dbPimDBGetInstRelBbox;
+         if((@loc == 0) || ($loc[0]==0 && $loc[1]==0 && $loc[2]==0 && $loc[3]==0)){  
+            $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$instance}->dbPimDBSetInstStatus("UNPLACED");
+         }#if location is (0,0,0,0)
+         my $status = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$instance}->dbPimDBGetInstStatus;
+         if($status eq "UNPLACED" || $status eq "UND"){
+            if($class == 9){ #if std cell
+            }else{
+               my @mod_bbox = &return_pseudo_vinst_size($TOP_MODULE,$instance);
+               my $mod_width = $mod_bbox[2] - $mod_bbox[0]; 
+               my $mod_height = $mod_bbox[3] - $mod_bbox[1]; 
+               $UNPLACED_HINST_WIDTH{$instance} = $mod_width;
+               $UNPLACED_HINST_HEIGHT{$instance} = $mod_height;
+            }
+         }else{
+            my @polygon_rect = ();
+            my @polygon_rect1 = ();
+            my $no_of_cord = @loc;
+            if($no_of_cord == 4){
+              push(@polygon_rect, $loc[0],$loc[1],$loc[2],$loc[1],$loc[2],$loc[3],$loc[0],$loc[3]);
+            }else{
+              @polygon_rect = @loc;
+            }
+            for(my $i=0; $i<=$#polygon_rect; $i++){
+              my $coordinates = 20 + $polygon_rect[$i]*$MICRONFACTOR;
+              push(@polygon_rect1,$coordinates);
+            }
+            my $inst_rect = $hier_canvas->createPolygon(@polygon_rect1, -outline=>$color, -fill=>$color, -stipple=>"gray12");
+            $hier_canvas->itemconfigure($inst_rect, -tags =>'HIER_MOD' );
+            $hier_canvas->addtag($instance , "withtag", $inst_rect);
+            #my $llx = 20 + $loc[0]*$MICRONFACTOR;
+            #my $lly = 20 + $loc[1]*$MICRONFACTOR;
+            #my $urx = 20 + $loc[2]*$MICRONFACTOR;
+            #my $ury = 20 + $loc[3]*$MICRONFACTOR;
+            #print "rect $llx,$lly,$urx,$ury\n";
+            #my $inst_rect = $hier_canvas->createRectangle($llx,$lly,$urx,$ury, -outline=>$color, -fill=>$color, -stipple=>"gray12");
+            #$hier_canvas->itemconfigure($inst_rect, -tags =>'HIER_MOD' );
+            #$hier_canvas->addtag($instance , "withtag", $inst_rect);
+
+            ##$hier_canvas->bind($instance, "<Enter>"=> sub{$hier_canvas->itemconfigure($instance, -outline=>'white')});
+            ##$hier_canvas->bind($instance, "<Leave>"=> sub{$hier_canvas->itemconfigure($instance, -outline=>$color);});
+         }
+       }#if instance is not PIN
+     }#for each instance
+my $startX = $size[2];
+my $startY = $size[1];
+my @MaxWidth = ();
+my @hinst = sort unplacedHashValueAsDecendingNum (keys(%UNPLACED_HINST_HEIGHT));
+foreach my $instance(@hinst){
+   if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$instance}){
+      my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$instance}->dbPimDBGetInstCellref;
+      my $class = $DLDB{$cellref}->dbDldbGetClass if(exists $DLDB{$cellref});
+      my $color = "red";
+      if($class == 0){$color = "orange";}# soft module 
+      elsif($class == 10){$color = "OliveDrab1"}#hard macro     
+      my @mod_bbox = &return_pseudo_vinst_size($TOP_MODULE,$instance);
+      my $mod_width = ($mod_bbox[2] - $mod_bbox[0])*$MICRONFACTOR; 
+      my $mod_height = ($mod_bbox[3] - $mod_bbox[1])*$MICRONFACTOR;
+      if($mod_height > ($size[3] - $startY)){ 
+         $startY = $size[1];
+         @MaxWidth = sort{$a<=>$b}@MaxWidth;
+         $startX = $startX + $MaxWidth[-1];
+         @MaxWidth = ();
+      }  
+      push(@MaxWidth,$mod_width);
+      my $llx = $startX; 
+      my $lly = $startY;
+      my $urx = $llx+$mod_width;
+      my $ury = $lly+$mod_height;
+      $startX = $llx;
+      $startY = $ury;
+      #my $inst_rect = $hier_canvas->createRectangle($llx,$lly,$urx,$ury, -outline=>$color, -fill=>$color, -stipple=>"gray12");
+      my $inst_rect = $hier_canvas->createPolygon($llx,$lly,$urx,$lly,$urx,$ury,$llx,$ury, -outline=>$color, -fill=>$color, -stipple=>"gray12");
+      $hier_canvas->itemconfigure($inst_rect, -tags =>'HIER_MOD' );
+      $hier_canvas->addtag($instance , "withtag", $inst_rect);
+
+      #$hier_canvas->bind($instance, "<Enter>"=> sub{$hier_canvas->itemconfigure($instance, -outline=>'white')});
+      #$hier_canvas->bind($instance, "<Leave>"=> sub{$hier_canvas->itemconfigure($instance, -outline=>$color);});
+
+   }
+}#foreach unplaced hier instance
+ 
+############################################# Net display ###########################################################
+if( $GLOBAL->dbGlobalGetHRouterStatus == 1){
+ my $dbu = $GLOBAL->dbfGlobalGetDBU;
+ foreach my $net (keys %{$PSEUDO_VNET_ALREADY{$TOP_MODULE}}) {
+   my @netCoords = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net}->dbaTstgenGetPseudoExtNetCoords;
+   foreach my $rect (@netCoords){
+      my @routeBox = @$rect;
+      my $layer = shift @routeBox;
+      if(exists $PTDB{$layer}){
+         my $W = $PTDB{$layer}->dbTechGetLayerWidth;
+         my $color = $PTDB{$layer}->dbTechGetLayerColor;
+
+         my $llx = 20 + ($routeBox[0] - $W/2)*$MICRONFACTOR;
+         my $lly = 20 + ($routeBox[1] - $W/2)*$MICRONFACTOR;
+         my $urx = 20 + ($routeBox[2] + $W/2)*$MICRONFACTOR;
+         my $ury = 20 + ($routeBox[3] + $W/2)*$MICRONFACTOR;
+         my $instNet = $hier_canvas->createRectangle($llx,$lly,$urx,$ury, -outline=>$color, -fill =>$color, -stipple => "gray12");
+         $hier_canvas->itemconfigure($instNet, -tags =>'HIER_ROUTING_NET' );
+         $hier_canvas->addtag($net , "withtag", $instNet);
+
+      }#if the metal layer exists in the technology
+   }#foreach rect
+ }#foreach net
+}else{
+ foreach my $net (keys %{$PSEUDO_VNET_ALREADY{$TOP_MODULE}}) {
+   my @wireCoords = ();
+   my $color = "";
+   my $width = 0;
+   my @coords = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net}->dbaTstgenGetPseudoNetCoords; 
+   my @extcoords = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net}->dbaTstgenGetPseudoExtNetCoords; 
+   my $type = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net}->dbaTstgenGetPseudoNetType;
+   my @source = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net}->dbaTstgenGetPseudoNetSourceFanInList;
+   for(my $i=0; $i<=$#coords; $i++){
+       my $coordInMicToGui = 20 + $coords[$i]*$MICRONFACTOR;
+       push(@wireCoords,$coordInMicToGui);
+   }
+   if($source[0] eq "'b0"){
+      if($#wireCoords >= 3){
+         my $instNet = $hier_canvas->createLine(@wireCoords,-fill=>"green", -arrow =>'last',-arrowshape =>[7, 0, 8],-width =>5,-tags=>$net);
+         $hier_canvas->itemconfigure($instNet, -tags =>'HIER_NET' );
+         $hier_canvas->addtag($net , "withtag", $instNet);
+      }
+   }elsif($source[0] eq "'b1"){ 
+      if($#wireCoords >= 3){
+         my $instNet = $hier_canvas->createLine(@wireCoords,-fill=>"red", -arrow =>'last',-arrowshape =>[10, 5, 5],-width =>5,-tags=>$net);
+         $hier_canvas->itemconfigure($instNet, -tags =>'HIER_NET' );
+         $hier_canvas->addtag($net , "withtag", $instNet);
+      }
+   }elsif($source[0] =~ m/^.*(\d+)'b.+$/){ 
+      if($#wireCoords >= 3){
+         my $instNet = $hier_canvas->createLine(@wireCoords,-fill=>"maroon4", -arrow =>'last',-arrowshape =>[10, 5, 5],-width =>5,-tags=>$net);
+         $hier_canvas->itemconfigure($instNet, -tags =>'HIER_NET' );
+         $hier_canvas->addtag($net , "withtag", $instNet);
+      }
+   }elsif($type eq "bump"){ 
+      if($#wireCoords == 3){
+         my $instNet = $hier_canvas->createOval(@wireCoords,-fill=>"pink", -outline=>'pink',-tags=>$net);
+         $hier_canvas->itemconfigure($instNet, -tags =>'HIER_NET' );
+         $hier_canvas->addtag($net , "withtag", $instNet);
+      }
+   }else{
+      if($type eq "bus"){$color = "blue";$width = 5;}
+      else {$color = "yellow";$width = 3;} 
+        if($#wireCoords >= 3){
+         my $instNet = $hier_canvas->createLine(@wireCoords,-fill=>$color, -arrow => 'last',-width => $width,-tags=>$net);
+         $hier_canvas->itemconfigure($instNet, -tags =>'HIER_NET' );
+         $hier_canvas->addtag($net , "withtag", $instNet);
+        }
+        if($#extcoords >= 0){
+           foreach my $rect (@extcoords){
+                my @extwireCoords = ();
+                my @wire_coords = @$rect;  
+                for(my $j=0; $j<=$#wire_coords; $j++){
+                    my $extcoordInMicToGui = 20 + $wire_coords[$j]*$MICRONFACTOR;
+                    push(@extwireCoords,$extcoordInMicToGui);
+                }
+                if($#extwireCoords >= 3){
+                  my $instNet = $hier_canvas->createLine(@extwireCoords,-fill=>$color, -arrow => 'last',-width => $width,-tags=>$net);
+                  $hier_canvas->itemconfigure($instNet, -tags =>'HIER_NET' );
+                  $hier_canvas->addtag($net , "withtag", $instNet);
+                }  
+            }
+        }#if extended wire found
+    }#if not power/ground
+  }#foreach net
+ }#else
+}# if top module exists
+
+$hier_canvas->viewArea(@$box, -border => 0);
+my @box_org = $hier_canvas->getView();
+&design_ZoomIn_ZoomOut($hier_canvas,\@box_org);
+}#sub display_hierarchy
+
+########################################################################################################
+################ subroutine to show Instances/Net Name in HierView via keyBind {t+ LMB} ################
+########################################################################################################
+sub show_proto_text {
+my $canvas = $_[0];
+   $canvas->CanvasBind("<t><1>"=> [sub {
+                                        #&resetCanvasBinding($hier_canvas);
+                                        my @xy = $canvas->eventLocation();
+                                        my $x = $xy[0];
+                                        my $y = $xy[1];
+                                        my @id      = $canvas->find(qw/withtag current/);
+                                        my @tagList = $canvas->gettags($id[0]);
+                                        my @coords = $canvas->coords($id[0]);
+                                   if($tagList[0] eq "HIER_NET"){
+                                      $canvas->createLine(@coords,-fill=>"purple",-tags=>"TEMP_TEXT",-width=>3,-arrow=>'last');
+                                   }else{ 
+                                      #$canvas->createRectangle(@coords,-outline=>"red",-tags=>"TEMP_TEXT");
+                                      my $fill_color = $canvas->itemcget($tagList[1],-fill);
+                                      my $stipple = $hier_canvas->itemcget($tagList[1],-stipple);
+                                      $canvas->createPolygon(@coords,-outline=>"red",-fill=>$fill_color,-stipple=>$stipple,-tags=>"TEMP_TEXT");
+                                   } 
+                                   $canvas->createText($x,$y, -text=>$tagList[1] ,-anchor=>"sw",-tags=>"TEMP_TEXT",-fill=>"white",-font=>"Times 12");
+                                   $canvas->CanvasBind("<B1-ButtonRelease>"=> [sub{$canvas->delete(TEMP_TEXT);}]);
+                         }]);
+}#sub show_prmto_text
+
+########################################################################################################
+############ subroutine to resize hierarical instances in hierview via keybind {r+ lmb} ################
+########################################################################################################
+#sub resize_instance_hierCanvas{
+#my $canvas = $_[0];
+#my $dx   = 0;
+#my $dy   = 0;
+#my $inst = "";
+#$canvas->CanvasFocus;
+#$canvas->CanvasBind('<r><1>', => sub{
+#               &dbfGuiResetCanvasBind;
+#               $inst = "";
+#               $dx = 0; $dy = 0;     
+#               my @xy = $canvas->eventLocation();
+#               my $x = $xy[0];
+#               my $y = $xy[1];
+#               my @id      = $canvas->find(qw/withtag current/);
+#               my @tagList = $canvas->gettags($id[0]);
+#               if($tagList[0] ne "HIER_MOD"){return;
+#               }else{
+#                  if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}){
+#                     my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstCellref;
+#                     my $class = $DLDB{$cellref}->dbDldbGetClass if(exists $DLDB{$cellref});
+#                     return if($class == 10);#if hardMacro
+#                     my @coords  = $canvas->coords($tagList[1]);
+#                     my $width   = $coords[2] - $coords[0];
+#                     my $height  = $coords[3] - $coords[1];
+#
+#                        if($x < $coords[0] + 0.3 * $width) {$dx =  1;}
+#                     elsif($x > $coords[2] - 0.3 * $width) {$dx = -1;}
+#                     else {$dx = 0;}
+#
+#                        if($y < $coords[1] + 0.3 * $height) {$dy =  1;}
+#                     elsif($y > $coords[3] - 0.3 * $height) {$dy = -1;}
+#                     else {$dy = 0;}
+#                     #$inst = $id[0];
+#                     if    ($dx == -1 && $dy ==  0){$canvas->configure(-cursor => 'right_side');
+#                     }elsif($dx ==  1 && $dy ==  0){$canvas->configure(-cursor => 'left_side');
+#                     }elsif($dx == -1 && $dy == -1){$canvas->configure(-cursor => 'top_right_corner');
+#                     }elsif($dx == -1 && $dy ==  1){$canvas->configure(-cursor => 'bottom_right_corner');
+#                     }elsif($dx ==  1 && $dy == -1){$canvas->configure(-cursor => 'top_left_corner');
+#                     }elsif($dx ==  1 && $dy ==  1){$canvas->configure(-cursor => 'bottom_left_corner');
+#                     }elsif($dx ==  0 && $dy == -1){$canvas->configure(-cursor => 'bottom_side');
+#                     }elsif($dx ==  0 && $dy ==  1){$canvas->configure(-cursor => 'top_side');
+#                     }else{$canvas->configure(-cursor => 'top_left_arrow');}
+#                     $inst = $tagList[1];
+#                     $canvas->createRectangle(@coords,
+#                                                   -outline => 'green',
+#                                                   -tags    => ['TEMP'],
+#                                                   );
+#                  }else{return;}
+#               }#if not TopModule
+#     });
+#$canvas->CanvasBind('<r><B1-Motion>' => sub {
+#                    my @xy = $canvas->eventLocation();
+#                    my $x = $xy[0];
+#                    my $y = $xy[1];
+#                        my @coords = $canvas->coords('TEMP');
+#                        if    ($dx ==  1) { $coords[0] = $x }
+#                        elsif ($dx == -1) { $coords[2] = $x }
+#                        else{}
+#
+#                        if    ($dy ==  1) { $coords[1] = $y }
+#                        elsif ($dy == -1) { $coords[3] = $y }
+#                        else{}
+#                        $canvas->coords('TEMP', @coords);
+#     });
+#$canvas->CanvasBind('<r><B1-ButtonRelease>' => sub {
+#        my @coords = $canvas->coords('TEMP');
+#        # Delete the rectangle.
+#        $canvas->delete('TEMP');
+#        $canvas->coords($inst => @coords);
+#        my @ll = dbfWGuiWGui2Micron($coords[0],$coords[1]);
+#        my @ur = dbfWGuiWGui2Micron($coords[2],$coords[3]);
+#        &setPseudoInstBox("-inst", $inst, "-bBox", "{$ll[0],$ll[1],$ur[0],$ur[1]}");
+#        #----------------updating specify table ---------------------------------------#
+#        my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$inst}->dbPimDBGetInstCellref;
+#        my @poly_coords = (@ll, @ur);
+#        &update_specifyTable_ifResizeOrMove_hierInst($inst, $cellref,\@poly_coords,"resize");
+#        #------------------------------------------------------------------------------#
+#        $canvas->configure(-cursor => 'top_left_arrow');
+#     });
+#}#sub resize_instance_hierCanvas
+
+sub resize_instance_hierCanvas{
+my $canvas = $_[0];
+my $pTag = $_[1];
+my $resizePossible = 0;
+my $instance = "";
+my $stretch_rect = "";
+my ($oldx, $oldy) = (0, 0);
+$canvas->CanvasFocus;
+$canvas->CanvasBind('<s><1>', => sub{
+               &dbfGuiResetCanvasBind;
+               $canvas->delete("BL","B","BR","R","TR","T","TL","L");
+               $instance = "";
+               $resizePossible = 0;
+               my @id      = $canvas->find(qw/withtag current/);
+               if(@id >= 1){
+                  my @tagList = $canvas->gettags($id[0]);
+                  $instance = $tagList[1];
+                  if($tagList[0] ne $pTag){return;
+                  }else{
+                     if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}){
+                        my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstCellref;
+                        my $class = $DLDB{$cellref}->dbDldbGetClass if(exists $DLDB{$cellref});
+                        return if($class == 10 || $class == 9);
+
+                        my @coords  = $canvas->coords($tagList[1]);
+                        my @x_coord_array = ();
+                        my @y_coord_array = ();
+                        for(my $i=0; $i<=$#coords; $i=$i+2){
+                            push(@x_coord_array, $coords[$i]);
+                            push(@y_coord_array, $coords[$i+1]);
+                        }
+                        @x_coord_array = sort{$a<=>$b}@x_coord_array; 
+                        @y_coord_array = sort{$a<=>$b}@y_coord_array;
+                        my $minx = $x_coord_array[0];
+                        my $miny = $y_coord_array[0];
+                        my $maxx = $x_coord_array[-1];
+                        my $maxy = $y_coord_array[-1];
+                        my $rect_ext = 4;
+                        if(($maxx-$minx) < 24 || ($maxy-$miny) < 24){
+                           $rect_ext = ($maxx-$minx)/6 if(($maxx-$minx) <= ($maxy-$miny));          
+                           $rect_ext = ($maxy-$miny)/6 if(($maxx-$minx) > ($maxy-$miny));          
+                        } 
+                        my $bl_rect = $canvas->createRectangle($minx-$rect_ext,$miny-$rect_ext,$minx+$rect_ext,$miny+$rect_ext, -fill=>'white',-outline=>'white');  
+                        $canvas->itemconfigure($bl_rect, -tags =>'STRETCH_RECT' );
+                        $canvas->addtag("BL" , "withtag", $bl_rect);
+                        $canvas->bind("BL","<Enter>"=> sub{$canvas->itemconfigure("BL",-fill=>'green')});
+                        $canvas->bind("BL","<Leave>"=> sub{ $canvas->itemconfigure("BL",-fill=>'white');});
+
+                        my $b_rect = $canvas->createRectangle(($minx+$maxx)/2-$rect_ext,$miny-$rect_ext,($minx+$maxx)/2+$rect_ext,$miny+$rect_ext, -fill=>'white',-outline=>'white'); 
+                        $canvas->itemconfigure($b_rect, -tags =>'STRETCH_RECT' );
+                        $canvas->addtag("B" , "withtag", $b_rect);
+                        $canvas->bind("B","<Enter>"=> sub{$canvas->itemconfigure("B",-fill=>'green')});
+                        $canvas->bind("B","<Leave>"=> sub{ $canvas->itemconfigure("B",-fill=>'white');});
+ 
+                        my $br_rect = $canvas->createRectangle($maxx-$rect_ext,$miny-$rect_ext,$maxx+$rect_ext,$miny+$rect_ext, -fill=>'white',-outline=>'white'); 
+                        $canvas->itemconfigure($br_rect, -tags =>'STRETCH_RECT' );
+                        $canvas->addtag("BR" , "withtag", $br_rect);
+                        $canvas->bind("BR","<Enter>"=> sub{$canvas->itemconfigure("BR",-fill=>'green')});
+                        $canvas->bind("BR","<Leave>"=> sub{ $canvas->itemconfigure("BR",-fill=>'white');});
+ 
+                        my $r_rect = $canvas->createRectangle($maxx-$rect_ext,($miny+$maxy)/2-$rect_ext,$maxx+$rect_ext,($miny+$maxy)/2+$rect_ext, -fill=>'white',-outline=>'white'); 
+                        $canvas->itemconfigure($r_rect, -tags =>'STRETCH_RECT' );
+                        $canvas->addtag("R" , "withtag", $r_rect);
+                        $canvas->bind("R","<Enter>"=> sub{$canvas->itemconfigure("R",-fill=>'green')});
+                        $canvas->bind("R","<Leave>"=> sub{ $canvas->itemconfigure("R",-fill=>'white');});
+ 
+                        my $tr_rect = $canvas->createRectangle($maxx-$rect_ext,$maxy-$rect_ext,$maxx+$rect_ext,$maxy+$rect_ext, -fill=>'white',-outline=>'white');  
+                        $canvas->itemconfigure($tr_rect, -tags =>'STRETCH_RECT' );
+                        $canvas->addtag("TR" , "withtag", $tr_rect);
+                        $canvas->bind("TR","<Enter>"=> sub{$canvas->itemconfigure("TR",-fill=>'green')});
+                        $canvas->bind("TR","<Leave>"=> sub{ $canvas->itemconfigure("TR",-fill=>'white');});
+
+                        my $t_rect = $canvas->createRectangle(($minx+$maxx)/2-$rect_ext,$maxy-$rect_ext,($minx+$maxx)/2+$rect_ext,$maxy+$rect_ext, -fill=>'white',-outline=>'white');  
+                        $canvas->itemconfigure($t_rect, -tags =>'STRETCH_RECT' );
+                        $canvas->addtag("T" , "withtag", $t_rect);
+                        $canvas->bind("T","<Enter>"=> sub{$canvas->itemconfigure("T",-fill=>'green')});
+                        $canvas->bind("T","<Leave>"=> sub{ $canvas->itemconfigure("T",-fill=>'white');});
+
+                        my $tl_rect = $canvas->createRectangle($minx-$rect_ext,$maxy-$rect_ext,$minx+$rect_ext,$maxy+$rect_ext, -fill=>'white',-outline=>'white');  
+                        $canvas->itemconfigure($tl_rect, -tags =>'STRETCH_RECT' );
+                        $canvas->addtag("TL" , "withtag", $tl_rect);
+                        $canvas->bind("TL","<Enter>"=> sub{$canvas->itemconfigure("TL",-fill=>'green')});
+                        $canvas->bind("TL","<Leave>"=> sub{ $canvas->itemconfigure("TL",-fill=>'white');});
+
+                        my $l_rect = $canvas->createRectangle($minx-$rect_ext,($miny+$maxy)/2-$rect_ext,$minx+$rect_ext,($miny+$maxy)/2+$rect_ext, -fill=>'white',-outline=>'white');  
+                        $canvas->itemconfigure($l_rect, -tags =>'STRETCH_RECT' );
+                        $canvas->addtag("L" , "withtag", $l_rect);
+                        $canvas->bind("L","<Enter>"=> sub{$canvas->itemconfigure("L",-fill=>'green')});
+                        $canvas->bind("L","<Leave>"=> sub{ $canvas->itemconfigure("L",-fill=>'white');});
+                        $resizePossible = 1;
+                     }#if exists in pseudo db
+                  }#if hier instance found
+               }#if id found
+     });
+
+$canvas->CanvasBind('<r><1>' => sub{
+            if($resizePossible == 1){
+               my @xy = $canvas->eventLocation();
+               my $x = $xy[0];
+               my $y = $xy[1];
+               $stretch_rect = "";
+               my @id      = $canvas->find(qw/withtag current/);
+               if(@id >= 1 ) {
+                 my @tagList = $canvas->gettags($id[0]);
+                 $stretch_rect = $tagList[1];
+               }
+               $oldx = $x;
+               $oldy = $y;
+             }#if resize possible
+     });
+$canvas->CanvasBind('<r><B1-Motion>' => sub {
+            if($resizePossible == 1 && $stretch_rect ne ""){
+               my @xy = $canvas->eventLocation();
+               my $x = $xy[0];
+               my $y = $xy[1];
+               my @coords = $canvas->coords($instance);
+               my @x_coord_array = ();   
+               my @y_coord_array = ();   
+               my $x_diff = $x-$oldx;
+               my $y_diff = $y-$oldy;
+               for(my $i=0; $i<=$#coords; $i=$i+2){
+                   push(@x_coord_array, $coords[$i]);
+                   push(@y_coord_array, $coords[$i+1]);
+               }
+               @x_coord_array = sort{$a<=>$b}@x_coord_array; 
+               @y_coord_array = sort{$a<=>$b}@y_coord_array;
+               my $minx = $x_coord_array[0];
+               my $miny = $y_coord_array[0];
+               my $maxx = $x_coord_array[-1];
+               my $maxy = $y_coord_array[-1];
+               my $width = $maxx - $minx; 
+               my $height = $maxy - $miny; 
+#########################################
+               if($stretch_rect eq "T"){
+                  my @opp_coords = $canvas->coords("B");
+                  if($y <= $opp_coords[3]){return}
+                  my $mid_point = ($opp_coords[1]+$opp_coords[3])/2;
+                  my @moving_st_rect = ("T","TL","TR","L","R");
+                  my $new_height = $height+$y_diff;
+                  for(my $i=0; $i<=$#coords; $i=$i+2){
+                      if($mid_point == $coords[$i+1]){
+                      }else{
+                         $coords[$i+1] = $miny + ($coords[$i+1] -$miny)*$new_height/$height;
+                      }
+                    }
+                    foreach my $st_rect (@moving_st_rect){
+                       my @st_rect_coords = $canvas->coords($st_rect);
+                       my $move = ($miny+(($st_rect_coords[1]+$st_rect_coords[3])/2 -$miny)*$new_height/$height)-($st_rect_coords[1]+$st_rect_coords[3])/2;
+                       $canvas->move("$st_rect" => 0, $move);
+                    }
+                    $canvas->coords($instance => @coords);
+                    $oldx = $x;
+                    $oldy = $y;
+               }elsif($stretch_rect eq "R"){
+                  my @opp_coords = $canvas->coords("L");
+                  if($x <= $opp_coords[2]){return}
+                  my $mid_point = ($opp_coords[0]+$opp_coords[2])/2;
+                  my @moving_st_rect = ("T","TR","R","BR","B");
+                  my $new_width = $width+$x_diff;
+                  for(my $i=0; $i<=$#coords; $i=$i+2){
+                      if($mid_point == $coords[$i]){
+                      }else{
+                         $coords[$i] = $minx + ($coords[$i] -$minx)*$new_width/$width;
+                      }
+                    }
+                    foreach my $st_rect (@moving_st_rect){
+                       my @st_rect_coords = $canvas->coords($st_rect);
+                       my $move = ($minx+(($st_rect_coords[0]+$st_rect_coords[2])/2 -$minx)*$new_width/$width)-($st_rect_coords[0]+$st_rect_coords[2])/2;
+                       $canvas->move("$st_rect" => $move,0);
+                    }
+                    $canvas->coords($instance => @coords);
+                    $oldx = $x;
+                    $oldy = $y;
+               }elsif($stretch_rect eq "B"){
+                  my @opp_coords = $canvas->coords("T");
+                  if($y >= $opp_coords[1]){return}
+                  my $mid_point = ($opp_coords[1]+$opp_coords[3])/2;
+                  my @moving_st_rect = ("B","BL","BR","L","R");
+                  my $new_height = $height-$y_diff;
+                  for(my $i=0; $i<=$#coords; $i=$i+2){
+                      if($mid_point == $coords[$i+1]){
+                      }else{
+                         $coords[$i+1] = $maxy - ($maxy-$coords[$i+1])*$new_height/$height;
+                      }
+                    }
+                    foreach my $st_rect (@moving_st_rect){
+                       my @st_rect_coords = $canvas->coords($st_rect);
+                       my $move = ($maxy-($maxy-($st_rect_coords[1]+$st_rect_coords[3])/2)*$new_height/$height)-($st_rect_coords[1]+$st_rect_coords[3])/2;
+                       $canvas->move("$st_rect" => 0, $move);
+                    }
+                    $canvas->coords($instance => @coords);
+                    $oldx = $x;
+                    $oldy = $y;
+               }elsif($stretch_rect eq "L"){
+                  my @opp_coords = $canvas->coords("R");
+                  if($x >= $opp_coords[0]){return}
+                  my $mid_point = ($opp_coords[1]+$opp_coords[3])/2;
+                  my @moving_st_rect = ("BL","B","T","TL","L");
+                  my $new_width = $width-$x_diff;
+                  for(my $i=0; $i<=$#coords; $i=$i+2){
+                      if($mid_point == $coords[$i]){
+                      }else{
+                         $coords[$i] = $maxx - ($maxx-$coords[$i])*$new_width/$width;
+                      }
+                    }
+                    foreach my $st_rect (@moving_st_rect){
+                       my @st_rect_coords = $canvas->coords($st_rect);
+                       my $move = ($maxx-($maxx-($st_rect_coords[0]+$st_rect_coords[2])/2)*$new_width/$width)-($st_rect_coords[0]+$st_rect_coords[2])/2;
+                       $canvas->move("$st_rect" => $move,0);
+                    }
+                    $canvas->coords($instance => @coords);
+                    $oldx = $x;
+                    $oldy = $y;
+               }elsif($stretch_rect eq "TL"){
+                  my @opp_coords = $canvas->coords("BR");
+                  if($x >= $opp_coords[0] || $y <= $opp_coords[3]){return}
+                  my $mid_x = ($opp_coords[0]+$opp_coords[2])/2;
+                  my $mid_y = ($opp_coords[1]+$opp_coords[3])/2;
+                  my @moving_st_rect = ("B", "BL", "L", "TL", "T", "TR", "R");
+                  my $new_width = $width-$x_diff;
+                  my $new_height = $height+$y_diff;
+                  for(my $i=0; $i<=$#coords; $i=$i+2){
+                      if($mid_x == $coords[$i] && $mid_y == $coords[$i+1]){
+                      }else{
+                         $coords[$i] = $maxx - ($maxx-$coords[$i])*$new_width/$width;
+                         $coords[$i+1] = $miny + ($coords[$i+1] -$miny)*$new_height/$height;
+                      }
+                    }
+                    foreach my $st_rect (@moving_st_rect){
+                       my @st_rect_coords = $canvas->coords($st_rect);
+                       my $move_x = ($maxx-($maxx-($st_rect_coords[0]+$st_rect_coords[2])/2)*$new_width/$width)-($st_rect_coords[0]+$st_rect_coords[2])/2;
+                       my $move_y = ($miny+(($st_rect_coords[1]+$st_rect_coords[3])/2 -$miny)*$new_height/$height)-($st_rect_coords[1]+$st_rect_coords[3])/2;
+                       $canvas->move("$st_rect" => $move_x, $move_y);
+                    }
+                    $canvas->coords($instance => @coords);
+                    $oldx = $x;
+                    $oldy = $y;
+               }elsif($stretch_rect eq "TR"){
+                  my @opp_coords = $canvas->coords("BL");
+                  if($x <= $opp_coords[2] || $y <= $opp_coords[3]){return}
+                  my $mid_x = ($opp_coords[0]+$opp_coords[2])/2;
+                  my $mid_y = ($opp_coords[1]+$opp_coords[3])/2;
+                  my @moving_st_rect = ("B", "BR", "R", "TR", "T", "TL", "L");
+                  my $new_width = $width+$x_diff;
+                  my $new_height = $height+$y_diff;
+                  for(my $i=0; $i<=$#coords; $i=$i+2){
+                      if($mid_x == $coords[$i] && $mid_y == $coords[$i+1]){
+                      }else{
+                         $coords[$i] = $minx + ($coords[$i] - $minx)*$new_width/$width;
+                         $coords[$i+1] = $miny + ($coords[$i+1] -$miny)*$new_height/$height;
+                      }
+                    }
+                    foreach my $st_rect (@moving_st_rect){
+                       my @st_rect_coords = $canvas->coords($st_rect);
+                       my $move_x = ($minx+(($st_rect_coords[0]+$st_rect_coords[2])/2 -$minx)*$new_width/$width)-($st_rect_coords[0]+$st_rect_coords[2])/2;
+                       my $move_y = ($miny+(($st_rect_coords[1]+$st_rect_coords[3])/2 -$miny)*$new_height/$height)-($st_rect_coords[1]+$st_rect_coords[3])/2;
+                       $canvas->move("$st_rect" => $move_x, $move_y);
+                    }
+                    $canvas->coords($instance => @coords);
+                    $oldx = $x;
+                    $oldy = $y;
+               }elsif($stretch_rect eq "BL"){
+                  my @opp_coords = $canvas->coords("TR");
+                  if($x >= $opp_coords[0] || $y >= $opp_coords[1]){return}
+                  my $mid_x = ($opp_coords[0]+$opp_coords[2])/2;
+                  my $mid_y = ($opp_coords[1]+$opp_coords[3])/2;
+                  my @moving_st_rect = ("B", "BL", "L", "TL", "T", "BR", "R");
+                  my $new_width = $width-$x_diff;
+                  my $new_height = $height-$y_diff;
+                  for(my $i=0; $i<=$#coords; $i=$i+2){
+                      if($mid_x == $coords[$i] && $mid_y == $coords[$i+1]){
+                      }else{
+                         $coords[$i] = $maxx - ($maxx-$coords[$i])*$new_width/$width;
+                         $coords[$i+1] = $maxy - ($maxy-$coords[$i+1])*$new_height/$height;
+                      }
+                    }
+                    foreach my $st_rect (@moving_st_rect){
+                       my @st_rect_coords = $canvas->coords($st_rect);
+                       my $move_x = ($maxx-($maxx-($st_rect_coords[0]+$st_rect_coords[2])/2)*$new_width/$width)-($st_rect_coords[0]+$st_rect_coords[2])/2;
+                       my $move_y = ($maxy-($maxy-($st_rect_coords[1]+$st_rect_coords[3])/2)*$new_height/$height)-($st_rect_coords[1]+$st_rect_coords[3])/2;
+                       $canvas->move("$st_rect" => $move_x, $move_y);
+                    }
+                    $canvas->coords($instance => @coords);
+                    $oldx = $x;
+                    $oldy = $y;
+               }elsif($stretch_rect eq "BR"){
+                  my @opp_coords = $canvas->coords("TL");
+                  if($x <= $opp_coords[2] || $y >= $opp_coords[1]){return}
+                  my $mid_x = ($opp_coords[0]+$opp_coords[2])/2;
+                  my $mid_y = ($opp_coords[1]+$opp_coords[3])/2;
+                  my @moving_st_rect = ("B", "BL", "L", "TR", "T", "BR", "R");
+                  my $new_width = $width+$x_diff;
+                  my $new_height = $height-$y_diff;
+                  for(my $i=0; $i<=$#coords; $i=$i+2){
+                      if($mid_x == $coords[$i] && $mid_y == $coords[$i+1]){
+                      }else{
+                         $coords[$i] = $minx + ($coords[$i] - $minx)*$new_width/$width;
+                         $coords[$i+1] = $maxy - ($maxy-$coords[$i+1])*$new_height/$height;
+                      }
+                    }
+                    foreach my $st_rect (@moving_st_rect){
+                       my @st_rect_coords = $canvas->coords($st_rect);
+                       my $move_x = ($minx+(($st_rect_coords[0]+$st_rect_coords[2])/2 -$minx)*$new_width/$width)-($st_rect_coords[0]+$st_rect_coords[2])/2;
+                       my $move_y = ($maxy-($maxy-($st_rect_coords[1]+$st_rect_coords[3])/2)*$new_height/$height)-($st_rect_coords[1]+$st_rect_coords[3])/2;
+                       $canvas->move("$st_rect" => $move_x, $move_y);
+                    }
+                    $canvas->coords($instance => @coords);
+                    $oldx = $x;
+                    $oldy = $y;
+               }else{}             
+            }#if resize possible 
+     });
+$canvas->CanvasBind('<r><B1-ButtonRelease>' => sub {
+            if($resizePossible == 1 && $stretch_rect ne ""){
+               my @coords = $canvas->coords($instance);
+               my @x_coords = ();
+               my @y_coords = ();
+               for(my $i=0; $i<=$#coords; $i=$i+2){
+                   push(@x_coords, $coords[$i]);
+                   push(@y_coords, $coords[$i+1]);
+               }
+               @x_coords = sort{$a<=>$b}@x_coords;
+               @y_coords = sort{$a<=>$b}@y_coords;
+               my @ll = dbfWGuiWGui2Micron($x_coords[0],$y_coords[0]);
+               my @ur = dbfWGuiWGui2Micron($x_coords[-1],$y_coords[-1]);
+               &setPseudoInstBox("-inst", $instance, "-bBox", "{$ll[0],$ll[1],$ur[0],$ur[1]}");
+               #----------------updating specify table ---------------------------------------#
+               my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$instance}->dbPimDBGetInstCellref;
+               my @poly_coords = (@ll, @ur);
+               &update_specifyTable_ifResizeOrMove_hierInst($instance, $cellref,\@poly_coords,"resize");
+             }
+     });
+$canvas->CanvasBind('<r><Escape>' => sub {
+              $canvas->delete("BL","B","BR","R","TR","T","TL","L")
+     });
+
+}#sub resize_instance_hierCanvas
+########################################################################################################
+########## subroutine to make rectilinear cuts in hierarical Instances via keyBind {c+ LMB} ############
+########################################################################################################
+#sub rectilinearCut_hierCanvas{
+#my $canvas = $_[0];
+#
+#my @MODCOORDS = ();
+#my @tempcoords = ();
+#my @newCoords = ();
+#
+#my $setRectCut = 0;
+#my $inst = "";
+#my $rect;
+#my $startX = 0;
+#my $startY = 0;
+#my $canx = 0;
+#my $cany = 0;
+#$canvas->CanvasBind('<c><1>' => sub {
+#                 my @xy = $canvas->eventLocation();
+#                 my $x = $xy[0];
+#                 my $y = $xy[1];
+#                 $canx = $xy[0];
+#                 $cany = $xy[1];
+#                 my @id      = $canvas->find(qw/withtag current/);
+#                 my @tagList = $canvas->gettags($id[-1]);
+#                 $inst = $tagList[1]; 
+#                 @MODCOORDS  = $canvas->coords($id[-1]);
+#                 $startX = 0; $startY = 0;
+#                 $setRectCut = 0;
+#                 my $final;
+#                 if($tagList[0] eq "HIER_MOD"){
+#                   if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}){
+#                       my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstCellref;
+#                       my $class = $DLDB{$cellref}->dbDldbGetClass if(exists $DLDB{$cellref});
+#                       return if($class == 10);#if hardMacro
+#                    if($#MODCOORDS == 3){
+#                       @MODCOORDS = ($MODCOORDS[0],$MODCOORDS[1],$MODCOORDS[0],$MODCOORDS[3],$MODCOORDS[2],$MODCOORDS[3],$MODCOORDS[2],$MODCOORDS[1]);
+#                    }
+#                    for(my $i=0; $i<=$#MODCOORDS; $i=$i+2){
+#                        if($i == ($#MODCOORDS -1)){$final = $MODCOORDS[0];
+#                        }else {$final = $MODCOORDS[$i+2];}      
+#                        if((($x - $MODCOORDS[$i])<=5 && ($x - $MODCOORDS[$i])>=1) && (($MODCOORDS[$i+1]-$y)<=5 && ($MODCOORDS[$i+1]-$y)>=1)){
+#                            $canvas->configure(-cursor => 'top_left_corner');
+#                            $setRectCut = 1;
+#                            $startX = $MODCOORDS[$i]; $startY = $MODCOORDS[$i+1]; 
+#                        }elsif((($MODCOORDS[$i] -$x)<=5 && ($MODCOORDS[$i] -$x)>=1)&& (($MODCOORDS[$i+1]-$y)<=5 && ($MODCOORDS[$i+1]-$y)>=1)){
+#                            $canvas->configure(-cursor => 'top_right_corner');
+#                            $setRectCut = 1;
+#                            $startX = $MODCOORDS[$i]; $startY = $MODCOORDS[$i+1]; 
+#                        }elsif((($x - $MODCOORDS[$i])<=5 && ($x - $MODCOORDS[$i])>=1) && (($y -$MODCOORDS[$i+1])<=5 && ($y -$MODCOORDS[$i+1])>=1)){
+#                           $canvas->configure(-cursor => 'bottom_left_corner');
+#                            $setRectCut = 1;
+#                            $startX = $MODCOORDS[$i]; $startY = $MODCOORDS[$i+1]; 
+#                        }elsif((($MODCOORDS[$i]-$x)<=5 && ($MODCOORDS[$i]-$x)>=1) && (($y-$MODCOORDS[$i+1])<=5 && ($y-$MODCOORDS[$i+1])>=1)){
+#                            $canvas->configure(-cursor => 'bottom_right_corner');
+#                            $setRectCut = 1;
+#                            $startX = $MODCOORDS[$i]; $startY = $MODCOORDS[$i+1]; 
+#                        }elsif((($x - $MODCOORDS[$i])<=5 && ($x - $MODCOORDS[$i])>=1) && (($y - $MODCOORDS[$i+1])>5 && ($MODCOORDS[$i+3]-$y)>5)){
+#                            $canvas->configure(-cursor => 'left_side');
+#                            $setRectCut = 1;
+#                            $startX = $MODCOORDS[$i]; $startY = $y; 
+#                        }elsif((($MODCOORDS[$i]-$x)<=5 && ($MODCOORDS[$i]-$x)>=1) && (($MODCOORDS[$i+1]-$y)>5 && ($y - $MODCOORDS[$i+3])>5)){
+#                            $canvas->configure(-cursor => 'right_side');
+#                            $setRectCut = 1;
+#                            $startX = $MODCOORDS[$i]; $startY = $y; 
+#                        }elsif((($y - $MODCOORDS[$i+1])<=5 && ($y - $MODCOORDS[$i+1])>=1) && (($x - $final)>5 && ($MODCOORDS[$i]-$x)>5)){
+#                            $canvas->configure(-cursor => 'bottom_side');
+#                            $setRectCut = 1;
+#                            $startX = $x; $startY = $MODCOORDS[$i+1]; 
+#                        }elsif((($MODCOORDS[$i+1]-$y)<=5 && ($MODCOORDS[$i+1]-$y)>=1) && (($x - $MODCOORDS[$i])>5 && ($MODCOORDS[$i+2]-$x)>5)){
+#                            $canvas->configure(-cursor => 'top_side');
+#                            $setRectCut = 1;
+#                            $startX = $x; $startY = $MODCOORDS[$i+1]; 
+#                        }else{} 
+#                     }      
+#                     if($setRectCut == 1){
+#                        @tempcoords = ($startX, $startY, $startX, $startY);  
+#                        $rect= $canvas->createRectangle(@tempcoords,
+#                                                        -outline => 'green',
+#                                                        -tags    => ['TEMP'],
+#                                                         );
+#                     }else{return;$canvas->configure(-cursor => 'top_left_arrow');}
+#                    }#if exists in VINST DB
+#                 }else{return;$canvas->configure(-cursor => 'top_left_arrow');}     
+#});
+#
+#$canvas->CanvasBind('<c><B1-Motion>' => sub {
+#         if($setRectCut == 1){
+#            my @xy = $canvas->eventLocation();
+#            my $x = $xy[0];
+#            my $y = $xy[1];
+#            my $overlapllx = $x - 1 ;
+#            my $overlaplly = $y - 1 ;
+#            my $overlapurx = $x + 1 ;
+#            my $overlapury = $y + 1 ;
+#            my @id = $canvas->find("overlapping", $overlapllx, $overlaplly, $overlapurx, $overlapury);
+#            my @tagList = $canvas->gettags($id[0]);
+#            if($tagList[1] ne $inst){
+#               $canvas->configure(-cursor => 'top_left_arrow');
+#               $canvas->delete('TEMP');
+#               $setRectCut = 0;
+#               return;
+#            }else{
+#               @tempcoords[2,3] = ($x,$y);
+#               $canvas->coords($rect => @tempcoords);
+#            }
+#         }else{return;}
+#});
+#
+#$canvas->CanvasBind('<c><B1-ButtonRelease>' => sub {
+#         if($setRectCut == 1){
+#           my $x = $canx; my $y = $cany;
+#           my $final; 
+#           if($tempcoords[1] >= $tempcoords[3]){
+#              my $tval= $tempcoords[1];
+#              $tempcoords[1] = $tempcoords[3];
+#              $tempcoords[3] = $tval;
+#           }
+#           if($tempcoords[0] >= $tempcoords[2]){
+#              my $tval= $tempcoords[0];
+#              $tempcoords[0] = $tempcoords[2];
+#              $tempcoords[2] = $tval;
+#           }
+#           
+#           for(my $i=0; $i<=$#MODCOORDS; $i=$i+2){
+#
+#               if($i == ($#MODCOORDS -1)){$final = $MODCOORDS[0];
+#               }else {$final = $MODCOORDS[$i+2];}
+#      
+#               if((($x - $MODCOORDS[$i])<=5 && ($x - $MODCOORDS[$i])>=1) && (($MODCOORDS[$i+1]-$y)<=5 && ($MODCOORDS[$i+1]-$y)>=1)){
+#                  push(@newCoords,$tempcoords[0],$tempcoords[1],$tempcoords[2],$tempcoords[1],$tempcoords[2],$tempcoords[3]);
+#               }elsif((($MODCOORDS[$i] -$x)<=5 && ($MODCOORDS[$i] -$x)>=1)&& (($MODCOORDS[$i+1]-$y)<=5 && ($MODCOORDS[$i+1]-$y)>=1)){
+#                  push(@newCoords,$tempcoords[0],$tempcoords[3],$tempcoords[0],$tempcoords[1],$tempcoords[2],$tempcoords[1]);
+#               }elsif((($x - $MODCOORDS[$i])<=5 && ($x - $MODCOORDS[$i])>=1) && (($y -$MODCOORDS[$i+1])<=5 && ($y -$MODCOORDS[$i+1])>=1)){
+#                  push(@newCoords,$tempcoords[2],$tempcoords[1],$tempcoords[2],$tempcoords[3],$tempcoords[0],$tempcoords[3]);
+#               }elsif((($MODCOORDS[$i]-$x)<=5 && ($MODCOORDS[$i]-$x)>=1) && (($y-$MODCOORDS[$i+1])<=5 && ($y-$MODCOORDS[$i+1])>=1)){
+#                  push(@newCoords,$tempcoords[2],$tempcoords[3],$tempcoords[0],$tempcoords[3],$tempcoords[0],$tempcoords[1]);
+#               }elsif((($x - $MODCOORDS[$i])<=5 && ($x - $MODCOORDS[$i])>=1) && (($y - $MODCOORDS[$i+1])>5 && ($MODCOORDS[$i+3]-$y)>5)){
+#                  push(@newCoords,$MODCOORDS[$i],$MODCOORDS[$i+1]);
+#                  push(@newCoords,$tempcoords[0],$tempcoords[1],$tempcoords[2],$tempcoords[1],$tempcoords[2],$tempcoords[3],$tempcoords[0],$tempcoords[3]);
+#               }elsif((($MODCOORDS[$i]-$x)<=5 && ($MODCOORDS[$i]-$x)>=1) && (($MODCOORDS[$i+1]-$y)>5 && ($y - $MODCOORDS[$i+3])>5)){
+#                  push(@newCoords,$MODCOORDS[$i],$MODCOORDS[$i+1]);
+#                  push(@newCoords,$tempcoords[2],$tempcoords[3],$tempcoords[0],$tempcoords[3],$tempcoords[0],$tempcoords[1],$tempcoords[2],$tempcoords[1]);
+#               }elsif((($y - $MODCOORDS[$i+1])<=5 && ($y - $MODCOORDS[$i+1])>=1) && (($x - $final)>5 && ($MODCOORDS[$i]-$x)>5)){
+#                  push(@newCoords,$MODCOORDS[$i],$MODCOORDS[$i+1]);
+#                  push(@newCoords,$tempcoords[2],$tempcoords[1],$tempcoords[2],$tempcoords[3],$tempcoords[0],$tempcoords[3],$tempcoords[0],$tempcoords[1]);
+#               }elsif((($MODCOORDS[$i+1]-$y)<=5 && ($MODCOORDS[$i+1]-$y)>=1) && (($x - $MODCOORDS[$i])>5 && ($MODCOORDS[$i+2]-$x)>5)){
+#                  push(@newCoords,$MODCOORDS[$i],$MODCOORDS[$i+1]);
+#                  push(@newCoords,$tempcoords[0],$tempcoords[3],$tempcoords[0],$tempcoords[1],$tempcoords[2],$tempcoords[1],$tempcoords[2],$tempcoords[3]);
+#               }else{push(@newCoords, $MODCOORDS[$i],$MODCOORDS[$i+1]);} 
+#           }#for      
+#          # Delete the rectangle.
+#           $canvas->configure(-cursor => 'top_left_arrow');
+#           $canvas->delete('TEMP');
+#           my $fill_color = $canvas->itemcget($inst, -fill);
+#           my $outline_color = $canvas->itemcget($inst, -outline);
+#           $canvas->delete($inst);
+#           my $inst_rect = $canvas->createPolygon(@newCoords, -outline=>$outline_color, -fill=>$fill_color, -stipple=>"gray12");
+#           $canvas->itemconfigure($inst_rect, -tags =>'HIER_MOD' );
+#           $canvas->addtag($inst , "withtag", $inst_rect);
+#
+#           @newCoords = (); 
+#           @tempcoords = ();
+#           @MODCOORDS = ();
+#           $setRectCut = 0;
+#         }else{return;}
+#    });
+#
+#}#sub rectilinearCut_hierCanvas
+
+sub rectilinearCut_hierCanvas{
+my $canvas = $_[0];
+
+my @MODCOORDS = ();
+my @tempcoords = ();
+my @newCoords = ();
+
+my $setRectCut = 0;
+my $inst = "";
+my $rect;
+my $startX = 0;
+my $startY = 0;
+my $canx = 0;
+my $cany = 0;
+my $x_margin = 0;
+my $y_margin = 0;
+$canvas->CanvasBind('<c><1>' => sub {
+                 my @xy = $canvas->eventLocation();
+                 my $x = $xy[0];
+                 my $y = $xy[1];
+                 $canx = $xy[0];
+                 $cany = $xy[1];
+                 my @id      = $canvas->find(qw/withtag current/);
+                 if(@id >=1 ){
+                    my @tagList = $canvas->gettags($id[-1]);
+                    $inst = $tagList[1]; 
+                    @MODCOORDS  = $canvas->coords($id[-1]);
+                    $startX = 0; $startY = 0;
+                    $setRectCut = 0;
+                    my @x_coords = ();  
+                    my @y_coords = ();  
+                    $x_margin = 0;   
+                    $y_margin = 0;   
+                    my $final;
+
+                    if($tagList[0] eq "HIER_MOD"){
+                       if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}){
+                          my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstCellref;
+                          my $class = $DLDB{$cellref}->dbDldbGetClass if(exists $DLDB{$cellref});
+                          return if($class == 10);#if hardMacro
+
+                          for(my $xx=0; $xx<=$#MODCOORDS; $xx=$xx+2){
+                              push(@x_coords, $MODCOORDS[$xx]);               
+                              push(@y_coords, $MODCOORDS[$xx+1]);
+                          }                   
+                          @x_coords = sort{$a<=>$b}@x_coords;
+                          @y_coords = sort{$a<=>$b}@y_coords;
+                          $x_margin = ($x_coords[-1] - $x_coords[0])/15;
+                          $y_margin = ($x_coords[-1] - $x_coords[0])/15;
+
+                          if($#MODCOORDS == 3){
+                             @MODCOORDS = ($MODCOORDS[0],$MODCOORDS[1],$MODCOORDS[2],$MODCOORDS[1],$MODCOORDS[2],$MODCOORDS[3],$MODCOORDS[0],$MODCOORDS[3]);
+                          }
+                          for(my $i=0; $i<=$#MODCOORDS; $i=$i+2){
+                              if($i == ($#MODCOORDS -1)){$final = $MODCOORDS[1];
+                              }else {$final = $MODCOORDS[$i+1];}      
+                              if((($x - $MODCOORDS[$i])<=$x_margin && ($x - $MODCOORDS[$i])>=0) && (($MODCOORDS[$i+1]-$y)<=$y_margin && ($MODCOORDS[$i+1]-$y)>=0)){
+                                  $canvas->configure(-cursor => 'top_left_corner');
+                                  $setRectCut = 1;
+                                  $startX = $MODCOORDS[$i]; $startY = $MODCOORDS[$i+1]; 
+                              }elsif((($MODCOORDS[$i] -$x)<=$x_margin && ($MODCOORDS[$i] -$x)>=0)&& (($MODCOORDS[$i+1]-$y)<=$y_margin && ($MODCOORDS[$i+1]-$y)>=0)){
+                                  $canvas->configure(-cursor => 'top_right_corner');
+                                  $setRectCut = 1;
+                                  $startX = $MODCOORDS[$i]; $startY = $MODCOORDS[$i+1]; 
+                              }elsif((($x - $MODCOORDS[$i])<=$x_margin && ($x - $MODCOORDS[$i])>=0) && (($y -$MODCOORDS[$i+1])<=$y_margin && ($y -$MODCOORDS[$i+1])>=0)){
+                                 $canvas->configure(-cursor => 'bottom_left_corner');
+                                  $setRectCut = 1;
+                                  $startX = $MODCOORDS[$i]; $startY = $MODCOORDS[$i+1]; 
+                              }elsif((($MODCOORDS[$i]-$x)<=$x_margin && ($MODCOORDS[$i]-$x)>=0) && (($y-$MODCOORDS[$i+1])<=$y_margin && ($y-$MODCOORDS[$i+1])>=0)){
+                                  $canvas->configure(-cursor => 'bottom_right_corner');
+                                  $setRectCut = 1;
+                                  $startX = $MODCOORDS[$i]; $startY = $MODCOORDS[$i+1]; 
+                              }elsif((($x - $MODCOORDS[$i])<=$x_margin && ($x - $MODCOORDS[$i])>=0) && (($MODCOORDS[$i+1] - $y)>$y_margin && ($y - $final)>$y_margin)){
+                                  $canvas->configure(-cursor => 'left_side');
+                                  $setRectCut = 1;
+                                  $startX = $MODCOORDS[$i]; $startY = $y; 
+                              }elsif((($MODCOORDS[$i]-$x)<=$x_margin && ($MODCOORDS[$i]-$x)>=0) && (($y - $MODCOORDS[$i+1])>$y_margin && ($MODCOORDS[$i+3] - $y)>$y_margin)){
+                                  $canvas->configure(-cursor => 'right_side');
+                                  $setRectCut = 1;
+                                  $startX = $MODCOORDS[$i]; $startY = $y; 
+                              }elsif((($y - $MODCOORDS[$i+1])<=$y_margin && ($y - $MODCOORDS[$i+1])>=0) && (($x - $MODCOORDS[$i])>$x_margin && ($MODCOORDS[$i+2]-$x)>$x_margin)){
+                                  $canvas->configure(-cursor => 'bottom_side');
+                                  $setRectCut = 1;
+                                  $startX = $x; $startY = $MODCOORDS[$i+1]; 
+                              }elsif((($MODCOORDS[$i+1]-$y)<=$y_margin && ($MODCOORDS[$i+1]-$y)>=0) && (($MODCOORDS[$i]-$x)>$x_margin && ($x-$MODCOORDS[$i+2])>$x_margin)){
+                                  $canvas->configure(-cursor => 'top_side');
+                                  $setRectCut = 1;
+                                  $startX = $x; $startY = $MODCOORDS[$i+1]; 
+                              }else{} 
+                           }      
+                           if($setRectCut == 1){
+                              @tempcoords = ($startX, $startY, $startX, $startY);  
+                              $rect= $canvas->createRectangle(@tempcoords,
+                                                              -outline => 'green',
+                                                              -tags    => ['TEMP'],
+                                                               );
+                           }else{return;$canvas->configure(-cursor => 'top_left_arrow');}
+                       }#if not a hard macro
+                    }else{return;$canvas->configure(-cursor => 'top_left_arrow');}     
+                 }#if id found 
+
+});
+
+$canvas->CanvasBind('<c><B1-Motion>' => sub {
+         if($setRectCut == 1){
+            my @xy = $canvas->eventLocation();
+            my $x = $xy[0];
+            my $y = $xy[1];
+            my $overlapllx = $x - 1 ;
+            my $overlaplly = $y - 1 ;
+            my $overlapurx = $x + 1 ;
+            my $overlapury = $y + 1 ;
+            my @id = $canvas->find("overlapping", $overlapllx, $overlaplly, $overlapurx, $overlapury);
+            my @tagList = $canvas->gettags($id[0]);
+            if($tagList[1] ne $inst){
+               $canvas->configure(-cursor => 'top_left_arrow');
+               $canvas->delete('TEMP');
+               $setRectCut = 0;
+               return;
+            }else{
+               @tempcoords[2,3] = ($x,$y);
+               $canvas->coords($rect => @tempcoords);
+            }
+         }else{return;}
+});
+
+$canvas->CanvasBind('<c><B1-ButtonRelease>' => sub {
+         if($setRectCut == 1){
+           my $x = $canx; my $y = $cany;
+           my $final; 
+           if($tempcoords[1] >= $tempcoords[3]){
+              my $tval= $tempcoords[1];
+              $tempcoords[1] = $tempcoords[3];
+              $tempcoords[3] = $tval;
+           }
+           if($tempcoords[0] >= $tempcoords[2]){
+              my $tval= $tempcoords[0];
+              $tempcoords[0] = $tempcoords[2];
+              $tempcoords[2] = $tval;
+           }
+           for(my $i=0; $i<=$#MODCOORDS; $i=$i+2){
+               if($i == ($#MODCOORDS -1)){$final = $MODCOORDS[1];
+               }else {$final = $MODCOORDS[$i+1];}
+
+               if((($x - $MODCOORDS[$i])<=$x_margin && ($x - $MODCOORDS[$i])>=1) && (($MODCOORDS[$i+1]-$y)<=$y_margin && ($MODCOORDS[$i+1]-$y)>=1)){
+                  push(@newCoords,$tempcoords[2],$tempcoords[3],$tempcoords[2],$tempcoords[1],$tempcoords[0],$tempcoords[1]);
+               }elsif((($MODCOORDS[$i] -$x)<=$x_margin && ($MODCOORDS[$i] -$x)>=1)&& (($MODCOORDS[$i+1]-$y)<=$y_margin && ($MODCOORDS[$i+1]-$y)>=1)){
+                  push(@newCoords,$tempcoords[2],$tempcoords[1],$tempcoords[0],$tempcoords[1],$tempcoords[0],$tempcoords[3]);
+               }elsif((($x - $MODCOORDS[$i])<=$x_margin && ($x - $MODCOORDS[$i])>=1) && (($y -$MODCOORDS[$i+1])<=$y_margin && ($y -$MODCOORDS[$i+1])>=1)){
+                  push(@newCoords,$tempcoords[0],$tempcoords[3],$tempcoords[2],$tempcoords[3],$tempcoords[2],$tempcoords[1]);
+               }elsif((($MODCOORDS[$i]-$x)<=$x_margin && ($MODCOORDS[$i]-$x)>=1) && (($y-$MODCOORDS[$i+1])<=$y_margin && ($y-$MODCOORDS[$i+1])>=1)){
+                  push(@newCoords,$tempcoords[0],$tempcoords[1],$tempcoords[0],$tempcoords[3],$tempcoords[2],$tempcoords[3]);
+               }elsif((($x - $MODCOORDS[$i])<=$x_margin && ($x - $MODCOORDS[$i])>=1) && (($MODCOORDS[$i+1] - $y)>$y_margin && ($y - $final)>$y_margin)){ #left
+                  push(@newCoords,$MODCOORDS[$i],$MODCOORDS[$i+1]);
+                  push(@newCoords,$tempcoords[0],$tempcoords[3],$tempcoords[2],$tempcoords[3],$tempcoords[2],$tempcoords[1],$tempcoords[0],$tempcoords[1]);
+               }elsif((($MODCOORDS[$i]-$x)<=$x_margin && ($MODCOORDS[$i]-$x)>=1) && (($y - $MODCOORDS[$i+1])>$y_margin && ($MODCOORDS[$i+3] - $y)>$y_margin)){#right
+                  push(@newCoords,$MODCOORDS[$i],$MODCOORDS[$i+1]);
+                  push(@newCoords,$tempcoords[2],$tempcoords[1],$tempcoords[0],$tempcoords[1],$tempcoords[0],$tempcoords[3],$tempcoords[2],$tempcoords[3]);
+               }elsif((($y - $MODCOORDS[$i+1])<=$y_margin && ($y - $MODCOORDS[$i+1])>=1) && (($x - $MODCOORDS[$i])>$x_margin && ($MODCOORDS[$i+2]-$x)>$x_margin)){#bottom
+                  push(@newCoords,$MODCOORDS[$i],$MODCOORDS[$i+1]);
+                  push(@newCoords,$tempcoords[0],$tempcoords[1],$tempcoords[0],$tempcoords[3],$tempcoords[2],$tempcoords[3],$tempcoords[2],$tempcoords[1]);
+               }elsif((($MODCOORDS[$i+1]-$y)<=$y_margin && ($MODCOORDS[$i+1]-$y)>=1) && (($MODCOORDS[$i]-$x)>$x_margin && ($x-$MODCOORDS[$i+2])>$x_margin)){#top
+                  push(@newCoords,$MODCOORDS[$i],$MODCOORDS[$i+1]);
+                  push(@newCoords,$tempcoords[2],$tempcoords[3],$tempcoords[2],$tempcoords[1],$tempcoords[0],$tempcoords[1],$tempcoords[0],$tempcoords[3]);
+               }else{push(@newCoords, $MODCOORDS[$i],$MODCOORDS[$i+1]);} 
+           }#for      
+          # Delete the rectangle.
+           $canvas->configure(-cursor => 'top_left_arrow');
+           $canvas->delete('TEMP');
+           my $fill_color = $canvas->itemcget($inst, -fill);
+           my $outline_color = $canvas->itemcget($inst, -outline);
+           $canvas->delete($inst);
+           my $inst_rect = $canvas->createPolygon(@newCoords, -outline=>$outline_color, -fill=>$fill_color, -stipple=>"gray12");
+           $canvas->itemconfigure($inst_rect, -tags =>'HIER_MOD' );
+           $canvas->addtag($inst , "withtag", $inst_rect);
+
+           @newCoords = (); 
+           @tempcoords = ();
+           @MODCOORDS = ();
+           $setRectCut = 0;
+         }else{return;}
+    });
+
+}#sub rectilinearCut_hierCanvas
+
+########################################################################################################
+############## subroutine to move hierarical Instances in HierView via keyBind {m+ LMB} ################
+########################################################################################################
+sub move_Instance_hierCanvas {
+my $canvas = $_[0];
+my $oldx   = 0;
+my $oldy   = 0;
+my $inst = "";
+my $moving_start = 0;
+$canvas->CanvasFocus;
+$canvas->CanvasBind('<m><1>', => sub{
+               &dbfGuiResetCanvasBind;
+               $moving_start = 0;
+               $inst = "";
+               my @xy = $canvas->eventLocation();
+               my $x = $xy[0];
+               my $y = $xy[1];
+               my @id      = $canvas->find(qw/withtag current/);
+               my @tagList = $canvas->gettags($id[0]);
+               if($tagList[0] ne "HIER_MOD"){return;
+               }else{
+                  $canvas->configure(-cursor => 'diamond_cross');
+                  my @coords  = $canvas->coords($tagList[1]);
+                  $oldx = $x;
+                  $oldy = $y;
+                  $inst = $tagList[1];   
+                  $moving_start = 1;
+                  #$canvas->createRectangle(@coords,-outline => 'white',-tags    => ['TEMP']);
+                  my $fill_color = $hier_canvas->itemcget($tagList[1],-fill);
+                  my $stipple = $hier_canvas->itemcget($tagList[1],-stipple);
+                  $canvas->createPolygon(@coords, -outline =>'white', -fill=>$fill_color, -stipple=>$stipple, -tags=>['TEMP']);
+               }#if not TopModule 
+  });
+$canvas->CanvasBind('<m><B1-Motion>' => sub {
+                    my @xy = $canvas->eventLocation();
+                    my $x = $xy[0];
+                    my $y = $xy[1];
+                    if($moving_start == 1){
+                       $canvas->move($inst => $x - $oldx, $y - $oldy);
+                       $canvas->move('TEMP' => $x - $oldx, $y - $oldy);
+                       $oldx = $x;
+                       $oldy = $y;
+                    }
+  });
+$canvas->CanvasBind('<m><B1-ButtonRelease>' => sub {
+        my @coords = $canvas->coords($inst);
+        my @poly_coords = ();
+        for(my $i=0; $i<=$#coords; $i=$i+2){
+            my @xy = dbfWGuiWGui2Micron($coords[$i],$coords[$i+1]);
+            push(@poly_coords, @xy);
+        }
+        print "calling move inst from here\n";
+        &movePseudoHierInst("-inst", $inst, "-coords", "{@poly_coords}");
+        #----------------updating specify table ---------------------------------------#
+        my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$inst}->dbPimDBGetInstCellref;
+        &update_specifyTable_ifResizeOrMove_hierInst($inst, $cellref,\@poly_coords,"move");
+        #-------- if assist mode floorplan os ON--- then call prachi's block placer----#
+        print "compacting the block placement\n";
+        &update_hier_floorplan_loc;
+        $canvas->delete('TEMP');
+        $canvas->configure(-cursor => 'top_left_arrow');
+        $moving_start = 0;
+    });
+}#sub move_Instance_hierCanvas
+
+########################################################################################################
+################################# subroutine to Undo Instance with ESC #################################
+########################################################################################################
+sub escape_undo_hier_instance{
+my $canvas = $_[0];
+$canvas->CanvasBind('<Key-Escape>', => sub{&perform_redo_undo("undo",$canvas)});;
+}#sub escape_undo_hier_instance
+
+########################################################################################################
+########################## subroutine to Acending Hierarchy via keyBind {U+ LMB} #######################
+########################################################################################################
+sub createPopup_upHier_hierCanvas {
+my $canvas = $_[0];
+   $canvas->CanvasBind('<U><1>', => sub{
+               my @xy = $canvas->eventLocation();
+               my $x = $xy[0];
+               my $y = $xy[1];
+               my @id      = $canvas->find(qw/withtag current/);
+               my @tagList = $canvas->gettags($id[0]);
+               if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}){
+                  my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstCellref;
+                  &call_popup_upHier($cellref);  
+               }}); 
+}#sub createPopup_upHier_hierCanvas
+
+########################################################################################################
+########################### subroutine to Descend Hierarchy via keyBind {D+ LMB} #######################
+########################################################################################################
+sub createPopup_downHier_hierCanvas {
+my $canvas = $_[0];
+   $canvas->CanvasBind('<D><1>', => sub{
+               my @xy = $canvas->eventLocation();
+               my $x = $xy[0];
+               my $y = $xy[1];
+               my @id      = $canvas->find(qw/withtag current/);
+               my @tagList = $canvas->gettags($id[0]);
+               if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}){
+                  &call_popup_downHier($tagList[1]);  
+               }}); 
+}#sub createPopup_downHier_hierCanvas
+
+########################################################################################################
+########################### subroutine to commit Module via keyBind {C+ LMB} #######################
+########################################################################################################
+sub createPopup_commitMod_hierCanvas {
+my $canvas = $_[0];
+   $canvas->CanvasBind('<C><1>', => sub{
+               my @xy = $canvas->eventLocation();
+               my $x = $xy[0];
+               my $y = $xy[1];
+               my @id      = $canvas->find(qw/withtag current/);
+               my @tagList = $canvas->gettags($id[0]);
+               if($TOP_MODULE eq $tagList[1]){&call_popup_commit_module($tagList[1]);
+               }elsif(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}){
+                  my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstCellref;
+                  &call_popup_commit_module($cellref);  
+               }}); 
+}#sub createPopup_commitMod_hierCanvas
+
+########################################################################################################
+########################### subroutine to edit Module via keyBind {E+ LMB} #######################
+########################################################################################################
+sub createPopup_editMod_hierCanvas {
+my $canvas = $_[0];
+   $canvas->CanvasBind('<E><1>', => sub{
+               my @xy = $canvas->eventLocation();
+               my $x = $xy[0];
+               my $y = $xy[1];
+               my @id      = $canvas->find(qw/withtag current/);
+               my @tagList = $canvas->gettags($id[0]);
+               if($TOP_MODULE eq $tagList[1]){&call_popup_edit_module($tagList[1]);
+               }elsif(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}){
+                  my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstCellref;
+                  &call_popup_edit_module($cellref);  
+               }}); 
+}#sub createPopup_editMod_hierCanvas
+
+########################################################################################################
+######################### subroutine to open a popup window having diffrent options ####################
+########################################################################################################
+sub create_popup_with_multipleChoice{
+my $canvas = $_[0];
+   $canvas->CanvasBind('<Double-3>', => sub{
+               my @xy = $canvas->eventLocation();
+               my $x = $xy[0];
+               my $y = $xy[1];
+               my @id      = $canvas->find(qw/withtag current/);
+               my @tagList = $canvas->gettags($id[0]);
+               if($tagList[0] eq "HIER_MOD"){ 
+                  &call_popup_with_multipleChoice(@tagList);
+               }
+   });
+}#sub create_popup_with_multipleChoice
+
+sub call_popup_with_multipleChoice{
+my @tagList = @_;
+
+my $popupMulChoice = MainWindow->new();
+$popupMulChoice->title("");
+$popupMulChoice->Button(-text => 'upHier',-padx=>0,-pady=>0,-relief=>'flat',-anchor=>'w', 
+                     -command=>sub{&call_popup_upHier; 
+                                   $popupMulChoice->destroy;
+                                   }    
+                      )->pack(-side=>"top",-expand=>1,-fill=>'both');
+$popupMulChoice->Button(-text => 'downHier',-padx=>0,-pady=>0,-relief=>'flat',-anchor=>'w',  
+                     -command=>sub{
+                                   if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}){
+                                      &call_popup_downHier($tagList[1]);
+                                      $popupMulChoice->destroy;
+                                   }  
+                     })->pack(-side=>"top",-expand=>1,-fill=>'both');
+$popupMulChoice->Button(-text => 'commitModule',-padx=>0,-pady=>0,-relief=>'flat',-anchor=>'w',  
+                     -command=>sub {
+                                    if($TOP_MODULE eq $tagList[1]){
+                                       &call_popup_commit_module($tagList[1]);
+                                       $popupMulChoice->destroy;
+                                    }elsif(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}){
+                                       my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstCellref;
+                                       &call_popup_commit_module($cellref);
+                                       $popupMulChoice->destroy;
+                                    }   
+                                    })->pack(-side=>"top",-expand=>1,-fill=>'both');
+$popupMulChoice->Button(-text => 'editModule',-padx=>0,-pady=>0,-relief=>'flat',-anchor=>'w',  
+                     -command=>sub {
+                                    if($TOP_MODULE eq $tagList[1]){
+                                       &call_popup_edit_module($tagList[1]);
+                                      $popupMulChoice->destroy;
+                                    }elsif(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}){
+                                       my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstCellref;
+                                       &call_popup_edit_module($cellref);  
+                                       $popupMulChoice->destroy;
+                                    }
+                     })->pack(-side=>"top",-expand=>1,-fill=>'both');
+}#sub call_popup_with_multipleChoice
+
+########################################################################################################
+####################### subroutine to display limited levels of hierarchy placement ####################
+########################################################################################################
+
+sub create_popupHaving_displayOptions{
+my $optionWin = MainWindow->new();
+   $optionWin->title("Option Window for Hierarical Placement Display");
+
+my $top_module = $GLOBAL->dbfGlobalGetTOP;
+&get_numberOfHierLevels($top_module,0,0);
+my $MaxLevel = $GLOBAL->dbGlobalGetHierLevel;
+my $noOfLevel = 1;
+$optionWin->Label(-text =>"HierLevels", -font=>"Times 10 italic")->pack(-side =>'left');
+#$optionWin->Scale(-orient=>"h", -from=>0, -to=>$MaxLevel+1, -showvalue=>1, -width=>5, -sliderlength=>10, -troughcolor=>"green", -variable=>\$noOfLevel)->pack(-side =>'left');
+$optionWin->Scale(-orient=>"h", -from=>0, -to=>$MaxLevel, -showvalue=>1, -width=>5, -sliderlength=>10, -troughcolor=>"green", -variable=>\$noOfLevel)->pack(-side =>'left');
+$optionWin->Button(-text=>"Display", -padx=>0,-pady=>0,-command=>sub{&delete_hier_inst;&display_noOfHierarchyLevels($noOfLevel,$top_module,0,$top_module);&get_viewArea_of_hierarchy})->pack(-side=>"right"); 
+
+}#sub create_popupHaving_displayOptions
+
+sub display_noOfHierarchyLevels {
+my $noOfLevels = $_[0];
+my $parent = $_[1];
+my $count = $_[2];
+my $hier_path = $_[3];
+ if($count < $noOfLevels){
+   &call_display_noOfHierarchyLevels($parent,$hier_path);
+   $count++;
+   if(exists $MODULE_ALREADY{$parent}){
+      my @hierInsts = $MODULE_ALREADY{$parent}->dbVNOMGetHierInst;
+      foreach my $inst(sort @hierInsts){
+        my $cellref = $MODULE_ALREADY{$parent}->dbVNOMGetHierInstCell($inst);
+        &display_noOfHierarchyLevels($noOfLevels, $cellref,$count,$hier_path."/".$inst);
+      }#foreach instance
+   }#if module exists in DB
+ }#if count is less than hier levels
+}#sub display_noOfHierarchyLevels
+#--------------------------------------------------------------------------------------#
+sub call_display_noOfHierarchyLevels{
+my $module = $_[0];
+my $hier_path = $_[1];
+&editModule("-module",$module);
+my $mulFact = $GLOBAL->dbGlobalGetMicronFactor;
+my ($flatX,$flatY) = &get_intance_flatLoc($hier_path);
+   foreach $instance ( keys %{$PSEUDO_VINST_ALREADY{$module}} ) {
+     my $cellref = $PSEUDO_VINST_ALREADY{$module}{$instance}->dbPimDBGetInstCellref;
+     my $class = $DLDB{$cellref}->dbDldbGetClass if(exists $DLDB{$cellref});
+     my $color = "red";
+     if($class == 0){$color = "orange";}# soft module 
+     elsif($class == 10){$color = "OliveDrab1"}#hard macro     
+     my @loc = $PSEUDO_VINST_ALREADY{$module}{$instance}->dbPimDBGetInstRelBbox;
+     my $status = $PSEUDO_VINST_ALREADY{$module}{$instance}->dbPimDBGetInstStatus;
+     if($status eq "UNPLACED" || $status eq "UND"){
+     }else{
+        my @poly = ();
+        my @poly_coords = ();
+        if($#loc == 3){
+           push(@poly,$loc[0], $loc[1], $loc[2], $loc[1], $loc[2], $loc[3], $loc[0], $loc[3]);
+        }else {
+           @poly = @loc;
+        }
+        for(my $i=0; $i<=$#poly; $i=$i+2){
+            my $x = 20 + ($flatX+$poly[$i])*$mulFact;
+            my $y = 20 + ($flatY+$poly[$i+1])*$mulFact;
+            push(@poly_coords,$x,$y);
+        }
+        my $inst_rect = $hier_canvas->createPolygon(@poly_coords, -outline=>$color, -fill=>$color, -stipple=>"gray12");
+        $hier_canvas->itemconfigure($inst_rect, -tags =>'HIER_MOD' );
+        $hier_canvas->addtag($instance , "withtag", $inst_rect);
+     }
+   }#for each instance
+}#sub call_display_noOfHierarchyLevels
+
+sub get_viewArea_of_hierarchy{
+my $box = [0, 0, 540, 540];
+$hier_canvas->viewArea(@$box, -border => 0);
+my @box_org = $hier_canvas->getView();
+&design_ZoomIn_ZoomOut($hier_canvas,\@box_org);
+}#sub get_viewArea_of_hierarchy
+
+################################### Calculating Max No. of Hirarchy levels ##################################
+sub get_numberOfHierLevels{
+my $parent = $_[0];
+my $count = $_[1];
+$MaxLevel = $_[2];
+if($count > $MaxLevel){$MaxLevel = $count;}
+   $GLOBAL->dbGlobalSetHierLevel($MaxLevel);
+if(exists $MODULE_ALREADY{$parent}){
+   my @hierInsts = $MODULE_ALREADY{$parent}->dbVNOMGetHierInst;
+   $count++;
+   foreach my $inst(sort @hierInsts){
+     my $cellref = $MODULE_ALREADY{$parent}->dbVNOMGetHierInstCell($inst);
+     &get_numberOfHierLevels($cellref,$count,$MaxLevel);
+   }
+}#if 
+}#sub get_numberOfHierLevels
+
+################################## Deleting the hier canvas instances except Top #################################
+sub delete_hier_inst{
+$hier_canvas->delete("all");
+my $design_top = $GLOBAL->dbfGlobalGetTOP;
+&editModule("-module",$design_top);
+if(exists $PSEUDO_MODULE_ALREADY{$design_top} ) {
+     my @size = $PSEUDO_MODULE_ALREADY{$design_top}->dbaTstgenGetSize;   
+     my $mulFact = 1;
+     my $xMulFact = 500/($size[2] - $size[0]);
+     my $yMulFact = 500/($size[3] - $size[1]);
+     if($xMulFact < $yMulFact){
+        $mulFact = $xMulFact;
+     }else {
+        $mulFact = $yMulFact;
+     } 
+     $GLOBAL->dbGlobalSetMicronFactor($mulFact);
+     $size[0] = 20 + $size[0]*$mulFact;      
+     $size[1] = 20 + $size[1]*$mulFact;      
+     $size[2] = 20 + $size[2]*$mulFact;      
+     $size[3] = 20 + $size[3]*$mulFact;      
+     $hier_canvas->createRectangle($size[0]-20,$size[1]-20,$size[2]+20,$size[3]+20, -outline=>"black"); 
+     my $top_rect = $hier_canvas->createRectangle($size[0],$size[1],$size[2],$size[3],-width=>3,-outline=>"green"); 
+        $hier_canvas->itemconfigure($top_rect, -tags =>'HIER_TOP' );
+        $hier_canvas->addtag($design_top , "withtag", $top_rect);
+}
+}#sub delete_hier_inst
+
+###################################### Clculating the hierarical location #####################################
+sub get_intance_flatLoc{
+my $hier_path = $_[0];
+my ($llx,$lly) = (0,0);
+my @instList = split(/\//,$hier_path);
+my $parent = shift @instList;
+   for(my $i=0; $i<=$#instList; $i++){
+       my @loc = $PSEUDO_VINST_ALREADY{$parent}{$instList[$i]}->dbPimDBGetInstRelBbox;
+       $parent = $PSEUDO_VINST_ALREADY{$parent}{$instList[$i]}->dbPimDBGetInstCellref;
+       $llx = $llx + $loc[0];
+       $lly = $lly + $loc[1];
+   }  
+return($llx,$lly);
+}#sub get_intance_flatLoc
+
+########################################################################################################
+############################################### display FlyLines #######################################
+########################################################################################################
+
+sub call_display_pseudo_flyLines {
+my $canvas = $_[0];
+   &dbfTstgenConstructConnSMatrix($TOP_MODULE) if(exists $PSEUDO_MODULE_ALREADY{$TOP_MODULE});
+   #$CONN_SMATRIX->dbgPlaceGetTpath;
+   $canvas->CanvasBind("<l><1>"=> [sub {
+                                        my @xy = $canvas->eventLocation();
+                                        my $x = $xy[0];
+                                        my $y = $xy[1];
+                                        my @id      = $canvas->find(qw/withtag current/);
+                                        my @tagList = $canvas->gettags($id[0]);
+                                        &display_pseudo_flyLines($tagList[1]) if($tagList[0] eq "HIER_MOD");     
+                                        $canvas->bind($tagList[1], "<Leave>"=> sub{$canvas->delete(FLY_LINES);});
+                         }]);
+}#sub call_display_pseudo_flyLines
+
+sub display_pseudo_flyLines{
+my $instance = $_[0];
+my $instID = $CONN_SMATRIX->dbPlaceGetNumberByName($instance);
+my $col = $row = $instID;
+
+my @src_coords = $hier_canvas->coords($instance);
+my @fanin = $CONN_SMATRIX->dbPlaceGetFanInsByName($instance);
+foreach my $in(@fanin){
+    my $input = $CONN_SMATRIX->dbPlaceGetNameByNumberCol($in);
+    my $tval = $CONN_SMATRIX->dbPlaceGetTpathVal($row, $in);
+    my @sink_coords = $hier_canvas->coords($input);
+    &draw_flyLines(\@sink_coords,\@src_coords,$tval,"white"); 
+}
+my @fanout = $CONN_SMATRIX->dbPlaceGetFanOutsByName($instance);
+foreach my $out (@fanout){
+    my $output = $CONN_SMATRIX->dbPlaceGetNameByNumberCol($out);
+    my $tval = $CONN_SMATRIX->dbPlaceGetTpathVal($out, $col);
+    my @sink_coords = $hier_canvas->coords($output);
+    &draw_flyLines(\@src_coords,\@sink_coords,$tval,"purple"); 
+}
+}#sub display_pseudo_flyLines
+
+sub draw_flyLines{
+my @src_coords = @{$_[0]};
+my @sink_coords = @{$_[1]};
+my $numConn = $_[2];
+my $color = $_[3];
+
+my $x1 = ($src_coords[0]+$src_coords[2])/2;
+my $y1 = ($src_coords[1]+$src_coords[3])/2;
+my $x2 = ($sink_coords[0]+$sink_coords[2])/2;
+my $y2 = ($sink_coords[1]+$sink_coords[3])/2;
+my $tx = ($x1+$x2)/2;
+my $ty = ($y1+$y2)/2 - 2;
+
+$hier_canvas->createLine($x1,$y1,$x2,$y2, -fill=>$color, -tags=>"FLY_LINES", -arrow=>'last');
+$hier_canvas->createText($tx,$ty, -fill=>"yellow", -text=>$numConn, -tags=>"FLY_LINES",);
+
+}#sub draw_flyLines
+
+#sub display_pseudo_flyLines{
+#&dbfTstgenConstructConnSMatrix($TOP_MODULE);
+#$CONN_SMATRIX->dbgPlaceGetTpath;
+#my $instance = $_[0];
+#
+#my $id = $CONN_SMATRIX->dbPlaceGetNumberByName($instance);
+#print "id $id\n";
+#my $col= $row = $id;
+#
+#my @fanin = $CONN_SMATRIX->dbPlaceGetFanInsByName($instance);
+#print "fanIn @fanin\n";
+#foreach my $in(@fanin){
+#    my $input = $CONN_SMATRIX->dbPlaceGetNameByNumberCol($in);
+#    my $tval = $CONN_SMATRIX->dbPlaceGetTpathVal($row, $in);
+#    print "driver $input tval $tval\n";
+#}
+#my @fanout = $CONN_SMATRIX->dbPlaceGetFanOutsByName($instance);
+#print "fanOut  @fanout\n";
+#foreach my $out (@fanout){
+#    my $output = $CONN_SMATRIX->dbPlaceGetNameByNumberCol($out);
+#    my $tval = $CONN_SMATRIX->dbPlaceGetTpathVal($out, $col);
+#    print "sink $output tval $tval\n";
+#}
+#}#sub display_pseudo_flyLines
+
+sub print_smatrix{
+&dbfTstgenConstructConnSMatrix($TOP_MODULE);
+$CONN_SMATRIX->dbgPlaceGetTpath;
+}#sub print_smatrix
+
+########################################################################################################
+################################# subroutine to display hier pins ######################################
+########################################################################################################
+
+sub display_hier_inst_pin {
+
+my $dbfact = $DEF_DATABASE_UNIT;
+my %PORT_HASH = ();
+my @output_pins = $PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenGetOutput;
+foreach my $out (@output_pins) {
+  if ( $PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenGetOutputType($out) == 0 ) {
+    $PORT_HASH{$out} = 1;
+  }
+  else {
+    my $bits = $PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenGetOutputBits($out);
+    my $pin = $out . $bits;
+    my @portList = utilSplitBusBits($pin);
+    foreach my $port ( @portList ) {
+      $PORT_HASH{$port} = 1;
+    }
+  }
+}#foreach out
+my @input_pins = $PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenGetInput;
+foreach my $in (@input_pins) {
+  if ( $PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenGetInputType($in) == 0 ) {
+    $PORT_HASH{$in} = 1;
+  }
+  else {
+    my $bits = $PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenGetInputBits($in);
+    my $pin = $in . $bits;
+    my @portList = utilSplitBusBits($pin);
+    foreach my $port ( @portList ) {
+      $PORT_HASH{$port} = 1;
+    }
+  }
+}#foreach in
+my @bidi_pins = $PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenGetBidi;
+foreach my $bidi (@bidi_pins){
+  if ( $PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenGetBidiType($bidi) == 0 ) {
+    $PORT_HASH{$bidi} = 1;
+  }
+  else {
+    my $bits = $PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenGetBidiBits($bidi);
+    my $pin = $bidi . $bits;
+    my @portList = utilSplitBusBits($pin);
+    foreach my $port ( @portList ) {
+      $PORT_HASH{$port} = 1;
+    }
+  }
+}#foreach bidi
+# commented by rajeev
+#my $curr_floor_plan = $PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenGetFloorplan;
+#&setPseudoFloorplan("-module",$TOP_MODULE,"-floorplan", $TOP_MODULE);
+foreach my $pin ( keys %PORT_HASH) {
+   my $status = $PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenGetPinStatus($pin);
+   if (( $status == 3) || ($status == 4) || ($status ==2)) {
+     my @shapes = $PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenGetPinRect($pin);
+     if ( @shapes == 0 ) {
+     } else {
+      my ($layer, $pinllx, $pinlly,$pinurx,$pinury) = (split(/\s+/,$shapes[0])) [0,1,2,3,4];
+      my $llx = 20+($pinllx)*$MICRONFACTOR;
+      my $lly = 20+($pinlly)*$MICRONFACTOR;
+      my $urx = 20+($pinurx)*$MICRONFACTOR;
+      my $ury = 20+($pinury)*$MICRONFACTOR;
+      if(($llx==$urx)&&($lly==$ury)) {
+        $hier_canvas->createRectangle($llx-1,$lly-1,$urx+1,$ury+1,-outline=>'yellow', -tags=>"HIERPINS");
+      }else {
+        $hier_canvas->createRectangle($llx,$lly,$urx,$ury,-outline=>'yellow', -tags=>"HIERPINS");
+      }
+      $hier_canvas->createText($llx,$lly,-fill=>'yellow',-text=>$pin, -tags=>"HIERPINS", -anchor=>"nw");
+     }
+   }
+}
+
+foreach my $inst ( keys %{$PSEUDO_VINST_ALREADY{$TOP_MODULE}} ) {
+       if($inst eq "PIN"){ 
+         next; 
+       }
+  my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$inst}->dbPimDBGetInstCellref;
+     if( exists $PLDB{$cellref} ) {next} else {print "INFO-TST-DIS_HR_INST_PN : 001 : displaying pins for $inst:$cellref\n";};
+
+  my @loc = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$inst}->dbPimDBGetInstRelBbox;
+  #$loc[0] = $loc[0]*$MICRONFACTOR;
+  #$loc[1] = $loc[1]*$MICRONFACTOR;
+
+  %PORT_HASH = ();
+  my @output_pins = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetOutput;
+  foreach my $out (@output_pins) {
+    if ( $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetOutputType($out) == 0 ) {
+      $PORT_HASH{$out} = 1;
+    }
+    else {
+      my $bits = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetOutputBits($out);
+      my $pin = $out . $bits;
+      my @portList = utilSplitBusBits($pin);
+      foreach my $port ( @portList ) {
+        $PORT_HASH{$port} = 1;
+      }
+    }
+  }#foreach out
+  my @input_pins = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetInput;
+  foreach my $in (@input_pins) {
+    if ( $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetInputType($in) == 0 ) {
+      $PORT_HASH{$in} = 1;
+    }
+    else {
+      my $bits = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetInputBits($in);
+      my $pin = $in . $bits;
+      my @portList = utilSplitBusBits($pin);
+      foreach my $port ( @portList ) {
+        $PORT_HASH{$port} = 1;
+      }
+    }
+  }#foreach in
+  my @bidi_pins = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetBidi;
+  foreach my $bidi (@bidi_pins){
+    if ( $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetBidiType($bidi) == 0 ) {
+      $PORT_HASH{$bidi} = 1;
+    }
+    else {
+      my $bits = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetBidiBits($bidi);
+      my $pin = $bidi . $bits;
+      my @portList = utilSplitBusBits($pin);
+      foreach my $port ( @portList ) {
+        $PORT_HASH{$port} = 1;
+      }
+    }
+  }#foreach bidi
+
+
+#  my $flPlan = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetFloorplan;
+#  my $fplanID = $FLOORPLAN_LOOKUP{$flPlan};
+#  #my $fplanID = $FLOORPLAN_ALREADY{$flPlan}->dbFlplanGetID;
+#print "display pin $flPlan, $fplanID\n";
+#  foreach my $pin ( $FLOORPLAN_ALREADY{$fplanID}->dbFlplanGetPinList ) {
+#    my $status = $FLOORPLAN_ALREADY{$fplanID}->dbFlplanGetPinStatus($pin);
+#    my @shapes = $FLOORPLAN_ALREADY{$fplanID}->dbFlplanGetPinRect($pin);
+#    if ( @shapes == 0 ) {
+#    }
+#    else {
+#     my ($layer, $pinllx, $pinlly,$pinurx,$pinury) = (split(/\s+/,$shapes[0])) [0,1,2,3,4];
+#     my $llx =  20+$loc[0]+$pinllx*$MICRONFACTOR/$dbfact;
+#     my $lly =  20+$loc[1]+$pinlly*$MICRONFACTOR/$dbfact;
+#     my $urx =  20+$loc[0]+$pinurx*$MICRONFACTOR/$dbfact;
+#     my $ury =  20+$loc[1]+$pinury*$MICRONFACTOR/$dbfact;
+#     if(($llx=$urx)&&($lly=$ury)) {
+#       $hier_canvas->createRectangle($llx-1,$lly-1,$urx+1,$ury+1,-outline=>'blue', -tags=>"HIERPINS");
+#     }else {
+#       #$hier_canvas->createRectangle($llx,$lly,$urx,$ury,-fill=>'red',-outline=>'red', -tags=>"HIERPINS");
+#       $hier_canvas->createRectangle($llx,$lly,$urx,$ury,-outline=>'blue', -tags=>"HIERPINS");
+#     }
+#       $hier_canvas->createText($llx,$lly,-fill=>'yellow',-text=>$pin, -tags=>"HIERPINS", -anchor=>"nw");
+#
+#    }
+#  }
+  foreach my $pin ( keys %PORT_HASH) {
+    my $status = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetPinStatus($pin);
+    if (( $status == 3) || ($status == 4) || ($status ==2)) {
+      my @shapes = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetPinRect($pin);
+      if ( @shapes == 0 ) {
+      } else {
+       my ($layer, $pinllx, $pinlly,$pinurx,$pinury) = (split(/\s+/,$shapes[0])) [0,1,2,3,4];
+       $inst_width = abs($loc[2] -$loc[0]);
+       $inst_height = abs($loc[3] -$loc[1]);
+       #if($pinllx > $inst_width){
+       #print "\nError: Problem in pin location, going out of chip $pinllx $inst_width $inst_height $inst $cellref $pin" ;
+       #}
+       #if($pinllx < 0){
+       #print "\nError: Problem in pin location, going out of chip $pinllx" ;
+       #}
+       #if($pinlly > $inst_height){
+       #print "\nError: Problem in pin location, going out of chip $pinlly $inst_height $inst_width $inst $cellref $pin" ;
+       #}
+       #if($pinlly < 0){
+       #print "\nError: Problem in pin location, going out of chip $pinlly" ;
+       #}
+       #if($pinurx > $inst_width){
+       #print "\nError: Problem in pin location, going out of chip $pinurx $inst_width $inst_height $inst $cellref $pin" ;
+       #}
+       #if($pinurx < 0){
+       #print "\nError: Problem in pin location, going out of chip $pinurx" ;
+       #}
+       #if($pinury > $inst_height){
+       #print "\nError: Problem in pin location, going out of chip $pinury $inst_height $inst_width $inst $cellref $pin" ;
+       #}
+       #if($pinurx < 0){
+       #print "\nError: Problem in pin location, going out of chip $pinury" ;
+       #}
+       #my $llx =  20+$loc[0]+$pinllx*$MICRONFACTOR/$dbfact;
+       #my $lly =  20+$loc[1]+$pinlly*$MICRONFACTOR/$dbfact;
+       #my $urx =  20+$loc[0]+$pinurx*$MICRONFACTOR/$dbfact;
+       #my $ury =  20+$loc[1]+$pinury*$MICRONFACTOR/$dbfact;
+       my $llx =  20+($loc[0]+$pinllx)*$MICRONFACTOR;
+       my $lly =  20+($loc[1]+$pinlly)*$MICRONFACTOR;
+       my $urx =  20+($loc[0]+$pinurx)*$MICRONFACTOR;
+       my $ury =  20+($loc[1]+$pinury)*$MICRONFACTOR;
+       if(($llx=$urx)&&($lly=$ury)) {
+         $hier_canvas->createRectangle($llx-1,$lly-1,$urx+1,$ury+1,-outline=>'blue', -tags=>"HIERPINS");
+       }else {
+         #$hier_canvas->createRectangle($llx,$lly,$urx,$ury,-fill=>'red',-outline=>'red', -tags=>"HIERPINS");
+         $hier_canvas->createRectangle($llx,$lly,$urx,$ury,-outline=>'blue', -tags=>"HIERPINS");
+       }
+         $hier_canvas->createText($llx,$lly,-fill=>'yellow',-text=>$pin, -tags=>"HIERPINS", -anchor=>"nw");
+      }
+    }
+  }
+}
+}#sub
+
+sub display_hier_inst_name {
+
+my $MICRONFACTOR = $GLOBAL->dbGlobalGetMicronFactor;
+     foreach my $instance ( keys %{$PSEUDO_VINST_ALREADY{$TOP_MODULE}} ) {
+       if($instance eq "PIN"){ 
+       }else{ 
+         #my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$instance}->dbPimDBGetInstCellref;
+         my @loc = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$instance}->dbPimDBGetInstRelBbox;
+         my $llx = 20 + (($loc[0]+$loc[2])/2)*$MICRONFACTOR;
+         my $lly = 20 + (($loc[1]+$loc[3])/2)*$MICRONFACTOR;
+         $hier_canvas->createText($llx,$lly,-fill=>'yellow',-text=>$instance, -tags=>"TEMP_TEXT", -anchor=>"nw");
+       }
+     }
+}#sub display_hier_inst_name
+
+1;
+
+

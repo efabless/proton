@@ -1,0 +1,1144 @@
+sub read_def {
+
+my $t0 = new Benchmark;
+
+my $noOfArguments = @_;
+print "read_def_arg @_\n";
+@COMPONENTS = (\%COMP_ALREADY, \%COMP_NEW_ADDED, \%COMP_NEW_NO_LOGIC);
+my $READ_COMPONENTS = 0;
+my $READ_NETS = 0;
+my $READ_SPNETS = 0;
+my $READ_PINS = 0;
+my $READ_FLPLAN = 0;
+my $READ_VIAS = 0;
+my $READ_ROUTES = 0;
+my $READ_BLKGS = 0;
+
+if($noOfArguments < 1 || $_[0] eq '-h'){ print "Usage : read_def -def <input_def_file>\n";
+   print "                 [--floorplan]\n";
+   print "                 [--pins]\n";
+   print "                 [--components]\n";
+   print "                 [--nets]\n";
+   print "                 [--specialNets]\n";
+   print "                 [--routing]\n";
+   print "                 [--blkgs]\n";
+   print "                 [--all]\n";
+   print "                 [--logical]\n";
+}else{
+   ############# since correct no of arguments ################
+   ############# registering the inputs        ################
+   for(my $x = 0; $x < $noOfArguments ; $x++){
+   if($_[$x] eq "-def"){$INPUT_DEF_FILE = $_[$x+1];}
+   elsif($_[$x] eq "--components"){$READ_COMPONENTS = 1;}
+   elsif($_[$x] eq "--pins"){$READ_PINS = 1;}
+   #elsif($_[$x] eq "--nets"){$READ_NETS = 1;}
+   #elsif($_[$x] eq "--specialNets"){$READ_SPNETS = 1;}
+   #### I (aditya) have changed these two lines ###
+   elsif($_[$x] eq "--nets"){$READ_NETS = 1; $READ_ROUTES = 1;}
+   elsif($_[$x] eq "--specialNets"){$READ_SPNETS = 1; $READ_SPROUTES = 1;}
+   elsif($_[$x] eq "--floorplan"){$READ_FLPLAN = 1;}
+   elsif($_[$x] eq "--routing"){$READ_ROUTES = 1; $READ_SPROUTES = 1;}
+   elsif($_[$x] eq "--blkgs"){$READ_BLKGS = 1;}
+   elsif($_[$x] eq "--logical"){
+                       $READ_FLPLAN = 1;
+                       $READ_COMPONENTS = 1;
+                       $READ_PINS = 1;
+                       $READ_NETS = 1;
+                              }
+   elsif($_[$x] eq "--all"){
+                       $READ_COMPONENTS = 1;
+                       $READ_PINS = 1;
+                       $READ_VIAS = 1;
+                       $READ_NETS = 1;
+                       $READ_SPNETS = 1;
+                       $READ_FLPLAN = 1;
+                       $READ_ROUTES = 1;
+                       $READ_SPROUTES = 1;
+                       $READ_BLKGS = 1;
+                          }
+                                             }#for all the arguments
+   $line = "";
+   
+   $referToTechnologyLef = %TECHNOLOGY_PHYSICAL;
+   
+   %NETS_ROUTING_ALREADY = ();
+   %DEF_TRACKS_ALREADY = ();
+   %DIE_ALREADY = ();
+   %FLOORPLAN_LOOKUP = ();
+   %FLOORPLAN_ALREADY = ();
+   %BLOCKAGES_ALREADY = ();
+   my $reading_spnets = 0;
+   my $reading_vias = 0;
+   my $reading_blkgs = 0;
+   my $net_data_start = 0;
+   open(READ_DEF_FILE, "$INPUT_DEF_FILE");
+   print "INFO-PAR-DEF : 001 : Begin reading the def file\n";
+   my $progBarMax = `wc -l $INPUT_DEF_FILE`;
+   
+   ($reading_spnets, $reading_vias, $reading_components ) = 0;
+   my $lineCount = 0;
+   while(<READ_DEF_FILE>){
+     if($STOP_IMMEDIATELY == 1) { last; }
+     $lineCount++;
+     if($lineCount =~ /0$/) { 
+     }else {}
+     
+     chomp($_);
+     $_ =~ s/^\s+//;
+     
+     if( $_ =~ /^\s*#/ ) { next; }
+     elsif(/^PROPERTYDEFINITIONS/ ... /END PROPERTYDEFINITIONS/) { next;}
+     else {
+       if($_ =~ /^DESIGN\b/) {
+          $TOP_MODULE = (split(/\s+/, $_))[1];
+       	  $GLOBAL->dbfGlobalSetTOP($TOP_MODULE);
+          my $flplanID = $GLOBAL->dbfGlobalGetNextFlplanID;
+          $FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"} = $flplanID;
+          $FLOORPLAN_ALREADY{$flplanID} = Floorplan::new();
+          $FLOORPLAN_ALREADY{$flplanID}->dbFlplanSetID($flplanID);
+          $FLOORPLAN_ALREADY{$flplanID}->dbFlplanSetCellref($TOP_MODULE);
+       }
+       ########################### Reading Dia Area Statement  ###############
+       elsif($_ =~ /^DIEAREA /){
+          ($DIEAREA_llx,$DIEAREA_lly,$DIEAREA_urx,$DIEAREA_ury) = (split(/\s+/, $_))[2,3,6,7];
+          $DIEAREA[0]=$DIEAREA_llx;
+          $DIEAREA[1]=$DIEAREA_lly;
+          $DIEAREA[2]=$DIEAREA_urx;
+          $DIEAREA[3]=$DIEAREA_ury;
+          $DIE_ALREADY{dieArea}=\@DIEAREA;
+          my $llx = $DIE_ALREADY{dieArea}[0];
+          my $lly = $DIE_ALREADY{dieArea}[1];
+          my $urx = $DIE_ALREADY{dieArea}[2];
+          my $ury = $DIE_ALREADY{dieArea}[3];
+          ####################################################################
+          # set floorplan values for the partition in the FLOORPLAN_ALREADY DB
+          ####################################################################
+          if ( $llx + $urx == 0 ) { $dieIsCentre = 1; } else { $dieIsCentre = 0;}
+          my $ASPECT_RATIO =  ($ury - $lly ) / ( $urx - $llx );
+          ############### hardcoding temporarily ################
+          my $UTILIZATION =  0.70;
+          $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanSetOrigin($dieIsCentre);
+          $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanSetUtilization($UTILIZATION);
+          $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanSetSize($llx, $lly, $urx, $ury);
+          $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanSetAspectRatio($ASPECT_RATIO);
+          $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanSetDBUnit($DEF_DATABASE_UNIT);
+       }# if dieArea  
+       ########################### Reading Rows ##############################
+       elsif($_ =~ /^ROW\s+/ ){
+          if($READ_FLPLAN == 1){
+             ($rowName, $sitename, $x0, $y0, $orient,$numX,$numY,$spaceX,$spaceY) = (split(/\s+/, $_))[1,2,3,4,5,7,9,11,12];
+              my $rowdata = $rowName ." $sitename ".$x0." ".$y0." ".$orient." $numX $numY $spaceX $spaceY";
+              $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanAddRows($rowdata);
+            }
+            else { next; }
+       }
+       ########################### Reading Tracks ##############################
+       elsif($_ =~ /^TRACKS/){ 
+          my @track_data = split(/\s+/, $_);
+          my $axis  = 0 ;
+          my $start = 0;
+          my $do    = 0;
+          my $step  = 0;
+          while(defined ($track_tag = shift @track_data)){
+            if($track_tag eq "TRACKS"){ # if first token is TRACK
+               $axis  = shift @track_data;
+               $start = shift @track_data;
+                           shift @track_data;
+               $do    = shift @track_data;
+                           shift @track_data;
+               $step  = shift @track_data;
+                        shift @track_data;
+            }
+            elsif($track_tag eq ";") {}
+            else { 
+              if(exists $TECHNOLOGY_PHYSICAL{$track_tag} ){
+                 $track_metal = TRACK.$track_tag; 
+                 $track_metal_dir = TRACK.$track_tag.$axis; 
+                 if(exists $DEF_TRACKS_ALREADY{$track_tag}) { }else{ %{$track_metal} = ();}
+                 $DEF_TRACKS_ALREADY{$track_tag} = \%{$track_metal};
+                 %{$track_metal_dir} = ();
+                 if($axis eq "X"){ ${$track_metal}{Vertical} = \%{$track_metal_dir}; }
+                 elsif($axis eq "Y"){ ${$track_metal}{Horizontal} = \%{$track_metal_dir}; }
+                 ${$track_metal_dir}{start} = $start;
+                 ${$track_metal_dir}{do} = $do;
+                 ${$track_metal_dir}{step} = $step;
+              } # if the track layer exists in the lef technology 
+            }
+          }#while
+       }# if track statement
+       elsif($_ =~ /^UNITS/){ 
+          $DEF_DATABASE_UNIT = (split(/\s+/, $_))[3];
+          $GLOBAL->dbfGlobalSetDBU($DEF_DATABASE_UNIT);
+       }
+       ################# begin the PIN section ###################
+       elsif(/^PINS\b/ ... /^END PINS\b/){ 
+          if($READ_PINS == 0){next;}
+          else {
+             if($_ =~ /^PINS/){ 
+                if($READ_PINS ==1){ 
+                   $line = ""; 
+                   my $noOfPins = (split(/\s+/, $_))[1]; 
+                   print "INFO-PAR-DEF : 002 : reading $noOfPins of pins\n"; 
+                   next;
+                }
+                else { next; }
+             }
+             if($_ =~ /^END PINS/){ 
+                print "INFO-PAR-DEF : 003 : End reading pins\n";
+                next;
+             }
+             if($_ =~ /\;\s*$/){ 
+                if($READ_PINS ==1){
+                   chomp();
+                   $_ =~ s/^\s+//;
+                   $line = $line." ".$_; # end of line
+                   $moduleName = $TOP_MODULE;
+                   ###########################################################
+                   ####    insert the code                                ####
+                   ###########################################################
+                   $line =~ s/^\s+//;
+                   @port_data = split(/\s+/, $line);
+                   shift @port_data;
+                   $pinName = shift @port_data;
+                   if(exists $PORTS_ALREADY{$moduleName}{$pinName}){
+                      print "WARN-PAR-DEF : 004 : multiple definition of the same pin ... keeping previous\n";
+                   }
+                   else{
+                      $PORTS_ALREADY{$moduleName}{$pinName} = PortDB::new(); 
+                      while(defined ($data = shift @port_data)){
+                        if($data eq "NET"){
+                           $netName = shift @port_data;
+                           $PORTS_ALREADY{$moduleName}{$pinName}->dbPortSetConn($netName);
+                        }
+                        elsif($data eq "DIRECTION"){ 
+                           $pinDirection = shift @port_data; 
+                           if($pinName eq "port_pad_data_in[14]"){ 
+                              print "INFO-PAR-DEF : 005 : $pinName : $pinDirection\n"; 
+                           }
+                           $PORTS_ALREADY{$moduleName}{$pinName}->dbPortSetDir($pinDirection);
+                        }
+                        elsif($data eq "USE"){
+                           $SIGNAL = shift @port_data;
+                           $PORTS_ALREADY{$moduleName}{$pinName}->dbPortSetSignal($SIGNAL);
+                        }
+                        elsif($data eq "PLACED" || $data eq "FIXED"){
+                           $PORTS_ALREADY{$moduleName}{$pinName}->dbPortSetStatus($data);
+                           shift @port_data;
+                           $dbX = shift @port_data;
+                           $dbY = shift @port_data;
+                           shift @port_data;
+                           $PORTS_ALREADY{$moduleName}{$pinName}->dbPortSetLoc($dbX,$dbY);
+                           $side = shift @port_data;
+                           $PORTS_ALREADY{$moduleName}{$pinName}->dbPortSetSide($side);
+                        }
+                        elsif($data eq "LAYER"){ 
+                           $layer = shift @port_data; 
+                           shift @port_data; # shift out open bracket
+                           my $x1 = shift @port_data;
+                           my $y1 = shift @port_data;
+                           shift @port_data;
+                           shift @port_data;
+                           my $x2 = shift @port_data;
+                           my $y2 = shift @port_data;
+                           my $W = $x2 - $x1;
+                           my $H = $y2 - $y1;
+                           $PORTS_ALREADY{$moduleName}{$pinName}->dbPortSetLayer($layer);
+                           $PORTS_ALREADY{$moduleName}{$pinName}->dbPortSetSize($W,$H);
+                        }
+                        else {}
+                      }#while
+                   }
+                   ###########################################################
+                   ####    stop inserting the code                        ####
+                   ###########################################################
+                   $line = ""; 
+                }else{ next;}
+             }else{
+                if($READ_PINS ==1){
+                   chomp(); 
+                   $_ =~ s/^\s+//; $line = $line." ".$_; 
+                }else {next;} 
+             }#if line does not end loop
+          }# if READ_PINS is equal to 1
+       }#PINS section
+       ################# end the PIN section #####################
+       ############## begin the COMPONENT section ################
+       elsif(/^COMPONENTS/ ... /^END COMPONENTS/){ 
+          if($READ_COMPONENTS == 0){ next; } 
+          else{
+             if($_ =~ /^COMPONENTS/){ 
+                my $noOfComponents = (split(/\s+/, $_))[1]; 
+                print "INFO-PAR-DEF : 006 : reading $noOfComponents components\n"; 
+             }
+             if($_ =~ /^END COMPONENTS/) { 
+                print "INFO-PAR-DEF : 007 : end components\n"; 
+             }
+             if($_ =~ /\;\s*$/){ 
+                $line = $line." ".$_; # end of line
+                ###########################################################
+                ####    insert the code                                ####
+                ###########################################################
+                chomp;
+                $line =~ s/^\s+//;
+                if( $line =~ /-/){
+                 ($instance, $cellref) = (split(/\s+/, $line))[1,2];
+                  $instance =~ s/\\//g;
+                  %{$instance} = ();
+                  $CADB{$instance} = CompAttDB::new();
+                  $CADB{$instance}->dbCadbSetCellref($cellref);
+                  $COMP_ALREADY{$instance} = \%{$instance};
+                  print "DBG-PAR-DEF : 008 : $instance : $cellref " if ($DEBUG == 21);
+                  ##########################################################
+                  ####     getting the location of component            ####
+                  ##########################################################
+                  @comp_placement_data = split(/\s+/, $line);
+                  while(defined ($placement_data = shift @comp_placement_data)){
+                    if($placement_data eq "PLACED" || $placement_data eq "FIXED" || $placement_data eq "UNPLACED"){
+                      $CADB{$instance}->dbCadbSetStatus($placement_data);
+                      $CADB{$instance}->dbgCadbGetStatus if ($DEBUG == 21);
+                      shift @comp_placement_data;
+                      $location_x = shift @comp_placement_data;
+                      $location_y = shift @comp_placement_data;
+                      $CADB{$instance}->dbCadbSetLoc($location_x,$location_y); 
+                      $CADB{$instance}->dbgCadbGetLoc if ($DEBUG == 21); 
+                      shift @comp_placement_data;
+                      $orientation = shift @comp_placement_data;
+                      $CADB{$instance}->dbCadbSetOrient($orientation);
+                      $CADB{$instance}->dbgCadbGetOrient if ($DEBUG == 21);
+                    } 
+                    elsif($placement_data eq "HALO"){
+                      my ($deltaL, $deltaB, $deltaR, $deltaT) = @comp_placement_data;
+                      my $delta = "$deltaL $deltaB $deltaR $deltaT";
+                      $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanAddHalo($instance, $delta);
+                    } 
+                  }# while analyzing placement
+                  print "\n" if ($DEBUG == 21);
+                }else{
+                  # is not a valid line
+                }
+                ###########################################################
+                ####    stop inserting the code                        ####
+                ###########################################################
+                $line = "";
+             }else{
+                chomp();
+                $line = $line." ".$_; 
+             }#if line does not end loop
+          }
+       }#COMPONENT section
+       ############## end the COMPONENT section ##################
+       ################# begin the NET section ###################
+       elsif(/^\s*NETS / ... /^\s*END NETS/){
+          if($READ_NETS == 0 ){next;}else { 
+             chomp();
+             $_ =~ s/^\s+//;
+             if($_ =~/^$/ ){next;}
+             if($_ =~ /^NETS/){my $noOfNets = (split(/\s+/,$_))[1]; print "INFO-PAR-DEF : 009 : reading $noOfNets Nets \n"; next;}
+             if( $_ =~ /^END NETS/){print "INFO-PAR-DEF : 010 : end Nets \n"; next;}
+             if($_ =~ /^\-/){
+                $net_data_start = 1;
+                print "DBG-PAR-DEF : 011 : $_\n" if ($DEBUG == 20);
+                @net_data = ();
+                ###########################################################
+                ####    insert the code                                ####
+                ###########################################################
+                $netName = (split(/\s+/, $_))[1];
+                print "DBG-PAR-DEF : 012 : $netName\n"if ($DEBUG == 10) ;
+                if(!defined $NETS_ALREADY{$netName}){
+                   $NETS_ALREADY{$netName} = NetDB::new();
+                   $NETS_ROUTING_ALREADY{$netName} = NetRoutingDB::new();
+                   $NADB{$netName} = NetsAttrDB::new();
+                   $NADB{$netName}->dbNadbSetNetType(0);
+                }else{
+                   my $currType = $NADB{$netName}->dbNadbGetNetType if(exists $NADB{$netName});
+                   if($currType == 1){$NADB{$netName}->dbNadbSetNetType(2);}
+                }
+                ###########################################################
+                ####    stop inserting the code                        ####
+                ###########################################################
+             }
+             if(( $net_data_start == 1) && ($_ =~ /\;\s*$/)){
+                my $abort_current_net = 0;
+                my $process_routes = 0;
+                print "DBG-PAR-DEF : 013 : $_\n" if ($DEBUG == 21);
+                push(@net_data, $_);
+                my $num = @net_data;
+                print "DBG-PAR-DEF : 014 : lines in net data are $num \n" if ($DEBUG == 20);
+                while(defined ($line = shift @net_data)){
+                  if($abort_current_net == 1){ last; }
+                  if($process_routes == 1){
+                     #----------------------------------------------------------------#
+                     # process routing of the net                                     #
+                     if($line =~ /ROUTED/) { 
+                        $route_type = R; 
+                        $line =~ s/\+*\s+ROUTED\s+//;
+                        $NETS_ROUTING_ALREADY{$netName}->dbNetRoutingDBSetRegularRoute($line);
+                        print "DBG-PAR-DEF : 015 : $line\n" if ($DEBUG == 23);  
+                     }
+                     elsif($line =~ /FIXED/){ $route_type = F; print "DBG-PAR-DEF : 016 : $line\n" if ($DEBUG == 23);  }
+                     elsif($line =~ /COVER/){ $route_type = C; print "DBG-PAR-DEF : 017 : $line\n" if ($DEBUG == 23);  }
+                     elsif($line =~ /NEW/){ 
+                        $line =~ s/NEW\s+//;
+                        $NETS_ROUTING_ALREADY{$netName}->dbNetRoutingDBSetRegularRoute($line);
+                        print "DBG-PAR-DEF : 018 : $line\n" if ($DEBUG == 23); 
+                     }
+                     #-----------------------------------------------------------#
+                  }
+                  else{ 
+                     my @net_data_per_line = split(/\s+/, $line);
+                     while(defined ($data = shift @net_data_per_line)){
+                       if($process_routes == 0){
+                         if($data eq "("){
+                            my @instArr = ();
+                            my $inst_str = shift @net_data_per_line;
+                            $inst_str =~ s/\\//g;
+                            if($inst_str =~ /\*/){
+                               @instArr = keys %COMP_ALREADY; 
+                            }else{
+                               push (@instArr,$inst_str);
+                            }
+                            $pin = shift @net_data_per_line;
+                            shift @net_data_per_line;
+                            foreach my $inst(@instArr){
+                              $NETS_ALREADY{$netName}{$inst} = $pin;
+                              if(exists $COMP_ALREADY{$inst}) { $COMP_ALREADY{$inst}{$pin} = $netName;} 
+                              elsif( $inst eq "PIN"){ }
+                              else { print "ERROR-PAR-DEF : 020 : $netName : $inst not found\n"; }
+                            }
+                         }
+                         elsif($data =~ /\+/){
+                            if($READ_ROUTES == 0){
+                               $abort_current_net = 1;
+                               last;
+                            }
+                            else { 
+                                  $process_routes = 1; 
+                            }# read the routing
+                         }
+                       }#if connectivity
+                       else{
+                         #----------------------------------------------------------------#
+                         # process routing of the net                                     #
+                         if($line =~ /ROUTED/) { 
+                            $route_type = R; 
+                            $line =~ s/\+*\s+ROUTED\s+//;
+                            $NETS_ROUTING_ALREADY{$netName}->dbNetRoutingDBSetRegularRoute($line);
+                            print "DBG-PAR-DEF : 021 : $line\n" if ($DEBUG == 23);  
+                            last; 
+                         }
+                         elsif($line =~ /FIXED/){$route_type = F; print "DBG-PAR-DEF : 022 : $line\n" if ($DEBUG == 23);  last; }
+       
+                         elsif($line =~ /COVER/){$route_type = C; print "DBG-PAR-DEF : 023 : $line\n" if ($DEBUG == 23);  last; }
+                         elsif($line =~ /NEW/){ 
+                            $line =~ s/NEW\s+//;
+                            $NETS_ROUTING_ALREADY{$netName}->dbNetRoutingDBSetRegularRoute($line);
+                            print "DBG-PAR-DEF : 024 : $line\n" if ($DEBUG == 23); 
+                            last; 
+                         }
+                       }#process routing
+                     }#while
+                  }# if processing connectivity
+                }#while
+             }#if line does not end loop
+             else {
+             print "DBG-PAR-DEF : 025 : $_\n" if ($DEBUG == 20);
+             push(@net_data,$_);
+            }
+          }#if READ_NETS is equal to 1
+       }# NETS section
+       ################# end   the NET section ###################
+       ################# parsing SPNET section ###################
+       elsif($_ =~ /^\s*SPECIALNETS/){ 
+          my $count = (split(/\s+/,$_))[1];
+          print "INFO-PAR-DEF : 026 : Reading $count special nets\n";
+          $reading_spnets = 1;
+       }
+       elsif($_ =~ /^\s*END SPECIALNETS/){ 
+          print "INFO-PAR-DEF : 027 : end special nets\n";
+          $reading_spnets = 0; 
+       }
+       elsif($_ =~ /^\s*VIAS/){ 
+          my $count = (split(/\s+/,$_))[1];
+          print "INFO-PAR-DEF : 028 : Reading $count vias\n";
+          $reading_vias = 1;
+       }
+       elsif($_ =~ /^\s*END VIAS/){ 
+          print "INFO-PAR-DEF : 029 : end vias\n";
+          $reading_vias = 0;
+       }
+       elsif($_ =~ /^\s*BLOCKAGES/){ 
+          my $count = (split(/\s+/,$_))[1];
+          $block_line = "";
+          $blockage_count_no = 0;
+          print "INFO-PAR-DEF : 030 : Reading $count blockages\n";
+          $reading_blkgs = 1;
+       }
+       elsif($_ =~ /^\s*END BLOCKAGES/){
+          print "INFO-PAR-DEF : 031 : end blockages\n";
+          $reading_blkgs = 0;
+       }
+       elsif($reading_spnets == 1 && $READ_SPNETS == 1){
+          ###########################################################
+          ####    read only the connectivity if present          ####
+          ###########################################################
+          if($_ =~ /^\-/){
+             @net_data = ();
+             $netName = (split(/\s+/, $_))[1];
+             print "DBG-PAR-DEF : 032 : $netName\n" if ($DEBUG > 10);
+             if ( !defined $NETS_ALREADY{$netName} ) {
+             $NETS_ALREADY{$netName} = NetDB::new();
+             $NETS_ROUTING_ALREADY{$netName} = NetRoutingDB::new();
+             $NADB{$netName} = NetsAttrDB::new();
+             $NADB{$netName}->dbNadbSetNetType(1);
+                                                     } else {
+             $NADB{$netName}->dbNadbSetNetType(2);
+             #$SNETS_ALREADY{$netName} = $NETS_ALREADY{$netName};
+                                                            }
+             $SNETS_ALREADY{$netName} = $NETS_ALREADY{$netName};
+             push(@net_data,$_);
+          }
+          elsif($_ =~ /\;\s*$/){
+             my $abort_current_net = 0;
+             my $process_routes = 0;
+             print "DBG-PAR-DEF : 033 : $_\n" if ($DEBUG == 24);
+             push(@net_data, $_);
+             my $num = @net_data;
+             print "DBG-PAR-DEF : 034 : lines in net data are $num \n" if ($DEBUG == 24);
+             while(defined ($line = shift @net_data)){
+               if($abort_current_net == 1){ last; }
+               my @net_data_per_line = split(/\s+/, $line);
+               while(defined ($data = shift @net_data_per_line)){
+                 if($process_routes == 0){
+                   if($data eq "("){
+                      my @instArr = ();
+                      my $inst_str = shift @net_data_per_line;
+                      $inst_str =~ s/\\//g;
+                      if($inst_str =~ /\*/){
+                         @instArr = keys %COMP_ALREADY; 
+                      }else{
+                         push (@instArr,$inst_str);
+                      }
+                      $pin = shift @net_data_per_line;
+                      shift @net_data_per_line;
+                      foreach my $inst(@instArr){
+                        $NETS_ALREADY{$netName}{$inst} = $pin;
+                        if(exists $COMP_ALREADY{$inst}) { $COMP_ALREADY{$inst}{$pin} = $netName;} 
+                        elsif( $inst eq "PIN"){ }
+                        elsif( $inst eq "\*") {}
+                        else { print "ERROR-PAR-DEF : 036 : $netName : $inst not found\n"; }
+                      }
+                   }
+                   elsif($data =~ /\+/){
+                      if($READ_SPROUTES == 0){$abort_current_net = 1; last;}
+                      else{
+                         $process_routes = 1;
+                      }# read the routing
+                   }
+                 }# if connectivity
+                 else {
+                   #----------------------------------------------------------------#
+                   # process routing of the net                                     #
+                   if($line =~ /ROUTED/){ 
+                      $route_type = R;
+                      $line =~ s/\+*\s+ROUTED\s+//;
+                      print "DBG-PAR-DEF : 037 : $netName : $line\n" if ($DEBUG == 24);
+                      $NETS_ROUTING_ALREADY{$netName}->dbNetRoutingDBSetSpecialRoute($line);
+                      last; 
+                   }
+                   elsif($line =~ /FIXED/){ 
+                      $route_type = F; 
+                      $line =~ s/\+*\s+FIXED\s+//;
+                      print "DBG-PAR-DEF : 038 : $netName : $line\n" if ($DEBUG == 24);
+                      $NETS_ROUTING_ALREADY{$netName}->dbNetRoutingDBSetFixedRoute($line);
+                      last; 
+                   }
+                   elsif($line =~ /COVER/){ $route_type = C; print "DBG-PAR-DEF : 039 : $line\n" if ($DEBUG == 24);  last; }
+                   elsif($line =~ /NEW/){
+                      $line =~ s/NEW\s+//;
+                      print "DBG-PAR-DEF : 040 : $line\n" if ($DEBUG == 24);
+                      if($route_type eq 'R'){
+                         $NETS_ROUTING_ALREADY{$netName}->dbNetRoutingDBSetSpecialRoute($line);
+                      }elsif($route_type eq 'F'){
+                         $NETS_ROUTING_ALREADY{$netName}->dbNetRoutingDBSetFixedRoute($line);
+                      }
+                      last; 
+                   }
+                   #------------------------Added by Mansi-------------------------#
+                   elsif($line =~/RECT/){
+                      my $shape_stripe = "SHAPE STRIPE";
+                      $line =~ s/\+*\s+RECT\s+//;
+                      $line =~ s/\(//g;
+                      $line =~ s/\)//g;
+                      my ($metal_layer,$X1,$Y1,$X2,$Y2) = (split(/\s+/,$line))[0,1,2,3,4];
+                      my $width_1 = abs($X2 -$X1);
+                      my $width_2 = abs($Y2 -$Y1);
+                      if($width_2 < $width_1 ){
+                         my $get_width = int ($width_2);
+                         my $new_y1 = int ($Y1+$get_width/2); 
+                         my $new_x1 = int ($X1);
+                         my $new_x2 = int ($X2);
+                         my $co_ord_1 = "( ".$new_x1." ".$new_y1." )";
+                         my $co_ord_2 = "( ".$new_x2." * )";
+                         my $new_line_data = $metal_layer." ".$get_width." + ".$shape_stripe." ".$co_ord_1." ".$co_ord_2;
+                         $NETS_ROUTING_ALREADY{$netName}->dbNetRoutingDBSetSpecialRoute($new_line_data);
+                      }else {
+                         my $get_width = int ($width_1);
+                         my $new_x1 = int($X1+$get_width/2);
+                         my $new_y1 = int($Y1);
+                         my $new_y2 = int($Y2);
+                         my $co_ord_1 = "( ".$new_x1." ".$new_y1." )";
+                         my $co_ord_2 = "( * ".$new_y2." )";
+                         my $new_line_data = $metal_layer." ".$get_width." + ".$shape_stripe." ".$co_ord_1." ".$co_ord_2;
+                         $NETS_ROUTING_ALREADY{$netName}->dbNetRoutingDBSetSpecialRoute($new_line_data);
+                      }
+                   } 
+                   #------------------------------------------------------#
+                   elsif($line =~ /USE/){
+                      $line =~ s/\+*\s+USE\s+//;
+                      $NETS_ROUTING_ALREADY{$netName}->dbNetSetType($line);
+                      last; 
+                   }
+                 }#process routing
+               }#while
+             }#while
+          }#if line end
+          else{ 
+             push(@net_data,$_);
+          }
+       }#if reading spnets
+       elsif($reading_vias == 1 && $READ_VIAS == 1){ next; }
+       elsif($reading_vias == 1 && $READ_VIAS == 0){ next; }
+       elsif($reading_blkgs == 1 && $READ_BLKGS == 1){
+          chomp();
+          if($_ =~ /^$/ || $_ =~ /^#/){next;}
+          $block_line = $block_line." ".$_;
+          if($_ =~ /\;\s*$/){
+             my $routing_blockage_found = 0;
+             my $placement_blockage_found = 0;
+             my @blockages_string = ();
+             my @blkg_data = split(/\s+/,$block_line);
+             my $BlkgName;
+             while(defined ($data = shift @blkg_data)){
+              if($data eq "-"){ $BlkgName = "Blkg".$blockage_count_no; @rect = (); 
+              }
+              elsif($data eq "LAYER"){ 
+                 my $layerName = shift @blkg_data;
+                 $routing_blockage_found = 1;
+                 push (@blockages_string, $layerName);
+              }
+              elsif($data eq "PLACEMENT"){ 
+                 $placement_blockage_found = 1;
+              }
+              elsif($data eq "RECT"){ 
+                 shift @blkg_data; # shift out open bracket
+                 my $x1 = shift @blkg_data;
+                 my $y1 = shift @blkg_data;
+                 shift @blkg_data;
+                 shift @blkg_data;
+                 my $x2 = shift @blkg_data;
+                 my $y2 = shift @blkg_data;
+                 push (@blockages_string,$x1,$y1,$x2,$y2);
+              } 
+              else{}
+            }#while
+            $blockage_count_no++;
+            $block_line = "";
+          }
+          #-------------------------------------------------------------#
+       }
+       elsif ($reading_blkgs == 1 && $READ_BLKGS == 0 ) {next;}
+       else{next;}
+     }# if line is not commented out
+   }#while
+   print "INFO-PAR-DEF : 041 : End reading the def file\n";
+}# if correct no of arguments
+&set_inst_box;
+
+$t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "command read_def took:",timestr($td),"\n";
+
+}#sub read_def
+
+sub set_inst_box {
+  $DEF_DATABASE_UNIT = $GLOBAL->dbfGlobalGetDBU;
+  foreach $instance (keys %COMP_ALREADY){
+    my @instLoc = $CADB{$instance}->dbCadbGetLoc;
+    my $orient = $CADB{$instance}->dbCadbGetOrient;
+    my $cellref = $CADB{$instance}->dbCadbGetCellref;
+    if(exists $PLDB{$cellref}){
+       my @cellSize = $PLDB{$cellref}->dbMdbGetSize;
+       my $xorigin = $instLoc[0];
+       my $yorigin = $instLoc[1];
+       
+       my $width = $cellSize[0]*$DEF_DATABASE_UNIT;
+       my $height = $cellSize[1]*$DEF_DATABASE_UNIT; 
+       
+       my ($llx,$lly,$urx,$ury) = &utilLocToBbox($xorigin, $yorigin, $orient, $width, $height);
+       $CADB{$instance}->dbCadbSetbBox($llx,$lly,$urx,$ury);
+    }#if exists cellref
+  }#foreach instance 
+}#sub set_inst_box
+#--------------------------------------------------------------------------------------------------------------------------------------------------------------------#
+
+sub utilLocToBbox {
+  my ($xorigin, $yorigin, $orient, $width, $height) = @_;
+  my ($llx, $lly, $urx, $ury) = ($xorigin, $yorigin, $xorigin, $yorigin);
+  if($orient eq "N" || $orient eq "FN" ||
+     $orient eq "S" || $orient eq "FS" ) {
+     $urx += $width;
+     $ury += $height;
+  }elsif($orient eq "W" || $orient eq "FW" || $orient eq "E" || $orient eq "FE"){
+     $urx += $height;
+     $ury += $width;
+  }else{
+     #print "MSG : Illegal orientation $orient of $instance\n";
+  }
+  return ($llx, $lly, $urx, $ury);
+}#sub utilLocToBbox
+
+sub dbPlaceFindClosestBoundary {
+  my $origX = $_[0];
+  my $origY = $_[1];
+  my $minX = 0;
+  my $minY = 0;
+  my $xbound = "W";
+  my $ybound = "S";
+  my $boundary = "N";
+  my @size = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetSize;
+  my $x1 = abs($origX - $size[0]);
+  my $y1 = abs($origY - $size[1]);
+  my $x2 = abs($origX - $size[2]);
+  my $y2 = abs($origY - $size[3]);
+  print "DBG-ALGO_PREPL : 001 : $x1 $y1 $x2 $y2\n" if ($DEBUG > 2);
+  if( $x1 <= $x2) { $minX = $x1 ; $xbound = "W"; } else { $minX = $x2; $xbound = "E";}
+  if( $y1 <= $y2) { $minY = $y1 ; $ybound = "S"; } else { $minY = $y2; $ybound = "N";}
+  if($minX <= $minY ) { $boundary = $xbound; } else {  $boundary = $ybound; }
+  print "DBG-ALGO_PREPL : 002 : closest boundary is $boundary\n" if ($DEBUG > 2);
+  my($newX,$newY,$orient) = dbPlacePortsTransformCoordinates($origX,$origY,$boundary);
+  return($newX,$newY,$orient);
+}#sub dbPlaceFindClosestBoundary
+
+sub dbPlacePortsTransformCoordinates {
+  my $x = $_[0];
+  my $y = $_[1];
+  my $boundaryName = $_[2];
+  print "DBG-ALGO_PREPL : 001 : New boundary and co-ordinates are $boundaryName $x  $y\n" if ($DEBUG > 2);
+  my $newX = 0;
+  my $newY = 0;
+  my @size = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetSize;
+     if($boundaryName eq "S") { $newX = $x; $newY = $size[1]; } 
+  elsif($boundaryName eq "E") { $newX = $size[2]; $newY = $y; } 
+  elsif($boundaryName eq "N") { $newX = $x; $newY = $size[3]; } 
+  elsif($boundaryName eq "W") { $newX = $size[0]; $newY = $y; } 
+  else { print "WARN-ALGO_PREPL : 002 : p003 : unknown closest boundary\n"; }
+  print "DBG-ALGO_PREPL : 003 : New boundary and co-ordinates are $boundaryName $newX $newY\n" if ($DEBUG > 2);
+  return($newX,$newY,$boundaryName);
+}#sub dbPlacePortsTransformCoordinates
+
+sub xformCellPinToInstPin {
+my $instOriginX = shift @_;
+my $instOriginY = shift @_ ;
+my $cellOriginX = shift @_;
+my $cellOriginY = shift @_;
+my $cellOrient = shift @_;
+my $cellW = shift @_;
+my $cellH = shift @_;
+my @cellPinRect = @_;
+my @instPinRect = ();
+my $dbu = $GLOBAL->dbfGlobalGetDBU;
+   # multiply each co-ordinate of rect by DBU
+   $cellPinRect[0] = $cellPinRect[0]+$cellOriginX;
+   $cellPinRect[1] = $cellPinRect[1]+$cellOriginY;
+   $cellPinRect[2] = $cellPinRect[2]+$cellOriginX;
+   $cellPinRect[3] = $cellPinRect[3]+$cellOriginY;
+   $_ *= $dbu for @cellPinRect;
+   $cellW *= $dbu;
+   $cellH *= $dbu;
+
+#----------- orentation cheat-sheet -----------#
+# FE : MYR90 : flip on y-axis and rotate by 90deg
+#  N  : R0 : default
+#  FN : MX : flip along X-axis
+  
+   
+
+#   if ( $cellOrient eq 'N' ){
+#   #default 
+#   $instPinRect[0] = $cellPinRect[0] + $instOriginX;
+#   $instPinRect[1] = $cellPinRect[1] + $instOriginY;
+#   $instPinRect[2] = $cellPinRect[2] + $instOriginX;
+#   $instPinRect[3] = $cellPinRect[3] + $instOriginY;
+#                             }
+#elsif ( $cellOrient eq 'FN'){
+#   # flip along Y-axis
+#   $instPinRect[0] = ($cellW - $cellPinRect[0]) + $instOriginX;
+#   $instPinRect[1] = $cellPinRect[1] + $instOriginY;
+#   $instPinRect[2] = ($cellW - $cellPinRect[2]) + $instOriginX;
+#   $instPinRect[3] = $cellPinRect[3] + $instOriginY;
+#                            }
+#elsif ( $cellOrient eq 'W'){
+#   # rotate by 90 deg 
+#   $instPinRect[0] = ($cellH - $cellPinRect[1]) + $instOriginX;
+#   $instPinRect[1] = $cellPinRect[0] + $instOriginY;
+#   $instPinRect[2] = ($cellH - $cellPinRect[3]) + $instOriginX;
+#   $instPinRect[3] = $cellPinRect[2] + $instOriginY;
+#                            }
+#elsif ( $cellOrient eq 'FW' ){
+#   # rotate by 90 deg and flip along Y-axis 
+#   $instPinRect[0] = $cellPinRect[1] + $instOriginX;
+#   $instPinRect[1] = $cellPinRect[0] + $instOriginY;
+#   $instPinRect[2] = $cellPinRect[3] + $instOriginX;
+#   $instPinRect[3] = $cellPinRect[2] + $instOriginY;
+#                             }
+#elsif ( $cellOrient eq 'S'){
+#   # rotate by 180 deg
+#   $instPinRect[0] = ($cellW - $cellPinRect[0]) + $instOriginX;
+#   $instPinRect[1] = ($cellH - $cellPinRect[1]) + $instOriginY;
+#   $instPinRect[2] = ($cellW - $cellPinRect[2]) + $instOriginX;
+#   $instPinRect[3] = ($cellH - $cellPinRect[3]) + $instOriginY;
+#                            }
+#elsif ( $cellOrient eq 'FS'){
+#   # rotate by 180 deg and flip along Y-axis 
+#   $instPinRect[0] = $cellPinRect[0] + $instOriginX;
+#   $instPinRect[1] = ($cellH - $cellPinRect[1]) + $instOriginY;
+#   $instPinRect[2] = $cellPinRect[2] + $instOriginX;
+#   $instPinRect[3] = ($cellH - $cellPinRect[3]) + $instOriginY;
+#                            }
+#elsif ( $cellOrient eq 'E'){
+#   # rotate by 270 deg
+#   $instPinRect[0] = $cellPinRect[1] + $instOriginX;
+#   $instPinRect[1] = ($cellW - $cellPinRect[0]) + $instOriginY;
+#   $instPinRect[2] = $cellPinRect[3] + $instOriginX;
+#   $instPinRect[3] = ($cellW - $cellPinRect[2]) + $instOriginY;
+#                            }
+#elsif ( $cellOrient eq 'FE'){
+#   # rotate by 270 deg and flip along Y-axis
+#   $instPinRect[0] = ($cellH - $cellPinRect[1]) + $instOriginX ;
+#   $instPinRect[1] = ($cellW - $cellPinRect[0]) + $instOriginY ;
+#   $instPinRect[2] = ($cellH - $cellPinRect[3]) + $instOriginX ;
+#   $instPinRect[3] = ($cellW - $cellPinRect[2]) + $instOriginY ;
+#                            }
+
+###### In above code some times upper coords becomes less than lower #######
+############ We are making here lower coords less than upper ###############
+   if ( $cellOrient eq 'N' ){
+   #default 
+   $instPinRect[0] = $cellPinRect[0] + $instOriginX;
+   $instPinRect[1] = $cellPinRect[1] + $instOriginY;
+   $instPinRect[2] = $cellPinRect[2] + $instOriginX;
+   $instPinRect[3] = $cellPinRect[3] + $instOriginY;
+                             }
+elsif ( $cellOrient eq 'FN'){
+   # flip along Y-axis
+   $instPinRect[0] = ($cellW - $cellPinRect[2]) + $instOriginX;
+   $instPinRect[1] = $cellPinRect[1] + $instOriginY;
+   $instPinRect[2] = ($cellW - $cellPinRect[0]) + $instOriginX;
+   $instPinRect[3] = $cellPinRect[3] + $instOriginY;
+                            }
+elsif ( $cellOrient eq 'W'){
+   # rotate by 90 deg 
+   $instPinRect[0] = ($cellH - $cellPinRect[3]) + $instOriginX;
+   $instPinRect[1] = $cellPinRect[0] + $instOriginY;
+   $instPinRect[2] = ($cellH - $cellPinRect[1]) + $instOriginX;
+   $instPinRect[3] = $cellPinRect[2] + $instOriginY;
+                            }
+elsif ( $cellOrient eq 'FW' ){
+   # rotate by 90 deg and flip along Y-axis 
+   $instPinRect[0] = $cellPinRect[1] + $instOriginX;
+   $instPinRect[1] = $cellPinRect[0] + $instOriginY;
+   $instPinRect[2] = $cellPinRect[3] + $instOriginX;
+   $instPinRect[3] = $cellPinRect[2] + $instOriginY;
+                             }
+elsif ( $cellOrient eq 'S'){
+   # rotate by 180 deg
+   $instPinRect[0] = ($cellW - $cellPinRect[2]) + $instOriginX;
+   $instPinRect[1] = ($cellH - $cellPinRect[3]) + $instOriginY;
+   $instPinRect[2] = ($cellW - $cellPinRect[0]) + $instOriginX;
+   $instPinRect[3] = ($cellH - $cellPinRect[1]) + $instOriginY;
+                            }
+elsif ( $cellOrient eq 'FS'){
+   # rotate by 180 deg and flip along Y-axis 
+   $instPinRect[0] = $cellPinRect[0] + $instOriginX;
+   $instPinRect[1] = ($cellH - $cellPinRect[3]) + $instOriginY;
+   $instPinRect[2] = $cellPinRect[2] + $instOriginX;
+   $instPinRect[3] = ($cellH - $cellPinRect[1]) + $instOriginY;
+                            }
+elsif ( $cellOrient eq 'E'){
+   # rotate by 270 deg
+   $instPinRect[0] = $cellPinRect[1] + $instOriginX;
+   $instPinRect[1] = ($cellW - $cellPinRect[2]) + $instOriginY;
+   $instPinRect[2] = $cellPinRect[3] + $instOriginX;
+   $instPinRect[3] = ($cellW - $cellPinRect[0]) + $instOriginY;
+                            }
+elsif ( $cellOrient eq 'FE'){
+   # rotate by 270 deg and flip along Y-axis
+   $instPinRect[0] = ($cellH - $cellPinRect[3]) + $instOriginX ;
+   $instPinRect[1] = ($cellW - $cellPinRect[2]) + $instOriginY ;
+   $instPinRect[2] = ($cellH - $cellPinRect[1]) + $instOriginX ;
+   $instPinRect[3] = ($cellW - $cellPinRect[0]) + $instOriginY ;
+                            }
+
+return(@instPinRect);
+}#sub xformCellPinToInstPin
+
+
+sub xformNetSegToRouteBox {
+ my $netSeg = $_[0];
+ my @routeBox = ();
+ my $dbu = $GLOBAL->dbfGlobalGetDBU;
+ my $netSegZ = (split(/\s+/,$netSeg))[0];
+ if(exists $PTDB{$netSegZ}){
+    my $defaultWidth = $PTDB{$netSegZ}->dbTechGetLayerWidth;
+    my $W = $defaultWidth*$dbu; 
+    if ($netSeg =~ m/\( (\d+) (\d+) \) (\w+)/ ) {
+           print "DBG-DES : 001 : matched connection to via $3\n" if ($DEBUG);
+           return($1,$2,$1,$2);
+                                                 }# if only via
+    elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( (\d+) \* \) (\w+)/ ) {
+           print "DBG-DES : 002 : matched horizontal without extn with via $1,$2,$3,$4  and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+           my $llx = $1-($W/2);
+           my $lly = $2-($W/2);
+           my $urx = $3+($W/2);
+           my $ury = $2+($W/2);
+           return($llx,$lly,$urx,$ury);
+                                                 }# if horizontal without extn with via
+    elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( (\d+) \* (\d+) \) (\w)/ ) {
+          print "DBG-DES : 003 : matched horizontal R-extn with via $1,$2,$3,$4,$5  and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+           my $llx = $1-($W/2);
+           my $lly = $2-($W/2);
+           my $urx = $3+$4;
+           my $ury = $2+($W/2);
+           return($llx,$lly,$urx,$ury);
+                                                 }# if horizontal R-extn with via
+    elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( (\d+) \* (\d+) \)/ ) {
+           print "DBG-DES : 004 : matched  horizontal R-extn without via $1,$2,$3,$4  and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+           my $llx = $1-($W/2);
+           my $lly = $2-($W/2);
+           my $urx = $3+$4;
+           my $ury = $2+($W/2);
+           return($llx,$lly,$urx,$ury);
+                                                 }# if horizontal R-extn without via
+    elsif ($netSeg =~ m/\( (\d+) (\d+) (\d+) \) \( (\d+) \* \) (\w)/ ) {
+           print "DBG-DES : 005 : matched horizontal L-extn with via $1,$2,$3,$4  and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+           my $llx = $1-$3;
+           my $lly = $2-($W/2);
+           my $urx = $4+($W/2);
+           my $ury = $2+($W/2);
+           return($llx,$lly,$urx,$ury);
+                                                 }# if horizontal L-extn with via
+    elsif ($netSeg =~ m/\( (\d+) (\d+) (\d+) \) \( (\d+) \* \)/ ) {
+           print "DBG-DES : 006 : matched horizontal L-extn without via $1,$2,$3,$4 and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+           my $llx = $1-$3;
+           my $lly = $2-($W/2);
+           my $urx = $4+($W/2);
+           my $ury = $2+($W/2);
+           return($llx,$lly,$urx,$ury);
+                                                 }# if horizontal L-extn without via
+    elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( (\d+) \* \)/ ) {
+           print "DBG-DES : 007 : matched horizontal without extn without via  $1,$2,$3 and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+           my $llx = $1-($W/2);
+           my $lly = $2-($W/2);
+           my $urx = $3+($W/2);
+           my $ury = $2+($W/2);
+           return($llx,$lly,$urx,$ury);
+                                                 }# if horizontal without extn without via
+    elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( \* (\d+) \) (\w)/ ) {
+           print "DBG-DES : 008 : matched verical without extn with via $1,$2,$3,$4  and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+           my $llx = $1-($W/2);
+           my $lly = $2-($W/2);
+           my $urx = $1+($W/2);
+           my $ury = $3+($W/2);
+           return($llx,$lly,$urx,$ury);
+                                                 }# if verical without extn with via
+    elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( \* (\d+) (\d+) \) (\w)/ ) {
+          print "DBG-DES : 009 : matched verical T-extn with via $1,$2,$3,$4,$5  and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+           my $llx = $1-($W/2);
+           my $lly = $2-($W/2);
+           my $urx = $1+($W/2);
+           my $ury = $3+$4;
+           return($llx,$lly,$urx,$ury);
+                                                 }# if verical T-extn with via
+    elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( \* (\d+) (\d+) \)/ ) {
+           print "DBG-DES : 010 : matched  verical T-extn without via $1,$2,$3,$4  and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+           my $llx = $1-($W/2);
+           my $lly = $2-($W/2);
+           my $urx = $1+($W/2);
+           my $ury = $3+$4;
+           return($llx,$lly,$urx,$ury);
+                                                 }# if verical T-extn without via
+    elsif ($netSeg =~ m/\( (\d+) (\d+) (\d+) \) \( \* (\d+) \) (\w)/ ) {
+           print "DBG-DES : 011 : matched verical B-extn with via $1,$2,$3,$4  and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+           my $llx = $1-($W/2);
+           my $lly = $2-$3;
+           my $urx = $1+($W/2);
+           my $ury = $4+($W/2);
+           return($llx,$lly,$urx,$ury);
+                                                 }# if verical B-extn with via
+    elsif ($netSeg =~ m/\( (\d+) (\d+) (\d+) \) \( \* (\d+) \)/ ) {
+           print "DBG-DES : 012 : matched verical B-extn without via $1,$2,$3,$4 and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+           my $llx = $1-($W/2);
+           my $lly = $2-$3;
+           my $urx = $1+($W/2);
+           my $ury = $4+($W/2);
+           return($llx,$lly,$urx,$ury);
+                                                 }# if verical B-extn without via
+    elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( \* (\d+) \)/ ) {
+           print "DBG-DES : 013 : matched verical without extn without via  $1,$2,$3 and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+           my $llx = $1-($W/2);
+           my $lly = $2-($W/2);
+           my $urx = $1+($W/2);
+           my $ury = $3+($W/2);
+           return($llx,$lly,$urx,$ury);
+                                                 }# if verical without extn without via
+#---- temporary code to support jspeed routing text -------------------------#
+    elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( (\d+) (\d+) \)/ ) {
+           print "DBG-DES : 014 : jspeed : matched without extn without via  $1,$2,$3,$4 and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                     if ( $1 == $3 ) {
+           my $llx = $1-($W/2);
+           my $lly = $2-($W/2);
+           my $urx = $3+($W/2);
+           my $ury = $4+($W/2);
+           return($llx,$lly,$urx,$ury);
+                                    }
+                  elsif ( $2 == $4 ) {
+           my $llx = $1-($W/2);
+           my $lly = $2-($W/2);
+           my $urx = $3+($W/2);
+           my $ury = $4+($W/2);
+           return($llx,$lly,$urx,$ury);
+                                     }
+    }# if verical without extn without via
+ }#if the routiung layer exists
+}#sub xformNetSegToRouteBox
+
+
+sub xformNetSegToSpecialRouteBox {
+my $netSeg = $_[0];
+my @routeBox = ();
+my $dbu = $GLOBAL->dbfGlobalGetDBU;
+my ($netSegZ, $Width) = (split(/\s+/,$netSeg))[0, 1];
+#print " $netSegZ, $Width\n";
+            my $W = $Width; 
+                        if ($netSeg =~ m/\( (\d+) (\d+) \) (\w+)/ ) {
+                            print "DBG-DES : 001 : matched connection to via $3\n" if ($DEBUG);
+                            return($1,$2,$1,$2);
+                                                                  }# if only via
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( (\d+) \* \) (\w+)/ ) {
+                            print "DBG-DES : 002 : matched horizontal without extn with via $1,$2,$3,$4  and W\=$W $Width $dbu\n" if ($DEBUG);
+                            my $llx = $1;
+                            my $lly = $2-($W/2);
+                            my $urx = $3;
+                            my $ury = $2+($W/2);
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if horizontal without extn with via
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( (\d+) \* (\d+) \) (\w)/ ) {
+                           print "DBG-DES : 003 : matched horizontal R-extn with via $1,$2,$3,$4,$5  and W\=$W $Width $dbu\n" if ($DEBUG);
+                            my $llx = $1;
+                            my $lly = $2-($W/2);
+                            my $urx = $3+$4;
+                            my $ury = $2+($W/2);
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if horizontal R-extn with via
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( (\d+) \* (\d+) \)/ ) {
+                            print "DBG-DES : 004 : matched  horizontal R-extn without via $1,$2,$3,$4  and W\=$W $Width $dbu\n" if ($DEBUG);
+                            my $llx = $1;
+                            my $lly = $2-($W/2);
+                            my $urx = $3+$4;
+                            my $ury = $2+($W/2);
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if horizontal R-extn without via
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) (\d+) \) \( (\d+) \* \) (\w)/ ) {
+                            print "DBG-DES : 005 : matched horizontal L-extn with via $1,$2,$3,$4  and W\=$W $Width $dbu\n" if ($DEBUG);
+                            my $llx = $1-$3;
+                            my $lly = $2-($W/2);
+                            my $urx = $4;
+                            my $ury = $2+($W/2);
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if horizontal L-extn with via
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) (\d+) \) \( (\d+) \* \)/ ) {
+                            print "DBG-DES : 006 : matched horizontal L-extn without via $1,$2,$3,$4 and W\=$W $Width $dbu\n" if ($DEBUG);
+                            my $llx = $1-$3;
+                            my $lly = $2-($W/2);
+                            my $urx = $4;
+                            my $ury = $2+($W/2);
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if horizontal L-extn without via
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( (\d+) \* \)/ ) {
+                            print "DBG-DES : 007 : matched horizontal without extn without via  $1,$2,$3 and W\=$W $Width $dbu\n" if ($DEBUG);
+                            my $llx = $1;
+                            my $lly = $2-($W/2);
+                            my $urx = $3;
+                            my $ury = $2+($W/2);
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if horizontal without extn without via
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( \* (\d+) \) (\w)/ ) {
+                            print "DBG-DES : 008 : matched verical without extn with via $1,$2,$3,$4  and W\=$W $Width $dbu\n" if ($DEBUG);
+                            my $llx = $1-($W/2);
+                            my $lly = $2;
+                            my $urx = $1+($W/2);
+                            my $ury = $3;
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if verical without extn with via
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( \* (\d+) (\d+) \) (\w)/ ) {
+                           print "DBG-DES : 009 : matched verical T-extn with via $1,$2,$3,$4,$5  and W\=$W $Width $dbu\n" if ($DEBUG);
+                            my $llx = $1-($W/2);
+                            my $lly = $2;
+                            my $urx = $1+($W/2);
+                            my $ury = $3+$4;
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if verical T-extn with via
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( \* (\d+) (\d+) \)/ ) {
+                            print "DBG-DES : 010 : matched  verical T-extn without via $1,$2,$3,$4  and W\=$W $Width $dbu\n" if ($DEBUG);
+                            my $llx = $1-($W/2);
+                            my $lly = $2;
+                            my $urx = $1+($W/2);
+                            my $ury = $3+$4;
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if verical T-extn without via
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) (\d+) \) \( \* (\d+) \) (\w)/ ) {
+                            print "DBG-DES : 011 : matched verical B-extn with via $1,$2,$3,$4  and W\=$W $Width $dbu\n" if ($DEBUG);
+                            my $llx = $1-($W/2);
+                            my $lly = $2-$3;
+                            my $urx = $1+($W/2);
+                            my $ury = $4+($W/2);
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if verical B-extn with via
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) (\d+) \) \( \* (\d+) \)/ ) {
+                            print "DBG-DES : 012 : matched verical B-extn without via $1,$2,$3,$4 and W\=$W $Width $dbu\n" if ($DEBUG);
+                            my $llx = $1-($W/2);
+                            my $lly = $2-$3;
+                            my $urx = $1+($W/2);
+                            my $ury = $4;
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if verical B-extn without via
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( \* (\d+) \)/ ) {
+                            print "DBG-DES : 013 : matched verical without extn without via  $1,$2,$3 and W\=$W $Width $dbu\n" if ($DEBUG);
+                            my $llx = $1-($W/2);
+                            my $lly = $2;
+                            my $urx = $1+($W/2);
+                            my $ury = $3;
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if verical without extn without via
+#--------------------- temporary code to support jspeed routing text -------------------------#
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( (\d+) (\d+) \)/ ) {
+                            print "DBG-DES : 014 : jspeed : matched without extn without via  $1,$2,$3,$4 and W\=$W $Width $dbu\n" if ($DEBUG);
+                                      if ( $1 == $3 ) {
+                            my $llx = $1-($W/2);
+                            my $lly = $2;
+                            my $urx = $3+($W/2);
+                            my $ury = $4;
+                            return($llx,$lly,$urx,$ury);
+                                                     }
+                                   elsif ( $2 == $4 ) {
+                            my $llx = $1;
+                            my $lly = $2-($W/2);
+                            my $urx = $3;
+                            my $ury = $4+($W/2);
+                            return($llx,$lly,$urx,$ury);
+                                                      }
+                                                                  }# if verical without extn without via
+
+}#sub xformNetSegToSpecialRouteBox
+
+1;

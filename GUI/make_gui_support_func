@@ -1,0 +1,1652 @@
+###############################################################
+################# export and Import Lef/Def ###################
+###############################################################
+sub call_read_def {
+my $fileName =$_;
+my @types = (["Config Files", '.def'],
+             ["All Files", "*"]);
+
+$fileName = $top->getOpenFile(-filetypes =>\@types,
+                              -defaultextension => '.def'); 
+          
+&read_defII("-def","$fileName","-all");
+}#sub call_read_def
+#-------------------------------------------------------#
+
+sub call_write_def {
+my $fileName =$_;
+my @types = (["Config Files", '.def'],
+             ["All Files", "*"]);
+
+$fileName = $top->getSaveFile(-filetypes =>\@types,
+                              -defaultextension => '.def'); 
+          
+&write_def("-output","$fileName");
+}#sub call_write_def
+#------------------------------------------------#
+
+sub read_lef_popup {
+
+my $fileName =$_;
+my @types = (["Config Files", '.lef'],
+             ["All Files", "*"]);
+$fileName = $top->getOpenFile(-filetypes =>\@types,
+                              -defaultextension => '.lef'); 
+          
+&read_lef("-lef","$fileName","-tech","also");
+}#sub read_lef_popup
+#-----------------------------------------------#
+
+sub write_lef_popup {
+
+my $fileName =$_;
+my @types = (["Config Files", '.lef'],
+             ["All Files", "*"]);
+
+$fileName = $top->getSaveFile(-filetypes =>\@types,
+                              -defaultextension => '.lef'); 
+          
+&write_lef("-output","$fileName","-tech","also");
+
+}#sub write_lef_popup
+
+#############################################################################################################
+################################## subroutines for OpenConfig button ########################################
+#############################################################################################################
+#-------------------------------------- popup to write & Run tcl file ---------------------------------#
+sub popup_openConfig {
+use Tk::Dialog;
+my $popupgui = MainWindow->new();
+$popupgui->title ("Run tcl Scripts");
+my $image = $popupgui->Getimage('folder');
+my $book = $popupgui->NoteBook(-tabpady=>0,-tabpadx=>0,-relief=>"raised",-font=> "Times 10 italic", -borderwidth=>2)->pack(-side=>'top', -fill=>'both',-expand=>1);
+###################### Adding Flow Tab ########################
+my $add_file_tab = $book->add( "Sheet 1", -label=>"AddFiles");
+my $flow_tab = $book->add( "Sheet 2", -label=>"Flow");
+
+my $flow_book = $flow_tab->NoteBook(-tabpady=>0,-tabpadx=>0,-relief=>"raised",-font=> "Times 10 italic", -borderwidth=>2)->pack(-side=>'top', -fill=>'both',-expand=>1);
+my $floorplan_tab = $flow_book->add( "Sheet 3", -label=>"FloorPlan");
+my $placement_tab = $flow_book->add( "Sheet 4", -label=>"Placement");
+my $analysis_tab = $flow_book->add( "Sheet 5", -label=>"Analysis");
+
+####################################################### preparing tab1(Run tcl) ################################################
+
+my ($techleffile,$macroleffile,$libfile,$deffile,$verilogfile,$tclfile,$rtlfile,$switch,$sdcfile,$partition_name) = ("","","","","","run.tcl","","","","");
+my ($utilization, $aspect,$width,$height) = ("70", "", "", "");
+        my $add_file_frame1 = $add_file_tab->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $add_file_frame2 = $add_file_tab->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $add_file_frame3 = $add_file_tab->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $add_file_frame4 = $add_file_tab->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $add_file_frame5 = $add_file_tab->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $add_file_frame6 = $add_file_tab->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $add_file_frame7 = $add_file_tab->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $add_file_frame8 = $add_file_tab->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $add_file_frame9 = $add_file_tab->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $add_file_frame10 = $add_file_tab->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $ButtonFrame = $add_file_tab->Frame(-relief=>"raised")->pack(-side => 'bottom');
+
+$add_file_frame1->Label(-text => "Tech Lef")->pack(-side =>'left', -anchor => 'w');
+$add_file_frame1->Button(-text=>'BrowseFile',-image=> $image,-command =>sub {$techleffile = &popup_read_lef;})->pack(-side => 'right');
+$techLefEntry = $add_file_frame1->Entry(-textvariable =>\$techleffile, -width=>30)->pack(-side =>'right');
+
+$add_file_frame2->Radiobutton(-variable =>\$switch,-value => "only",-text => "only")->pack(-side =>"left"); 
+$add_file_frame2->Radiobutton(-variable =>\$switch,-value => "also",-text => "also")->pack(-side =>"left");
+$add_file_frame2->Radiobutton(-variable =>\$switch, -value => "dont",-text => "dont")->pack(-side =>"left");
+
+$add_file_frame3->Label(-text => "Macro Lef")->pack(-side =>'left', -anchor => 'w');
+$add_file_frame3->Button(-text=>'BrowseFile',-image=> $image,-command =>sub {$macroleffile = &popup_read_macrolef($macroLefEntry,"lef");})->pack(-side => 'right');
+$macroLefEntry = $add_file_frame3->Entry(-textvariable =>\$macroleffile, -width=>30)->pack(-side =>'right');
+
+$add_file_frame4->Label(-text => "lib File")->pack(-side =>'left', -anchor => 'w');
+$add_file_frame4->Button(-text=>'BrowseFile',-image=>$image,-command =>sub {$libfile = &popup_read_macrolef($macroLibEntry,"lib");})->pack(-side => 'right'); 
+$macroLibEntry = $add_file_frame4->Entry(-textvariable =>\$libfile,-width=>30)->pack(-side =>'right');
+
+$add_file_frame5->Label(-text => "def File")->pack(-side =>'left', -anchor => 'w');
+$add_file_frame5->Button(-text=>'BrowseFile',-image=>$image,-command =>sub {$deffile = &popup_read_def;})->pack(-side => 'right');
+$defEntry = $add_file_frame5->Entry(-textvariable =>\$deffile,-width=>30)->pack(-side =>'right');
+
+$add_file_frame6->Label(-text => "verilog File")->pack(-side =>'left', -anchor => 'w');
+$add_file_frame6->Button(-text=>'BrowseFile',-image=>$image,-command =>sub {$verilogfile = &popup_read_macrolef($macroVerilogEntry,"verilog")})->pack(-side => 'right');
+$macroVerilogEntry = $add_file_frame6->Entry(-textvariable =>\$verilogfile,-width=>30)->pack(-side =>'right');
+
+$add_file_frame7->Label(-text => "Rtl File")->pack(-side =>'left', -anchor => 'w');
+$add_file_frame7->Button(-text=>'BrowseFile',-image=>$image,-command =>sub {$rtlfile = &popup_read_macrolef($macroRtlEntry,"rtl");})->pack(-side => 'right');
+$macroRtlEntry = $add_file_frame7->Entry(-textvariable =>\$rtlfile,-width=>30)->pack(-side =>'right');
+
+$add_file_frame8->Label(-text => "Sdc File")->pack(-side =>'left', -anchor => 'w');
+$add_file_frame8->Button(-text=>'BrowseFile',-image=>$image,-command =>sub {$sdcfile = &popup_read_macrolef($macroSdcEntry,"sdc");})->pack(-side => 'right');
+$macroSdcEntry = $add_file_frame8->Entry(-textvariable =>\$sdcfile,-width=>30)->pack(-side =>'right');
+
+#$add_file_frame9->Label(-text => "TclFile")->pack(-side =>'left', -anchor => 'w');
+#$add_file_frame9->Button(-text=>'BrowseFile',-image=>$image,-command =>sub {$tclfile = &popup_write_tcl;})->pack(-side => 'right'); 
+#$add_file_frame9->Entry(-textvariable =>\$tclfile,-width=>30)->pack(-side =>'right');
+
+$add_file_frame10->Label(-text => "Floorplan Name")->pack(-side =>'left', -anchor => 'w');
+$add_file_frame10->Entry(-textvariable =>\$partition_name,-width=>30)->pack(-side =>'left');
+$savebutton = $ButtonFrame->Button(-text=>'Save',-command =>sub {&create_popup_2save_file($techLefEntry->get(), $switch,$defEntry->get(),$aspect,$utilization,$width,$height,$partition_name);})->pack(-side => 'left');
+
+$okbutton = $ButtonFrame->Button(-text=>'Ok',-command =>sub {&write_tcl("-output","$tclfile","-techlef","$techleffile","-tech","$switch","-macrolef",$macroLefEntry->get(),"-lib",$macroLibEntry->get(),"-def","$deffile","-verilog",$macroVerilogEntry->get(),"-rtl",$macroRtlEntry->get(),"-sdc",$macroSdcEntry->get(),"-Aspect",$aspect,"-Utilization",$utilization,"-Width",$width,"-Height",$height,"-Partition",$partition_name);&source($tclfile);$popupgui->destroy;})->pack(-side => 'left');
+
+$applybutton = $ButtonFrame->Button(-text=>'Apply',-command =>sub {&write_tcl("-output","$tclfile","-techlef","$techleffile","-tech","$switch","-macrolef",$macroLefEntry->get(),"-lib",$macroLibEntry->get(),"-def","$deffile","-verilog",$macroVerilogEntry->get(),"-rtl",$macroRtlEntry->get(),"-sdc",$macroSdcEntry->get(),"-Aspect",$aspect,"-Utilization",$utilization,"-Width",$width,"-Height",$height,"-Partition",$partition_name);&source($tclfile);})->pack(-side => 'left');
+
+$loadbutton = $ButtonFrame->Button(-text=>'Load',
+                                   -command =>\&open_load_gui,
+                                  )->pack(-side => 'left');
+$fetchbutton = $ButtonFrame->Button(-text=>'Auto Fetch',
+                                    -command =>\&open_auto_fetch_gui,
+                                    )->pack(-side => 'left');
+$cancelbutton = $ButtonFrame->Button(-text=>'Cancel',-command =>sub {$popupgui->destroy;})->pack(-side => 'left');
+####################################################### preparing tab2(Flow tab) ################################################
+##-------------------------- FloorPlan Tab -------------------##
+my $add_flow_frame1 = $floorplan_tab->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+my $add_flow_frame2 = $floorplan_tab->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+my $add_flow_frame3 = $floorplan_tab->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+my $add_flow_frame4 = $floorplan_tab->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+
+     $add_flow_frame1->Label(-text => "Utilization")->pack(-side =>'left', -anchor => 'w');
+     $add_flow_frame1->Entry(-textvariable =>\$utilization,-width=>30)->pack(-side =>'right');
+     
+     $add_flow_frame2->Label(-text => "AspectRatio")->pack(-side =>'left', -anchor => 'w');
+     $add_flow_frame2->Entry(-textvariable =>\$aspect,-width=>30)->pack(-side =>'right');
+     
+     $add_flow_frame3->Label(-text => "Width")->pack(-side =>'left', -anchor => 'w');
+     $add_flow_frame3->Entry(-textvariable =>\$width,-width=>30)->pack(-side =>'right');
+     
+     $add_flow_frame4->Label(-text => "Height")->pack(-side =>'left', -anchor => 'w');
+     $add_flow_frame4->Entry(-textvariable =>\$height,-width=>30)->pack(-side =>'right');
+     
+
+##-------------------------- Placement Tab -------------------##
+my ($level, $switch) = (1, "");
+my $add_flow_placement_frame1 = $placement_tab->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+my $add_flow_placement_frame2 = $placement_tab->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+my $placement_ButtonFrame = $placement_tab->Frame(-relief=>"raised")->pack(-side => 'bottom');
+
+         $add_flow_placement_frame1->Radiobutton(-variable =>\$switch,-value => "hier",-text => "Hier",)->pack(-side =>"left"); 
+         $add_flow_placement_frame1->Entry(-textvariable =>\$level,-width=>10)->pack(-side =>'right');
+         $add_flow_placement_frame1->Label(-text => "Level")->pack(-side =>'right');
+
+         $add_flow_placement_frame2->Radiobutton(-variable =>\$switch,-value => "flat",-text => "Flat")->pack(-side =>"left");
+
+     $plApplyButton = $placement_ButtonFrame->Button(-text=>'Run Placement',-command =>sub { 
+                                                                                             if($switch eq "hier") {
+                                                                                                                    &place_design_hierarchy_from_earlyProto_DB('-no_of_level',$level); 
+                                                                                             }
+                                                                                             if($switch eq "flat") {
+                                                                                                                    &place_graph_plan_4;
+                                                                                             }
+
+                                                                                   })->pack(-side => 'left');
+     $plCancelButton = $placement_ButtonFrame->Button(-text=>'Cancel',-command =>sub {$popupgui->destroy;})->pack(-side => 'left');
+
+}#sub popup_openConfig
+
+######################################  browse popup windows for lef,def,verilog,lib, rtl etc. ####################################
+sub popup_read_lef {
+my @types = (["Config Files", '.lef'],
+             ["All Files", "*"]);
+my $leffile = $top->getOpenFile(-filetypes =>\@types,
+                               -defaultextension => '.lef'); 
+return($leffile);          
+}#sub popup_read_lef
+
+############################################### popup to read Macro Lef ######################################################
+sub popup_read_macrolef {
+use Cwd;
+my $parentEntry = $_[0];
+my $file_type = $_[1];
+my $popupgui = MainWindow->new();
+$popupgui->title ("Select Lef Files")if($file_type eq "lef");
+$popupgui->title ("Select Lib Files")if($file_type eq "lib");
+$popupgui->title ("Select Verilog Files")if($file_type eq "verilog");
+$popupgui->title ("Select RTL Files")if($file_type eq "rtl");
+$popupgui->title ("Select Sdc Files")if($file_type eq "sdc");
+$popupgui->title ("Select Spice Files")if($file_type eq "spice");
+my $Dirimage = $popupgui->Getimage('folder');
+my $Fileimage = $popupgui->Getimage('file');
+my @fileList = ();
+ @fileList = ("Lef Files (*.lef)", "All Files (*)") if($file_type eq "lef");
+ @fileList = ("Lib Files (*.lib)", "All Files (*)") if($file_type eq "lib");
+ @fileList = ("Verilog Files (*.gv)","Verilog Files (*.v)","Verilog Files (*.vg)","All Files (*)")  if($file_type eq "verilog");
+ @fileList = ("Rtl Files (*.v)", "All Files (*)") if($file_type eq "rtl"); 
+ @fileList = ("Sdc Files (*.sdc)", "All Files (*)") if($file_type eq "sdc");
+ @fileList = ("Config Files (*)", "All Files (*)") if($file_type eq "");
+ @fileList = ("Spice Files (*.sp)","Spice Files (*.spx)","Spice Files (*.spi)","Spice Files (*.pxi)","Spice Files (*.pex)","All Files (*)")  if($file_type eq "spice");
+my $ext = $fileList[0];
+$lefEntryVar = "";
+@LEF_FILES = (); 
+
+my $pathFrame = $popupgui->Frame()->pack(-side=>'top', -expand=>1,-fill=>'x');
+my $ListFrame = $popupgui->Frame()->pack(-side=>'top', -expand=>1,-fill=>'both');
+my $entryFrame = $popupgui->Frame()->pack(-side=>'top', -expand=>1,-fill=>'x');
+my $typeFrame = $popupgui->Frame()->pack(-side=>'top', -expand=>1,-fill=>'x');
+
+my $path = cwd();
+my @var = split(/\//,$path);
+my @pathList = ("/");
+for(my $i = 1; $i<= $#var; $i++){
+    if($i >1){
+      $reg_path = $pathList[-1]."\/".$var[$i];
+    }else{ 
+      $reg_path = "\/".$var[$i];
+    }
+  push(@pathList,$reg_path); 
+}
+
+my $top_pane = $ListFrame->Scrolled(qw/Pane -width 400 -height 130 -scrollbars s -sticky nsew -relief sunken -borderwidth 2/);
+   $top_pane->Subwidget("xscrollbar")->configure(-width=>15,-borderwidth=>2);
+   $top_pane->pack(qw/-side left -anchor w -fill both -expand 1/);
+
+my $dir_label = $pathFrame->Label(-text=>"Directory:")->pack(-side=>"left");
+   $dir_list = $pathFrame->Optionmenu(
+           -options => \@pathList,
+           -textvariable=>\$path,
+           -command => sub{
+                         for(my $j=0; $j<= $#pathList; $j++){
+                           if($pathList[$j] =~m/$path\/.*/){
+                              delete $pathList[$j];
+                           } 
+                         }
+                         $dir_list->configure(-options=>\@pathList);
+                         &create_ListOfFileDir($top_pane,$path,$ext,$Dirimage,$Fileimage);
+   })->pack(-side=>'left',-expand=>1,-fill=>'x');
+ 
+my $path2eq = $GLOBAL->dbfGlobalGetProtonHome;
+my $bitmap = $popupgui->Photo(-file => "$path2eq/ETC/up.gif");
+my $upButton = $pathFrame->Button(-text=>"ad",-image => $bitmap, 
+                                  -padx=>0, -pady=>0,
+                                  -command=>sub {
+                                                 my $path2 = $dir_list->cget(-options);
+                                                 &create_ListOfFileDir($top_pane,@$path2[-2],$ext,$Dirimage,$Fileimage);
+                                                  })->pack( -side=>"right");
+$entryFrame->Label(-text=>'File name: ')->pack(-side=>'left');
+$file_entry = $entryFrame->Entry(-textvariable=>\$lefEntryVar)->pack(-side=>'left',-expand=>1,-fill=>'x');
+$entryFrame->Button(-text=>"Open", -relief=>'groove',-borderwidth=>5,-command=>sub{my $setEntryVar = join ",",@LEF_FILES;$parentEntry->configure(-textvariable=>\$setEntryVar);$popupgui->destroy;})->pack(-side=>'right');
+
+$typeFrame->Label(-text=>'Files of type:')->pack(-side=>'left');
+$file_list = $typeFrame->Optionmenu(
+                         -options => \@fileList,
+                         -textvariable=>\$ext,
+                         -command => sub{my $ad = $dir_list->cget(-options);
+                                         &create_ListOfFileDir($top_pane,@$ad[-1],$ext,$Dirimage,$Fileimage);}
+                         )->pack(-side=>'left',-expand=>1,-fill=>'x');
+$typeFrame->Button(-text=>"Cancel", -relief=>'raised', -borderwidth=>2, -command=>sub{$popupgui->destroy;})->pack(-side=>'right');
+
+&create_ListOfFileDir($top_pane,$path,$ext,$Dirimage,$Fileimage);
+}#sub popup_read_macrolef
+
+
+sub create_ListOfFileDir {
+my $frame = $_[0];
+my $path = $_[1];
+my $ext = $_[2];
+my $dir_image = $_[3];
+my $file_image = $_[4];
+my @DirFile = ();
+my @dir = ();
+my @files = ();
+
+my $extension = (split(/\(/,$ext))[1];
+for($extension){s/\)//g;}
+
+#-------------- listing the Dir and Files of CWD-----------------# 
+opendir (DIR, "$path");
+while(defined ($fileName = readdir(DIR))){
+   if(-d $path."\/".$fileName){
+      if($fileName =~ m/\.$/){ 
+      }else {
+        push(@dir, $fileName);
+      } 
+   }else{
+      if($fileName =~ m/^.$extension/){
+         push(@files, $fileName);
+      }
+   }
+} 
+closedir(DIR);
+
+@dir = sort @dir;
+@files = sort @files;
+my $noOfDir = @dir;
+my $noOfFrames = int(($#dir+$#files +2)/6); 
+push(@DirFile,@dir,@files);
+
+#-------- Deleting previous Frames and making Hash empty -------#
+foreach my $key (keys %DIR_FRAME_HASH){
+  if(Exists $DIR_FRAME_HASH{$key}){
+     my $f = $DIR_FRAME_HASH{$key};
+     $f->destroy;
+  }
+}
+%DIR_FRAME_HASH = ();
+
+#-------- Updating the path  and path List of Option Menu ------#
+my @var = split(/\//,$path);
+my @pathList = ("/");
+for(my $i = 1; $i<= $#var; $i++){
+    if($i >1){
+      $reg_path = $pathList[-1]."\/".$var[$i];
+    }else{ 
+      $reg_path = "\/".$var[$i];
+    }
+  push(@pathList,$reg_path); 
+}
+
+$dir_list->configure(-textvariable=>\$path);
+$dir_list->configure(-options=>\@pathList);
+
+#------------------- Making buttons for Files and Directory --------------------#
+my $j = 0;
+for(my $i=0; $i<=$noOfFrames; $i++){
+    $dir_frame = $frame->Frame()->pack(-side=>'left',-anchor=>'n');
+    $DIR_FRAME_HASH{$i} = $dir_frame;
+    for(my $k=0; $k<=5; $k++){
+        my $name = $DirFile[$j];
+        if($j > $#DirFile){last;}
+        my $dir_but_frame = $dir_frame->Frame()->pack(-side=>'top',-expand=>1, -fill=>'x',-anchor=>'n');  
+        if($j<$noOfDir){
+           $dir_but_frame->Label(-image=>$dir_image)->pack(-side=>'left');   
+           ${"Button".$name} = $dir_but_frame->Button(-text=> $name,-padx=>0,-pady=>0,-borderwidth=>0,-relief=>'flat',-command=>sub{
+                                                      my $buttonText = ${"Button".$name}->cget('-text');
+                                                      my $path1;
+                                                      if($path eq "\/"){
+                                                         $path1 = $path.$buttonText;
+                                                      }else{ 
+                                                         $path1 = $path."\/".$buttonText;                           
+                                                      }
+                                                      &create_ListOfFileDir($frame,$path1,$ext,$dir_image,$file_image);
+                                                     })->pack(-side=>'left');
+        }else{
+              $dir_but_frame->Label(-image=>$file_image)->pack(-side=>'left');   
+              ${"Button".$name} = $dir_but_frame->Button(-text=>$name,-padx=>0,-pady=>0,-borderwidth=>0,-relief=>'flat',
+                                                         -command=>sub{my $selFile = $path."\/".$name;
+                                                                       my $color = ${"Button".$name}->cget(-foreground);
+                                                                       if($color ne "blue"){
+                                                                          ${"Button".$name}->configure(-foreground=>"blue");
+                                                                          if($lefEntryVar eq ""){
+                                                                             $lefEntryVar = $name;
+                                                                          }else{
+                                                                             $lefEntryVar = $lefEntryVar.",".$name;
+                                                                          }
+                                                                          push(@LEF_FILES,$selFile);
+                                                                        }else{ 
+                                                                          ${"Button".$name}->configure(-foreground=>"Black");
+                                                                          my @lefEntry = split(/\,/,$lefEntryVar);
+                                                                          my @lefTemp = @LEF_FILES;
+                                                                          @LEF_FILES = (); 
+                                                                          my @LEF_ENTRY = ();
+                                                                          foreach(@lefTemp){
+                                                                            my $entryRemove = shift @lefEntry;  
+                                                                            if($_ ne $selFile){
+                                                                               push(@LEF_FILES,$_);
+                                                                               push(@LEF_ENTRY,$entryRemove); 
+                                                                            }
+                                                                          }     
+                                                                          $lefEntryVar = join ",", @LEF_ENTRY;
+                                                                        } 
+                                                        })->pack(-side=>'left');
+        } 
+        $j++;
+   }  
+}
+}#sub create_ListOfFileDir
+
+#-----------------------------------------------------------#
+sub popup_read_lib {
+my @types = (["Config Files", '.lib'],
+             ["All Files", "*"]);
+my $libfile = $top->getOpenFile(-filetypes =>\@types,
+                              -defaultextension => '.lib'); 
+return($libfile);
+}#sub popup_read_lib
+
+#-----------------------------------------------------------#
+sub popup_read_def {
+my @types = (["Config Files", '.def'],
+             ["All Files", "*"]);
+my $deffile = $top->getOpenFile(-filetypes =>\@types,
+                              -defaultextension => '.def'); 
+return($deffile);
+}#sub popup_read_def
+
+#-----------------------------------------------------------#
+sub popup_read_verilog {
+  my @types = (["Config Files", '.gv'],
+               ["All Files", "*"]);
+  my $verilogfile = $top->getOpenFile(-filetypes =>\@types,
+                                -defaultextension => '.gv'); 
+  return($verilogfile);          
+  #if($verilogfile ne ""){
+  #   &read_verilog("-v","$verilogfile");
+  #   &elaborate;
+  #}
+}#sub popup_read_verilog
+
+#-----------------------------------------------------------#
+sub popup_read_rtl {
+my @types = (["Config Files", '.v'],
+             ["All Files", "*"]);
+my $rtlfile = $top->getOpenFile(-filetypes =>\@types,
+                              -defaultextension => '.v'); 
+return($rtlfile);          
+}#sub popup_read_rtl
+
+#-----------------------------------------------------------#
+sub popup_write_tcl {
+my @types = (["Config Files", '.tcl'],
+             ["All Files", "*"]);
+
+my $tclfile = $top->getSaveFile(-filetypes =>\@types,
+                                -defaultextension => '.tcl'); 
+return($tclfile);          
+}#sub popup_write_tcl
+
+##################  creating entries for more than one lef reading ######################################
+#sub create_readLefEntry{
+#my $mw = $_[0];
+#my $frame = $_[1];
+#my $image = $_[2];
+#my $i = $_[3];
+#my $x = $i+2;
+#        ${"Frame".$i} = $mw->Frame()->pack(-after=>$frame, -expand=>1, -fill=>'x');
+#        ${"Frame".$i}->Label(-text => "lefFile".$x."      ")->pack(-side =>'left', -anchor => 'w');
+#        ${"Entry".$i} = ${"Frame".$i}->Entry(-textvariable =>\${"Pvar".$i})->pack(-side =>'left', -anchor => 'w',-fill => 'x', -expand=> '1' ); 
+#        ${"Frame".$i}->Button(-text=>'BrowseFile',-image=> $image,-command =>sub {$lef = &popup_read_morelef($i);})->pack(-side => 'right');
+#return(${"Frame".$i});
+#}#create_readLefEntry
+
+sub poup_read_moreLef {
+
+}#sub poup_read_moreLef
+####################################################### writing tcl file #######################################################
+sub write_tcl{
+
+#****f* / write_tcl
+# NAME
+#   write_tcl
+# FUNCTION
+#   to write tcl file 
+# SYNOPSIS
+#   write_tcl -output <tcl fileName> 
+#             -techlef <lef file with technology section>  
+#             -macrolef <leffile1, leffile2,.....>
+#             -lib <lib file> -tech < only/also/dont>
+#             -def <def file>
+#             -verilog <verilog file>
+#   --summary
+# INPUTS
+#   options:
+#   -output <tcl fileName>,-techlef <lef file with technology section>,
+#   -macrolef <leffile1, leffile2,.....>,-lib <lib file> -tech < only/also/dont>,
+#   -def <def file>,-verilog <verilog file>
+# OUTPUTS
+#    tcl file generate
+# ****
+
+
+my $noOfArguments = @_;
+my ($TCL_FILE,$DEF_FILE,$TECH_LEF_FILE,$SWITCH,$MACRO_LEF_FILES,$LIB_FILE,$VERILOG_FILE,$RTL_FILE,$SDC_FILE,$UTILIZATION,$ASPECT,$WIDTH,$HEIGHT,$PARTITION,$W,$X,$Y,$Z) = ("","","","","","","","","","","","","","","","","",""); 
+if( $noOfArguments < 8 || $_[0] eq "-h" || $_[0] eq "-help" || $_[0] eq "-HELP") {
+                                          print "Usage : write_tcl -output <tcl file> \n";
+                                          print "                  -techlef <lef file> -tech < only / also / dont>\n";
+                                          print "                  -macrolef <lef file1, leffile2,.....> \n";
+                                          print "                  -lib <lib file> \n";
+                                          print "                  -def <def file> \n";
+                                          print "                  -verilog <verilog file> \n";
+                                          print "                  -rtl <rtl file> \n";
+                                          print "                  -sdc <sdc file> \n";
+                                          print "                  -Utilization <utilization> \n";
+                                          print "                  -Aspect <aspect ratio> \n";
+                                          print "                  -Width <Width> \n";
+                                          print "                  -Height <Height> \n";
+                                          print "                  -Partition <Partition Name> \n";
+                                                    }
+else { # if correct no. of inputs
+
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-output"){$TCL_FILE = $_[$i+1];}
+if($_[$i] eq "-def"){$DEF_FILE = $_[$i+1];}
+if($_[$i] eq "-techlef"){$TECH_LEF_FILE = $_[$i+1];"-tech" eq $_[$i+2];$SWITCH= $_[$i+3];} 
+if($_[$i] eq "-macrolef"){$MACRO_LEF_FILES = $_[$i+1];} 
+if($_[$i] eq "-lib"){$LIB_FILE = $_[$i+1];}
+if($_[$i] eq "-verilog"){$VERILOG_FILE = $_[$i+1];}
+if($_[$i] eq "-rtl"){$RTL_FILE = $_[$i+1];}
+if($_[$i] eq "-sdc"){$SDC_FILE = $_[$i+1];}
+if($_[$i] eq "-Utilization"){$UTILIZATION = $_[$i+1];}
+if($_[$i] eq "-Aspect"){$ASPECT = $_[$i+1];}
+if($_[$i] eq "-Width"){$WIDTH = $_[$i+1];}
+if($_[$i] eq "-Height"){$HEIGHT = $_[$i+1];}
+if($_[$i] eq "-Partition"){$PARTITION = $_[$i+1];}
+} # for
+
+$MACRO_LEF_FILES =~ s/\s*//g;
+$LIB_FILE =~ s/\s*//g;
+$VERILOG_FILE =~ s/\s*//g;
+$RTL_FILE =~ s/\s*//g;
+$SDC_FILE =~ s/\s*//g;
+my @lefFiles = split(/\,/,$MACRO_LEF_FILES);
+my @libFiles = split(/\,/,$LIB_FILE);
+my @verilogFiles = split(/\,/,$VERILOG_FILE);
+my @rtlFiles = split(/\,/,$RTL_FILE);
+my @sdcFiles = split(/\,/,$SDC_FILE);
+my $is_verilog_present = 0;
+my $is_net_in_def_present = 0;
+
+if($SWITCH eq ""){$SWITCH = "also";}
+if($TCL_FILE eq ""){return; print "WARN: write the tcl file Name\n";}
+
+open (WRITE, ">$TCL_FILE");
+print WRITE "#TCL written from proton verion-$TOOL_VERSION\n";
+print WRITE "\n";
+if ($TECH_LEF_FILE eq ""){
+}else{
+    print WRITE "read_lef -lef $TECH_LEF_FILE -tech $SWITCH\n";
+}
+
+if ($MACRO_LEF_FILES eq ""){
+}else{
+for(my $j=0;$j<=$#lefFiles;$j++){
+    print WRITE "read_lef -lef $lefFiles[$j]\n";
+    }
+}
+if ($LIB_FILE eq ""){
+}else {
+for(my $j=0;$j<=$#libFiles;$j++){
+    print WRITE "read_lib -lib  $libFiles[$j]\n";
+    }
+}
+if ($DEF_FILE eq ""){
+}else{
+   my $match = `grep '^NETS *' $DEF_FILE`;
+   my @no_nets = split(/\s+/,$match);
+   if($no_nets[1] != 0) {$is_net_in_def_present = 1;}
+    print WRITE "read_def -def $DEF_FILE --all\n";
+}
+if ($VERILOG_FILE eq ""){
+}else {
+for(my $j=0;$j<=$#verilogFiles;$j++){
+    print WRITE "read_verilog -v $verilogFiles[$j]\n";
+}
+    print WRITE "elaborate\n";
+  if($UTILIZATION ne ""){ $W = "-UTILIZATION";}
+  if($ASPECT ne ""){ $X = "-ASPECT_RATIO";}
+  if($WIDTH ne ""){ $Y = "-WIDTH";}
+  if($HEIGHT ne ""){ $Z = "-HEIGHT";}
+    print WRITE "set_floorplan_parameters $W $UTILIZATION $X $ASPECT $Y $WIDTH $Z $HEIGHT\n";
+    print WRITE "set_floorplan -partition $PARTITION \n"if($PARTITION ne "");
+    print WRITE "set_floorplan  \n"if($PARTITION eq "");
+    $is_verilog_present = 1;
+}
+if ($RTL_FILE eq ""){
+}else {
+for(my $j=0;$j<=$#rtlFiles;$j++){
+    print WRITE "read_hdl -hdl $rtlFiles[$j]\n";
+    }
+}
+if ($SDC_FILE eq ""){
+}else {
+for(my $j=0;$j<=$#sdcFiles;$j++){
+    print WRITE "read_sdc -sdc $sdcFiles[$j]\n";
+    }
+}
+if ($is_verilog_present == 1 || $is_net_in_def_present == 1){
+  print WRITE "place_graph\n";
+}
+close(WRITE);
+}
+}#sub write_tcl
+#############################################################################################################
+################################################ End OpenConfig #############################################
+#############################################################################################################
+sub createTKcolors {
+%COLOR_TABLE = (
+               0 => "chocolate4",
+               1 => "blue4",
+               2 => "cyan4",
+               3 => "green4",
+               4 => "LightGoldenrodYellow",
+               5 => "yellow4",
+               );
+}#sub createTKcolors
+
+
+#############################################################################################################
+sub FP {
+my $popupgui = MainWindow->new();
+$popupgui->title ("Run tcl Scripts");
+my $image = $popupgui->Getimage('folder');
+
+my $flow_book = $popupgui->NoteBook(-tabpady=>0,-tabpadx=>0,-relief=>"raised",-font=> "Times 10 italic", -borderwidth=>2)->pack(-side=>'top', -fill=>'both',-expand=>1);
+my $flow_tab = $flow_book->add( "Sheet 2", -label=>"Flow");
+my $add_flow_frame1 = $floorplan_tab->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+my $add_flow_frame2 = $floorplan_tab->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+my $add_flow_frame3 = $floorplan_tab->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+my $add_flow_frame4 = $floorplan_tab->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+my $add_flow_frame5 = $floorplan_tab->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+my $floorplan_ButtonFrame = $floorplan_tab->Frame(-relief=>"raised")->pack(-side => 'bottom');
+
+     $add_flow_frame1->Label(-text => "Utilization")->pack(-side =>'left', -anchor => 'w');
+     $add_flow_frame1->Entry(-textvariable =>\$utilization,-width=>30)->pack(-side =>'right');
+     
+     $add_flow_frame2->Label(-text => "AspectRatio")->pack(-side =>'left', -anchor => 'w');
+     $add_flow_frame2->Entry(-textvariable =>\$aspect,-width=>30)->pack(-side =>'right');
+     
+     $add_flow_frame3->Label(-text => "Width")->pack(-side =>'left', -anchor => 'w');
+     $add_flow_frame3->Entry(-textvariable =>\$width,-width=>30)->pack(-side =>'right');
+     
+     $add_flow_frame4->Label(-text => "Height")->pack(-side =>'left', -anchor => 'w');
+     $add_flow_frame4->Entry(-textvariable =>\$height,-width=>30)->pack(-side =>'right');
+     
+     $add_flow_frame5->Label(-text => "Floorplan Name")->pack(-side =>'left', -anchor => 'w');
+     $add_flow_frame5->Entry(-textvariable =>\$partition_name,-width=>30)->pack(-side =>'left');
+     $add_flow_frame5->Radiobutton(-variable => \$Selection,-text => "Automatic",-value => "Automatic")->pack(-anchor => 'w');
+     $add_flow_frame5->Radiobutton(-variable => \$Selection,-text => "Manual",-value => "Manual")->pack(-anchor => 'w');
+     $flApplyButton = $floorplan_ButtonFrame->Button(-text=>'Apply',-command =>sub {
+                                                                                       #if($utilization eq ""){$utilization = "variable";}
+                                                                                       #if($aspect eq ""){$aspect = "variable";}
+                                                                                       #if($width eq ""){$width = 0 ;}
+                                                                                       #if($height eq ""){$height = 0;}
+                                                                                       &set_floorplan_parameters('-UTILIZATION',$utilization,'-ASPECT_RATIO',$aspect,'-WIDTH',$width, '-HEIGHT',$height);})->pack(-side => 'left');
+     $flCancelButton = $floorplan_ButtonFrame->Button(-text=>'Cancel',-command =>sub {$popupgui->destroy;})->pack(-side => 'left');
+}#FP
+#####################################################################################################################
+############################This code is written by Aditya,It is working fine  #######################################
+#####################################################################################################################
+#sub popup_read_macrolef {
+#use Cwd;
+#my $parentEntry = $_[0];
+#my $popupgui = MainWindow->new();
+#$popupgui->title ("Select Files");
+#my $Dirimage = $popupgui->Getimage('folder');
+#my $Fileimage = $popupgui->Getimage('file');
+#my @fileList = ("Config Files (*.lef)", "All Files (*)");
+#my $ext = $fileList[0];
+#$lefEntryVar = "";
+#@LEF_FILES = (); 
+#
+#my $pathFrame = $popupgui->Frame()->pack(-side=>'top', -expand=>1,-fill=>'x');
+#my $ListFrame = $popupgui->Frame()->pack(-side=>'top', -expand=>1,-fill=>'both');
+#my $entryFrame = $popupgui->Frame()->pack(-side=>'top', -expand=>1,-fill=>'x');
+#my $typeFrame = $popupgui->Frame()->pack(-side=>'top', -expand=>1,-fill=>'x');
+#
+#my $path = cwd();
+#my @var = split(/\//,$path);
+#my @pathList = ("/");
+#for(my $i = 1; $i<= $#var; $i++){
+#    if($i >1){
+#      $reg_path = $pathList[-1]."\/".$var[$i];
+#    }else{ 
+#      $reg_path = "\/".$var[$i];
+#    }
+#  push(@pathList,$reg_path); 
+#}
+#
+#my $top_pane = $ListFrame->Scrolled(qw/Pane -width 400 -height 130 -scrollbars s -sticky nsew -relief sunken -borderwidth 2/);
+#   $top_pane->Subwidget("xscrollbar")->configure(-width=>15,-borderwidth=>2);
+#   $top_pane->pack(qw/-side left -anchor w -fill both -expand 1/);
+#
+#my $dir_label = $pathFrame->Label(-text=>"Directory:")->pack(-side=>"left");
+#   $dir_list = $pathFrame->Optionmenu(
+#           -options => \@pathList,
+#           -textvariable=>\$path,
+#           -command => sub{
+#                         for(my $j=0; $j<= $#pathList; $j++){
+#                           if($pathList[$j] =~m/$path\/.*/){
+#                              delete $pathList[$j];
+#                           } 
+#                         }
+#                         $dir_list->configure(-options=>\@pathList);
+#                         &create_ListOfFileDir($top_pane,$path,$ext,$Dirimage,$Fileimage);
+#   })->pack(-side=>'left',-expand=>1,-fill=>'x');
+# 
+#my $path2eq = $GLOBAL->dbfGlobalGetProtonHome;
+#my $bitmap = $popupgui->Photo(-file => "$path2eq/ETC/up.gif");
+#my $upButton = $pathFrame->Button(-text=>"ad",-image => $bitmap, 
+#                                  -padx=>0, -pady=>0,
+#                                  -command=>sub {
+#                                                 my $path2 = $dir_list->cget(-options);
+#                                                 &create_ListOfFileDir($top_pane,@$path2[-2],$ext,$Dirimage,$Fileimage);
+#                                                  })->pack( -side=>"right");
+#$entryFrame->Label(-text=>'File name: ')->pack(-side=>'left');
+#$file_entry = $entryFrame->Entry(-textvariable=>\$lefEntryVar)->pack(-side=>'left',-expand=>1,-fill=>'x');
+#$entryFrame->Button(-text=>"Open", -relief=>'groove',-borderwidth=>5,-command=>sub{my $setEntryVar = join ",",@LEF_FILES;$parentEntry->configure(-textvariable=>\$setEntryVar);$popupgui->destroy;})->pack(-side=>'right');
+#
+#$typeFrame->Label(-text=>'Files of type:')->pack(-side=>'left');
+#$file_list = $typeFrame->Optionmenu(
+#                         -options => \@fileList,
+#                         -textvariable=>\$ext,
+#                         -command => sub{my $ad = $dir_list->cget(-options);
+#                                         &create_ListOfFileDir($top_pane,@$ad[-1],$ext,$Dirimage,$Fileimage);}
+#                         )->pack(-side=>'left',-expand=>1,-fill=>'x');
+#$typeFrame->Button(-text=>"Cancel", -relief=>'raised', -borderwidth=>2, -command=>sub{$popupgui->destroy;})->pack(-side=>'right');
+#
+#&create_ListOfFileDir($top_pane,$path,$ext,$Dirimage,$Fileimage);
+#}#sub popup_read_macrolef
+#
+#
+#sub create_ListOfFileDir {
+#my $frame = $_[0];
+#my $path = $_[1];
+#my $ext = $_[2];
+#my $dir_image = $_[3];
+#my $file_image = $_[4];
+#my @DirFile = ();
+#my @dir = ();
+#my @files = ();
+#
+#my $extension = (split(/\(/,$ext))[1];
+#for($extension){s/\)//g;}
+#
+##-------------- listing the Dir and Files of CWD-----------------# 
+#opendir (DIR, "$path");
+#while(defined ($fileName = readdir(DIR))){
+#   if(-d $path."\/".$fileName){
+#      if($fileName =~ m/\.$/){ 
+#      }else {
+#        push(@dir, $fileName);
+#      } 
+#   }else{
+#      if($fileName =~ m/^.$extension/){
+#         push(@files, $fileName);
+#      }
+#   }
+#} 
+#closedir(DIR);
+#
+#@dir = sort @dir;
+#@files = sort @files;
+#my $noOfDir = @dir;
+#my $noOfFrames = int(($#dir+$#files +2)/6); 
+#push(@DirFile,@dir,@files);
+#
+##-------- Deleting previous Frames and making Hash empty -------#
+#foreach my $key (keys %DIR_FRAME_HASH){
+#  if(Exists $DIR_FRAME_HASH{$key}){
+#     my $f = $DIR_FRAME_HASH{$key};
+#     $f->destroy;
+#  }
+#}
+#%DIR_FRAME_HASH = ();
+#
+##-------- Updating the path  and path List of Option Menu ------#
+#my @var = split(/\//,$path);
+#my @pathList = ("/");
+#for(my $i = 1; $i<= $#var; $i++){
+#    if($i >1){
+#      $reg_path = $pathList[-1]."\/".$var[$i];
+#    }else{ 
+#      $reg_path = "\/".$var[$i];
+#    }
+#  push(@pathList,$reg_path); 
+#}
+#
+#$dir_list->configure(-textvariable=>\$path);
+#$dir_list->configure(-options=>\@pathList);
+#
+##------------------- Making buttons for Files and Directory --------------------#
+#my $j = 0;
+#for(my $i=0; $i<=$noOfFrames; $i++){
+#    $dir_frame = $frame->Frame()->pack(-side=>'left',-anchor=>'n');
+#    $DIR_FRAME_HASH{$i} = $dir_frame;
+#    for(my $k=0; $k<=5; $k++){
+#        my $name = $DirFile[$j];
+#        if($j > $#DirFile){last;}
+#        my $dir_but_frame = $dir_frame->Frame()->pack(-side=>'top',-expand=>1, -fill=>'x',-anchor=>'n');  
+#        if($j<$noOfDir){
+#           $dir_but_frame->Label(-image=>$dir_image)->pack(-side=>'left');   
+#           ${"Button".$name} = $dir_but_frame->Button(-text=> $name,-padx=>0,-pady=>0,-borderwidth=>0,-relief=>'flat',-command=>sub{
+#                                                      my $buttonText = ${"Button".$name}->cget('-text');
+#                                                      my $path1;
+#                                                      if($path eq "\/"){
+#                                                         $path1 = $path.$buttonText;
+#                                                      }else{ 
+#                                                         $path1 = $path."\/".$buttonText;                           
+#                                                      }
+#                                                      &create_ListOfFileDir($frame,$path1,$ext,$dir_image,$file_image);
+#                                                     })->pack(-side=>'left');
+#        }else{
+#              $dir_but_frame->Label(-image=>$file_image)->pack(-side=>'left');   
+#              ${"Button".$name} = $dir_but_frame->Button(-text=>$name,-padx=>0,-pady=>0,-borderwidth=>0,-relief=>'flat',
+#                                                         -command=>sub{my $selFile = $path."\/".$name;
+#                                                                       my $color = ${"Button".$name}->cget(-foreground);
+#                                                                       if($color ne "blue"){
+#                                                                          ${"Button".$name}->configure(-foreground=>"blue");
+#                                                                          if($lefEntryVar eq ""){
+#                                                                             $lefEntryVar = $name;
+#                                                                          }else{
+#                                                                             $lefEntryVar = $lefEntryVar.",".$name;
+#                                                                          }
+#                                                                          push(@LEF_FILES,$selFile);
+#                                                                        }else{ 
+#                                                                          ${"Button".$name}->configure(-foreground=>"Black");
+#                                                                          my @lefEntry = split(/\,/,$lefEntryVar);
+#                                                                          my @lefTemp = @LEF_FILES;
+#                                                                          @LEF_FILES = (); 
+#                                                                          my @LEF_ENTRY = ();
+#                                                                          foreach(@lefTemp){
+#                                                                            my $entryRemove = shift @lefEntry;  
+#                                                                            if($_ ne $selFile){
+#                                                                               push(@LEF_FILES,$_);
+#                                                                               push(@LEF_ENTRY,$entryRemove); 
+#                                                                            }
+#                                                                          }     
+#                                                                          $lefEntryVar = join ",", @LEF_ENTRY;
+#                                                                        } 
+#                                                        })->pack(-side=>'left');
+#        } 
+#        $j++;
+#   }  
+#}
+#}#sub create_ListOfFileDir
+#
+##-----------------------------------------------------------#
+#sub popup_read_lib {
+#my @types = (["Config Files", '.lib'],
+#             ["All Files", "*"]);
+#my $libfile = $top->getOpenFile(-filetypes =>\@types,
+#                              -defaultextension => '.lib'); 
+#return($libfile);
+#}#sub popup_read_lib
+#
+##-----------------------------------------------------------#
+#sub popup_read_def {
+#my @types = (["Config Files", '.def'],
+#             ["All Files", "*"]);
+#my $deffile = $top->getOpenFile(-filetypes =>\@types,
+#                              -defaultextension => '.def'); 
+#return($deffile);
+#}#sub popup_read_def
+#
+##-----------------------------------------------------------#
+#sub popup_read_verilog {
+#my @types = (["Config Files", '.gv'],
+#             ["All Files", "*"]);
+#my $verilogfile = $top->getOpenFile(-filetypes =>\@types,
+#                              -defaultextension => '.gv'); 
+#return($verilogfile);          
+#}#sub popup_read_verilog
+#
+##-----------------------------------------------------------#
+#sub popup_read_rtl {
+#my @types = (["Config Files", '.lef'],
+#             ["All Files", "*"]);
+#my $rtlfile = $top->getOpenFile(-filetypes =>\@types,
+#                              -defaultextension => '.lef'); 
+#return($rtlfile);          
+#}#sub popup_read_rtl
+#
+##-----------------------------------------------------------#
+#sub popup_write_tcl {
+#my @types = (["Config Files", '.tcl'],
+#             ["All Files", "*"]);
+#
+#my $tclfile = $top->getSaveFile(-filetypes =>\@types,
+#                                -defaultextension => '.tcl'); 
+#return($tclfile);          
+#}#sub popup_write_tcl
+#
+###################  creating entries for more than one lef reading ######################################
+##sub create_readLefEntry{
+##my $mw = $_[0];
+##my $frame = $_[1];
+##my $image = $_[2];
+##my $i = $_[3];
+##my $x = $i+2;
+##        ${"Frame".$i} = $mw->Frame()->pack(-after=>$frame, -expand=>1, -fill=>'x');
+##        ${"Frame".$i}->Label(-text => "lefFile".$x."      ")->pack(-side =>'left', -anchor => 'w');
+##        ${"Entry".$i} = ${"Frame".$i}->Entry(-textvariable =>\${"Pvar".$i})->pack(-side =>'left', -anchor => 'w',-fill => 'x', -expand=> '1' ); 
+##        ${"Frame".$i}->Button(-text=>'BrowseFile',-image=> $image,-command =>sub {$lef = &popup_read_morelef($i);})->pack(-side => 'right');
+##return(${"Frame".$i});
+##}#create_readLefEntry
+#
+#sub poup_read_moreLef {
+#
+#}#sub poup_read_moreLef
+######################################################## writing tcl file #######################################################
+#sub write_tcl{
+#
+##****f* / write_tcl
+## NAME
+##   write_tcl
+## FUNCTION
+##   to write tcl file 
+## SYNOPSIS
+##   write_tcl -output <tcl fileName> 
+##             -techlef <lef file with technology section>  
+##             -macrolef <leffile1, leffile2,.....>
+##             -lib <lib file> -tech < only/also/dont>
+##             -def <def file>
+##             -verilog <verilog file>
+##   --summary
+## INPUTS
+##   options:
+##   -output <tcl fileName>,-techlef <lef file with technology section>,
+##   -macrolef <leffile1, leffile2,.....>,-lib <lib file> -tech < only/also/dont>,
+##   -def <def file>,-verilog <verilog file>
+## OUTPUTS
+##    tcl file generate
+## ****
+#
+#
+#my $noOfArguments = @_;
+#my ($TCL_FILE,$DEF_FILE,$TECH_LEF_FILE,$SWITCH,$MACRO_LEF_FILES,$LIB_FILE,$VERILOG_FILE,$RTL_FILE) = ("","","","","","","",""); 
+#if( $noOfArguments < 8 || $_[0] eq "-h" || $_[0] eq "-help" || $_[0] eq "-HELP") {
+#                                          print "Usage : write_tcl -output <tcl file> \n";
+#                                          print "                  -techlef <lef file> \n";
+#                                          print "                  -macrolef <lef file1, leffile2,.....> \n";
+#                                          print "                  -lib <lib file> -tech < only / also / dont>\n";
+#                                          print "                  -def <def file> \n";
+#                                          print "                  -verilog <verilog file> \n";
+#                                                    }
+#else { # if correct no. of inputs
+#
+#for(my $i = 0; $i < $noOfArguments; $i++){
+#if($_[$i] eq "-output"){$TCL_FILE = $_[$i+1];}
+#if($_[$i] eq "-def"){$DEF_FILE = $_[$i+1];}
+#if($_[$i] eq "-techlef"){$TECH_LEF_FILE = $_[$i+1];"-tech" eq $_[$i+2];$SWITCH= $_[$i+3];} 
+#if($_[$i] eq "-macrolef"){$MACRO_LEF_FILES = $_[$i+1];} 
+#if($_[$i] eq "-lib"){$LIB_FILE = $_[$i+1];}
+#if($_[$i] eq "-verilog"){$VERILOG_FILE = $_[$i+1];}
+#if($_[$i] eq "-rtl"){$RTL_FILE = $_[$i+1];}
+#} # for
+#
+#my @lefFiles = split(/\,/,$MACRO_LEF_FILES);
+#if($SWITCH eq ""){$SWITCH = "also";}
+#if($TCL_FILE eq ""){return; print "WARN: write the tcl file Name\n";}
+#
+#open (WRITE, ">$TCL_FILE");
+#print WRITE "#TCL written from proton verion-$TOOL_VERSION\n";
+#print WRITE "\n";
+#if ($TECH_LEF_FILE eq ""){
+#}else{
+#    print WRITE "read_lef -lef $TECH_LEF_FILE -tech $SWITCH\n";
+#}
+#
+#if ($MACRO_LEF_FILES eq ""){
+#}else{
+#for(my $j=0;$j<=$#lefFiles;$j++){
+#    print WRITE "read_lef -lef $lefFiles[$j]\n";
+#    }
+#}
+#if ($DEF_FILE eq ""){
+#}else{
+#    print WRITE "read_def -def $DEF_FILE --all\n";
+#}
+#if ($LIB_FILE eq ""){
+#}else {
+#    print WRITE "read_lib -lib  $LIB_FILE\n";
+#}
+#if ($VERILOG_FILE eq ""){
+#}else {
+#    print WRITE "read_verilog -v $VERILOG_FILE\n";
+#}
+#if ($RTL_FILE eq ""){
+#}else {
+#    print WRITE "read_verilog -v $RTL_FILE\n";
+#}
+#close(WRITE);
+#}
+#}#sub write_tcl
+################################## End of Aditya,s code working properly ################################################
+sub open_auto_fetch_gui {
+my $popupgui = MainWindow->new();
+my $path = "../";
+my ($all,$lef,$lib,$def,$netlist,$sdc,$rtl,$verify) = ("--all","","","","","","","");
+$popupgui->title ("Create Config File");
+        my $frame1 = $popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $frame2 = $popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $frame3 = $popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $ButtonFrame = $popupgui->Frame(-relief=>"raised")->pack(-side => 'bottom');
+
+$frame1->Label(-text => "Path")->pack(-side =>'left', -anchor => 'w');
+$frame1->Entry(-textvariable =>\$path, -width=>30)->pack(-side =>'right');
+
+$frame2->Label(-text => "FileTypes")->pack(-side =>'left', -anchor => 'w');
+$frame2->Checkbutton(-text=>'All',-variable =>\$all, -onvalue=>"--all", -offvalue => "")->pack(-side=>"left");
+$frame2->Checkbutton(-text=>'Lef',-variable =>\$lef, -onvalue=>"--lef", -offvalue => "", -command=>sub{$all = "";})->pack(-side=>"left");
+$frame2->Checkbutton(-text=>'Lib',-variable =>\$lib, -onvalue=>"--lib", -offvalue => "", -command=>sub{$all = "";})->pack(-side=>"left");
+$frame2->Checkbutton(-text=>'Def',-variable =>\$def, -onvalue=>"--def", -offvalue => "", -command=>sub{$all = "";})->pack(-side=>"left");
+$frame2->Checkbutton(-text=>'NetList',-variable =>\$netlist, -onvalue=>"--v", -offvalue => "", -command=>sub{$all = "";})->pack(-side=>"left");
+$frame2->Checkbutton(-text=>'Sdc',-variable =>\$sdc, -onvalue=>"--sdc", -offvalue => "", -command=>sub{$all = "";})->pack(-side=>"left");
+$frame2->Checkbutton(-text=>'Rtl',-variable =>\$rtl, -onvalue=>"--rtl", -offvalue => "", -command=>sub{$all = "";})->pack(-side=>"left");
+
+$frame3->Checkbutton(-text=>'Verify',-variable =>\$verify)->pack(-side=>"left");
+
+$ButtonFrame->Button(-text=>'Ok',-command =>sub {&write_config_file("-path", $path, $all, $lef, $lib, $def, $netlist, $sdc, $rtl);&read_load_file ("./config_file");$popupgui->destroy;})->pack(-side=>"left");
+$ButtonFrame->Button(-text=>'Cancel',-command =>sub {$popupgui->destroy;})->pack(-side=>"left");
+
+}#sub open_auto_fetch_gui
+
+sub open_load_gui {
+
+my $popupgui = MainWindow->new();
+my $image = $popupgui->Getimage('folder');
+$popupgui->title ("Load Config/Tcl File");
+my ($confile, $tfile) = ("", "");
+        my $frame1 = $popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $ButtonFrame = $popupgui->Frame(-relief=>"raised")->pack(-side => 'bottom');
+
+$frame1->Label(-text => "Tcl/Config File")->pack(-side =>'left', -anchor => 'w');
+$frame1->Button(-text=>'BrowseFile',-image=> $image,-command =>sub {$confile = &popup_read_configfile;})->pack(-side => 'right');
+$frame1->Entry(-textvariable =>\$confile, -width=>20)->pack(-side =>'right');
+
+$ButtonFrame->Button(-text=>'Ok',-command =>sub {
+                                                 if ($confile ne "") {
+                                                   &read_load_file ($confile);$popupgui->destroy;
+                                                 }
+                                            })->pack(-side=>"left");
+$ButtonFrame->Button(-text=>'Cancel',-command =>sub {$popupgui->destroy;})->pack(-side=>"left");
+
+
+}#sub open_load_gui
+
+sub popup_read_configfile {
+my @types = (["Tcl Files", '.tcl'],
+             ["All Files", "*"]);
+my $file = $top->getOpenFile(-filetypes =>\@types,
+                               -defaultextension => ''); 
+return($file);          
+}#sub popup_read_configfile
+
+sub read_load_file {
+
+my $file_to_read = $_[0];
+if ( (-e $file_to_read) && (-r $file_to_read) ){
+  open(READ, "$file_to_read");
+my @techlef_files = ();
+my @lef_files = ();
+my @lib_files = ();
+my @def_files = ();
+my @netlist_files = ();
+my @sdc_files = ();
+my @rtl_files = ();
+my @v_files = ();
+  while(<READ>){
+    my @load_file = ();
+    chomp();
+    if ($_ =~ /^\s*#/ ) { next ; }
+    if ($_ =~ /\#/ ) { $_ =~ s/\s+#.*$//; }
+    if ($_ =~ /\.lef\s+\-tech/) {
+      @load_file=(split(/\s+/,$_));
+      foreach $word (@load_file) {
+        if ($word =~ /\.lef/) {
+          push(@techlef_files, $word);
+        }
+      }
+    }elsif ( ($_ =~ /\.lef/ && $_ !~ /\.lef\s+\-tech/) ||  ($_ =~ /\.lib/) ||  ($_ =~ /\.v/) ||  ($_ =~ /\.gv/) ||  ($_ =~ /\.vg/) ||  ($_ =~ /\.def/) ||  ($_ =~ /\.sdc/) ||  ($_ =~ /\.rtl/) ) {
+      @load_file=(split(/\s+/,$_));
+      foreach $words(@load_file) {
+          if ($words =~ /\.lef/) {
+            push(@lef_files, $words);
+          }elsif($words =~ /\.lib/) {
+            push(@lib_files, $words);
+          }elsif($words =~ /\.v/) {
+            push(@netlist_files, $words);
+          }elsif($words =~ /\.gv/) {
+            push(@netlist_files, $words);
+          }elsif($words =~ /\.vg/) {
+            push(@netlist_files, $words);
+          }elsif($words =~ /\.def/) {
+            push(@def_files, $words);
+          }elsif($words =~ /\.sdc/) {
+            push(@sdc_files, $words);
+          }elsif($words =~ /\.rtl/) {
+            push(@rtl_files, $words);
+          }
+     }#foreach line
+   }#if filename match
+  }#while read
+  close(READ);
+
+      foreach my $file(@netlist_files){
+        open(READ, "$file");
+        my $skip_comment = 0;
+        my $read_rtl = 0;
+        while(<READ>){ 
+          chomp($_);
+          if ($_ =~ /\/\*(.*)\*\//){
+            $_ =~s/\/\*(.*)\*\///;
+          }
+          if (($skip_comment == 1) && ($_ !~ /\*\//)){
+            next;
+          }
+          if (($_ =~ /\/\*/) && ($_ !~ /\*\//) ){
+            $skip_comment = 1; 
+            $_ =~s/\/\*(.*)//;
+          }
+          if (($skip_comment == 1) && ($_ =~ /\*\//)){
+            $_ =~s/(.*)\*\///;
+            $skip_comment = 0;
+          }
+          if($_ =~ /\/\//){
+            $_ =~s/\/\/(.*)//;
+          }
+          if($_ =~ /^\s*always/){
+            push(@rtl_files, $file);
+            $read_rtl = 1;
+            last;
+          }
+        }
+        close(READ);
+        if($read_rtl == 0){
+          push(@v_files, $file);
+          next;
+        }
+      }
+  
+my $techlef_var = join ",", @techlef_files;
+my $lef_var = join ",", @lef_files;
+my $lib_var = join ",", @lib_files;
+my $def_var = join ",", @def_files;
+#my $netlist_var = join ",", @netlist_files;
+my $netlist_var = join ",", @v_files;
+my $sdc_var = join ",", @sdc_files;
+my $rtl_var = join ",", @rtl_files;
+
+$techLefEntry->configure(-textvariable=>\$techlef_var);
+$macroLefEntry->configure(-textvariable=>\$lef_var);
+$defEntry->configure(-textvariable=>\$def_var);
+$macroLibEntry->configure(-textvariable=>\$lib_var);
+$macroVerilogEntry->configure(-textvariable=>\$netlist_var);
+$macroSdcEntry->configure(-textvariable=>\$sdc_var);
+$macroRtlEntry->configure(-textvariable=>\$rtl_var);
+}else { 
+print "$file_to_read FILE DOES NOT EXISTS OR IS NOT READABLE.\n";
+}
+}#sub read_load_file
+
+###############################################################################################################################
+###################################################### Creating Save button popup #############################################
+###############################################################################################################################
+sub create_popup_2save_file{
+my $mw = MainWindow->new();
+my $image = $mw->Getimage('folder');
+my $tclfile = "";
+my $techleffile = $_[0];
+my $switch = $_[1];
+my $deffile = $_[2];
+my $aspect = $_[3];
+my $utilization = $_[4];
+my $width = $_[5];
+my $height = $_[6];
+my $partition_name = $_[7];
+
+
+my $frame = $mw->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+my $buttonframe = $mw->Frame->pack(-side => 'bottom');
+
+$frame->Label(-text => "TclFile")->pack(-side =>'left', -anchor => 'w');
+$frame->Button(-text=>'BrowseFile',-image=>$image,-command =>sub {$tclfile = &popup_write_tcl;})->pack(-side => 'right'); 
+$frame->Entry(-textvariable =>\$tclfile,-width=>30)->pack(-side =>'right');
+
+$buttonframe->Button(-text=>"Ok", -command=>sub{&write_tcl("-output","$tclfile","-techlef","$techleffile","-tech","$switch","-macrolef",$macroLefEntry->get(),"-lib",$macroLibEntry->get(),"-def","$deffile","-verilog",$macroVerilogEntry->get(),"-rtl",$macroRtlEntry->get(),"-sdc",$macroSdcEntry->get(),"-Aspect",$aspect,"-Utilization",$utilization,"-Width",$width,"-Height",$height,"-Partition",$partition_name);$mw->destroy;})->pack(-side=>'left');
+
+$buttonframe->Button(-text=>"Cancel", -command=>sub{$mw->destroy;})->pack(-side=>'left');
+}#sub create_popup_2save_file
+
+sub flplan_popup {
+
+my $popupgui = MainWindow->new();
+$popupgui->title ("Set Floorplan");
+my ($top_module, $force)= ("", "");
+        my $frame1 = $popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $frame2 = $popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $ButtonFrame = $popupgui->Frame(-relief=>"raised")->pack(-side => 'bottom');
+
+$frame1->Label(-text => "Top Module")->pack(-side =>'left', -anchor => 'w');
+$frame1->Entry(-textvariable =>\$top_module, -width=>20)->pack(-side =>'right');
+$frame2->Checkbutton(-text=>'force',-variable =>\$force, -onvalue=>"--force", -offvalue => "")->pack(-side=>"left",-anchor=>'n', -expand=>1, -fill=>'x');
+
+$ButtonFrame->Button(-text=>'Ok',-command =>sub {
+                                                 if ($force ne "") {
+                                                   if ($top_module ne ""){&set_floorplan ("-partition","$top_module","--force");}
+                                                   else {&set_floorplan ("--force");}
+                                                 }else {
+                                                   if ($top_module ne ""){&set_floorplan ("-partition","$top_module");}
+                                                   else {&set_floorplan;}
+                                                 }
+                                                    
+                                            })->pack(-side=>"left");
+$ButtonFrame->Button(-text=>'Cancel',-command =>sub {$popupgui->destroy;})->pack(-side=>"left");
+
+
+}#sub flplan_popup
+
+sub flplan_parameter_popup {
+my $popupgui = MainWindow->new();
+$popupgui->title ("Flpaln Parametrs");
+my ($utilization, $aspect, $width, $height)= ("70", "", "", "");
+
+my $add_flow_frame1 = $popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+my $add_flow_frame2 = $popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+my $add_flow_frame3 = $popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+my $add_flow_frame4 = $popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+my $add_flow_frame5 = $popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+my $floorplan_ButtonFrame = $popupgui->Frame(-relief=>"raised")->pack(-side => 'bottom');
+
+     $add_flow_frame1->Label(-text => "Utilization")->pack(-side =>'left', -anchor => 'w');
+     $add_flow_frame1->Entry(-textvariable =>\$utilization,-width=>20)->pack(-side =>'right');
+     
+     $add_flow_frame2->Label(-text => "AspectRatio")->pack(-side =>'left', -anchor => 'w');
+     $add_flow_frame2->Entry(-textvariable =>\$aspect,-width=>20)->pack(-side =>'right');
+     
+     $add_flow_frame3->Label(-text => "Width")->pack(-side =>'left', -anchor => 'w');
+     $add_flow_frame3->Entry(-textvariable =>\$width,-width=>20)->pack(-side =>'right');
+     
+     $add_flow_frame4->Label(-text => "Height")->pack(-side =>'left', -anchor => 'w');
+     $add_flow_frame4->Entry(-textvariable =>\$height,-width=>20)->pack(-side =>'right');
+     
+     $flApplyButton = $floorplan_ButtonFrame->Button(-text=>'Apply',-command =>sub {
+                                                                                       if($utilization eq ""){$utilization = "variable";}
+                                                                                       if($aspect eq ""){$aspect = "variable";}
+                                                                                       if($width eq ""){$width = 0 ;}
+                                                                                       if($height eq ""){$height = 0;}
+                                                                                       &set_floorplan_parameters('-UTILIZATION',$utilization,'-ASPECT_RATIO',$aspect,'-WIDTH',$width, '-HEIGHT',$height);})->pack(-side => 'left');
+     $flCancelButton = $floorplan_ButtonFrame->Button(-text=>'Cancel',-command =>sub {$popupgui->destroy;})->pack(-side => 'left');
+}#flplan_parameter_popup
+#------------------------------------------------#
+sub popup_yosys_binary {
+use Tk::Dialog;
+my $popupgui = MainWindow->new();
+$popupgui->title ("Create Makefile");
+my $image = $popupgui->Getimage('folder');
+my $book = $popupgui->NoteBook(-tabpady=>0,-tabpadx=>0,-relief=>"raised",-font=> "Times 10 italic", -borderwidth=>2)->pack(-side=>'top', -fill=>'both',-expand=>1);
+####################################################### preparing tab1(Run tcl) ################################################
+my $add_file_tab = $book->add( "Sheet 1", -label=>"AddFiles");
+
+my ($techfile,$rtlfile_new,$fab_name,$top_module) = ("","","","","");
+my ($new_rtl_file,$new_lib_file) = ("","");
+        my $add_file_frame1 = $add_file_tab->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $add_file_frame2 = $add_file_tab->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $add_file_frame3 = $add_file_tab->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $add_file_frame4 = $add_file_tab->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $add_file_frame5 = $add_file_tab->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $ButtonFrame = $add_file_tab->Frame()->pack(-side => 'bottom');
+
+
+$add_file_frame1->Label(-text => "LibFile")->pack(-side=>'left', -anchor => 'w');
+$add_file_frame1->Entry(-textvariable => "xh035", -width =>30 )->pack(-side=>'left');
+
+$add_file_frame1->Checkbutton(-text => "LibFile", -onvalue => "1")->pack(); 
+
+$add_file_frame2->Label(-text => "RTLFile")->pack(-side=>'left', -anchor => 'w');
+$add_file_frame2->Button(-image=>$image,-command =>sub {$rtlfile_new = &popup_read_rtl;}
+                        )->pack(-side => 'right') ;
+$add_file_frame2->Entry(-textvariable => \$rtlfile_new, -width =>30 )->pack(-side=>'left');
+
+$add_file_frame3->Label(-text => "tech")->pack(-side =>'left', -anchor => 'w');
+$add_file_frame3->Entry(-textvariable =>\$techfile,-width=>30)->pack(-side =>'right');
+
+$add_file_frame4->Label(-text => "fab")->pack(-side =>'left', -anchor => 'w');
+$add_file_frame4->Entry(-textvariable =>\$fab_name,-width=>30)->pack(-side =>'right');
+
+$add_file_frame5->Label(-text => "top_module")->pack(-side =>'left', -anchor => 'w');
+$add_file_frame5->Entry(-textvariable =>\$top_module,-width=>30)->pack(-side =>'right');
+
+
+$ButtonFrame->Button(-text => 'Write', -padx=>0, -pady=>0, 
+                     -command=>sub {
+                                    my @full_path_of_rtl = split(/\//,$rtlfile_new);
+                                    $new_rtl_file = $full_path_of_rtl[-1];
+
+                                    &run_yosys_binary("-fab",$fab_name,"-top_module",$top_module,"-tech",$techfile,"-rtl",$new_rtl_file);
+                                    $popupgui->destroy;
+                                    })->pack( -side=>"left");
+
+}#sub popup_yosys_binary
+
+#------------------------------------------------#
+sub popup_iverilog_binary {
+use Tk::Dialog;
+my $popupgui = MainWindow->new();
+$popupgui->title ("Create Makefile");
+my $image = $popupgui->Getimage('folder');
+my $book = $popupgui->NoteBook(-tabpady=>0,-tabpadx=>0,-relief=>"raised",-font=> "Times 10 italic", -borderwidth=>2)->pack(-side=>'top', -fill=>'both',-expand=>1);
+####################################################### preparing tab1(Run tcl) ################################################
+my $add_file_tab = $book->add( "Sheet 1", -label=>"AddFiles");
+
+my ($output_file,$tb_file) = ("","");
+my @verilog_file_list = ();
+my $verilog_file_list_new = "";
+my ($new_rtl_file,$new_lib_file) = ("","");
+
+my $add_file_frame1 = $add_file_tab->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+my $add_file_frame2 = $add_file_tab->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+my $add_file_frame3 = $add_file_tab->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+my $ButtonFrame = $add_file_tab->Frame()->pack(-side => 'bottom');
+
+$add_file_frame1->Label(-text => "TBFile")->pack(-side=>'left', -anchor => 'w');
+$add_file_frame1->Button(-image=>$image,-command =>sub {$tb_file = &popup_read_rtl;}
+                        )->pack(-side => 'right') ;
+$add_file_frame1->Entry(-textvariable => \$tb_file, -width =>30 )->pack(-side=>'left');
+
+$add_file_frame2->Label(-text => "VerilogFile")->pack(-side=>'left', -anchor => 'w');
+$add_file_frame2->Button(-image=>$image,-command =>sub {my $verilog_file_new = &popup_read_rtl;
+                                                        push (@verilog_file_list,$verilog_file_new);
+                                                        $verilog_file_list_new = join " ",@verilog_file_list;
+                                                       }
+                        )->pack(-side => 'right'); 
+$add_file_frame2->Entry(-textvariable => \$verilog_file_list_new, -width =>30 )->pack(-side=>'left');
+
+$add_file_frame3->Label(-text => "output")->pack(-side =>'left', -anchor => 'w');
+$add_file_frame3->Entry(-textvariable =>\$output_file,-width=>30)->pack(-side =>'right');
+$ButtonFrame->Button(-text => 'Write', -padx=>0, -pady=>0, 
+                     -command=>sub {
+                                    &run_iverilog_binary("-tb",$tb_file,"-v",$verilog_file_list_new,"-output",$output_file);
+                                    $popupgui->destroy;
+                                    })->pack( -side=>"left");
+
+}#sub popup_iverilog_binary
+
+###############################################################################################################################
+################################################### Creating Clone from Git popup #############################################
+###############################################################################################################################
+sub clone_from_git_popup {
+  my $popupgui = MainWindow->new();
+  $popupgui->title ("Clone From Git");
+  $popupgui->geometry("400x150+0+0"); 
+  my $git_url = "";
+  my $frame1 = $popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+  my $ButtonFrame = $popupgui->Frame(-relief=>"raised")->pack(-side => 'bottom');
+  
+  $frame1->Label(-text => "Git URL")->pack(-side =>'left', -anchor => 'w');
+  $frame1->Entry(-textvariable =>\$git_url)->pack(-side =>'left', -expand=>1, -fill=>'x');
+  
+  $ButtonFrame->Button(-text=>'Clone',-command =>sub { &clone_git($git_url);$popupgui->destroy;})->pack(-side=>"left");
+  $ButtonFrame->Button(-text=>'Cancel',-command =>sub {$popupgui->destroy;})->pack(-side=>"left");
+
+}#sub clone_from_git_popup
+
+###############################################################################################################################
+################################################## Display all foundry tech popup #############################################
+###############################################################################################################################
+sub import_foundry_lef_popup {
+  my $filename = '/home/ubuntu/library_new.config';
+  my $data;
+  if (open (my $json_str, $filename))
+  {
+    local $/ = undef;
+    my $json = JSON->new;
+    $data = $json->decode(<$json_str>);
+    close($json_stream);
+  }
+  
+  my $subWin = MainWindow->new();
+     $subWin->title ("Design Hierarchy Display");
+  
+  my $techFrame= $subWin->Frame()->pack(-side => 'top',-anchor=>'n',-fill=>'x');
+  my $stdCellFrame= $subWin->Frame()->pack(-side => 'top',-anchor=>'n', -fill=>'x');
+  my $libFrame= $subWin->Frame()->pack(-side => 'top',-anchor=>'n', -fill=>'x');
+  my $MainFrame= $subWin->Frame()->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'both');
+  my $buttonFrame= $subWin->Frame()->pack(-side => 'bottom');
+  
+  my $techLabel = $techFrame->Label(-text=>"Tech File    :")->pack(-side=>'left');
+  $techEntry = $techFrame->Entry(-textvariable => \$techPath )->pack(-expand=>1, -fill=>'x',-side=>'left');
+  my $stdCellLabel = $stdCellFrame->Label(-text=>"StdCell File:")->pack(-side=>'left');
+  $stdCellEntry = $stdCellFrame->Entry(-textvariable => \$stdCellPath )->pack(-expand=>1, -fill=>'x',-side=>'left');
+  my $libLabel = $libFrame->Label(-text=>"Liberty File :")->pack(-side=>'left');
+  $libEntry = $libFrame->Entry(-textvariable => \$libPath )->pack(-expand=>1, -fill=>'x',-side=>'left');
+  
+  $techPathEntry = $techFrame->Entry(-textvariable => \$techFullPath )->pack(-expand=>1, -fill=>'x',-side=>'left');
+  $stdCellPathEntry = $stdCellFrame->Entry(-textvariable => \$stdCellFullPath )->pack(-expand=>1, -fill=>'x',-side=>'left');
+  $libPathEntry = $libFrame->Entry(-textvariable => \$libFullPath )->pack(-expand=>1, -fill=>'x',-side=>'left');
+
+  $techPathEntry->packForget(); 
+  $stdCellPathEntry->packForget();
+  $libPathEntry->packForget(); 
+  
+  
+  my $top_pane = $MainFrame->Scrolled(qw/Pane -width 400 -height 400 -scrollbars se -sticky nsew/);
+     $top_pane->Subwidget("xscrollbar")->configure(-width=>15,-borderwidth=>1);
+     $top_pane->Subwidget("yscrollbar")->configure(-width=>15,-borderwidth=>1);
+     $top_pane->pack(qw/-side left -anchor w -fill both -expand 1/);
+  my $exitButton = $buttonFrame->Button(-text=>"Exit", -command=>sub{$subWin->destroy;})->pack(-side=>"left");;
+  my $importButton = $buttonFrame->Button(-text=>"Import", -command=>sub{&import_sel_library();$subWin->destroy;})->pack(-side=>"left");;
+  
+  
+  my $cf = $top_pane->Frame(-relief=>"groove", -borderwidth=>4,-background=>"light gray");
+  $cf->pack(qw/-fill both -expand 1 -side left -anchor w /);
+  my $foundryLabel = $cf->Label(-text=>"FOUNDRY", -background=>'dark grey', -foreground=>'blue', -height=>2)->pack(-side=>'top', -fill=>'x');
+  
+  foreach my $lib (keys %$data){
+     ${"button".$lib} = $cf->Button(-text=>$lib,-relief=>"flat", -foreground=>"orange2",-background=>"light gray", 
+                                    -command=>sub{&delete_frame($data, 0); 
+                                                  &displayLibrary($data, $lib, "", $top_pane,0);
+                                                  &highlight_selected_lib($data, $lib, "", "");
+                                    })->pack(-side=>'top',-fill=>'x');
+  }
+
+}#sub import_foundry_lef_popup
+
+##############################################################################################################
+############################################### display Library ##############################################
+##############################################################################################################
+sub displayLibrary {
+  my $data = $_[0];
+  my $lib = $_[1];
+  my $type = $_[2];
+  my $topFrame = $_[3];
+  my $level = $_[4];
+  my $frame;
+  if($level == 0){
+     if(@{$data->{$lib}{node}} > 0){
+         $frame = $topFrame->Frame(-relief=>"groove", -borderwidth=>4,-background=>"light gray");
+         $frame->pack(qw/-fill both -expand 1 -side left -anchor w /);
+         my $processLabel = $frame->Label(-text=>"PROCESS", -background=>'dark grey', -foreground=>'blue', -height=>2)->pack(-side=>'top', -fill=>'x');
+         $FRAME_HASH{$lib} = $frame;
+     }else{return;}
+     foreach my $node (@{$data->{$lib}{node}}){
+         my $nodeType = $node->{type};
+         ${"button".$lib.$nodeType} = $frame->Button(-text=>$nodeType,-relief=>"flat", -foreground=>"orange2",-background=>"light gray", 
+                                                     -command=>sub{&delete_frame($data,1); 
+                                                                   &displayLibrary($data, $lib,$nodeType,$topFrame, 1);
+                                                                   &highlight_selected_lib($data, $lib, $nodeType, "");
+                                                     })->pack(-side=>'top',-fill=>'x');
+     }#foreach node
+  }elsif($level == 1){
+     foreach my $node (@{$data->{$lib}{node}}){
+        my $nodeType = $node->{type};
+        if($nodeType eq $type){
+           if(@{$node->{files}} > 0){
+               $frame = $topFrame->Frame(-relief=>"groove", -borderwidth=>4,-background=>"light gray");
+               $frame->pack(qw/-fill both -expand 1 -side left -anchor w /);
+               my $layerLabel = $frame->Label(-text=>"LAYER", -background=>'dark grey', -foreground=>'blue', -height=>2)->pack(-side=>'top', -fill=>'x');
+               $FRAME_HASH{$lib.$nodeType} = $frame;
+           }else{return;}
+           foreach my $file (@{$node->{files}}){
+               my $layer = $file->{layer};
+               my $techFile = $file->{tech};
+               my $stdCellFile = $file->{'std-cells'};
+               my $libFile = $file->{'lib'};
+               ${"button".$lib.$nodeType.$layer} = $frame->Button(-text=>$layer,-relief=>"flat", -foreground=>"orange2",-background=>"light gray", 
+                                                              -command=>sub{ 
+                                                                            &highlight_selected_lib($data, $lib, $nodeType, $layer);
+                                                                            $techPath = (split(/\//, $techFile))[-1];      
+                                                                            $stdCellPath = (split(/\//, $stdCellFile))[-1];      
+                                                                            $libPath = (split(/\//, $libFile))[-1];      
+                                                                            $techFullPath = $techFile;
+                                                                            $stdCellFullPath = $stdCellFile;
+                                                                            $libFullPath = $libFile;
+                                                              })->pack(-side=>'top',-fill=>'x');
+           }#foreach file
+        }#if nodeType
+     }#foreach node
+  }#if level 1
+}#sub displayLibrary
+
+
+##############################################################################################################
+############################################# deleting the frames ############################################
+##############################################################################################################
+sub delete_frame {
+  my $data = $_[0];
+  my $level = $_[1];
+  foreach my $lib (keys %$data){
+     if($level >= 0){
+        foreach my $node (@{$data->{$lib}{node}}){
+           my $type = $node->{type};
+           if(Exists $FRAME_HASH{$lib.$type}){
+              my $frame = $FRAME_HASH{$lib.$type};
+              $frame->destroy;
+           }
+        }
+     }
+     if($level == 0){
+        if(Exists $FRAME_HASH{$lib}){
+           my $frame = $FRAME_HASH{$lib};
+           $frame->destroy;
+        }
+     }  
+  }
+}#sub delete_frame
+
+##############################################################################################################
+########################################### highliting selected lib ##########################################
+##############################################################################################################
+sub highlight_selected_lib{
+  my $data = $_[0];
+  my $lib = $_[1];
+  my $type = $_[2];
+  my $layer = $_[3];
+
+  if($type eq "" && $layer eq ""){
+     foreach my $library (keys %$data){
+        if($library eq $lib){
+           ${"button".$library}->configure(-background=>"white");
+        }else{
+           ${"button".$library}->configure(-background=>"light gray");
+        }
+     }#foreach library
+  }else{
+     foreach my $node (@{$data->{$lib}{node}}){
+        my $nodeType = $node->{type};
+        if($type ne "" && $layer eq ""){
+           if($nodeType eq $type){
+              ${"button".$lib.$nodeType}->configure(-background=>"white");
+           }else{
+              ${"button".$lib.$nodeType}->configure(-background=>"light gray");
+           }
+        }else{
+           if($nodeType eq $type){
+              foreach my $file (@{$node->{files}}){
+                  my $nodeLayer = $file->{layer};
+                  if($nodeLayer eq $layer){
+                     ${"button".$lib.$nodeType.$nodeLayer}->configure(-background=>"white");
+                  }else{
+                     ${"button".$lib.$nodeType.$nodeLayer}->configure(-background=>"light gray");
+                  }
+              }#foreach file
+           }
+        }
+     }#foreach node
+  }
+}#sub highlight_selected_lib
+
+##############################################################################################################
+################################################ import library ##############################################
+##############################################################################################################
+sub import_sel_library{
+  my $techLef = $techPathEntry->cget('-text'); 
+  my $stdCellsLef = $stdCellPathEntry->cget('-text');
+  my $libertyFile = $libPathEntry->cget('-text'); 
+  #print "tech:$$techLef | stdcell:$$stdCellsLef | liberty:$$libertyFile\n";
+
+  &read_lef ("-lef", "$$techLef", "-tech","only");
+  &read_lef ("-lef","$$stdCellsLef");
+  &read_lib ("-lib","$$libertyFile");
+
+  &call_read_lef;
+}#sub import_sel_library
+
+##############################################################################################################
+################################################ import Verilog ##############################################
+##############################################################################################################
+sub import_verilog_popup{
+  my $subWin = MainWindow->new();
+  my $image = $subWin->Getimage('folder');
+     $subWin->title ("Import Verilog");
+  my ($verilogfile, $topModuleName) = ("", "");
+  
+  my $fileFrame= $subWin->Frame()->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+  my $moduleFrame= $subWin->Frame()->pack(-side => 'top',-anchor=>'e', -expand=>1, -fill=>'x');
+  my $buttonFrame= $subWin->Frame()->pack(-side => 'bottom');
+
+  $fileFrame->Label(-text => "Verilog File")->pack(-side =>'left', -anchor => 'w');
+  $fileFrame->Button(-text=>'BrowseFile',-image=> $image,-command =>sub {$verilogfile = &popup_read_verilog;})->pack(-side => 'right');
+  $verilogEntry = $fileFrame->Entry(-textvariable =>\$verilogfile, -width=>30)->pack(-side =>'right', -expand=>1, -fill=>'x');
+
+  $moduleFrame->Label(-text => "Top Module")->pack(-side =>'left', -anchor => 'w');
+  $moduleFrame->Entry(-textvariable =>\$topModuleName,-width=>30)->pack(-side =>'left', -expand=>1, -fill=>'x');
+
+  $buttonFrame->Button(-text=>'Import',-command =>sub {if($verilogfile ne ""){&read_verilog("-v","$verilogfile"); $TOP_MODULE = $topModuleName; &elaborate;$subWin->destroy;}})->pack(-side=>"left");
+  $buttonFrame->Button(-text=>'Cancel',-command =>sub {$subWin->destroy;})->pack(-side=>"left");
+}#sub import_verilog_popup
+
+##############################################################################################################
+################################################ import HDL ##############################################
+##############################################################################################################
+sub import_hdl_popup{
+  my $subWin = MainWindow->new();
+  my $image = $subWin->Getimage('folder');
+     $subWin->title ("Import HDL");
+  my ($rtlfile, $includeDir) = ("", "");
+  
+  my $fileFrame= $subWin->Frame()->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+  my $dirFrame= $subWin->Frame()->pack(-side => 'top',-anchor=>'e', -expand=>1, -fill=>'x');
+  my $buttonFrame= $subWin->Frame()->pack(-side => 'bottom');
+
+  $fileFrame->Label(-text => "RTL Files")->pack(-side =>'left', -anchor => 'w');
+  $fileFrame->Button(-text=>'BrowseFile',-image=> $image,-command =>sub {$rtlfile = &popup_read_macrolef($rtlEntry,"rtl");})->pack(-side => 'right');
+  $rtlEntry = $fileFrame->Entry(-textvariable =>\$rtlfile, -width=>30)->pack(-side =>'right', -expand=>1, -fill=>'x');
+
+  $dirFrame->Label(-text => "Include Directory")->pack(-side =>'left', -anchor => 'w');
+  $dirFrame->Button(-text=>'BrowseFile',-image=> $image,-command =>sub {$includeDir = &popup_include_dir;})->pack(-side => 'right');
+  $dirEntry = $dirFrame->Entry(-textvariable =>\$includeDir, -width=>30)->pack(-side =>'right', -expand=>1, -fill=>'x');
+
+  $buttonFrame->Button(-text=>'Import',-command =>sub {my @rtlfiles = (split(/\,/,$rtlEntry->get()));$GLOBAL->dbGlobalSetRtlFiles(@rtlfiles); $GLOBAL->dbGlobalSetRtlDir($dirEntry->get());})->pack(-side=>"left");
+  $buttonFrame->Button(-text=>'Cancel',-command =>sub {$subWin->destroy;})->pack(-side=>"left");
+}#sub import_hdl_popup
+
+#sub popup_include_dir1 {
+#  my $subWin = new MainWindow;
+#  $subWin->withdraw;
+#  
+#  my $t = $subWin->Toplevel;
+#  $t->title("Choose directory:");
+#  my $ok = 0;
+#  
+#  my $f = $t->Frame->pack(-fill => "x", -side => "bottom");
+#  
+#  #my $curr_dir = 'd:';
+#  my $curr_dir = Cwd::cwd();
+#  
+#  my $d;
+#  $d = $t->Scrolled('DirTree',
+#                    -scrollbars => 'osoe',
+#                    -width => 35,
+#                    -height => 20,
+#                    -selectmode => 'browse',
+#                    -exportselection =>1,
+#                    -browsecmd => sub { $curr_dir = shift },
+#                    -command => sub { $ok = 1; },
+#                   )->pack(-fill => "both", -expand => 1);
+#  
+#  $d->chdir($curr_dir);
+#  
+#  $f->Button(-text => 'Ok',
+#             -command => sub {return($curr_dir); })->pack(-side => 'left');
+#  $f->Button(-text => 'Cancel',
+#             -command => sub {$subWin->destroy  })->pack(-side => 'left');
+#  
+#  $f->waitVariable(\$ok);
+#  
+#}#sub popup_include_dir
+
+sub popup_include_dir {
+  my $dir = $top->chooseDirectory(-initialdir => '~',
+                                  -title => 'Choose a directory');
+  return $dir; 
+}#sub popup_include_dir
+
+
+1;

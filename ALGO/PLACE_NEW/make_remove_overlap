@@ -1,0 +1,758 @@
+$spacing = 0;
+$eps = 0.001;
+$grid_place = 0;
+@rownames_sorted_array=();
+sub remove_overlap {
+$debug = 0;
+  #****
+  # NAME
+  #   remove_overlap
+  # FUNCTION
+  #    reads the placed database which has been snapped to row and removes overlapping of the cells.
+  #    remove_overlap has the following command line options and switches.
+  # SYNOPSIS
+  # remove_overlap [-spacing <spacing in microns>] [-maxfp <max filled percentage desired in row] <-debug>
+  #
+  # INPUTS
+  #      options :
+  #      	-spacing <spacing in microns needed between overlapping cells> : by default spacing is taken to be 0. 
+  #       -gridsize <placement grid in microns> : by default gridsize is taken to be 0
+  #       -maxfp <maximum filled percentage desired in row>  : by default filled percentage is taken to be 80.
+  #       -bbox <{llx,lly,urx,ury}>\n"  : Black box coordinates, by default the whole die area is taken;
+  #       -debug : This is optional to run the program in debug mode
+  # OUTPUTS
+  #      The placed database will have no overlapping cells
+  #****
+
+  %RO_ROWNAME2INFO_DB = ();   ### Main DB hash for the code
+  %RO_MACRO = ();             ### Macro info per row basis
+  %RO_ORIG_LOC = ();
+  $maxfp = 100;
+  my $noOfArguments = @_;
+  my ($debug, $debug1, $debug2) = (0,0,0);
+  $grid_place = 0;
+  $bin_size = 10;
+  my $cellHeight = $GLOBAL->dbGlobalGetRowHeight;
+  @covg_area = @{$DIE_ALREADY{dieArea}};
+  $die_area = 1;
+  $DBU = $GLOBAL->dbfGlobalGetDBU;
+  $cellHeight *=$DBU;
+
+  ### Variables used for padding in case of macros
+  $DELTA_PAD = 0.2;
+  $MPAD = 40000;
+  $MACROLENPAD = 0.02;
+
+  print "INFO-ALGO_PL_NW-RM_OVLP : 001 : No of arguments: $noOfArguments\n";
+  if($_[0] eq "-h" )  { 
+    print "Usage :  remove_overlap\n"; 
+    print "                       -spacing <spacing in microns needed between overlap cells>\n";
+    print "                  		note : by default spacing is taken to be 0\n";
+    print "                       -gridsize <placement grid in microns>\n";
+    print "                  		note : by default gridsize is taken to be 0\n";
+    print "                       -maxfp <maximum filled percentage desired in row>\n";
+    print "                  		note : by default filled percentage is taken to be 80\n";
+    print "                       -bbox <{llx,lly,urx,ury}>\n";
+    print "                  		note : by default the whole die area is taken\n";
+    print "                       <-debug>\n";
+  }
+  else {
+    for(my $i = 0; $i < $noOfArguments; $i++){ 
+      if($_[$i] eq "-spacing"){  
+	$spacing = $_[$i+1] * $DBU;
+      }
+      elsif ($_[$i] eq "-debug") {
+	$debug = 1;
+      }
+      elsif ($_[$i] eq "-debug1") {
+	$debug1 = 1;
+      }
+      elsif ($_[$i] eq "-debug2") {
+	$debug2 = 1;
+      }
+      elsif ($_[$i] eq "-gridsize") {
+	$grid_place = $_[$i+1] * $DBU ;
+      }
+      elsif ($_[$i] eq "-maxfp")  {
+	$maxfp = $_[$i+1] ;
+      }
+      elsif($_[$i] eq "-bbox"){  
+	$die_area = 0;
+	my $rect = $_[$i+1]; 
+	$rect =~ s/\{\s*//; 
+	$rect =~ s/\s*\}//; 
+	@covg_area = split(/\,/,$rect);
+	$covg_area[0] *= $DBU;
+	$covg_area[1] *= $DBU;
+	$covg_area[2] *= $DBU;
+	$covg_area[3] *= $DBU;
+      }
+    } # for
+
+    $covg_area[1] = (floor($covg_area[1]/$cellHeight))*$cellHeight;
+    $covg_area[3] = (ceil($covg_area[3]/$cellHeight))*$cellHeight;
+    print "\nINFO-ALGO_PL_NW-RM_OVLP : 002 : Running overlap removal\n" ;
+    print "DBG-ALGO_PL_NW-RM_OVLP : 003 : Spacing : $spacing , Maxfp : $maxfp, Covg area : @covg_area\n" if ($debug);
+    $Rw = $covg_area[2] - $covg_area[0]; ## Row width
+    if ($die_area ==1 ) {$covg_area[3] = $covg_area[3] - $cellHeight;}
+
+    ### calling fn from make_InstByRow_db to create initial databases %RO_YTOROWNAME and %RO_ROWNAME2INFO_DB
+    &dbPlaceCreateRowInstDB(@covg_area); 
+    @rownames_sorted_array = sort { $a <=> $b } keys %RO_YTOROWNAME;
+
+    ### store original location of cells for finding which cells have moved later
+    foreach ( keys %COMP_ALREADY ) {
+      my @loc = $CADB{$_}->dbCadbGetLoc;
+      $RO_ORIG_LOC{$_}{x} = $loc[0];
+      $RO_ORIG_LOC{$_}{y} = $loc[1];
+    }
+
+    &remove_overlap_fixMacroList;   ### fix macro list per row adjusting for height and orientation into %RO_MACRO
+    &remove_overlap_findRowLen;     ### split rows around macros and calculates rowLen available for std cells
+    &remove_overlap_calcMaxFp;      ### calculates maxFp for a row depending on the macros in the row
+
+    ### for each row, create a list of std cell instance in the row, sorted by llx
+    foreach ( sort {$a <=> $b } keys %RO_YTOROWNAME ) {
+      my $rowName = $RO_YTOROWNAME{$_};
+      my @instList = $RO_ROWNAME2INFO_DB{$rowName}->dbPlaceGetInstInRow;
+      foreach my $inst(@instList) {
+	my @loc = $CADB{$inst}->dbCadbGetLoc;
+	$temp_hash{$inst} = $loc[0];
+      } #foreach $inst
+      ##Sorting based on value(X-cordinate)##
+      my @Sorted_instList = sort {$temp_hash{$a} <=> $temp_hash{$b}} keys %temp_hash;
+      @{$RO_ROWINSTSORTED{$rowName}{instList}} = @Sorted_instList;
+      %temp_hash = ();
+    } #foreach row
+
+    ### Find overlaps in original code
+    print "Checking overlap in original code....\n";
+    &check_overlap(@covg_area);
+    print "End of checking overlap in original code....\n";
+
+    ###Store fp of the rows#######################
+    foreach $rowName ( keys %RO_ROWNAME2INFO_DB ) { 
+      ($fp,$sum_cells_row) = calculateFp($rowName,@covg_area);
+    }
+
+    ### This is phase I of overlap removal where cells are moved inter-row    ###
+    ### to gurantee that cells within any row can be placed in the row itself ###
+    ### without voilating maxfp requirement ####
+    my $exit =0;
+    my $flag =0;
+    my $first_row = $rownames_sorted_array[0]-$cellHeight;
+    my ($covg_util,$sum_cells_above,$width_above) = &avgfp($first_row,@covg_area);
+    print "INFO-ALGO_PL_NW-RM_OVLP : 004 : Design area util : $covg_util \n "; 
+    if ($covg_util > $maxfp) {
+      print "WARN-ALGO_PL_NW-RM_OVLP : 005 : Please set the maximum utilization higher\n";
+      $exit = 1;
+      print "INFO-ALGO_PL_NW-RM_OVLP : 006 : Existing design utilization is : $covg_util\n";
+    }
+
+    foreach  (@rownames_sorted_array) {
+      if ($flag == 1){
+	print "ERR-ALGO_PL_NW-RM_OVLP : 007 :  in moving cells to another row.\nPlease set the maximum utilization higher\n";
+      }
+      if (($exit == 0)&&($flag==0)) {
+	my $W_unused=0;
+	my $avg_fp_unused=0;
+	my $fp_unused=0;
+	my $count =0;
+	$flag = 0;
+	$rowName = $RO_YTOROWNAME{$_};
+	($fp,$sum_cells_row) = calculateFp($rowName,@covg_area);
+	$num_cells = $RO_ROWNAME2INFO_DB{$rowName}->dbPlaceGetRowNI;
+	($avgfp,$sum_cells_above,$width_above) = avgfp($_,@covg_area);
+	print "DBG-ALGO_PL_NW-RM_OVLP : 008 : $rowName , fp: $fp , maxfp: $maxfp, avgfp: $avgfp, Number of cells: $num_cells cells_above=$sum_cells_above width_above=$width_above\n" if ($debug2);
+	if (($fp > $maxfp) && ($avgfp < ($maxfp))) {
+	  ######Move cells from rowi to rowi+1 ###########	
+	  print "**********$rowName : case1\n" if ($debug);
+	  my $move_loc = $_+$cellHeight;
+	  while ((($fp >= $maxfp )&& ($avgfp < $maxfp))&&($flag == 0)) {
+	    $avg_fp_unused = $maxfp-$avgfp;
+	    $W_unused = ($avg_fp_unused/100) * $width_above;
+	    my @instList = $RO_ROWNAME2INFO_DB{$rowName}->dbPlaceGetInstInRow;
+	    $cell_move = pop(@instList);
+	    $y = $RO_ROWNAME2INFO_DB{$rowName}->dbPlaceGetRowY;
+	    ##########Move location info####################
+	    my $move_loc_rowName = $RO_YTOROWNAME{$move_loc};
+	    my ($move_loc_fp,$temp_sum) = calculateFp($move_loc_rowName,@covg_area);
+	    print "##########$move_loc_rowName $move_loc_fp\n" if ($debug);
+	    while ($move_loc_fp > $maxfp) {
+	      $move_loc += $cellHeight;
+	      $move_loc_rowName = $RO_YTOROWNAME{$move_loc};
+	      ($move_loc_fp,$temp_sum) = calculateFp($move_loc_rowName,@covg_area);
+	      print "##########Modified : $move_loc_rowName $move_loc_fp\n" if ($debug);
+	    }
+	    my @loc = $CADB{$cell_move}->dbCadbGetLoc;
+	    ######Cell width###########	
+	    my $cellref =  $CADB{$cell_move}->dbCadbGetCellref;
+	    $size = $MACROS_ATTRIBUTE_ALREADY{$cellref}{size};
+	    my ($width,$height)=(split(/\s+/,$size))[0,1];
+	    $width = ($width *$DBU);
+	    ###########################
+	    if ($width < $W_unused) {  
+	      $RO_ROWNAME2INFO_DB{$rowName}->dbPlaceDeleteInstInRow($cell_move);
+	      unshift(@{$RO_ROWNAME2INFO_DB{$move_loc_rowName}{IL}},$cell_move);
+	      $CADB{$cell_move}->dbCadbSetLoc($loc[0],$move_loc);
+	      $W_unused = $W_unused - $width;
+	      $sum_cells_row = $sum_cells_row - $width;
+	      if ($RO_ROWNAME2INFO_DB{$rowName}{totalMacroWidth} > 0) {
+		if ($MPAD > $MACROLENPAD * $RO_ROWNAME2INFO_DB{$rowName}{totalMacroWidth}) {
+		  $rowMpad = $MPAD + $RO_ROWNAME2INFO_DB{$rowName}{totalMacroWidth};
+		} else {
+		  $rowMpad = (1+$MACROLENPAD) * $RO_ROWNAME2INFO_DB{$rowName}{totalMacroWidth};
+		}
+	      } else {$rowMpad = 0;}
+	      $fp = sprintf("%.2f",($sum_cells_row / ($RO_ROWNAME2INFO_DB{$rowName}{RW} - $rowMpad)) * 100);
+	      $RO_ROWNAME2INFO_DB{$rowName}->dbPlaceSetRowFP($fp);
+	      $RO_ROWNAME2INFO_DB{$rowName}->dbPlaceSetRowW($sum_cells_row);
+	      $sum_cells_above += $width;
+	      $avgfp = ($sum_cells_above/$width_above)*100 ;
+	    } else {
+	      $RO_ROWNAME2INFO_DB{$rowName}->dbPlaceDeleteInstInRow($cell_move);
+	      unshift(@{$RO_ROWNAME2INFO_DB{$RO_YTOROWNAME{$y}}{IL}},$cell_move);	
+	      $count += 1;
+	    }
+	    $num_cells = $RO_ROWNAME2INFO_DB{$rowName}->dbPlaceGetRowNI;
+	    if ($count == $num_cells) {
+	      $flag = 1;
+	    }
+	    #print "$rowName , fp: $fp , avgfp:$avgfp, W_unused:$W_unused, inst:$cell_move, cellref:$cellref, width:$width num_cells: $num_cells, count: $count , flag: $flag\n" if ($debug);
+	    print "DBG-ALGO_PL_NW-RM_OVLP : 009 : $rowName , fp: $fp , avgfp:$avgfp, Move loc rowName:$move_loc_rowName\n" if ($debug);
+	    #print"Moving cell:$cell_move from row:$rowName to rowName:$RO_YTOROWNAME{$y+$cellHeight}\n ";
+	  }
+	}
+	elsif (($fp > $maxfp) && ($avgfp > $maxfp)) {
+	  print "**********$rowName : case2\n" if ($debug);
+	  $exit = 1;
+	  print "WARN-ALGO_PL_NW-RM_OVLP : 010 : Please set the maximum utilization per row higher\n";
+	  ($covg_util,$sum_cells_above,$width_above) = &avgfp($first_row,@covg_area);
+	  print "INFO-ALGO_PL_NW-RM_OVLP : 011 : Existing design utilization is : $covg_util+2 \n";
+	}
+	elsif (($fp < $maxfp) && ($avgfp > ($maxfp))) {
+	  ######Move cells from rowi+1 to rowi iteratively ###########
+	  $num_cells = $RO_ROWNAME2INFO_DB{$rowName}->dbPlaceGetRowNI;
+	  print "**********$rowName : case3\n" if ($debug);
+	  $y = $RO_ROWNAME2INFO_DB{$rowName}->dbPlaceGetRowY;
+	  $y1 = $y+$cellHeight;
+	  while (($fp < $maxfp) && ($avgfp > $maxfp))  {
+	    $fp_unused = $maxfp-$fp;
+	    $W_unused = ($fp_unused/100) * $RO_ROWNAME2INFO_DB{$rowName}{RW};
+	    $num_cells_y1 = $RO_ROWNAME2INFO_DB{$RO_YTOROWNAME{$y1}}->dbPlaceGetRowNI;
+	    if ($num_cells_y1 !=0) {
+	      ##Move from y1 to y##
+	      my @instList = $RO_ROWNAME2INFO_DB{$RO_YTOROWNAME{$y1}}->dbPlaceGetInstInRow;
+	      $cell_move = pop(@instList);
+	      #if (($cell_move eq "a11257") or ($cell_move eq "a986")) {
+	      #`	print "Moving cell $cell_move\n";
+	      #      }
+	      my @loc = $CADB{$cell_move}->dbCadbGetLoc;
+	      ######Cell width###########	
+	      my $cellref =  $CADB{$cell_move}->dbCadbGetCellref;
+	      $size = $MACROS_ATTRIBUTE_ALREADY{$cellref}{size};
+	      my ($width,$height)=(split(/\s+/,$size))[0,1];
+	      $width = ($width *$DBU);
+	      ###########################
+	      if ($width < $W_unused) { 
+		$RO_ROWNAME2INFO_DB{$RO_YTOROWNAME{$y1}}->dbPlaceDeleteInstInRow($cell_move);
+		unshift(@{$RO_ROWNAME2INFO_DB{$RO_YTOROWNAME{$y}}{IL}},$cell_move);	
+		$CADB{$cell_move}->dbCadbSetLoc($loc[0],$y);
+		$W_unused = $W_unused-$width;
+		$sum_cells_row = $sum_cells_row + $width;
+
+		if ($RO_ROWNAME2INFO_DB{$rowName}{totalMacroWidth} > 0) {
+		  if ($MPAD > $MACROLENPAD * $RO_ROWNAME2INFO_DB{$rowName}{totalMacroWidth}) {
+		    $rowMpad = $MPAD + $RO_ROWNAME2INFO_DB{$rowName}{totalMacroWidth};
+		  } else {
+		    $rowMpad = (1+$MACROLENPAD) * $RO_ROWNAME2INFO_DB{$rowName}{totalMacroWidth};
+		  }
+		} else {$rowMpad = 0;}
+		$fp = sprintf("%.2f",($sum_cells_row / ($RO_ROWNAME2INFO_DB{$rowName}{RW} - $rowMpad)) * 100);
+		##$fp = sprintf("%.2f",($sum_cells_row / ($RO_ROWNAME2INFO_DB{$rowName}{RW} - $MACROLENPAD * $RO_ROWNAME2INFO_DB{$rowName}{totalMacroWidth})) * 100);
+		$RO_ROWNAME2INFO_DB{$rowName}->dbPlaceSetRowFP($fp);
+		$RO_ROWNAME2INFO_DB{$rowName}->dbPlaceSetRowW($sum_cells_row);
+		$sum_cells_above -= $width;
+		$avgfp = ($sum_cells_above/$width_above)*100 ;
+	      } else {
+		$RO_ROWNAME2INFO_DB{$RO_YTOROWNAME{$y1}}->dbPlaceDeleteInstInRow($cell_move);
+	        unshift(@{$RO_ROWNAME2INFO_DB{$RO_YTOROWNAME{$y1}}{IL}},$cell_move);	
+		$count += 1;
+	      }
+	      print "DBG-ALGO_PL_NW-RM_OVLP : 012 : $rowName , fp: $fp , avgfp:$avgfp, W_unused:$W_unused, inst:$cell_move, cellref:$cellref, width:$width\n" if ($debug);
+	      $num_cells = $RO_ROWNAME2INFO_DB{$RO_YTOROWNAME{$y1}}->dbPlaceGetRowNI;
+	      if ($count == $num_cells) {
+		$flag = 1;
+	      }
+	    } else {
+	      $y1 +=$cellHeight;
+	      $num_cells = 0;
+	      $count = 0;
+	    }
+	  } #while
+	}
+	elsif (($fp < $maxfp) && ($avgfp < $maxfp)) {
+	  ######Do nothing ###########
+	  print "**********$rowName : case4\n" if ($debug);
+	}
+      } #end if
+    } #end foreach
+    ### This is end of phase I of overlap removal where cells are moved inter-row    ###
+
+
+
+    ### This is phase 2 of overlap removal where cells are moved intra-row    ###
+    if (($exit == 0)&&($flag==0)) {
+      foreach ( sort {$a <=> $b } keys %RO_YTOROWNAME ) {
+	$rowName = $RO_YTOROWNAME{$_};
+	$fp = $RO_ROWNAME2INFO_DB{$rowName}->dbPlaceGetRowFP($fp);
+	#print "$rowName , New fp: $fp\n";
+	#if ($rowName eq "CORE_ROW_171") {
+	#  print "Entering CORE_ROW_171\n";
+	#}
+	my @instList = $RO_ROWNAME2INFO_DB{$rowName}->dbPlaceGetInstInRow;
+	
+	####Sort each row in order of increasing X-coordinate####
+	foreach $inst(@instList) {
+	  my @loc = $CADB{$inst}->dbCadbGetLoc;
+	  $temp_hash{$inst} = $loc[0];
+	}
+	##Sorting based on value(X-cordinate)##
+	@Sorted_instList = sort {
+	  $temp_hash{$a} <=> $temp_hash{$b}
+	} keys %temp_hash;
+	@{$RO_ROWINSTSORTED{$rowName}{instList}} = @Sorted_instList;
+	%temp_hash = ();
+	########################################################
+
+	my $Swc =0;
+	$Swc = totalCellWidthInRow( $rowName,@{$RO_ROWINSTSORTED{$rowName}{instList}} ) - $spacing;
+	$delta = $RO_ROWNAME2INFO_DB{$rowName}{RW} - $Swc - $RO_ROWNAME2INFO_DB{$rowName}{totalMacroWidth};
+	if ($delta >= 0 ) {
+	  $delta_used = min($delta,$DELTA_PAD * $RO_ROWNAME2INFO_DB{$rowName}{totalMacroWidth}); 
+	  $delta_used_new = $delta_used;
+	  $W_used = $covg_area[0];
+	  foreach $inst(@{$RO_ROWINSTSORTED{$rowName}{instList}}) {
+	    my $solnFound = 0;
+	    while (!$solnFound) {
+	      $W_used_old = $W_used;
+	      my @loc = $CADB{$inst}->dbCadbGetLoc;
+	      my $cellref =  $CADB{$inst}->dbCadbGetCellref;
+	      $size = $MACROS_ATTRIBUTE_ALREADY{$cellref}{size};
+	      ($width,$height)=(split(/\s+/,$size))[0,1];
+	      $width = ($width *$DBU);
+	      ##In case of overlap
+	      if ($loc[0] < ($W_used+$spacing)) {
+		$new_X = $W_used+$spacing;   
+		$new_X_aligned = alignCellToGrid($new_X, $W_used);
+		$CADB{$inst}->dbCadbSetLoc($new_X_aligned,$loc[1]);
+		$delta_used = $delta_used +$new_X_aligned - $W_used;
+		$W_used = $new_X_aligned + $width;
+	      }
+	      ##No overlap
+	      else {
+		$delta_used_new = $delta_used + $loc[0]  - $W_used ;
+		if ( $delta_used_new <= $delta ) {
+		  ## keep cell position same;
+		  $new_X = $loc[0];
+		  $new_X_aligned = alignCellToGrid($new_X, $W_used);
+		  $CADB{$inst}->dbCadbSetLoc($new_X_aligned,$loc[1]);
+		  $delta_used = $delta_used +$new_X_aligned - $W_used;
+		  $W_used = $new_X_aligned + $width ;
+		}
+		else {
+		  $new_X = $W_used + $delta - $delta_used;	
+		  if ($new_X < ($W_used + $spacing)) {
+		    #print "Line to test\n";
+		    if ($delta_used == 0) {
+		      $new_X= $new_X;
+		    }
+		    else {
+		      $new_X = $W_used + $spacing;
+		    }
+		  }	
+		  $new_X_aligned = alignCellToGrid($new_X, $W_used);
+		  $CADB{$inst}->dbCadbSetLoc($new_X_aligned,$loc[1]);
+		  $delta_used = $delta_used + $new_X_aligned  - $W_used ;
+		  $W_used = $new_X_aligned + $width;
+		  #print "W_used : $W_used delta_used: $delta_used and delta: $delta\n" if ($debug);
+		}
+	      }
+	      ### check for no overlap with a macro
+	      my @loc = $CADB{$inst}->dbCadbGetLoc;
+	      my $newLx = $loc[0];
+	      my $newRx = $newLx + $width;
+	      my ($macroOverlap, $idx) = remove_overlap_checkMacroOverlap($newLx, $newRx, $rowName);
+	      if ($macroOverlap) {
+		$solnFound = 1;
+		print "\nINFO-ALGO_PL_NW-RM_OVLP : 014 : Found macro overlap row:$rowName inst:$inst id:$idx macro:$RO_ROWNAME2INFO_DB{$rowName}{macro}->[$idx] x:$RO_ROWNAME2INFO_DB{$rowName}{macroRx}->[$idx]\n" if ($debug);
+		my $macroWidth = $RO_ROWNAME2INFO_DB{$rowName}{macroRx}->[$idx] - $RO_ROWNAME2INFO_DB{$rowName}{macroLx}->[$idx];
+		$W_used = $RO_ROWNAME2INFO_DB{$rowName}{macroRx}->[$idx];
+		$new_X = $W_used + $spacing;
+		$new_X_aligned = alignCellToGrid($new_X, $W_used);
+		$CADB{$inst}->dbCadbSetLoc($new_X_aligned,$loc[1]);
+		$delta_used = $delta_used + $new_X_aligned - $W_used_old + $width - $macroWidth;
+		$W_used = $new_X_aligned + $width;
+	      } else {
+		$solnFound = 1;
+	      }
+	    } #while
+	    #print "Inst: $inst , Delta : $delta, delta_used : $delta_used, W_used :$W_used, New X : $new_X, Width: $width\n" if ($debug); 
+	    printf("Row:%-s Inst:%-8s Delta:%8.2f Delta_used:%8.2f W_used:%8.2f New_X:%8.2f New_X_aligned=%8.2f Width:%8.2f Max_width=%8.2f\n",$rowName,$inst,$delta,$delta_used,$W_used,$new_X,$new_X_aligned,$width,$covg_area[2]) if ($debug) ; 
+	    #print "__";
+	  }
+	} else {
+	  print "INFO-ALGO_PL_NW-RM_OVLP : 012 : Unable to fix row:$rowName in Phase 2 since delta:$delta  \n";
+	}
+      }#end foreach 	
+    }
+
+    &adjustcellorient;
+    &check_overlap(@covg_area);
+    &check_movements();
+    %RO_ROWNAME2INFO_DB=();
+    %RO_ORIG_LOC = ();
+    %RO_YTOROWNAME = ();
+    %RO_ROWINSTSORTED = ();
+    @rownames_sorted_array = ();
+
+    print "\nINFO-ALGO_PL_NW-RM_OVLP : 013 : End overlap removal\n" ;
+  } # end else
+  &set_inst_box;
+}#sub remove_overlap
+################### End of remove_overlap function ###########################
+
+sub adjustcellorient {
+  foreach (@rownames_sorted_array) {
+    my $rowName = $RO_YTOROWNAME{$_};
+    my @instList = $RO_ROWNAME2INFO_DB{$rowName}->dbPlaceGetInstInRow;
+    my  $orient = $RO_ROWNAME2INFO_DB{$rowName}->dbPlaceGetOrient($orient);
+    #print "Orientation for Row $rowName is $orient\n";
+    foreach $inst(@instList) {
+      my $cell_orient_pre = $CADB{$inst}->dbCadbGetOrient;
+      $CADB{$inst}->dbCadbSetOrient($orient);
+      my $cell_orient = $CADB{$inst}->dbCadbGetOrient;
+      #print "Row orient:$orient Inst:$inst Pre orient:$cell_orient_pre Orient:$cell_orient\n";
+    }
+  }
+}#sub adjustcellorient
+
+sub alignCellToGrid {
+  my ($new_X, $W_used) = @_;
+  my $leastCount = $grid_place;
+  if ($grid_place != 0) {
+    # find floor and ceil
+    $new_X_aligned_floor = $leastCount * floor($new_X/$leastCount);
+    $new_X_aligned_ceil  = $leastCount * ceil($new_X/$leastCount);
+
+    #align
+    if ($new_X_aligned_floor > $W_used) {
+      $new_X_aligned = $new_X_aligned_floor;
+    } else {
+      $new_X_aligned = $new_X_aligned_ceil;
+    }
+  } else {
+    $new_X_aligned = $new_X;
+  }
+
+  printf("alignCellToGrid: new_x=%10.2f W_used=%10.2f new_X_aligned=%10.2f floor=%10.2f ceil=%10.2f lc=%10.2f\n",$new_X,$W_used,$new_X_aligned,$new_X_aligned_floor,$new_X_aligned_ceil,$leastCount) if ($debug);
+  return $new_X_aligned;
+} #sub
+
+sub check_overlap {
+  my @covg_area = @_;
+  my $overlapCnt = 0;
+  my $outsideCnt = 0;
+
+  #foreach $badInst ("a2947" ,"a17678" ,"a11917" ,"a9822" ,"a9871" ,"a8710" ,"a8778" ,"a4520" ,"a6461" ,"a4841" ,"a1128" ,"a8621" ,"a8233" ,"a15422" ,"a7461" ,"a4432" ,"a8746" ,"a4827" ,"a4968" ,"a13649" ,"a2505" ,"a18632" ,"a1966" ,"a12659" ,"a2131" ,"a13285" ,"a16155" ,"a12706" ,"a3759" ,"a7942" ,"a12893" ,"a8757" ,"a2627" ,"a11257" ,"a986" ,"a16915" ,"a16384") {
+   # my @loc = $CADB{$badInst}->dbCadbGetLoc;
+    ##print "BadInst:$badInst x=$loc[0] y=$loc[1] \n";
+  #}
+  foreach ( sort {$a <=> $b } keys %RO_YTOROWNAME ) {
+    $rowName = $RO_YTOROWNAME{$_};
+    $pointer = 0;
+    @temp = @{$RO_ROWINSTSORTED{$rowName}{instList}};
+    #print "Row:$rowName InstCount:$#temp @temp\n";
+    foreach $inst(@{$RO_ROWINSTSORTED{$rowName}{instList}}) {
+      my $cellref =  $CADB{$inst}->dbCadbGetCellref;
+      my $inst_class = $PLDB{$cellref}->dbMdbGetClass;
+      my @loc = $CADB{$inst}->dbCadbGetLoc;
+      my $cellref =  $CADB{$inst}->dbCadbGetCellref;
+      $size = $MACROS_ATTRIBUTE_ALREADY{$cellref}{size};
+      ($width,$height)=(split(/\s+/,$size))[0,1];
+      $width = ($width *$DBU);
+      if ($loc[0] < $pointer) {
+	printf ("INFO-ALGO_PL_NW : 001 : Overlap found in $rowName for $inst at x=%10.2f width=%10.2f\n",$loc[0],$width) if ($debug2);
+	$overlapCnt++;
+      }
+      if (($loc[0]+$width) > ($covg_area[2]) + $eps) {
+	print "WARN-ALGO_PL_NW : 002 : $inst outside the coverage area in row:$rowName\n" if ($debug2);
+	$outsideCnt++;
+      }
+      $pointer = $loc[0] +$width +$spacing;
+    }#foreach
+  } #foreach
+  print "WARN-ALGO_PL_NW : 002 : Found $overlapCnt overlaps and $outsideCnt cells outside of coverage area for debug2=$debug2\n";
+} #sub check_overlap
+
+sub check_movements {
+  $numMoved = 0;
+  $numStayed = 0;
+  $totCells = 0;
+  $maxLenMoved = 0;
+  $avgLenMoved = 0;
+  $totLenMoved = 0;
+  $maxLenCell = "";
+
+  foreach $cell ( keys %COMP_ALREADY ) {
+    $totCells++;
+    my @loc = $CADB{$cell}->dbCadbGetLoc;
+    my @loc_orig = ($RO_ORIG_LOC{$cell}{x}, $RO_ORIG_LOC{$cell}{y});
+    $lenMoved = abs(($loc[0]- $loc_orig[0])) + abs(($loc[1] - $loc_orig[1]));
+    if ($lenMoved == 0) {
+      $numStayed++;
+    } else {
+      $numMoved++;
+      if ($lenMoved > $maxLenMoved) {$maxLenMoved = $lenMoved; $maxLenCell = $cell;}
+      $totLenMoved += $lenMoved;
+      printf( "INFO-ALGO_PL_NW_RO_OUT : 001 : cell=%-30s orig=%10.10f,%10.10f, new=%-10.10f,%-10.10f move=%-10.10f total=%-10.0f\n",$cell,$loc_orig[0],$loc_orig[1],$loc[0],$loc[1],$lenMoved,$totLenMoved) if ($debug);
+    }
+  }
+  if ($numMoved != 0) {$avgLenMoved = $totLenMoved / $numMoved;} else {$avgLenMoved = 0;}
+  printf ("INFO-ALGO_PL_NW_RO_OUT : 010 : totalcells=%-10.0f numCellMoved=%-10.0f maxLenMoved=%-10.0f avgLenMoved=%-10.0f\n",$totCells,$numMoved,$maxLenMoved,$avgLenMoved) ;
+} #sub
+
+sub totalCellWidthInRow { 
+  my ($rowName,@instList) = @_;
+  my $leastCount = $grid_place;
+  my $Swc =0;
+  foreach $inst(@instList) {
+    my $cellref =  $CADB{$inst}->dbCadbGetCellref;
+    $size = $MACROS_ATTRIBUTE_ALREADY{$cellref}{size};
+    ($width,$height)=(split(/\s+/,$size))[0,1];
+    if ($grid_place != 0) {
+      $width = $leastCount * ceil((($width *$DBU) + $spacing)/$leastCount);
+    }else {
+      $width = ($width *$DBU) + $spacing;
+    }
+    $Swc += $width ;
+  }
+  return($Swc+$grid_place);
+} #sub 	totalCellWidthInRow
+
+sub totalCellWidth { 
+  my (@instList) = @_;
+  my $leastCount = $grid_place;
+  my $Swc =0;
+  foreach $inst(@instList) {
+    my $cellref =  $CADB{$inst}->dbCadbGetCellref;
+    $size = $MACROS_ATTRIBUTE_ALREADY{$cellref}{size};
+    ($width,$height)=(split(/\s+/,$size))[0,1];
+    if ($grid_place != 0) {
+      $width = $leastCount * ceil((($width *$DBU) + $spacing)/$leastCount);
+    }else {
+      $width = ($width *$DBU) + $spacing;
+    }
+    $Swc += $width ;
+  }
+  return($Swc+$grid_place);
+} #sub 	totalCellWidth
+
+sub calculateFp {
+  my ($rowName,@covg_area)=@_;
+  my @instList = $RO_ROWNAME2INFO_DB{$rowName}->dbPlaceGetInstInRow;
+  my $Swc=totalCellWidthInRow($rowName,@instList) - $spacing;
+  #$Rw = $covg_area[2] - $covg_area[0];
+
+  if ($RO_ROWNAME2INFO_DB{$rowName}{totalMacroWidth} > 0) {
+    if ($MPAD > $MACROLENPAD * $RO_ROWNAME2INFO_DB{$rowName}{totalMacroWidth}) {
+      $rowMpad = $MPAD + $RO_ROWNAME2INFO_DB{$rowName}{totalMacroWidth};
+    } else {
+      $rowMpad = (1+$MACROLENPAD) * $RO_ROWNAME2INFO_DB{$rowName}{totalMacroWidth};
+    }
+  } else {$rowMpad = 0;}
+
+  my $fp = sprintf("%.2f",($Swc / ($RO_ROWNAME2INFO_DB{$rowName}{RW} - $rowMpad)) * 100);
+  ##my $fp = sprintf("%.2f",($Swc / ($RO_ROWNAME2INFO_DB{$rowName}{RW} - ($MACROLENPAD * $RO_ROWNAME2INFO_DB{$rowName}{totalMacroWidth}))) * 100);
+  $RO_ROWNAME2INFO_DB{$rowName}->dbPlaceSetRowFP($fp);
+  $RO_ROWNAME2INFO_DB{$rowName}->dbPlaceSetRowW($Swc);
+  return($fp,$Swc);
+} # sub calculateFp
+
+sub avgfp {
+  my $cellHeight = $GLOBAL->dbGlobalGetRowHeight;
+  $cellHeight *= $DBU;
+  my ($rowNum,@covg_area) = @_;
+  my $sum= 0;
+  my $avg =0;
+  #$Rw = $covg_area[2] - $covg_area[0];
+  my $count =0;
+  my $row_name;
+  my $no_of_rows = @rownames_sorted_array;
+  my $macroWidthAbove = 0;
+  my $rowWidthAbove = 0;
+  if ($rowNum == $rownames_sorted_array[$no_of_rows - 1]) {
+    $rowNum = $rowNum - $cellHeight;
+  }
+  if ($rowNum == 85860) {
+    print "$row_name\n";
+    }
+  for (my $i = $RO_ROWNAME2INFO_DB{$RO_YTOROWNAME{$rowNum+$cellHeight}}->dbPlaceGetRowY ; $i<=$rownames_sorted_array[$no_of_rows-1] ; $i = $i+$cellHeight) {
+    my $row_name = $RO_YTOROWNAME{$i};
+    #my @instList = $RO_ROWNAME2INFO_DB{$row_name}->dbPlaceGetInstInRow;
+    $Swc=$RO_ROWNAME2INFO_DB{$row_name}->dbPlaceGetRowW;
+    $sum += $Swc;		
+    $count++;
+    $macroWidthAbove += $RO_ROWNAME2INFO_DB{$rowName}{totalMacroWidth};
+  }
+  if ($count != 0) {
+    $rowWidthAbove = ($count*$RO_ROWNAME2INFO_DB{$rowName}{RW}) - $macroWidthAbove;
+    $avg = ($sum/$rowWidthAbove)*100 ;
+    return($avg,$sum,$rowWidthAbove);
+  }
+} #sub avgfp
+
+sub remove_overlap_fixMacroList {
+  foreach( sort {$a <=> $b } keys %RO_YTOROWNAME ) {
+    $rowName = $RO_YTOROWNAME{$_};
+    my @instance = @{$RO_ROWNAME2INFO_DB{$rowName}{IL}};
+    foreach my $inst (@instance) {
+      my $cellref =  $CADB{$inst}->dbCadbGetCellref;
+      my $inst_class = $PLDB{$cellref}->dbMdbGetClass;
+      if ($inst_class eq "BLOCK") {
+	$RO_ROWNAME2INFO_DB{$rowName}->dbPlaceDeleteInstInRow($inst);
+	printf ("INFO-ALGO_PL_NW_RO_FML : 001 : Removing instance:$inst from row:$rowName class:$inst_class\n") if ($debug);
+	if (!defined($RO_MACRO{$inst})) {$RO_MACRO{$inst}{'exist'} = 1;}
+      } #if
+    } #foreach
+  } #foreach
+
+  ##add macros properly
+  foreach my $macro (keys %RO_MACRO) {
+    my ($llx, $lly, $urx, $ury) = ();
+    my @loc = $CADB{$macro}->dbCadbGetLoc;
+    my $cellref =  $CADB{$macro}->dbCadbGetCellref;
+    my $orient = $CADB{$macro}->dbCadbGetOrient;
+    my $inst_class = $PLDB{$cellref}->dbMdbGetClass;
+    my $xorigin = $loc[0];
+    my $yorigin = $loc[1];
+    my $size = $MACROS_ATTRIBUTE_ALREADY{$cellref}{size};
+    my ($width,$height)=(split(/\s+/,$size))[0,1];
+    $width = $width*$DBU;
+    $height = $height*$DBU;
+    if( $orient eq "N") {
+      $llx = $xorigin;
+      $lly = $yorigin;
+      $urx = $xorigin+$width;
+      $ury = $yorigin+$height;
+    } elsif( $orient eq "FN") {
+      $llx = $xorigin;
+      $lly = $yorigin+$height;
+      $urx = $xorigin+$width;
+      $ury = $yorigin;
+    } elsif( $orient eq "FS") {
+      $llx = $xorigin;
+      $lly = $yorigin;
+      $urx = $xorigin+$width;
+      $ury = $yorigin+$height;
+    } elsif( $orient eq "S") {
+      $llx = $xorigin;
+      $lly = $yorigin;
+      $urx = $xorigin+$width;
+      $ury = $yorigin+$height;
+    } elsif( $orient eq "W") {
+      $llx = $xorigin;
+      $lly = $yorigin;
+      $urx = $xorigin+$height;
+      $ury = $yorigin+$width;
+    } elsif( $orient eq "FW") {
+      $llx = $xorigin;
+      $lly = $yorigin;
+      $urx = $xorigin+$height;
+      $ury = $yorigin+$width;
+    } elsif( $orient eq "E") {
+      $llx = $xorigin;
+      $lly = $yorigin;
+      $urx = $xorigin+$height;
+      $ury = $yorigin+$width;
+    } elsif( $orient eq "FE") {
+      $llx = $xorigin;
+      $lly = $yorigin;
+      $urx = $xorigin+$height;
+      $ury = $yorigin+$width;
+    }
+    $RO_MACRO{$macro}{llx} = $llx;
+    $RO_MACRO{$macro}{lly} = $lly;
+    $RO_MACRO{$macro}{urx} = $urx;
+    $RO_MACRO{$macro}{ury} = $ury;
+    print "INFO-ALGO_PL_NW_RO_FML : 002 : Found macro:$macro  llx : $llx,lly : $lly, urx = $urx, ury : $ury \n" if ($debug);
+  } #foreach
+}#sub
+
+sub remove_overlap_calcMaxFp {
+  # calculates maxFp for a row depending on the macros in the row
+  # for each row check if a macro lies in that row and then calculate max fp
+  foreach( sort {$a <=> $b } keys %RO_YTOROWNAME ) {
+    $rowName = $RO_YTOROWNAME{$_};
+    $RO_ROWNAME2INFO_DB{$rowName}{totalMacroWidth} = 0;
+    my $rowLy = $RO_ROWNAME2INFO_DB{$rowName}{Y};
+    my $rowUy = $rowLy + ($GLOBAL->dbGlobalGetRowHeight * $DBU);
+    foreach my $macro (keys %RO_MACRO) {
+      #check if macro lies with in the row
+      if (  (($rowLy >= $RO_MACRO{$macro}{lly}) && ($rowLy <= $RO_MACRO{$macro}{ury})) ||
+	    (($rowUy >= $RO_MACRO{$macro}{lly}) && ($rowUy <= $RO_MACRO{$macro}{ury})) ) {
+	push(@{$RO_ROWNAME2INFO_DB{$rowName}{macro}}, $macro);
+	push(@{$RO_ROWNAME2INFO_DB{$rowName}{macroLx}},$RO_MACRO{$macro}{llx});
+	push(@{$RO_ROWNAME2INFO_DB{$rowName}{macroRx}},$RO_MACRO{$macro}{urx});
+	push(@{$RO_MACRO{$macro}{rows}},$rowName);
+	$RO_ROWNAME2INFO_DB{$rowName}{totalMacroWidth} += $RO_MACRO{$macro}{urx} - $RO_MACRO{$macro}{llx};
+	print "INFO-ALGO_PL_NW_RO_CMF : 002 : Row:$rowName macro:$macro found width:$RO_ROWNAME2INFO_DB{$rowName}{totalMacroWidth}\n" if ($debug1);
+      } #if
+    } #foreach macro
+    $RO_ROWNAME2INFO_DB{$rowName}{maxFp} = $maxfp * ( 1 -  $RO_ROWNAME2INFO_DB{$rowName}{totalMacroWidth}/$RO_ROWNAME2INFO_DB{$rowName}{RW});
+  } #foreach row
+  print "1" if ($debug);
+
+  foreach( sort {$a <=> $b } keys %RO_YTOROWNAME ) {
+    $rowName = $RO_YTOROWNAME{$_};
+    my @num_inst = @{$RO_ROWNAME2INFO_DB{$rowName}{IL}};
+    my @num_macro = @{$RO_ROWNAME2INFO_DB{$rowName}{macro}};
+    my $num_inst = $#num_inst; 
+    my $num_macro = $#num_macro; 
+    printf ("INFO-ALGO_PL_NW_RO_FML : 101 : row:$rowName num_inst: $num_inst num_macro: $num_macro\n") if ($debug);
+  } #foreach
+}#sub
+
+sub remove_overlap_checkMacroOverlap {
+  my ($instLx, $instRx, $rowName) = @_;
+  my ($macroOverlap,$idx) = 0;
+  my @macroLx = @{$RO_ROWNAME2INFO_DB{$rowName}{macroLx}};
+  my @macroRx = @{$RO_ROWNAME2INFO_DB{$rowName}{macroRx}};
+  for ($idx=0; $idx <=$#macroLx; $idx++) {
+    if (($instLx >= $macroLx[$idx]) && ($instLx < $macroRx[$idx])) {
+      $macroOverlap = 1; last;
+    } elsif (($instRx >= $macroLx[$idx]) && ($instLx < $macroRx[$idx])) {
+      $macroOverlap = 1; last;
+    }
+  } #for
+  return($macroOverlap, $idx);
+}#sub
+
+
+sub remove_overlap_findRowLen {
+  ### split rows around macros and calculates rowLen available for std cells
+  $i =0;
+  foreach( sort {$a <=> $b } keys %RO_YTOROWNAME ) {
+    $rowName = $RO_YTOROWNAME{$_};
+    if ($i == 0) {
+      $RO_ROWNAME2INFO_DB{$rowName}{RW} = 1.0 * ($covg_area[2] - $covg_area[0]);
+      $i = 1;
+    } else {
+      $RO_ROWNAME2INFO_DB{$rowName}{RW} = 1.0 * ($covg_area[2] - $covg_area[0]);
+      $i = 0;
+    }
+  } #foreach
+}#sub
+
+
+1;

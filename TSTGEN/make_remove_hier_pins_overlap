@@ -1,0 +1,312 @@
+@sides_array=();
+sub remove_hier_pins_overlap {
+my ($flplanID,$sTracks,@legalizedPins) = @_;
+my @bbox = $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetSize;
+
+%HIER_PIN_BY_SIDE = ();
+my $noOfArguments = @_;
+my $debug = 0;
+$DBU = $GLOBAL->dbfGlobalGetDBU;
+print "No of arguments: $noOfArguments\n" if ($debug);
+if($_[0] eq "-h" )  { 
+ 	print "Usage :  remove_hier_pins_overlap\n"; 
+        print "                       <-debug>\n";
+	
+  }
+else {
+print "\nINFO-TST-RM_HR_PN_OVLP : 001 : Running pins overlap removal\n" ;
+&dbPlaceCreateHierPinBySide($flplanID,@legalizedPins);
+@sides_array = ('W','N','S','E');
+
+foreach $side( @sides_array ) {
+	print "DBG-TST-RM_HR_PN_OVLP : 002 : Side : $side \n" if ($debug);
+	foreach $layer (keys %{$HIER_PIN_BY_SIDE{$side}{PL}}) {
+	print "DBG-TST-RM_HR_PN_OVLP : 003 : Layer: $layer \n" if ($debug);
+	my @pinList = $HIER_PIN_BY_SIDE{$side}->dbPlaceGetPinsInSide($layer);
+	my $layerPitch;	
+	foreach $pin(@pinList) {
+	    my @shapes = $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetPinRect($pin);
+	    print "DBG-TST-RM_HR_PN_OVLP : 004 : Shapes: @shapes \n" if ($debug);
+	    my @shapes_info = split(/\s/, $shapes[0]);
+	    $pin_layer = $shapes_info[0];
+	    $loc[0] = $shapes_info[1];
+	    $loc[1] = $shapes_info[2];
+	    $loc[2] = $shapes_info[3];
+	    $loc[3] = $shapes_info[4];
+		$DBU = $GLOBAL->dbfGlobalGetDBU;
+		$layerPitch =  $PTDB{$pin_layer}->dbTechGetLayerPitch ;
+	 	$layerPitch *= $DBU;
+		if ( $side eq 'N' || $side eq 'S' ) { 
+			$temp_hash{$pin} = $loc[0];
+		} elsif ( $side eq 'E' || $side eq 'W' ) {
+			$temp_hash{$pin} = $loc[1];
+		}
+	}
+	##Sorting based on value(X-cordinate)##
+	@Sorted_pinList = sort {
+        	$temp_hash{$a} <=> $temp_hash{$b}
+        } keys %temp_hash;
+	@{$HIERPINLIST_SORTED{$side}{pinList}{$layer}} = @Sorted_pinList;
+	%temp_hash = ();
+
+        ########################################################
+	my $sidelength = $HIER_PIN_BY_SIDE{$side}->dbPlaceGetSideSL;
+	my $spacing = $sTracks*$layerPitch ;
+	my $sidePinlength = totalHierPinLengthInSide($flplanID,$sTracks,$side, @{$HIERPINLIST_SORTED{$side}{pinList}{$layer}} ) - ($spacing) ;
+	$delta = $sidelength - $sidePinlength - ($#pinList/4)*$spacing;
+
+	#############Added to turn around pins############
+	while ($delta < 0){
+		print "INFO : Pins going outside boundary. Turning around pins\n";
+		my $side_new;
+
+		if ($side eq 'W') { $side_new = 'N'; $new_X = $bbox[0]; $new_Y = $bbox[3];}
+		elsif ($side eq 'N') { $side_new = 'S';$new_X = $bbox[0]; $new_Y = $bbox[1];}
+		elsif ($side eq 'S') { $side_new = 'E';$new_X = $bbox[2] ; $new_Y = $bbox[1];}
+		else { $side_new = 'E';}
+		my $pin_move = pop(@{$HIERPINLIST_SORTED{$side}{pinList}{$layer}});
+		unshift(@{$HIERPINLIST_SORTED{$side_new}{pinList}{$layer}},$pin_move);
+		
+		#########Get pin layer########
+		my @shapes = $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetPinRect($pin_move);
+	    	my @shapes_info = split(/\s/, $shapes[0]);
+	    	$pin_layer = $shapes_info[0];
+		##############################
+
+		$sidePinlength = totalHierPinLengthInSide($flplanID,$sTracks,$side, @{$HIERPINLIST_SORTED{$side_new}{pinList}{$layer}} ) - ($spacing) ;
+		$delta = $sidelength - $sidePinlength - ($#pinList/4)*$spacing;
+		my($new_X_aligned,$new_Y_aligned)=&AlignToTrack($new_X,$new_Y,$side_new,$layer);   
+		print "Delta: $delta , New X: $new_X , New Y: $new_Y, Side new: $side_new  \n" if ($debug);
+	
+		if (exists 	$HIER_PIN_BY_SIDE{$side_new} ) { } 
+		else {
+ 	    		$HIER_PIN_BY_SIDE{$side_new} = PinInstDB::new();
+	    		if ( $side_new eq 'N' || $side_new eq 'S' ) { 
+            		my $sl = $bbox[2] - $bbox[0];
+			$HIER_PIN_BY_SIDE{$side_new}->dbPlaceSetSideSL($sl);
+            		}
+            		elsif ( $side_new eq 'E' || $side_new eq 'W' ) {
+           		my $sl = $bbox[3] - $bbox[1] ;
+			$HIER_PIN_BY_SIDE{$side_new}->dbPlaceSetSideSL($sl);
+            		}
+	    	} #end else
+	
+	    	$HIER_PIN_BY_SIDE{$side_new}->dbPlaceAddPinsInSide($pin_layer,$pin_move); 
+            	
+
+	}
+	##################################################
+
+if ($delta >= 0 ) {
+	$delta_used = 0 ; 
+	$delta_used_new = 0 ; 
+	$W_used = 0;
+	foreach $pin(@{$HIERPINLIST_SORTED{$side}{pinList}{$layer}}) {
+	    my @shapes = $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetPinRect($pin);
+	    my $size;
+	    print "DBG-TST-RM_HR_PN_OVLP : 005 : Shapes: @shapes \n" if ($debug);
+	    my @shapes_info = split(/\s/, $shapes[0]);
+	    $layer = $shapes_info[0];
+	    $loc[0] = $shapes_info[1];
+	    $loc[1] = $shapes_info[2];
+	    $loc[2] = $shapes_info[3];
+	    $loc[3] = $shapes_info[4];
+
+		if ( $side eq 'N' || $side eq 'S' ) {
+			 $size=$loc[2]-$loc[0];
+		} else {
+			 $size = $loc[3]-$loc[1];
+		}
+		my @pinAbsLoc;
+		
+		if ( $side eq 'N' || $side eq 'S' ) { 
+		##In case of overlap
+		if ($loc[0] < ($W_used+$spacing)) {
+			$new_X = ($W_used+$spacing);
+			my($new_X_aligned,$new_Y_aligned)=&AlignToTrack($new_X,$loc[1],$side,$layer);   
+			print "DBG-TST-RM_HR_PN_OVLP : 006 : Pin:$pin Loc : @loc , New loc:  $new_X_aligned $new_Y_aligned\n" if ($debug);
+			$delta_used = $delta_used +$new_X_aligned - $W_used;
+			$W_used = $new_X_aligned + $size;
+		}
+		##No overlap
+		else {
+			$delta_used_new = $delta_used + $loc[0]  - $W_used ;
+			if ( $delta_used_new <= $delta ) {
+				## keep cell position same;
+				$new_X = $loc[0];
+				my($new_X_aligned,$new_Y_aligned)=&AlignToTrack($new_X,$loc[1],$side,$layer);   
+				print "DBG-TST-RM_HR_PN_OVLP : 007 : Pin:$pin Loc : @loc , New loc:  $new_X_aligned $new_Y_aligned\n" if ($debug);
+				$delta_used = $delta_used +$new_X_aligned - $W_used;
+				$W_used = $new_X_aligned + $size;
+			}
+			else {
+				$new_X = $W_used + $delta - $delta_used;
+				if ($new_X < ($W_used + $spacing)) {
+				#print "Line to test\n";
+					if ($delta_used == 0) {
+						$new_X= $new_X;
+					}
+					else {
+						$new_X = $W_used + $spacing;
+						
+					} 
+				}	
+				my($new_X_aligned,$new_Y_aligned)=&AlignToTrack($new_X,$loc[1],$side,$layer);   
+				print "DBG-TST-RM_HR_PN_OVLP : 008 : Pin:$pin Loc : @loc , New loc:  $new_X_aligned $new_Y_aligned\n" if ($debug);
+				$delta_used = $delta_used +$new_X_aligned - $W_used;
+				$W_used = $new_X_aligned + $size;
+				#print "W_used : $W_used delta_used: $delta_used and delta: $delta\n" if ($debug);
+			}
+		}
+
+		}elsif ( $side eq 'E' || $side eq 'W' ) {
+		##In case of overlap
+		if ($loc[1] < ($W_used+$spacing)) {
+			$new_Y = $W_used+$spacing;
+			my($new_X_aligned,$new_Y_aligned)=&AlignToTrack($loc[0],$new_Y,$side,$layer);  
+			print "DBG-TST-RM_HR_PN_OVLP : 009 : Pin:$pin Loc : @loc , New loc:  $new_X_aligned $new_Y_aligned\n" if ($debug);
+			$delta_used = $delta_used +$new_Y_aligned - $W_used;
+			$W_used = $new_Y_aligned + $size;
+		}
+		##No overlap
+		else {
+			$delta_used_new = $delta_used + $loc[1]  - $W_used ;
+			if ( $delta_used_new <= $delta ) {
+				## keep cell position same;
+				$new_Y = $loc[1];
+			my($new_X_aligned,$new_Y_aligned)=&AlignToTrack($loc[0],$new_Y,$side,$layer);   
+			print "DBG-TST-RM_HR_PN_OVLP : 010 : Pin:$pin Loc : @loc , New loc:  $new_X_aligned $new_Y_aligned\n" if ($debug);
+			$delta_used = $delta_used +$new_Y_aligned - $W_used;
+			$W_used = $new_Y_aligned + $size;
+			}
+			else {
+				$new_Y = $W_used + $delta - $delta_used;	
+				if ($new_Y < ($W_used + $spacing)) {
+				#print "Line to test\n";
+					if ($delta_used == 0) {
+						$new_Y= $new_Y;
+					}
+					else {
+						$new_Y = $W_used + $spacing;
+						
+					} 
+				}	
+			my($new_X_aligned,$new_Y_aligned)=&AlignToTrack($loc[0],$new_Y,$side,$layer);   
+			print "DBG-TST-RM_HR_PN_OVLP : 011 : Pin:$pin Loc : @loc , New loc:  $new_X_aligned $new_Y_aligned\n" if ($debug);
+			$delta_used = $delta_used +$new_Y_aligned - $W_used;
+			$W_used = $new_Y_aligned + $size;
+			}
+		}
+		}#end elsif
+	}#end foreach
+} else {
+	print "DBG-INFO : Overlap cannot be removed with double spacing between pins\n";
+}
+
+
+
+
+	} #end foreach
+}#end foreach 	
+
+%HIERPINLIST_SORTED = ();
+@sides_array = ();
+
+print "\nINFO-TST-RM_HR_PN_OVLP : 012 : End overlap removal\n" ;
+
+} # end else
+}#sub remove_hier_pins_overlap
+
+sub AlignToTrack{
+my ($loc_X,$loc_Y,$side,$layer) = @_;
+$DBU = $GLOBAL->dbfGlobalGetDBU;
+my $layerWidth = $PTDB{$layer}->dbTechGetLayerWidth;
+ 	$layerWidth *= $DBU;
+	#######################################
+	#####Align pins on track###############
+	#######################################
+	my $layerPitch =  $PTDB{$layer}->dbTechGetLayerPitch ;
+	$layerPitch = $layerPitch * $DBU ;
+	my $offset = $layerPitch /2 ;
+	my $newX ; my $newY ; my $temp1; my $temp2;
+	my $rect;
+
+ 	if ( $side eq 'N' ) { 
+        	my $temp1 = ceil( ($loc_X - $offset)/$layerPitch );
+                my $temp2 = ($temp1 * $layerPitch )+$offset ;
+		$newX = $temp2 - ($layerWidth/2);
+		$newY = $loc_Y;
+	 	$temp1 = $newX + ($layerWidth);
+	 	$temp2 = $newY - ($layerWidth);
+    	 	$rect = "$layer $newX $temp2 $temp1 $newY";
+        }
+	elsif ( $side eq 'S' ) { 
+        	my $temp1 = ceil( ($loc_X - $offset)/$layerPitch );
+                my $temp2 = ($temp1 * $layerPitch )+$offset ;
+		$newX = $temp2 - ($layerWidth/2);
+		$newY = $loc_Y;
+	 	$temp1 = $newX + ($layerWidth);
+	 	$temp2 = $newY + ($layerWidth);
+    	 	$rect = "$layer $newX $newY $temp1 $temp2";
+        }
+        elsif ( $side eq 'E' ) {
+                my $temp1 = ceil( ($loc_Y - $offset)/$layerPitch );
+                my $temp2 = ($temp1 * $layerPitch) +$offset ;
+		$newY = $temp2 - ($layerWidth/2);
+		$newX = $loc_X;
+		$temp1 = $newX + ($layerWidth);
+	 	$temp2 = $newY + ($layerWidth);
+    	 	$rect = "$layer $newX $newY $temp1 $temp2";
+        }
+	elsif ( $side eq 'W' ) {
+                my $temp1 = ceil( ($loc_Y - $offset)/$layerPitch );
+                my $temp2 = ($temp1 * $layerPitch) +$offset ;
+		$newY = $temp2 - ($layerWidth/2);
+		$newX = $loc_X;
+		$temp1 = $newX - ($layerWidth);
+	 	$temp2 = $newY + ($layerWidth);
+    	 	$rect = "$layer $temp1 $newY $newX $temp2";
+        }
+   	 $FLOORPLAN_ALREADY{$flplanID}->dbFlplanSetPinStatus($pin, "PLACED");
+	 $FLOORPLAN_ALREADY{$flplanID}->dbFlplanWipePinRect($pin);
+	 print "DBG-TST : 001 : Pinrect : $rect\n\n" if ($debug);
+    	 $FLOORPLAN_ALREADY{$flplanID}->dbFlplanAddPinRect($pin, $rect);
+return($newX,$newY);
+}#sub AlignToTrack
+
+
+sub totalHierPinLengthInSide { 
+	my ($flplanID,$sTracks,$side,@pinList) = @_;
+	my $width = 0;
+	my $size;
+	foreach $pin(@pinList) {
+		my @shapes = $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetPinRect($pin);
+	    print "DBG-TST : 001 : Shapes: @shapes \n" if ($debug);
+	    my @shapes_info = split(/\s/, $shapes[0]);
+	    $layer = $shapes_info[0];
+	    $loc[0] = $shapes_info[1];
+	    $loc[1] = $shapes_info[2];
+	    $loc[2] = $shapes_info[3];
+	    $loc[3] = $shapes_info[4];
+		$DBU = $GLOBAL->dbfGlobalGetDBU;
+		my $layerPitch =  $PTDB{$layer}->dbTechGetLayerPitch ;
+                $layerPitch *= $DBU;
+		if ( $side eq 'N' || $side eq 'S' ) {
+			$size = ($loc[2]-$loc[0])+($sTracks*$layerPitch);
+			$size = sprintf("%.3f",$size);
+		}
+		if ( $side eq 'E' || $side eq 'W' ) {
+			$size = ($loc[3]-$loc[1])+($sTracks*$layerPitch);
+			$size = sprintf("%.3f",$size);
+		}
+		$width = $width + $size ; 
+}
+return($width);
+} #sub 	totalHierPinLengthInSide
+
+
+
+
+
+
+1;

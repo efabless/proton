@@ -1,0 +1,958 @@
+#################################################################################################
+############################ subroutine to convert FPDEF to GDS #################################
+#################################################################################################
+sub def2gds {
+ use GDS2;
+ use Benchmark;
+ my $t0 = new Benchmark;
+ 
+ my $noOfArguments = @_;
+ if($noOfArguments < 0 || $_[0] eq "-h"){  
+    print "Usage: -output <fileName> | by default it takes top module Name\n";
+    print "       -boundary_layer <layer number> | by default it takes 149\n";
+    print "       -boundary_data_type <layer data type> | by default it takes 150\n";
+    print "       -userUnits <number of user units per database unit> | by default it is 0.001\n";
+    print "       -dbUnit <number of meters per database unit> | by default it is 1e-9\n";
+    print "       --pin (used to write pins) | by default it off\n";
+    print "       --inst (used to write instance) | by default it off\n";
+    print "       --net (used to write nets) | by default it off\n";
+    print "       --spnet (used to write special nets) | by default it off\n";
+    print "       --pin_text (used to write pins) | by default it off\n";
+    print "       --inst_text (used to write instance name) | by default it off\n";
+    print "       --net_text (used to write net's name) | by default it is off\n";
+    print "       --spnet_text (used to write special net's name) | by default it is off\n";
+    print "       --include_cell (used to write cell polygons) | by default it is off\n";
+    print "       --cell_pin_text (used to write pin name) | by default it off\n";
+    print "       --include_gds_cells (used to write gds of the cell) | by default it off\n";
+    print "       -gds_file_path <gds file path to read cell gds>| by default it is PWD\n";
+    print "       -layer_map_file <input layer map file>\n";
+ }else {
+    my $OUTPUT_GDS = $TOP_MODULE;
+    my $boundary_layer = 149;
+    my $boundary_dataType = 150;
+    my $gDBU = $GLOBAL->dbfGlobalGetDBU;
+    my $user_units = 1/$gDBU;
+    my @gds_file_paths = ();
+    my $gds_file_path = "";
+    my $db_units = (10**-6)/$gDBU;
+    my ($write_pins, $write_inst, $write_nets, $write_spnets,$include_gds_cells,$layerMapFile,$write_all_gds_files) = (0, 0, 0 ,0 ,0,"",0);
+    my ($write_pin_text, $write_inst_text, $write_cell_pin_text, $write_nets_text, $write_spnets_text, $write_cell) = (0, 0, 0, 0, 0);
+    my %temp_mod = ();
+ 
+    for(my $i=0;$i<$noOfArguments;$i++){
+        if($_[$i] eq "-output"){$OUTPUT_GDS = $_[$i+1];}
+        if($_[$i] eq "-boundary_layer"){$boundary_layer = $_[$i+1];}
+        if($_[$i] eq "-boundary_data_type"){$boundary_dataType = $_[$i+1];}
+        if($_[$i] eq "-userUnits"){$user_units = $_[$i+1];}
+        if($_[$i] eq "-dbUnit"){$db_units = $_[$i+1];}
+        if($_[$i] eq "--pin"){$write_pins = 1;}
+        if($_[$i] eq "--inst"){$write_inst = 1;}
+        if($_[$i] eq "--net"){$write_nets = 1;}
+        if($_[$i] eq "--spnet"){$write_spnets = 1;}
+        if($_[$i] eq "--pin_text"){$write_pin_text = 1;}
+        if($_[$i] eq "--inst_text"){$write_inst_text = 1;}
+        if($_[$i] eq "--net_text"){$write_nets_text = 1;}
+        if($_[$i] eq "--spnet_text"){$write_spnets_text = 1;}
+        if($_[$i] eq "--include_cell"){$write_cell = 1;}
+        if($_[$i] eq "--cell_pin_text"){$write_cell_pin_text = 1;}
+        if($_[$i] eq "--include_gds_cells"){$include_gds_cells = 1;}
+        if($_[$i] eq "-gds_file_path"){$gds_file_path = $_[$i+1];push(@gds_file_paths,$gds_file_path);}
+        if($_[$i] eq "-layer_map_file"){$layerMapFile = $_[$i+1];} 
+        if($_[$i] eq "--write_all_gds_files"){$write_all_gds_files = 1;} 
+     }#for
+
+    ####################### Reading layer Map file ###########################
+    my %temp_layer_map = ();
+    if(( -e $layerMapFile) && (-r $layerMapFile)){
+      print "INFO-PAR-VERI : 002 : $layerMapFile FILE EXISTS AND IS READABLE!\n";
+      my $xml = new XML::Simple;
+      my $layerConnData = $xml->XMLin("$layerMapFile");
+      my %layerConnHash = %$layerConnData;
+      foreach my $key (keys %layerConnHash){
+        my %layerHash = %{$layerConnHash{$key}};
+        if(exists $layerHash{name}){
+          my $layer = $layerHash{name};
+          my $layerNum = $layerHash{num};
+          $temp_layer_map{$layer} = $layerNum;
+        }else{
+          foreach my $layer (keys %layerHash ){
+            my %layerInfoHash = %{$layerHash{$layer}};
+            my $layerNum = $layerInfoHash{num};
+            $temp_layer_map{$layer} = $layerNum;
+          }
+        }
+      }
+    }
+    ####################### End Reading layer Map file ###########################
+ 
+    my $moduleName = $TOP_MODULE;
+    my $gds2File = new GDS2(-fileName=>">$OUTPUT_GDS.gds");
+    print "user_units is $user_units db_units is $db_units\n";
+    $gds2File -> printInitLib(-name=> 'test.lib',
+                              -uUnit=>$user_units,
+                              -dbUnit=>$db_units); 
+    if(exists $FLOORPLAN_LOOKUP{"$moduleName/_self_"}){
+       my $flplanID = $FLOORPLAN_LOOKUP{"$moduleName/_self_"};
+       if(exists $FLOORPLAN_ALREADY{$flplanID} ) {
+          $gds2File -> printBgnstr(-name=>$moduleName);
+          my @dieArea = $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetSize;
+          my $top_llx = $dieArea[0]/$gDBU; 
+          my $top_lly = $dieArea[1]/$gDBU; 
+          my $top_urx = $dieArea[2]/$gDBU; 
+          my $top_ury = $dieArea[3]/$gDBU; 
+ 
+          $gds2File -> printBoundary(
+                       -layer=>$boundary_layer,
+                       -dataType=>$boundary_dataType,
+                       -xy=>[$top_llx,$top_lly,$top_urx,$top_lly,$top_urx,$top_ury,$top_llx,$top_ury],
+                    );
+ 
+        my $total_layers = keys %PTDB;
+        ########################## Writing PINS in gds as POLYGON #######################
+        if($write_pins == 1){
+           my $portTextLayer = $total_layers + 10;
+           foreach my $port (keys %{$PORTS_ALREADY{$moduleName}}){
+              my @loc = $PORTS_ALREADY{$moduleName}{$port}->dbPortGetLoc; 
+              my $layer = $PORTS_ALREADY{$moduleName}{$port}->dbPortGetLayer;
+              my $side = $PORTS_ALREADY{$moduleName}{$port}->dbPortGetSide;
+              my ($W, $H) = $PORTS_ALREADY{$moduleName}{$port}->dbPortGetSize;  
+              my $layerNum = $PTDB{$layer}->dbTechGetLayerNum;
+              if(exists $temp_layer_map{$layer}){
+                $layerNum = $temp_layer_map{$layer};
+              }else{
+                 print "layernum not found for $layer\n";
+              }
+              print "W=$W H=$H\n";
+              my $port_llx ;
+              my $port_lly ;
+              my $port_urx ;
+              my $port_ury ;
+              if($side eq "N"){ 
+                $port_llx = ($loc[0] -$W/2)/$gDBU;
+                $port_lly = $loc[1]/$gDBU;
+                $port_urx = ($loc[0] +$W/2)/$gDBU;
+                $port_ury = ($loc[1]+$H)/$gDBU;
+              }elsif($side eq "S"){
+                $port_llx = ($loc[0] -$W/2)/$gDBU;
+                $port_lly = ($loc[1]-$H)/$gDBU;
+                $port_urx = ($loc[0] +$W/2)/$gDBU;
+                $port_ury = $loc[1]/$gDBU;
+              }elsif($side eq "E"){
+                $port_llx = $loc[0]/$gDBU;
+                $port_lly = ($loc[1]-$W/2)/$gDBU;
+                $port_urx = ($loc[0] +$H)/$gDBU;
+                $port_ury = ($loc[1]+$W/2)/$gDBU;
+              }elsif($side eq "W"){
+                $port_llx = ($loc[0]-$H)/$gDBU;
+                $port_lly = ($loc[1]-$W/2)/$gDBU;
+                $port_urx = $loc[0]/$gDBU;
+                $port_ury = ($loc[1]+$W/2)/$gDBU;
+              }
+              $gds2File->printBoundary(
+                         -layer=>$layerNum,
+                         -xy=>[$port_llx,$port_lly,$port_urx,$port_lly,$port_urx,$port_ury,$port_llx,$port_ury],
+                       );
+              if($write_pin_text == 1){
+                 $gds2File->printText(
+                           -string=>$port,   ## Name of structure
+                           -xy=>[$port_llx,$port_lly],    ## array of reals
+                           -layer=>$portTextLayer,
+                          );
+              }
+           }
+        }
+
+        ########################## Writing Instances in gds as SREF #######################
+        if($write_inst == 1){
+           my $instTextLayer = $total_layers + 11;
+           foreach my $instance (keys %CADB){
+             my $cellref = $CADB{$instance}->dbCadbGetCellref;
+             my @instLoc = $CADB{$instance}->dbCadbGetLoc;
+             my $orient = $CADB{$instance}->dbCadbGetOrient;
+             my $angle = 0;
+             my $isReflect = 0;
+ 
+             if(exists $PLDB{$cellref}){
+                my @size = $PLDB{$cellref}->dbMdbGetSize;
+                if(!exists $temp_mod{$cellref}){
+                   $temp_mod{$cellref} = 1;
+                }
+                my $llx = $instLoc[0]/$gDBU;
+                my $lly = $instLoc[1]/$gDBU;
+ 
+                if($orient eq "W")    {$angle = 90; $llx = $llx + $size[1];}
+                elsif($orient eq "S") {$angle = 180; $llx = $llx + $size[0];$lly = $lly + $size[1];}
+                elsif($orient eq "E") {$angle = 270; $lly = $lly + $size[0];}
+                elsif($orient eq "FS"){$isReflect = 1; $lly = $lly + $size[1];}
+                elsif($orient eq "FW"){$isReflect = 1; $angle = 90; } 
+                elsif($orient eq "FN"){$isReflect = 1; $angle = 180; $llx = $llx + $size[0];}
+                elsif($orient eq "FE"){$isReflect = 1; $angle = 270; $llx = $llx + $size[1]; $lly = $lly + $size[0];}
+ 
+                $gds2File -> printSref(
+                          -name=>$cellref,   ## Name of structure
+                          -xy=>[$llx,$lly],    ## array of reals
+                          -angle=>$angle,
+                          -reflect=>$isReflect,
+                       );
+                if($write_inst_text == 1){
+                   $gds2File -> printText(
+                             -string=>$instance,   ## Name of structure
+                             -xy=>[$llx,$lly],    ## array of reals
+                             -layer=>$instTextLayer,
+                          );
+                }#if write_inst_text switch is on
+             }else{
+                print "WARN : $cellref not exists in PLDB\n";
+             }
+           }#foreach
+        }#if write_inst is on
+
+        ##################### Writing Nets/Special Nets in gds as BOUNDARY #######################
+        my $netTextLayer = $total_layers + 12;
+        foreach my $net ( keys %NETS_ALREADY ) {
+          if(exists $NETS_ROUTING_ALREADY{$net}) {
+             if($write_nets == 1){
+                my @net_data = $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBGetRegularRoute;
+                foreach my $segment ( @net_data ) {
+                  $segment =~ s/\s*;\s*//g;
+                  my @seg = split(/\s+/,$segment);
+                  my $num_of_elem = @seg;
+                  my $via_midx = 0 ;
+                  my $via_midy = 0 ;
+                  my $via_name = "non_exist_via";
+                  if ( $num_of_elem%2 == 0 ) {
+                    $via_name = pop @seg;
+                  }
+                  if($num_of_elem == 10){
+                    if($seg[6] ne "*"){
+                      $via_midx = $seg[6]/$gDBU ;
+                    }else{
+                      $via_midx = $seg[2]/$gDBU ;
+                    }
+                    if($seg[7] ne "*"){
+                      $via_midy = $seg[7]/$gDBU ;
+                    }else{
+                      $via_midy = $seg[3]/$gDBU ;
+                    }
+                  }elsif($num_of_elem == 6){
+                    $via_midx = $seg[2]/$gDBU ;
+                    $via_midy = $seg[3]/$gDBU ;
+                  }elsif($num_of_elem == 9){
+                    $via_midx = 0;
+                    $via_midy = 0;
+                  }else{
+                    print "unexpected number of routing coords $num_of_elem\n";
+                  }
+                  my $layerNum = $PTDB{$seg[0]}->dbTechGetLayerNum;
+                  if(exists $temp_layer_map{$seg[0]}){
+                    $layerNum = $temp_layer_map{$seg[0]};
+                  }else{
+                    print "layernum not found for $seg[0]\n";
+                  }
+                  my @routeBox = xformNetSegToRouteBox($segment);
+                  my $net_llx = $routeBox[0]/$gDBU; 
+                  my $net_lly = $routeBox[1]/$gDBU; 
+                  my $net_urx = $routeBox[2]/$gDBU; 
+                  my $net_ury = $routeBox[3]/$gDBU; 
+                  if($net_urx < $net_llx){
+                    my $temp_x = $net_llx;
+                    my $net_llx = $net_urx;
+                    my $net_urx = $temp_x;
+                  }
+                  if($net_urx == $net_llx){
+                    print "normal net $net wrong routing x coordinates $net_urx $net_llx\n";
+                  }
+                  if($net_ury < $net_lly){
+                    my $temp_y = $net_lly;
+                    my $net_lly = $net_ury;
+                    my $net_ury = $temp_y;
+                  }
+                  if($net_ury == $net_lly){
+                    print "normal net $net wrong routing y coordinates $net_ury $net_lly\n";
+                  }
+                  my @viaBox = ();
+                  if($via_name ne "non_exist_via"){
+                    @viaBox = getViaBox($via_name,$via_midx,$via_midy);
+                    foreach my $temp_line (@viaBox){
+                      my ($layer,$layer_llx,$layer_lly,$layer_urx,$layer_ury) = (split(/\s+/, $temp_line))[0,1,2,3,4];
+                      my $layerNum = $PTDB{$layer}->dbTechGetLayerNum;
+                      if(exists $temp_layer_map{$layer}){
+                        $layerNum = $temp_layer_map{$layer};
+                      }else{
+                        print "layernum not found for $layer\n";
+                      }
+                      $gds2File -> printBoundary(
+                                   -layer=>$layerNum,
+                                   -xy=>[$layer_llx,$layer_lly,$layer_urx,$layer_lly,$layer_urx,$layer_ury,$layer_llx,$layer_ury],
+                                );
+                    }
+                  }
+                  $gds2File -> printBoundary(
+                               -layer=>$layerNum,
+                               -xy=>[$net_llx,$net_lly,$net_urx,$net_lly,$net_urx,$net_ury,$net_llx,$net_ury],
+                            );
+                }#foreach segment of routing
+                if($write_nets_text == 1){
+                   my @routeBox = xformNetSegToRouteBox($net_data[0]);
+                   my $net_llx = $routeBox[0]/$gDBU; 
+                   my $net_lly = $routeBox[1]/$gDBU; 
+                   my $net_urx = $routeBox[2]/$gDBU; 
+                   my $net_ury = $routeBox[3]/$gDBU; 
+                   my $mid_x = ($net_llx + $net_urx)/2;
+                   my $mid_y = ($net_lly + $net_ury)/2;
+                   $gds2File -> printText(
+                             -string=>$net,   ## Name of structure
+                             -xy=>[$mid_x,$mid_y],    ## array of reals
+                             -layer=>$netTextLayer,
+                          );
+                }#if write_nets_text switch is on
+             }#if write_nets is on
+
+             if($write_spnets == 1){
+                my @spnet_data = ();
+                push(@spnet_data,$NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBGetSpecialRoute);
+                push(@spnet_data, $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBGetFixedRoute);
+                foreach my $segment ( @spnet_data ) {
+                  $segment =~ s/\s*;\s*//g;
+                  my @seg = split(/\s+/,$segment);
+                  my $layerNum = $PTDB{$seg[0]}->dbTechGetLayerNum;
+                  if(exists $temp_layer_map{$seg[0]}){
+                    $layerNum = $temp_layer_map{$seg[0]};
+                  }else{
+                    print "layernum not found for $seg[0]\n";
+                  }
+                  my @routeBox = xformNetSegToSpecialRouteBox($segment);
+                  my $spnet_llx = $routeBox[0]/$gDBU; 
+                  my $spnet_lly = $routeBox[1]/$gDBU; 
+                  my $spnet_urx = $routeBox[2]/$gDBU; 
+                  my $spnet_ury = $routeBox[3]/$gDBU; 
+                  if($spnet_urx < $spnet_llx){
+                    my $temp_x = $spnet_llx;
+                    my $spnet_llx = $spnet_urx;
+                    my $spnet_urx = $temp_x;
+                  }
+                  if($spnet_urx == $spnet_llx){
+                    print "special net $net wrong routing x coordinates\n";
+                  }
+                  if($spnet_ury < $spnet_lly){
+                    my $temp_y = $spnet_lly;
+                    my $spnet_lly = $spnet_ury;
+                    my $spnet_ury = $temp_y;
+                  }
+                  if($spnet_ury == $spnet_lly){
+                    print "special net $net wrong routing y coordinates\n";
+                  }
+                  $gds2File -> printBoundary(
+                               -layer=>$layerNum,
+                               -xy=>[$spnet_llx,$spnet_lly,$spnet_urx,$spnet_lly,$spnet_urx,$spnet_ury,$spnet_llx,$spnet_ury],
+                            );
+                }#foreach segment of routing
+                if($write_spnets_text == 1){
+                   my @routeBox = xformNetSegToRouteBox($spnet_data[0]);
+                   my $net_llx = $routeBox[0]/$gDBU; 
+                   my $net_lly = $routeBox[1]/$gDBU; 
+                   my $net_urx = $routeBox[2]/$gDBU; 
+                   my $net_ury = $routeBox[3]/$gDBU; 
+                   my $mid_x = ($net_llx + $net_urx)/2;
+                   my $mid_y = ($net_lly + $net_ury)/2;
+                   $gds2File -> printText(
+                             -string=>$net,   ## Name of structure
+                             -xy=>[$mid_x,$mid_y],    ## array of reals
+                             -layer=>$netTextLayer,
+                          );
+                }#if write_spnets_text switch is on
+             }#if write_nets is on
+          }# if routing data is present
+        }#for all nets in the database
+ 
+        ############################## Closing Top module block #################################
+        $gds2File -> printEndstr;
+ 
+        ################################## Writing Definition of all cells ###################### 
+        if($write_inst == 1 && $write_cell == 1 && $include_gds_cells == 0){
+           my $pinTextLayer = $total_layers + 13;
+           foreach my $mod (keys %temp_mod){
+             $gds2File -> printBgnstr(-name=>$mod);
+             my @cellOrigin = $PLDB{$mod}->dbMdbGetOrigin;
+             my @size = $PLDB{$mod}->dbMdbGetSize;
+             my $llx = 0;
+             my $lly = 0;
+             my $urx = $size[0];
+             my $ury = $size[1];
+ 
+             ########################## Pin section #######################
+             my @pins = $PLDB{$mod}->dbMdbGetPins;
+             foreach my $pin (@pins){
+               my @RECTS = $PLDB{$mod}->dbMdbGetPinRect($pin);
+               my @POLYS = $PLDB{$mod}->dbMdbGetPinPolygon($pin);
+               if(@RECTS > 0){
+                  foreach my $rectLine(@RECTS){
+                    my ($layerName, $rect_llx, $rect_lly, $rect_urx, $rect_ury)=(split(/\s+/,$rectLine))[0,2,3,4,5];
+                    my $layerNum = $PTDB{$layerName}->dbTechGetLayerNum;
+                    if(exists $temp_layer_map{$layerName}){
+                      $layerNum = $temp_layer_map{$layerName};
+                    }else{
+                      print "layernum not found for $layerName\n";
+                    }
+                    $rect_llx = $rect_llx + $cellOrigin[0];
+                    $rect_lly = $rect_lly + $cellOrigin[1];
+                    $rect_urx = $rect_urx + $cellOrigin[0];
+                    $rect_ury = $rect_ury + $cellOrigin[1];
+                    $gds2File -> printBoundary(
+                                 -layer=>$layerNum,
+                                 -xy=>[$rect_llx,$rect_lly,$rect_urx,$rect_lly,$rect_urx,$rect_ury,$rect_llx,$rect_ury],
+                              );
+                  }#foreach rectline
+               }#if rect found     
+               if(@POLYS > 0){
+                  foreach my $polyLine (@POLYS){
+                    my @new_poly = ();
+                    my @poly = split(/\s+/,$polyLine);
+                    my $layerName = $poly[0];
+                    my $layerNum = $PTDB{$layerName}->dbTechGetLayerNum;
+                    if(exists $temp_layer_map{$layerName}){
+                      $layerNum = $temp_layer_map{$layerName};
+                    }else{
+                      print "layernum not found for $layerName\n";
+                    }
+                    for(my $i=2; $i<=$#poly; $i=$i+2){
+                        my $xx = $poly[$i] + $cellOrigin[0];
+                        my $yy = $poly[$i+1] + $cellOrigin[1];
+                        push(@new_poly, $xx, $yy);
+                    }
+                    $gds2File -> printBoundary(
+                                 -layer=>$layerNum,
+                                 -xy=>[@new_poly],
+                              );
+                  }#foreach polyline
+                }#if polygon found
+                if($write_cell_pin_text == 1){
+                   if(@RECTS > 0){
+                      my ($layerName, $rect_llx, $rect_lly, $rect_urx, $rect_ury)=(split(/\s+/,$RECTS[0]))[0,2,3,4,5];
+                      $rect_llx = $rect_llx + $cellOrigin[0];
+                      $rect_lly = $rect_lly + $cellOrigin[1];
+                      $rect_urx = $rect_urx + $cellOrigin[0];
+                      $rect_ury = $rect_ury + $cellOrigin[1];
+                      my $mid_x = ($rect_llx + $rect_urx)/2;
+                      my $mid_y = ($rect_lly + $rect_ury)/2;
+                      $gds2File -> printText(
+                                -string=>$pin,   ## Name of structure
+                                -xy=>[$mid_x,$mid_y],    ## array of reals
+                                -layer=>$pinTextLayer,
+                             );
+                   }else{   
+                      my @new_poly = ();
+                      my @poly = split(/\s+/,$POLYS[0]);
+                      for(my $i=2; $i<=$#poly; $i=$i+2){
+                          my $xx = $poly[$i] + $cellOrigin[0];
+                          my $yy = $poly[$i+1] + $cellOrigin[1];
+                          push(@new_poly, $xx, $yy);
+                      }
+                      $gds2File -> printText(
+                                -string=>$pin,   ## Name of structure
+                                -xy=>[$new_poly[0],$new_poly[1]],    ## array of reals
+                                -layer=>$pinTextLayer,
+                             );
+                   }        
+                }#if write_cell_pin_text switch is on
+             }#foreach pin
+             
+             ####################### Obstraction section ###################
+             my @RECT_OBS = $PLDB{$mod}->dbMdbGetObs;
+             my @POLY_OBS = $PLDB{$mod}->dbMdbGetObsPolygon;
+             if(@RECT_OBS > 0){
+                foreach my $obsLine(@RECT_OBS){
+                  my ($layerName, $rect_llx, $rect_lly, $rect_urx, $rect_ury)=(split(/\s+/,$obsLine))[0,2,3,4,5];
+                  my $layerNum = $PTDB{$layerName}->dbTechGetLayerNum;
+                  if(exists $temp_layer_map{$layerName}){
+                    $layerNum = $temp_layer_map{$layerName};
+                  }else{
+                    print "layernum not found for $layerName\n";
+                  }
+                  $rect_llx = $rect_llx + $cellOrigin[0];
+                  $rect_lly = $rect_lly + $cellOrigin[1];
+                  $rect_urx = $rect_urx + $cellOrigin[0];
+                  $rect_ury = $rect_ury + $cellOrigin[1];
+                  $gds2File -> printBoundary(
+                               -layer=>$layerNum,
+                               -xy=>[$rect_llx,$rect_lly,$rect_urx,$rect_lly,$rect_urx,$rect_ury,$rect_llx,$rect_ury],
+                            );
+                }#foreach rectline
+             }#if rect found     
+             if(@POLY_OBS > 0){
+                foreach my $obsLine (@POLY_OBS){
+                  my @new_poly = ();
+                  my @poly = split(/\s+/,$obsLine);
+                  my $layerName = $poly[0];
+                  my $layerNum = $PTDB{$layerName}->dbTechGetLayerNum;
+                  if(exists $temp_layer_map{$layerName}){
+                    $layerNum = $temp_layer_map{$layerName};
+                  }else{
+                    print "layernum not found for $layerName\n";
+                  }
+                  for(my $i=2; $i<=$#poly; $i=$i+2){
+                      my $xx = $poly[$i] + $cellOrigin[0];
+                      my $yy = $poly[$i+1] + $cellOrigin[1];
+                      push(@new_poly, $xx, $yy);
+                  }
+                  $gds2File -> printBoundary(
+                               -layer=>$layerNum,
+                               -xy=>[@new_poly],
+                            );
+                }#foreach polyline
+             }#if polygon found
+ 
+             ###############################################################
+             $gds2File -> printBoundary(
+                          -layer=>$boundary_layer,
+                          -dataType=>$boundary_dataType,
+                          -xy=>[$llx,$lly,$urx,$lly,$urx,$ury,$llx,$ury],
+                       );
+             $gds2File -> printEndstr;
+           }#foreach module
+         }elsif($write_inst == 1 && $write_cell == 1 && $include_gds_cells == 1){
+           foreach $gds_file_path ( @gds_file_paths ) {
+           if(!(( -e $gds_file_path) && (-r $gds_file_path))){
+             print "INFO-PAR-VERI : 002 : $gds_file_path FILE EITHER DOES NOT EXISTS OR IS NOT READABLE!\n";
+           }else{
+             print "INFO-PAR-VERI : 002 : $gds_file_path FILE EXISTS AND IS READABLE!\n";
+             my $bgn_str_record ;
+             my $str_name_record ;
+             my $curr_record ;
+             my $bgn_string_found = 0;
+             my $header_to_be_printed = 0;
+             my $mod_gds2_file = new GDS2(-fileName=>"$gds_file_path");
+             while ($curr_record = $mod_gds2_file -> readGds2Record){
+               if($mod_gds2_file->isUnits){
+                  ($uu,$dbu) = $mod_gds2_file->returnUnitsAsArray;
+                  next;
+               }
+               if($mod_gds2_file->isBgnstr){
+                 $bgn_string_found = 1;
+                 $header_to_be_printed = 1;
+                 $bgn_str_record = $curr_record;
+                 next;
+               }
+               if($mod_gds2_file->isEndstr){
+                 if($bgn_string_found == 1){
+                   $gds2File -> printRecord(-data=>$curr_record);
+                   $bgn_string_found = 0;
+                 }
+                 next;
+               }
+               if($bgn_string_found == 1){
+                 if($header_to_be_printed == 1){
+                   $header_to_be_printed = 0;
+                   if($mod_gds2_file->isStrname){
+                     $string_name = $mod_gds2_file->returnStrname;
+                     if((exists $temp_mod{$string_name}) || ($write_all_gds_files == 1)){
+                       print "cell $string_name found in the gds file\n";
+                       $gds2File -> printRecord(-data=>$bgn_str_record);
+                     }else{
+                       $bgn_string_found = 0;
+                       next;
+                     }
+                   }else{
+                     print "string_name not found\n";
+                   }
+                 }
+                 $gds2File -> printRecord(-data=>$curr_record);
+               }
+             }
+           }
+           }
+         }
+       }#if floorplan id exists
+    }#if floorplan exists
+    $gds2File -> printEndlib();
+ }#if correct number of arg
+ my $t1 = new Benchmark;
+ my $td = timediff($t1, $t0);
+ print "def2gds is completed in :",timestr($td),"\n";
+}#sub def2gds
+
+#################################################################################################
+############################ subroutine to convert FPDEF to GDS #################################
+#################################################################################################
+sub fpdef2gds {
+ use GDS2;
+ my $noOfArguments = @_;
+ if($noOfArguments < 0 || $_[0] eq "-h"){
+    print "Usage : -output <fileName> | by defalut it takes top module Name\n";
+ }else{
+    my $OUTPUT_GDS = $TOP_MODULE;
+    my $moduleName = $TOP_MODULE;
+    my $boundary_layer = 149;
+    my $boundary_dataType = 150;
+    my %temp_mod = ();
+ 
+    for(my $i=0;$i<$noOfArguments;$i++){
+      if($_[$i] eq "-output"){$OUTPUT_GDS = $_[$i+1];}
+    }#for
+ 
+    my $gDBU = $GLOBAL->dbfGlobalGetDBU;
+    my $gds2File = new GDS2(-fileName=>">$OUTPUT_GDS.gds");
+    $gds2File -> printInitLib(-name=> 'proton.lib',
+                              -uUnit=>'0.001',
+                              -dbUnit=>$gDBU);
+    $gds2File -> printBgnstr(-name=>$moduleName);
+    if(exists $FLOORPLAN_LOOKUP{"$moduleName/_self_"}){
+      my $fpPntr = $FLOORPLAN_LOOKUP{"$moduleName/_self_"} ;
+      if(exists $FLOORPLAN_ALREADY{$fpPntr}){
+        my @bBox = $FLOORPLAN_ALREADY{$fpPntr}->dbFlplanGetSize;
+        my $top_llx = $bBox[0]/$gDBU; 
+        my $top_lly = $bBox[1]/$gDBU; 
+        my $top_urx = $bBox[2]/$gDBU; 
+        my $top_ury = $bBox[3]/$gDBU; 
+    
+        $gds2File -> printBoundary(
+                     -layer=>$boundary_layer,
+                     -dataType=>$boundary_dataType,
+                     -xy=>[$top_llx,$top_lly,$top_urx,$top_lly,$top_urx,$top_ury,$top_llx,$top_ury],
+                  );
+        ####################### for Hier Instances ######################
+        my @hInsts = $FLOORPLAN_ALREADY{$fpPntr}->dbFlplanGetHierInstList;
+        foreach my $hinst ( @hInsts ) {
+          my @rBox = $FLOORPLAN_ALREADY{$fpPntr}->dbFlplanGetHierInstBbox($hinst);
+          my $cellref = $MODULE_ALREADY{$moduleName}->dbVNOMGetHierInstCell($hinst);
+ 
+          if(!exists $temp_mod{$cellref}){
+             $temp_mod{$cellref} = 1;
+          }
+          my $llx = $rBox[0]/$gDBU; 
+          my $lly = $rBox[1]/$gDBU; 
+          $gds2File -> printSref(
+                    -name=>$cellref,   ## Name of structure
+                    -xy=>[$llx,$lly],    ## array of reals
+                 );
+        }#foreach hinst
+ 
+        ####################### for Leaf Instances ######################
+        my @lInsts = $FLOORPLAN_ALREADY{$fpPntr}->dbFlplanGetLeafInstList;
+        foreach my $linst ( @lInsts ){
+          my $cellref = $MODULE_ALREADY{$moduleName}->dbVNOMGetLeafInstCell($linst);
+          my $angle = 0;
+          my $isReflect = 0;
+ 
+          if(exists $PLDB{$cellref}){
+             if(!exists $temp_mod{$cellref}){
+                $temp_mod{$cellref} = 1;
+             }
+             my @rBox = $FLOORPLAN_ALREADY{$fpPntr}->dbFlplanGetLeafInstBbox($linst);
+             my $orient = $MODULE_ALREADY{$moduleName}->dbVNOMGetLeafInstOrient($linst);
+             my @size = $PLDB{$cellref}->dbMdbGetSize;
+             my $llx = $rBox[0]/$gDBU; 
+             my $lly = $rBox[1]/$gDBU; 
+ 
+             if($orient eq "W")    {$angle = 90; $llx = $llx + $size[1];}
+             elsif($orient eq "S") {$angle = 180; $llx = $llx + $size[0];$lly = $lly + $size[1];}
+             elsif($orient eq "E") {$angle = 270; $lly = $lly + $size[0];}
+             elsif($orient eq "FS"){$isReflect = 1; $lly = $lly + $size[1];}
+             elsif($orient eq "FW"){$isReflect = 1; $angle = 90; } 
+             elsif($orient eq "FN"){$isReflect = 1; $angle = 180; $llx = $llx + $size[0];}
+             elsif($orient eq "FE"){$isReflect = 1; $angle = 270; $llx = $llx + $size[1]; $lly = $lly + $size[0];}
+    
+             $gds2File-> printSref(
+                       -name=>$cellref,   ## Name of structure
+                       -xy=>[$llx,$lly],    ## array of reals
+                       -angle=>$angle,
+                       -reflect=>$isReflect,
+                    );
+          }# if the leaf cell exists 
+        }#foreach linst
+      }#if floorpan exists
+    }
+    $gds2File -> printEndstr;
+ 
+    ########################## for Modules ##########################
+    foreach my $mod (keys %temp_mod){
+      if(exists $MODULE_ALREADY{$mod}){
+         if(exists $FLOORPLAN_LOOKUP{"$mod/_self_"}){
+            my $fplan = $FLOORPLAN_LOOKUP{"$mod/_self_"} ;
+            if(exists $FLOORPLAN_ALREADY{$fplan}){
+               my @bbox = $FLOORPLAN_ALREADY{$fplan}->dbFlplanGetSize;
+               my $llx = 0;
+               my $lly = 0;
+               my $urx = ($bbox[2] - $bbox[0])/$gDBU;
+               my $ury = ($bbox[3] - $bbox[1])/$gDBU;
+ 
+               $gds2File -> printBgnstr(-name=>$mod);
+               $gds2File -> printBoundary(
+                            -layer=>$boundary_layer,
+                            -dataType=>$boundary_dataType,
+                            -xy=>[$llx,$lly,$urx,$lly,$urx,$ury,$llx,$ury],
+                         );
+               $gds2File -> printEndstr;
+            }
+         }
+      }elsif(exists $PLDB{$mod}){
+         $gds2File -> printBgnstr(-name=>$mod);
+         my @cellOrigin = $PLDB{$mod}->dbMdbGetOrigin;
+         my @size = $PLDB{$mod}->dbMdbGetSize;
+         my $llx = 0;
+         my $lly = 0;
+         my $urx = $size[0];
+         my $ury = $size[1];
+ 
+         ########################## Pin section #######################
+         my @pins = $PLDB{$mod}->dbMdbGetPins;
+         foreach my $pin (@pins){
+           my @RECTS = $PLDB{$mod}->dbMdbGetPinRect($pin);
+           my @POLYS = $PLDB{$mod}->dbMdbGetPinPolygon($pin);
+           if(@RECTS > 0){
+              foreach my $rectLine(@RECTS){
+                my ($layerName, $rect_llx, $rect_lly, $rect_urx, $rect_ury)=(split(/\s+/,$rectLine))[0,2,3,4,5];
+                my $layerNum = $PTDB{$layerName}->dbTechGetLayerNum;
+                $rect_llx = $rect_llx + $cellOrigin[0];
+                $rect_lly = $rect_lly + $cellOrigin[1];
+                $rect_urx = $rect_urx + $cellOrigin[0];
+                $rect_ury = $rect_ury + $cellOrigin[1];
+                $gds2File -> printBoundary(
+                             -layer=>$layerNum,
+                             -xy=>[$rect_llx,$rect_lly,$rect_urx,$rect_lly,$rect_urx,$rect_ury,$rect_llx,$rect_ury],
+                          );
+              }#foreach rectline
+           }#if rect found     
+           if(@POLYS > 0){
+              foreach my $polyLine (@POLYS){
+                my @new_poly = ();
+                my @poly = split(/\s+/,$polyLine);
+                my $layerName = $poly[0];
+                my $layerNum = $PTDB{$layerName}->dbTechGetLayerNum;
+                for(my $i=2; $i<=$#poly; $i=$i+2){
+                    my $xx = $poly[$i] + $cellOrigin[0];
+                    my $yy = $poly[$i+1] + $cellOrigin[1];
+                    push(@new_poly, $xx, $yy);
+                }
+                $gds2File -> printBoundary(
+                             -layer=>$layerNum,
+                             -xy=>[@new_poly],
+                          );
+              }#foreach polyline
+            }#if polygon found
+         }#foreach pin
+         
+         ####################### Obstraction section ###################
+         my @RECT_OBS = $PLDB{$mod}->dbMdbGetObs;
+         my @POLY_OBS = $PLDB{$mod}->dbMdbGetObsPolygon;
+         if(@RECT_OBS > 0){
+            foreach my $obsLine(@RECT_OBS){
+              my ($layerName, $rect_llx, $rect_lly, $rect_urx, $rect_ury)=(split(/\s+/,$obsLine))[0,2,3,4,5];
+              my $layerNum = $PTDB{$layerName}->dbTechGetLayerNum;
+              $rect_llx = $rect_llx + $cellOrigin[0];
+              $rect_lly = $rect_lly + $cellOrigin[1];
+              $rect_urx = $rect_urx + $cellOrigin[0];
+              $rect_ury = $rect_ury + $cellOrigin[1];
+              $gds2File -> printBoundary(
+                           -layer=>$layerNum,
+                           -xy=>[$rect_llx,$rect_lly,$rect_urx,$rect_lly,$rect_urx,$rect_ury,$rect_llx,$rect_ury],
+                        );
+            }#foreach rectline
+         }#if rect found     
+         if(@POLY_OBS > 0){
+            foreach my $obsLine (@POLY_OBS){
+              my @new_poly = ();
+              my @poly = split(/\s+/,$obsLine);
+              my $layerName = $poly[0];
+              my $layerNum = $PTDB{$layerName}->dbTechGetLayerNum;
+              for(my $i=2; $i<=$#poly; $i=$i+2){
+                  my $xx = $poly[$i] + $cellOrigin[0];
+                  my $yy = $poly[$i+1] + $cellOrigin[1];
+                  push(@new_poly, $xx, $yy);
+              }
+              $gds2File -> printBoundary(
+                           -layer=>$layerNum,
+                           -xy=>[@new_poly],
+                        );
+            }#foreach polyline
+         }#if polygon found
+ 
+         ###############################################################
+         $gds2File -> printBoundary(
+                      -layer=>$boundary_layer,
+                      -dataType=>$boundary_dataType,
+                      -xy=>[$llx,$lly,$urx,$lly,$urx,$ury,$llx,$ury],
+                   );
+         $gds2File -> printEndstr;
+      }
+    }#foreach module
+    $gds2File -> printEndlib();
+ }#else
+}#sub fpdef2gds
+
+#################################################################################################
+############################ subroutine to convert LEF to GDS ###################################
+#################################################################################################
+sub lef2gds {
+ use GDS2;
+ use Benchmark;
+ my $t0 = new Benchmark;
+ 
+ my $noOfArguments = @_;
+ if($noOfArguments < 0 || $_[0] eq "-h"){  
+    print "Usage: -output <fileName> | by default it is silverline.gds\n";
+    print "       -cell <cell1,cell2,cell3...> | by default it will select all cells\n";
+    print "       -boundary_layer <layer number> | by default it takes 149\n";
+    print "       -boundary_data_type <layer data type> | by default it takes 150\n";
+    print "       --no_pin_text (used to not write pin name) | by default it off\n";
+ }else {
+    my $OUTPUT_GDS = 'silverline';
+    my @cellList = ();
+    my $boundary_layer = 149;
+    my $boundary_dataType = 150;
+    my $write_cell_pin_text = 1;
+ 
+    for(my $i=0;$i<$noOfArguments;$i++){
+        if($_[$i] eq "-output"){$OUTPUT_GDS = $_[$i+1];}
+        if($_[$i] eq "-cell"){
+           my $cellListStr = $_[$i+1];
+           $cellListStr =~ s/\{|\}//g;
+           @cellList = split(/\,/, $cellListStr); 
+        }
+        if($_[$i] eq "-boundary_layer"){$boundary_layer = $_[$i+1];}
+        if($_[$i] eq "-boundary_data_type"){$boundary_dataType = $_[$i+1];}
+        if($_[$i] eq "--no_pin_text"){$write_cell_pin_text = 0;}
+     }#for
+ 
+    my $gds2File = new GDS2(-fileName=>">$OUTPUT_GDS.gds");
+    $gds2File -> printInitLib(-name=> 'test.lib');
+    my $total_layers = keys %PTDB;
+    my $pinTextLayer = $total_layers + 10;
+    if(@cellList <= 0){
+       @cellList = keys %PLDB;
+    }
+    foreach my $macro (@cellList){
+       if(exists $PLDB{$macro}){
+          $gds2File -> printBgnstr(-name=>$macro);
+          my @cellOrigin = $PLDB{$macro}->dbMdbGetOrigin;
+          my @size = $PLDB{$macro}->dbMdbGetSize;
+          my $llx = 0;
+          my $lly = 0;
+          my $urx = $size[0];
+          my $ury = $size[1];
+ 
+          ########################## Pin section #######################
+          my @pins = $PLDB{$macro}->dbMdbGetPins;
+          foreach my $pin (@pins){
+            my @RECTS = $PLDB{$macro}->dbMdbGetPinRect($pin);
+            my @POLYS = $PLDB{$macro}->dbMdbGetPinPolygon($pin);
+            if(@RECTS > 0){
+               foreach my $rectLine(@RECTS){
+                 my ($layerName, $rect_llx, $rect_lly, $rect_urx, $rect_ury)=(split(/\s+/,$rectLine))[0,2,3,4,5];
+                 my $layerNum = $PTDB{$layerName}->dbTechGetLayerNum;
+                 $rect_llx = $rect_llx + $cellOrigin[0];
+                 $rect_lly = $rect_lly + $cellOrigin[1];
+                 $rect_urx = $rect_urx + $cellOrigin[0];
+                 $rect_ury = $rect_ury + $cellOrigin[1];
+                 $gds2File -> printBoundary(
+                              -layer=>$layerNum,
+                              -xy=>[$rect_llx,$rect_lly,$rect_urx,$rect_lly,$rect_urx,$rect_ury,$rect_llx,$rect_ury],
+                           );
+               }#foreach rectline
+            }#if rect found     
+            if(@POLYS > 0){
+               foreach my $polyLine (@POLYS){
+                 my @new_poly = ();
+                 my @poly = split(/\s+/,$polyLine);
+                 my $layerName = $poly[0];
+                 my $layerNum = $PTDB{$layerName}->dbTechGetLayerNum;
+                 for(my $i=2; $i<=$#poly; $i=$i+2){
+                     my $xx = $poly[$i] + $cellOrigin[0];
+                     my $yy = $poly[$i+1] + $cellOrigin[1];
+                     push(@new_poly, $xx, $yy);
+                 }
+                 $gds2File -> printBoundary(
+                              -layer=>$layerNum,
+                              -xy=>[@new_poly],
+                           );
+               }#foreach polyline
+             }#if polygon found
+             if($write_cell_pin_text == 1){
+                if(@RECTS > 0){
+                   my ($layerName, $rect_llx, $rect_lly, $rect_urx, $rect_ury)=(split(/\s+/,$RECTS[0]))[0,2,3,4,5];
+                   $rect_llx = $rect_llx + $cellOrigin[0];
+                   $rect_lly = $rect_lly + $cellOrigin[1];
+                   $rect_urx = $rect_urx + $cellOrigin[0];
+                   $rect_ury = $rect_ury + $cellOrigin[1];
+                   my $mid_x = ($rect_llx + $rect_urx)/2;
+                   my $mid_y = ($rect_lly + $rect_ury)/2;
+                   $gds2File -> printText(
+                             -string=>$pin,   ## Name of structure
+                             -xy=>[$mid_x,$mid_y],    ## array of reals
+                             -layer=>$pinTextLayer,
+                          );
+                }else{   
+                   my @new_poly = ();
+                   my @poly = split(/\s+/,$POLYS[0]);
+                   for(my $i=2; $i<=$#poly; $i=$i+2){
+                       my $xx = $poly[$i] + $cellOrigin[0];
+                       my $yy = $poly[$i+1] + $cellOrigin[1];
+                       push(@new_poly, $xx, $yy);
+                   }
+                   $gds2File -> printText(
+                             -string=>$pin,   ## Name of structure
+                             -xy=>[$new_poly[0],$new_poly[1]],    ## array of reals
+                             -layer=>$pinTextLayer,
+                          );
+                }        
+             }#if write_cell_pin_text switch is on
+          }#foreach pin
+          
+          ####################### Obstraction section ###################
+          my @RECT_OBS = $PLDB{$macro}->dbMdbGetObs;
+          my @POLY_OBS = $PLDB{$macro}->dbMdbGetObsPolygon;
+          if(@RECT_OBS > 0){
+             foreach my $obsLine(@RECT_OBS){
+               my ($layerName, $rect_llx, $rect_lly, $rect_urx, $rect_ury)=(split(/\s+/,$obsLine))[0,2,3,4,5];
+               my $layerNum = $PTDB{$layerName}->dbTechGetLayerNum;
+               $rect_llx = $rect_llx + $cellOrigin[0];
+               $rect_lly = $rect_lly + $cellOrigin[1];
+               $rect_urx = $rect_urx + $cellOrigin[0];
+               $rect_ury = $rect_ury + $cellOrigin[1];
+               $gds2File -> printBoundary(
+                            -layer=>$layerNum,
+                            -xy=>[$rect_llx,$rect_lly,$rect_urx,$rect_lly,$rect_urx,$rect_ury,$rect_llx,$rect_ury],
+                         );
+             }#foreach rectline
+          }#if rect found     
+          if(@POLY_OBS > 0){
+             foreach my $obsLine (@POLY_OBS){
+               my @new_poly = ();
+               my @poly = split(/\s+/,$obsLine);
+               my $layerName = $poly[0];
+               my $layerNum = $PTDB{$layerName}->dbTechGetLayerNum;
+               for(my $i=2; $i<=$#poly; $i=$i+2){
+                   my $xx = $poly[$i] + $cellOrigin[0];
+                   my $yy = $poly[$i+1] + $cellOrigin[1];
+                   push(@new_poly, $xx, $yy);
+               }
+               $gds2File -> printBoundary(
+                            -layer=>$layerNum,
+                            -xy=>[@new_poly],
+                         );
+             }#foreach polyline
+          }#if polygon found
+ 
+          ###############################################################
+          $gds2File -> printBoundary(
+                       -layer=>$boundary_layer,
+                       -dataType=>$boundary_dataType,
+                       -xy=>[$llx,$lly,$urx,$lly,$urx,$ury,$llx,$ury],
+                    );
+          $gds2File -> printEndstr;
+       }#if cell exists
+    }#foreach macro
+    $gds2File -> printEndlib();
+ }#if correct number of arg
+ my $t1 = new Benchmark;
+ my $td = timediff($t1, $t0);
+ print "lef2gds is completed in :",timestr($td),"\n";
+}#sub lef2gds
+
+
+#################################################################################################
+#################################################################################################
+#################################################################################################
+
+
+1;

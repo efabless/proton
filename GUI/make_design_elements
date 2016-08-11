@@ -1,0 +1,2509 @@
+###################################################################################################################################
+##############################################-- subroutine to delete items --#####################################################
+###################################################################################################################################
+
+sub delete_geometry {
+#&dbfGuiResetCanvasBind;
+my $canvas = $_[0];
+$canvas->focusForce;
+        $canvas->CanvasBind('<d><1>' => sub {
+            my $x = $canvas->canvasx($Tk::event->x);
+            my $y = $canvas->canvasy($Tk::event->y);
+            my @id      = $canvas->find(qw/withtag current/);
+            my @tagList = $canvas->gettags($id[0]);
+               #$canvas->delete($id[0]);
+               if($id[0] ne "" && $tagList[0] ne "TOP_MODULE"){
+                               &delete_item_popup($id[0]);
+                               &delete_itemsFromDatabase($id[0], \@tagList);
+               }else{
+                    return;
+                      }    
+});
+}#sub delete_geometry
+
+sub delete_item_popup {
+my $id = $_[0];
+my $response = $top->messageBox(-message=>"Are you sure you want to delete the item  ?",
+		-type=>'yesno',-icon=>'question');
+
+if($response eq "Yes" ) {
+   $design_canvas->delete($id);
+}
+else {
+}
+
+}#sub delete_item_popup
+
+sub delete_itemsFromDatabase{
+my $id = $_[0];
+my $tag = $_[1];
+if(@$tag[0] eq "TOP_MODULE" ){
+   if ( exists $PSEUDO_MODULE_ALREADY{$TOP_MODULE} ) {
+        delete $PSEUDO_MODULE_ALREADY{@$tag[1]}
+    }
+}elsif(@$tag[0] eq "TST_WIRE"){ 
+  if ( exists $PSEUDO_VNET_ALREADY{$TOP_MODULE} ) {
+       if (exists $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{@$tag[1]}){
+           delete $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{@$tag[1]};#->dbaTstgenSetPseudoNetName($netName);
+       }
+  }
+}else{
+    if ( exists $PSEUDO_MODULE_ALREADY{$TOP_MODULE} ) {
+         if (exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{@$tag[1]}){ 
+             delete $PSEUDO_VINST_ALREADY{$TOP_MODULE}{@$tag[1]}
+         }
+       }
+}
+
+}#sub delete_itemsFromDatabase
+
+##################################################################################################################################
+####################################### Subroutines to draw and resize Psedo Instances ###########################################
+##################################################################################################################################
+
+################################### code to draw, Resize and move Rectangle ##########################################
+sub draw_rectangle {
+&dbfGuiResetCanvasBind;
+    $design_canvas->CanvasBind('<1>' => sub {
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+            my $color;
+            if($fillcolor eq ""){$color = "green";}
+            else {$color = $fillcolor;} 
+            @rectCoords = ($x, $y, $x, $y);
+
+            $rect = $design_canvas->createRectangle(
+                                            @rectCoords,
+                                            -outline => $color,
+                                            -fill => $color,
+                                            -stipple => 'gray12',
+                                            -width => $thickness,
+                                            );
+        });
+    $design_canvas->CanvasBind('<B1-Motion>' => sub {
+            @rectCoords[2,3] = ($design_canvas->canvasx($Tk::event->x),
+                                $design_canvas->canvasy($Tk::event->y));
+            $design_canvas->coords($rect => @rectCoords);
+        });
+    $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+            $design_canvas->itemconfigure($rect, -tags =>'Rectangle' );
+        });
+
+}#sub draw_rectangle
+
+sub resizeOrMove_rectangle {
+&dbfGuiResetCanvasBind;
+    my $dx   = 0;
+    my $dy   = 0;
+    my $mode = 0;    # 0 => move
+                     # 1 => resize
+    my $pct  = 0.2;
+    my $oldx = 0;
+    my $oldy = 0;
+    my $rect;
+    $design_canvas->CanvasBind('<1>' => sub {
+                    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+                    my $id      = $design_canvas->find(qw/withtag current/);
+                    my @tagList = $design_canvas->gettags($id);
+                 if($tagList[0] eq "Rectangle"){
+                    my @coords  = $design_canvas->coords($id);
+                    my $width   = $coords[2] - $coords[0];
+                    my $height  = $coords[3] - $coords[1];
+
+                    if($x < $coords[0] + 0.2 * $width) {$dx =  1;}
+                 elsif($x > $coords[2] - 0.2 * $width) {$dx = -1;}
+                 else {$dx = 0;}
+
+                    if($y < $coords[1] + 0.2 * $height) {$dy =  1;}
+                 elsif($y > $coords[3] - 0.2 * $height) {$dy = -1;}
+                 else {$dy = 0;}
+
+                    $mode = ($dx || $dy) ? 1 : 0;
+                    $oldx = $x;
+                    $oldy = $y;
+                    $rect = $id;
+
+                    if ($mode) {
+                        $design_canvas->createRectangle(@coords,
+                                               -outline => 'red',
+                                               -tags    => ['TEMP'],
+                                               );
+                    }
+
+                    return;
+                }});
+
+    $design_canvas->CanvasBind('<B1-Motion>' => sub {
+                    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+                    my $id      = $design_canvas->find(qw/withtag current/);
+                    my @tagList = $design_canvas->gettags($id);
+                 if($tagList[0] eq "Rectangle"){
+                    if ($mode) {  # resize
+                        my @coords = $design_canvas->coords('TEMP');
+
+                        if    ($dx ==  1) { $coords[0] = $x }
+                        elsif ($dx == -1) { $coords[2] = $x }
+
+                        if    ($dy ==  1) { $coords[1] = $y }
+                        elsif ($dy == -1) { $coords[3] = $y }
+
+                        $design_canvas->coords('TEMP', @coords);
+                    } else {      # move
+                        $design_canvas->move($id => $x - $oldx, $y - $oldy);
+                        $oldx = $x;
+                        $oldy = $y;
+                    }
+                }});
+
+    $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+        my @coords = $design_canvas->coords('TEMP');
+
+        # Delete the rectangle.
+        $design_canvas->delete('TEMP');
+        $design_canvas->coords($rect => @coords);
+    });
+}#sub resizeOrMove_rectangle
+
+################################### code to draw, Resize and move Black Box ##########################################
+sub draw_rectangle1 {
+&dbfGuiResetCanvasBind;
+    $design_canvas->CanvasBind('<1>' => sub {
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+            my $color;
+            if($fillcolor eq ""){$color = "Olive Drab";}
+            else {$color = $fillcolor;} 
+            @rectCoords = ($x, $y, $x, $y);
+
+            $rect = $design_canvas->createRectangle(
+                                            @rectCoords,
+                                            -outline => $color,
+                                            -fill => $color,
+                                            -stipple => 'gray12',
+                                            -width => $thickness,
+                                            );
+        });
+    $design_canvas->CanvasBind('<B1-Motion>' => sub {
+            @rectCoords[2,3] = ($design_canvas->canvasx($Tk::event->x),
+                                $design_canvas->canvasy($Tk::event->y));
+            $design_canvas->coords($rect => @rectCoords);
+        });
+    $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+            $design_canvas->itemconfigure($rect, -tags =>'Rectangle' );
+        });
+
+}#sub draw_rectangle1
+
+sub resizeOrMove_rectangle1{
+&dbfGuiResetCanvasBind;
+    my $dx   = 0;
+    my $dy   = 0;
+    my $mode = 0;    # 0 => move
+                     # 1 => resize
+    my $pct  = 0.2;
+    my $oldx = 0;
+    my $oldy = 0;
+    my $rect;
+    $design_canvas->CanvasBind('<1>' => sub {
+                    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+                    my $id      = $design_canvas->find(qw/withtag current/);
+                    my @tagList = $design_canvas->gettags($id);
+                 if($tagList[0] eq "Rectangle"){
+                    my @coords  = $design_canvas->coords($id);
+                    my $width   = $coords[2] - $coords[0];
+                    my $height  = $coords[3] - $coords[1];
+
+                    if($x < $coords[0] + 0.2 * $width) {$dx =  1;}
+                 elsif($x > $coords[2] - 0.2 * $width) {$dx = -1;}
+                 else {$dx = 0;}
+
+                    if($y < $coords[1] + 0.2 * $height) {$dy =  1;}
+                 elsif($y > $coords[3] - 0.2 * $height) {$dy = -1;}
+                 else {$dy = 0;}
+
+                    $mode = ($dx || $dy) ? 1 : 0;
+                    $oldx = $x;
+                    $oldy = $y;
+                    $rect = $id;
+
+                    if ($mode) {
+                        $design_canvas->createRectangle(@coords,
+                                               -outline => 'red',
+                                               -tags    => ['TEMP'],
+                                               );
+                    }
+
+                    return;
+                }});
+
+    $design_canvas->CanvasBind('<B1-Motion>' => sub {
+                    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+                    my $id      = $design_canvas->find(qw/withtag current/);
+                    my @tagList = $design_canvas->gettags($id);
+                 if($tagList[0] eq "Rectangle"){
+                    if ($mode) {  # resize
+                        my @coords = $design_canvas->coords('TEMP');
+
+                        if    ($dx ==  1) { $coords[0] = $x }
+                        elsif ($dx == -1) { $coords[2] = $x }
+
+                        if    ($dy ==  1) { $coords[1] = $y }
+                        elsif ($dy == -1) { $coords[3] = $y }
+
+                        $design_canvas->coords('TEMP', @coords);
+                    } else {      # move
+                        $design_canvas->move($id => $x - $oldx, $y - $oldy);
+                        $oldx = $x;
+                        $oldy = $y;
+                    }
+                }});
+
+    $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+        my @coords = $design_canvas->coords('TEMP');
+
+        # Delete the rectangle.
+        $design_canvas->delete('TEMP');
+        $design_canvas->coords($rect => @coords);
+    });
+}#sub resizeOrMove_rectangle1
+
+
+#######################################  code to draw, Resize and move Oval ###########################################
+ 
+ sub draw_oval {
+&dbfGuiResetCanvasBind;
+    $design_canvas->CanvasBind('<1>' => sub {
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+            my $color;
+            if($fillcolor eq ""){$color = "green";}
+            else {$color = $fillcolor;} 
+            @ovalCoords = ($x, $y, $x, $y);
+
+            $oval = $design_canvas->createOval(
+                                            @ovalCoords,
+                                            -outline => $color,
+                                            -fill => $color,
+                                            -stipple => 'gray12',
+                                            -width => $thickness,
+                                            );
+        });
+    $design_canvas->CanvasBind('<B1-Motion>' => sub {
+            @ovalCoords[2,3] = ($design_canvas->canvasx($Tk::event->x),
+                                $design_canvas->canvasy($Tk::event->y));
+            $design_canvas->coords($oval => @ovalCoords);
+        });
+    $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+            $design_canvas->itemconfigure($oval, -tags =>'Oval' );
+        });
+
+}#sub draw_oval
+
+sub resizeOrMove_oval {
+&dbfGuiResetCanvasBind;
+    my $dx   = 0;
+    my $dy   = 0;
+    my $mode = 0;    # 0 => move
+                     # 1 => resize
+    my $pct  = 0.2;
+    my $oldx = 0;
+    my $oldy = 0;
+    my $oval;
+    $design_canvas->CanvasBind('<1>' => sub {
+                    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+                    my $id      = $design_canvas->find(qw/withtag current/);
+                    my @tagList = $design_canvas->gettags($id);
+                  if($tagList[0] eq "Oval"){
+                    my @coords  = $design_canvas->coords($id);
+                    my $width   = $coords[2] - $coords[0];
+                    my $height  = $coords[3] - $coords[1];
+
+                    if($x < $coords[0] + 0.2 * $width) {$dx =  1;}
+                 elsif($x > $coords[2] - 0.2 * $width) {$dx = -1;}
+                 else {$dx = 0;}
+
+                    if($y < $coords[1] + 0.2 * $height) {$dy =  1;}
+                 elsif($y > $coords[3] - 0.2 * $height) {$dy = -1;}
+                 else {$dy = 0;}
+
+                    $mode = ($dx || $dy) ? 1 : 0;
+                    $oldx = $x;
+                    $oldy = $y;
+                    $oval = $id;
+
+                    if ($mode) {
+                        $design_canvas->createOval(@coords,
+                                               -outline => 'red',
+                                               -tags    => ['TEMP'],
+                                               );
+                    }
+
+                    return;
+                }});
+
+    $design_canvas->CanvasBind('<B1-Motion>' => sub {
+                    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+                    my $id      = $design_canvas->find(qw/withtag current/);
+                    my @tagList = $design_canvas->gettags($id);
+                  if($tagList[0] eq "Oval"){
+                    if ($mode) {  # resize
+                        my @coords = $design_canvas->coords('TEMP');
+
+                        if    ($dx ==  1) { $coords[0] = $x }
+                        elsif ($dx == -1) { $coords[2] = $x }
+
+                        if    ($dy ==  1) { $coords[1] = $y }
+                        elsif ($dy == -1) { $coords[3] = $y }
+
+                        $design_canvas->coords('TEMP', @coords);
+                    } else {      # move
+                        $design_canvas->move($id => $x - $oldx, $y - $oldy);
+                        $oldx = $x;
+                        $oldy = $y;
+                    }
+                }});
+
+    $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+        my @coords = $design_canvas->coords('TEMP');
+
+        # Delete the rectangle.
+        $design_canvas->delete('TEMP');
+        $design_canvas->coords($oval => @coords);
+    });
+}#sub resizeOrMove_oval
+
+#######################################  code to draw, Resize and move Square ###########################################
+sub draw_square {
+&dbfGuiResetCanvasBind;
+    $design_canvas->CanvasBind('<1>' => sub {
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+            my $color;
+            if($fillcolor eq ""){$color = "green";}
+            else {$color = $fillcolor;}    $flllllllillcolor = "green";
+            @squareCoords = ($x, $y, $x, $y);
+
+            $square = $design_canvas->createRectangle(
+                                            @squareCoords,
+                                            -outline => $color,
+                                            -fill => $color,
+                                            -stipple => 'gray12',
+                                            -width => $thickness,
+                                            );
+        });
+    $design_canvas->CanvasBind('<B1-Motion>' => sub {
+                    my $x = $design_canvas->canvasx($Tk::event->x); 
+                    my $y = $design_canvas->canvasx($Tk::event->y); 
+                    my $x1 = $x - $squareCoords[0];
+                    my $y1 = $y - $squareCoords[1];   
+                    if($x1 >= $y1){$squareCoords[2] = $x;
+                                   $squareCoords[3] = $squareCoords[1] + ($x - $squareCoords[0]);}
+                  else{$squareCoords[2] = $squareCoords[0] + ($y - $squareCoords[1]);
+                       $squareCoords[3] = $y;}
+   
+            $design_canvas->coords($square => @squareCoords);
+        });
+    $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+            $design_canvas->itemconfigure($square, -tags =>'Square' );
+        });
+
+}#sub draw_square
+
+sub resizeOrMove_square {
+&dbfGuiResetCanvasBind;
+    my $dx   = 0;
+    my $dy   = 0;
+    my $mode = 0;    # 0 => move
+                     # 1 => resize
+    my $pct  = 0.2;
+    my $oldx = 0;
+    my $oldy = 0;
+    my $square;
+    $design_canvas->CanvasBind('<1>' => sub {
+                    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+                    my $id      = $design_canvas->find(qw/withtag current/);
+                    my @tagList = $design_canvas->gettags($id);
+                 if($tagList[0] eq "Square"){
+                    my @coords  = $design_canvas->coords($id);
+                    my $width   = $coords[2] - $coords[0];
+                    my $height  = $coords[3] - $coords[1];
+
+                    if($x < $coords[0] + 0.2 * $width) {$dx =  1;}
+                 elsif($x > $coords[2] - 0.2 * $width) {$dx = -1;}
+                 else {$dx = 0;}
+
+                    if($y < $coords[1] + 0.2 * $height) {$dy =  1;}
+                 elsif($y > $coords[3] - 0.2 * $height) {$dy = -1;}
+                 else {$dy = 0;}
+
+                    $mode = ($dx || $dy) ? 1 : 0;
+                    $oldx = $x;
+                    $oldy = $y;
+                    $square = $id;
+
+                    if ($mode) {
+                        $design_canvas->createRectangle(@coords,
+                                               -outline => 'red',
+                                               -tags    => ['TEMP'],
+                                               );
+                    }
+
+                    return;
+                }});
+
+    $design_canvas->CanvasBind('<B1-Motion>' => sub {
+                    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+                    my $id      = $design_canvas->find(qw/withtag current/);
+                    my @tagList = $design_canvas->gettags($id);
+                 if($tagList[0] eq "Square"){
+                    if ($mode) {  # resize
+                        my @coords = $design_canvas->coords('TEMP');
+                        my $org_llx = $coords[0];
+                        my $org_lly = $coords[1];
+                        my $org_urx = $coords[2];
+                        my $org_ury = $coords[3];
+
+                        if    (($dx ==  1) && (($dy ==  0) ||($dy ==  1))){ 
+                                      $coords[0] = $x; my $xdiff = $org_llx- $x; $coords[1] = $coords[1] - $xdiff;
+                       }elsif (($dx == -1) && (($dy ==  0) || ($dy == -1))){ 
+                                      $coords[2] = $x; my $xdiff = $org_urx- $x; $coords[3] = $coords[3] - $xdiff;
+                       }elsif (($dy ==  1) && ($dx ==  0)) { 
+                                      $coords[1] = $y; my $ydiff = $org_lly- $y; $coords[0] = $coords[0] - $ydiff;
+                       }elsif (($dy == -1) && ($dx ==  0)) { 
+                                      $coords[3] = $y; my $ydiff = $org_ury- $y; $coords[2] = $coords[2] - $ydiff;
+                       }elsif (($dx == 1) && ($dy == -1)) { 
+                                      $coords[0] = $x; my $xdiff = $org_llx- $x; $coords[3] = $coords[3] + $xdiff;
+                       }elsif (($dx == -1) && ($dy ==  1)) { 
+                                      $coords[1] = $y; my $ydiff = $org_lly- $y; $coords[2] = $coords[2] + $ydiff;
+                       }
+
+                        $design_canvas->coords('TEMP', @coords);
+                    } else {      # move
+                        $design_canvas->move($id => $x - $oldx, $y - $oldy);
+                        $oldx = $x;
+                        $oldy = $y;
+                    }
+                }});
+
+    $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+        my @coords = $design_canvas->coords('TEMP');
+
+        # Delete the rectangle.
+        $design_canvas->delete('TEMP');
+        $design_canvas->coords($square => @coords);
+    });
+}#sub resizeOrMove_square
+
+#######################################  code to draw, Resize and move Parallelogram  ###########################################
+sub draw_parallelogram {
+&dbfGuiResetCanvasBind;
+    $design_canvas->CanvasBind('<1>' => sub {
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+            my $color;
+            if($fillcolor eq ""){$color = "green";}
+            else {$color = $fillcolor;} 
+            @parallelogramCoords = ($x, $y, $x, $y, $x, $y, $x, $y);
+
+            $parallelogram = $design_canvas->createPolygon(
+                                            @parallelogramCoords,
+                                            -outline => $color,
+                                            -fill => $color,
+                                            -stipple => 'gray12',
+                                            -width => $thickness,
+                                            );
+        });
+    $design_canvas->CanvasBind('<B1-Motion>' => sub {
+                    my $x = $design_canvas->canvasx($Tk::event->x); 
+                    my $y = $design_canvas->canvasx($Tk::event->y); 
+                       $parallelogramCoords[2] = $x + ($x - $parallelogramCoords[0])/2; 
+                       $parallelogramCoords[3] = $parallelogramCoords[1];
+                       $parallelogramCoords[4] = $x;
+                       $parallelogramCoords[5] = $y;
+                       $parallelogramCoords[6] = $parallelogramCoords[0] - ($x - $parallelogramCoords[0])/2;
+                       $parallelogramCoords[7] = $y;
+   
+            $design_canvas->coords($parallelogram => @parallelogramCoords);
+        });
+    $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+            $design_canvas->itemconfigure($parallelogram, -tags =>'Parallelogram' );
+        });
+
+}#sub draw_parallelogram
+
+sub resizeOrMove_parallelogram {
+&dbfGuiResetCanvasBind;
+    my $dx   = 0;
+    my $dy   = 0;
+    my $mode = 0;    # 0 => move
+                     # 1 => resize
+    my $pct  = 0.2;
+    my $oldx = 0;
+    my $oldy = 0;
+    my $parallelogram;
+    $design_canvas->CanvasBind('<1>' => sub {
+                    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+                    my $id      = $design_canvas->find(qw/withtag current/);
+                    my @tagList = $design_canvas->gettags($id);
+                 if($tagList[0] eq "Parallelogram"){
+                    my @coords  = $design_canvas->coords($id);
+                    my $width   = $coords[2] - $coords[0];
+                    my $height  = $coords[5] - $coords[1];
+
+                    if($x < $coords[0] + 0.2 * $width) {$dx =  1;}
+                 elsif($x > $coords[2] - 0.2 * $width) {$dx = -1;}
+                 else {$dx = 0;}
+
+                    if($y < $coords[1] + 0.2 * $height) {$dy =  1;}
+                 elsif($y > $coords[5] - 0.2 * $height) {$dy = -1;}
+                 else {$dy = 0;}
+
+                    $mode = ($dx || $dy) ? 1 : 0;
+                    $oldx = $x;
+                    $oldy = $y;
+                    $parallelogram = $id;
+
+                    if ($mode) {
+                        $design_canvas->createPolygon(@coords,
+                                               -outline => 'red',
+                                               -fill => "",
+                                               -tags    => ['TEMP'],
+                                               );
+                    }
+
+                    return;
+                }});
+
+    $design_canvas->CanvasBind('<B1-Motion>' => sub {
+                    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+                    my $id      = $design_canvas->find(qw/withtag current/);
+                    my @tagList = $design_canvas->gettags($id);
+                 if($tagList[0] eq "Parallelogram"){
+                    if ($mode) {  # resize
+                        my @coords = $design_canvas->coords('TEMP');
+                        my $org_x1 = $coords[0];
+                        my $org_y1 = $coords[1];
+                        my $org_x2 = $coords[2];
+                        my $org_y2 = $coords[3];
+                        my $org_x3 = $coords[4];
+                        my $org_y3 = $coords[5];
+                        my $org_x4 = $coords[6];
+                        my $org_y4 = $coords[7];
+
+                        if    (($dx ==  1) && ($dy ==  0)){ 
+                                      $coords[0] = $x; my $xdiff = $org_x1- $x; $coords[6] = $coords[6] - $xdiff;
+                       }elsif (($dx == -1) && ($dy ==  0)){ 
+                                      $coords[4] = $x; my $xdiff = $org_x3- $x; $coords[2] = $coords[2] - $xdiff;
+                       }elsif (($dy ==  1) && ($dx ==  0)) { 
+                                      $coords[1] = $y; my $ydiff = $org_y1- $y; $coords[3] = $coords[3] - $ydiff;
+                       }elsif (($dy == -1) && ($dx ==  0)) { 
+                                      $coords[5] = $y; my $ydiff = $org_y3- $y; $coords[7] = $coords[7] - $ydiff;$coords[7] = $y;
+                       }elsif (($dx == 1) && ($dy == -1)) { 
+                                      $coords[6] = $x; $coords[7] = $y; $coords[5] = $y; my $xdiff = $org_x4- $x; $coords[0] = $coords[0] - $xdiff; 
+                       }elsif (($dx == -1) && ($dy ==  1)) { 
+                                      $coords[2] = $x; $coords[3] = $y; $coords[1] = $y; my $xdiff = $org_x2- $x; $coords[4] = $coords[4] - $xdiff; 
+
+                       }elsif (($dx == 1) && ($dy ==  1)) { 
+                                      $coords[0] = $x; $coords[1] = $y;$coords[3] = $y; my $xdiff = $org_x1- $x; $coords[6] = $coords[6] - $xdiff; 
+                       }elsif (($dx == -1) && ($dy == -1)) { 
+                                      $coords[4] = $x; $coords[5] = $y; $coords[7] = $y; my $xdiff = $org_x3- $x; $coords[2] = $coords[2] - $xdiff; 
+
+                       } 
+                        $design_canvas->coords('TEMP', @coords);
+                    } else {      # move
+                        $design_canvas->move($id => $x - $oldx, $y - $oldy);
+                        $oldx = $x;
+                        $oldy = $y;
+                    }
+                }});
+
+    $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+        my @coords = $design_canvas->coords('TEMP');
+
+        # Delete the rectangle.
+        $design_canvas->delete('TEMP');
+        $design_canvas->coords($parallelogram => @coords);
+    });
+
+}#sub resizeOrMove_parallelogram
+#######################################  code to draw, Resize and move Trapezium  ###########################################
+sub draw_trapezoid {
+&dbfGuiResetCanvasBind;
+    $design_canvas->CanvasBind('<1>' => sub {
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+            my $color;
+            if($fillcolor eq ""){$color = "green";}
+            else {$color = $fillcolor;} 
+            @trapezoidCoords = ($x, $y, $x, $y, $x, $y, $x, $y);
+
+            $trapezoid = $design_canvas->createPolygon(
+                                            @trapezoidCoords,
+                                            -outline => $color,
+                                            -fill => $color,
+                                            -stipple => 'gray12',
+                                            -width => $thickness,
+                                            );
+        });
+    $design_canvas->CanvasBind('<B1-Motion>' => sub {
+                    my $x = $design_canvas->canvasx($Tk::event->x); 
+                    my $y = $design_canvas->canvasx($Tk::event->y); 
+                       $trapezoidCoords[2] = $trapezoidCoords[0] + ($x - $trapezoidCoords[0])*3/4; 
+                       $trapezoidCoords[3] = $trapezoidCoords[1];
+                       $trapezoidCoords[4] = $x;
+                       $trapezoidCoords[5] = $y;
+                       $trapezoidCoords[6] = $trapezoidCoords[0] - ($x - $trapezoidCoords[0])/4;
+                       $trapezoidCoords[7] = $y;
+   
+            $design_canvas->coords($trapezoid => @trapezoidCoords);
+        });
+    $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+            $design_canvas->itemconfigure($trapezoid, -tags =>'Trapezoid' );
+        });
+
+}#sub draw_trapezoid
+
+sub resizeOrMove_trapezoid {
+&dbfGuiResetCanvasBind;
+    my $dx   = 0;
+    my $dy   = 0;
+    my $mode = 0;    # 0 => move
+                     # 1 => resize
+    my $pct  = 0.2;
+    my $oldx = 0;
+    my $oldy = 0;
+    my $trapezoid;
+    $design_canvas->CanvasBind('<1>' => sub {
+                    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+                    my $id      = $design_canvas->find(qw/withtag current/);
+                    my @tagList = $design_canvas->gettags($id);
+                 if($tagList[0] eq "Trapezoid"){
+                    my @coords  = $design_canvas->coords($id);
+                    my $width   = $coords[2] - $coords[0];
+                    my $height  = $coords[5] - $coords[1];
+
+                    if($x < $coords[0] + 0.2 * $width) {$dx =  1;}
+                 elsif($x > $coords[2] - 0.2 * $width) {$dx = -1;}
+                 else {$dx = 0;}
+
+                    if($y < $coords[1] + 0.2 * $height) {$dy =  1;}
+                 elsif($y > $coords[5] - 0.2 * $height) {$dy = -1;}
+                 else {$dy = 0;}
+
+                    $mode = ($dx || $dy) ? 1 : 0;
+                    $oldx = $x;
+                    $oldy = $y;
+                    $trapezoid = $id;
+
+                    if ($mode) {
+                        $design_canvas->createPolygon(@coords,
+                                               -outline => 'red',
+                                               -fill => "",
+                                               -tags    => ['TEMP'],
+                                               );
+                    }
+
+                    return;
+                }});
+
+    $design_canvas->CanvasBind('<B1-Motion>' => sub {
+                    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+                    my $id      = $design_canvas->find(qw/withtag current/);
+                    my @tagList = $design_canvas->gettags($id);
+                 if($tagList[0] eq "Trapezoid"){
+                    if ($mode) {  # resize
+                        my @coords = $design_canvas->coords('TEMP');
+                        my $org_x1 = $coords[0];
+                        my $org_y1 = $coords[1];
+                        my $org_x2 = $coords[2];
+                        my $org_y2 = $coords[3];
+                        my $org_x3 = $coords[4];
+                        my $org_y3 = $coords[5];
+                        my $org_x4 = $coords[6];
+                        my $org_y4 = $coords[7];
+
+                        if    (($dx ==  1) && ($dy ==  0)){ 
+                                      $coords[0] = $x; my $xdiff = $org_x1- $x; $coords[6] = $coords[6] - $xdiff;
+                       }elsif (($dx == -1) && ($dy ==  0)){ 
+                                      $coords[4] = $x; my $xdiff = $org_x3- $x; $coords[2] = $coords[2] - $xdiff;
+                       }elsif (($dy ==  1) && ($dx ==  0)) { 
+                                      $coords[1] = $y; my $ydiff = $org_y1- $y; $coords[3] = $coords[3] - $ydiff;
+                       }elsif (($dy == -1) && ($dx ==  0)) { 
+                                      $coords[5] = $y; my $ydiff = $org_y3- $y; $coords[7] = $coords[7] - $ydiff;$coords[7] = $y;
+                       }elsif (($dx == 1) && ($dy == -1)) { 
+                                      $coords[6] = $x; $coords[7] = $y; $coords[5] = $y;  
+                       }elsif (($dx == -1) && ($dy ==  1)) { 
+                                      $coords[2] = $x; $coords[3] = $y;  $coords[1] = $y; 
+
+                       }elsif (($dx == 1) && ($dy ==  1)) { 
+                                      $coords[0] = $x; $coords[1] = $y;$coords[3] = $y; 
+                       }elsif (($dx == -1) && ($dy == -1)) { 
+                                      $coords[4] = $x; $coords[5] = $y; $coords[7] = $y;  
+
+                       } 
+                        $design_canvas->coords('TEMP', @coords);
+                    } else {      # move
+                        $design_canvas->move($id => $x - $oldx, $y - $oldy);
+                        $oldx = $x;
+                        $oldy = $y;
+                    }
+                }});
+
+    $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+        my @coords = $design_canvas->coords('TEMP');
+
+        # Delete the rectangle.
+        $design_canvas->delete('TEMP');
+        $design_canvas->coords($trapezoid => @coords);
+    });
+
+}#sub resizeOrMove_trapezoid
+
+#######################################  code to draw, Resize and move Rhombus ###########################################
+
+sub draw_rhombus {
+&dbfGuiResetCanvasBind;
+    $design_canvas->CanvasBind('<1>' => sub {
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+            my $color;
+            if($fillcolor eq ""){$color = "green";}
+            else {$color = $fillcolor;} 
+            @rhombusCoords = ($x, $y, $x, $y, $x, $y, $x, $y);
+
+            $rhombus = $design_canvas->createPolygon(
+                                            @rhombusCoords,
+                                            -outline => $color,
+                                            -fill => $color,
+                                            -stipple => 'gray12',
+                                            -width => $thickness,
+                                            );
+        });
+    $design_canvas->CanvasBind('<B1-Motion>' => sub {
+                    my $x = $design_canvas->canvasx($Tk::event->x); 
+                    my $y = $design_canvas->canvasx($Tk::event->y); 
+                    my $x1 = $x - $rhombusCoords[0];
+                    my $y1 = $y - $rhombusCoords[1];   
+                    #if($x1 >= $y1){  
+                       $rhombusCoords[2] = $x + ($x - $rhombusCoords[0])/2; 
+                       $rhombusCoords[3] = $rhombusCoords[1];
+                       $rhombusCoords[4] = $x;
+                       $rhombusCoords[5] = $rhombusCoords[1] + (sqrt(2))*($x - $rhombusCoords[0]);
+                       $rhombusCoords[6] = $rhombusCoords[0] - ($x - $rhombusCoords[0])/2;
+                       $rhombusCoords[7] = $rhombusCoords[1] + (sqrt(2))*($x - $rhombusCoords[0]);
+                   #}else{
+                   #    $rhombusCoords[2] = $rhombusCoords[0] + ($y - $rhombusCoords[1])*3/2; 
+                   #    $rhombusCoords[3] = $rhombusCoords[1];
+                   #    $rhombusCoords[4] = $rhombusCoords[0] + ($y - $rhombusCoords[1])*(3/2 - sqrt(2));
+                   #    $rhombusCoords[5] = $y; 
+                   #    $rhombusCoords[6] = $rhombusCoords[0] - (sqrt(2))*($y - $rhombusCoords[1]);
+                   #    $rhombusCoords[7] = $y;
+                   #     }
+                
+            $design_canvas->coords($rhombus => @rhombusCoords);
+        });
+    $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+            $design_canvas->itemconfigure($rhombus, -tags =>'Rhombus' );
+        });
+
+}#sub draw_rhombus
+
+sub resizeOrMove_rhombus {
+&dbfGuiResetCanvasBind;
+    my $dx   = 0;
+    my $dy   = 0;
+    my $mode = 0;    # 0 => move
+                     # 1 => resize
+    my $pct  = 0.2;
+    my $oldx = 0;
+    my $oldy = 0;
+    my $rhombus;
+    $design_canvas->CanvasBind('<1>' => sub {
+                    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+                    my $id      = $design_canvas->find(qw/withtag current/);
+                    my @tagList = $design_canvas->gettags($id);
+                 if($tagList[0] eq "Rhombus"){
+                    my @coords  = $design_canvas->coords($id);
+                    my $width   = $coords[2] - $coords[0];
+                    my $height  = $coords[5] - $coords[1];
+
+                    if($x < $coords[0] + 0.2 * $width) {$dx =  1;}
+                 elsif($x > $coords[2] - 0.2 * $width) {$dx = -1;}
+                 else {$dx = 0;}
+
+                    if($y < $coords[1] + 0.2 * $height) {$dy =  1;}
+                 elsif($y > $coords[5] - 0.2 * $height) {$dy = -1;}
+                 else {$dy = 0;}
+
+                    $mode = ($dx || $dy) ? 1 : 0;
+                    $oldx = $x;
+                    $oldy = $y;
+                    $rhombus = $id;
+
+                    if ($mode) {
+                        $design_canvas->createPolygon(@coords,
+                                               -outline => 'red',
+                                               -fill => "",
+                                               -tags    => ['TEMP'],
+                                               );
+                    }
+                    return;
+                }});
+
+    $design_canvas->CanvasBind('<B1-Motion>' => sub {
+                    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+                    my $id      = $design_canvas->find(qw/withtag current/);
+                    my @tagList = $design_canvas->gettags($id);
+                 if($tagList[0] eq "Rhombus"){
+                    if ($mode) {  # resize
+                        my @coords = $design_canvas->coords('TEMP');
+                        my $org_x1 = $coords[0];
+                        my $org_y1 = $coords[1];
+                        my $org_x2 = $coords[2];
+                        my $org_y2 = $coords[3];
+                        my $org_x3 = $coords[4];
+                        my $org_y3 = $coords[5];
+                        my $org_x4 = $coords[6];
+                        my $org_y4 = $coords[7];
+
+                        if    ((($dx ==  1) && ($dy ==  0)) || (($dx ==  1) && ($dy == -1))){ 
+                                      $coords[0] = $x; my $xdiff = $org_x1- $x; 
+                                      $coords[4] = $coords[4] - $xdiff/3; $coords[5] = $coords[5] + $xdiff*2/3*sqrt(2);
+                                      $coords[6] = $coords[6] - $xdiff*4/3; $coords[7] = $coords[7] + $xdiff*2/3*sqrt(2);
+                       }elsif ((($dx == -1) && ($dy ==  0)) || (($dx == -1) && ($dy ==  1))) { 
+                                      $coords[4] = $x; my $xdiff = $x - $org_x3; 
+                                      $coords[0] = $coords[0] + $xdiff/3; $coords[1] = $coords[1] - $xdiff*2/3*sqrt(2);
+                                      $coords[2] = $coords[2] + $xdiff*4/3; $coords[3] = $coords[3] - $xdiff*2/3*sqrt(2);  
+                       }elsif ((($dy ==  1) && ($dx ==  0)) || (($dx == 1) && ($dy ==  1))) { 
+                                      $coords[1] = $y; my $ydiff = $org_y1- $y; $coords[0] = $coords[0] - $ydiff/sqrt(2);
+                                      $coords[2] = $coords[2] + $ydiff/(2*sqrt(2)); $coords[3] = $y;    
+                                      $coords[6] = $coords[6] - $ydiff*3/(2*sqrt(2));
+                       }elsif ((($dy == -1) && ($dx ==  0)) || (($dx == -1) && ($dy ==  -1))) { 
+                                      $coords[5] = $y; my $ydiff = $y-$org_y3; $coords[2] = $coords[2] + $ydiff*3/(2*sqrt(2));
+                                      $coords[4] = $coords[4] + $ydiff/sqrt(2);     
+                                      $coords[6] = $coords[6] - $ydiff/(2*sqrt(2)); $coords[7] = $y;
+                       } 
+                        $design_canvas->coords('TEMP', @coords);
+                    } else {      # move
+                        $design_canvas->move($id => $x - $oldx, $y - $oldy);
+                        $oldx = $x;
+                        $oldy = $y;
+                    }
+                }});
+
+    $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+        my @coords = $design_canvas->coords('TEMP');
+
+        # Delete the rectangle.
+        $design_canvas->delete('TEMP');
+        $design_canvas->coords($rhombus => @coords);
+    });
+
+}#sub resizeOrMove_rhombus
+
+#######################################  code to draw, Resize and move polygon ###########################################
+sub draw_polygon {
+&dbfGuiResetCanvasBind;
+    $design_canvas->CanvasBind('<1>' => sub {
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+            my $color;
+            if($fillcolor eq ""){$color = "green";}
+            else {$color = $fillcolor;} 
+            @polygonCoords = ($x, $y, $x, $y, $x, $y, $x, $y);
+
+            $polygon = $design_canvas->createPolygon(
+                                            @polygonCoords,
+                                            -outline => $color,
+                                            -fill => $color,
+                                            -stipple => 'gray12',
+                                            -width => $thickness,
+                                            );
+        });
+    $design_canvas->CanvasBind('<B1-Motion>' => sub {
+                    my $x = $design_canvas->canvasx($Tk::event->x); 
+                    my $y = $design_canvas->canvasx($Tk::event->y); 
+                    #my $x1 = $x - $polygonCoords[0];
+                    #my $y1 = $y - $polygonCoords[1];   
+                    #if($x1 >= $y1){   
+                       $polygonCoords[2] = $x + ($x - $polygonCoords[0])/4; 
+                       $polygonCoords[3] = $polygonCoords[1];
+                       $polygonCoords[4] = $x;
+                       $polygonCoords[5] = $polygonCoords[1] + ($x - $polygonCoords[0])/2;
+                       $polygonCoords[6] = $polygonCoords[0] + ($x - $polygonCoords[0])/3;
+                       $polygonCoords[7] = $polygonCoords[1] + ($x - $polygonCoords[0])*3/4;
+                   #}else{
+                   #    $polygonCoords[2] = $polygonCoords[0] + ($y - $polygonCoords[1])*3/4; 
+                   #    $polygonCoords[3] = $polygonCoords[1];
+                   #    $polygonCoords[4] = $polygonCoords[0] + ($y - $polygonCoords[1]);
+                   #    $polygonCoords[5] = $y; 
+                   #    $polygonCoords[6] = $polygonCoords[0] - ($y - $polygonCoords[1])/3;
+                   #    $polygonCoords[7] = $polygonCoords[7] - ($y - $polygonCoords[1])*3/4;
+                   #   }
+                
+            $design_canvas->coords($polygon => @polygonCoords);
+        });
+    $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+            $design_canvas->itemconfigure($polygon, -tags =>'Polygon' );
+        });
+
+}#sub draw_polygon
+
+sub resizeOrMove_polygon {
+&dbfGuiResetCanvasBind;
+    my $dx   = 0;
+    my $dy   = 0;
+    my $bend = 0;
+    my $mode = 0;    # 0 => move
+                     # 1 => resize
+    my $pct  = 0.2;
+    my $oldx = 0;
+    my $oldy = 0;
+    my $polygon;
+    $design_canvas->CanvasBind('<1>' => sub {
+                    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+                    my $id      = $design_canvas->find(qw/withtag current/);
+                    my @tagList = $design_canvas->gettags($id);
+                 if($tagList[0] eq "Polygon"){
+                    my @coords  = $design_canvas->coords($id);
+                    my $width   = $coords[2] - $coords[0];
+                    my $height  = $coords[5] - $coords[1];
+
+                    if($x < $coords[0] + 0.2 * $width) {$dx =  1;}
+                 elsif($x > $coords[2] - 0.2 * $width) {$dx = -1;}
+                 else {$dx = 0;}
+
+                    if($y < $coords[1] + 0.2 * $height) {$dy =  1;}
+                 elsif($y > $coords[5] - 0.2 * $height) {$dy = -1;}
+                 else {$dy = 0;}
+                  
+                    $mode = ($dx || $dy) ? 1 : 0;
+                    $oldx = $x;
+                    $oldy = $y;
+                    $polygon = $id;
+
+                    if ($mode) {
+                        $design_canvas->createPolygon(@coords,
+                                               -outline => 'red',
+                                               -fill => "",
+                                               -tags    => ['TEMP'],
+                                               );
+                    }
+                    return;
+                }});
+
+# $design_canvas->CanvasBind('<Shift-Button-1>' => sub {
+#                    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+#                    my $id      = $design_canvas->find(qw/withtag current/);
+#                    my @tagList = $design_canvas->gettags($id);
+#                 if($tagList[0] eq "Polygon"){
+#                    my @coords  = $design_canvas->coords($id);
+#                    my $width   = $coords[2] - $coords[0];
+#                    my $height  = $coords[5] - $coords[1];
+#                     if($x < $coords[0] + 0.2 * $width) {$dx =  1;$bend = 1;}
+#                 elsif($x > $coords[2] - 0.2 * $width) {$dx = -1;$bend = 1;}
+#                 else {$dx = 0;}
+#
+#                    if($y < $coords[1] + 0.2 * $height) {$dy =  1;$bend = 1;}
+#                 elsif($y > $coords[5] - 0.2 * $height) {$dy = -1;$bend = 1;}}
+#                 else {$dy = 0;}
+#
+#                    $mode = ($dx || $dy) ? 1 : 0;
+#                    $oldx = $x;
+#                    $oldy = $y;
+#                    $polygon = $id;
+#                    if ($mode) {
+#                        $design_canvas->createPolygon(@coords,
+#                                               -outline => 'red',
+#                                               -fill => "",
+#                                               -tags    => ['TEMP'],
+#                                               );
+#                    }
+#                    return;
+#                }});
+#
+    $design_canvas->CanvasBind('<B1-Motion>' => sub {
+                    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+                    my $id      = $design_canvas->find(qw/withtag current/);
+                    my @tagList = $design_canvas->gettags($id);
+                 if($tagList[0] eq "Polygon"){
+                    if ($mode) {  # resize
+                        my @coords = $design_canvas->coords('TEMP');
+                        my $org_x1 = $coords[0];
+                        my $org_y1 = $coords[1];
+                        my $org_x2 = $coords[2];
+                        my $org_y2 = $coords[3];
+                        my $org_x3 = $coords[4];
+                        my $org_y3 = $coords[5];
+                        my $org_x4 = $coords[6];
+                        my $org_y4 = $coords[7];
+                        if    (($dx ==  1) && ($dy ==  0)){ 
+                                      $coords[0] = $x; my $xdiff = $org_x1- $x; $coords[6] = $coords[6] - $xdiff;
+                       }elsif (($dx == -1) && ($dy ==  0)){ 
+                                      $coords[4] = $x; my $xdiff = $org_x3- $x; $coords[2] = $coords[2] - $xdiff;
+                       }elsif (($dy ==  1) && ($dx ==  0)) { 
+                                      $coords[1] = $y; my $ydiff = $org_y1- $y; $coords[3] = $coords[3] - $ydiff;
+                       }elsif (($dy == -1) && ($dx ==  0)) { 
+                                      $coords[5] = $y; my $ydiff = $org_y3- $y; $coords[7] = $coords[7] - $ydiff;$coords[7] = $y;
+                       }elsif (($dx == 1) && ($dy == -1)) { 
+                                      $coords[6] = $x; $coords[7] = $y; #$coords[5] = $y; my $xdiff = $org_x4- $x; $coords[0] = $coords[0] - $xdiff; 
+                       }elsif (($dx == -1) && ($dy ==  1)) { 
+                                      $coords[2] = $x; $coords[3] = $y; #$coords[1] = $y; my $xdiff = $org_x2- $x; $coords[4] = $coords[4] - $xdiff; 
+
+                       }elsif (($dx == 1) && ($dy ==  1)) { 
+                                      $coords[0] = $x; $coords[1] = $y;#$coords[3] = $y; my $xdiff = $org_x1- $x; $coords[6] = $coords[6] - $xdiff; 
+                       }elsif (($dx == -1) && ($dy == -1)) { 
+                                      $coords[4] = $x; $coords[5] = $y; #$coords[7] = $y; my $xdiff = $org_x3- $x; $coords[2] = $coords[2] - $xdiff; 
+                       }elsif ($bend == 1) { 
+                       my $len = @coords;
+                       for(my $i = 0; $i <$len; $i++){
+                          $coords[$i] = $coords[$i];}
+
+                                      $coords[$len] = $x; $coords[$len+1] = $y; #$coords[7] = $y; my $xdiff = $org_x3- $x; $coords[2] = $coords[2] - $xdiff; 
+                       } 
+
+                        $design_canvas->coords('TEMP', @coords);
+                    } else {      # move
+                        $design_canvas->move($id => $x - $oldx, $y - $oldy);
+                        $oldx = $x;
+                        $oldy = $y;
+                    }
+                }});
+
+    $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+        my @coords = $design_canvas->coords('TEMP');
+
+        # Delete the rectangle.
+        $design_canvas->delete('TEMP');
+        $design_canvas->coords($polygon => @coords);
+    });
+
+}#sub resizeOrMove_polygon;
+
+#######################################  code to draw, Resize and move Triangle ###########################################
+sub draw_triangle {
+&dbfGuiResetCanvasBind;
+    $design_canvas->CanvasBind('<1>' => sub {
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+            my $color;
+            if($fillcolor eq ""){$color = "green";}
+            else {$color = $fillcolor;} 
+            @triangleCoords = ($x, $y, $x, $y, $x, $y);
+
+            $triangle = $design_canvas->createPolygon(
+                                            @triangleCoords,
+                                            -outline => $color,
+                                            -fill => $color,
+                                            -stipple => 'gray12',
+                                            -width => $thickness,
+                                            );
+        });
+    $design_canvas->CanvasBind('<B1-Motion>' => sub {
+                    my $x = $design_canvas->canvasx($Tk::event->x); 
+                    my $y = $design_canvas->canvasx($Tk::event->y); 
+                    my $x1 = abs($x - $triangleCoords[0]);
+                    my $y1 = abs($y - $triangleCoords[1]);
+                    if($x1 >= $y1){ 
+                       $triangleCoords[2] = $x; 
+                       $triangleCoords[3] = $triangleCoords[1] - $x1/2;
+                       $triangleCoords[4] = $x;
+                       $triangleCoords[5] = $triangleCoords[1] + $x1/2;
+                  }else{
+                       $triangleCoords[2] = $triangleCoords[0] + $y1/2; 
+                       $triangleCoords[3] = $y;
+                       $triangleCoords[4] = $triangleCoords[0] - $y1/2;
+                       $triangleCoords[5] = $y;
+                        }      
+
+            $design_canvas->coords($triangle => @triangleCoords);
+        });
+    $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+            $design_canvas->itemconfigure($triangle, -tags =>'Triangle');
+        });
+
+}#sub draw_triangle
+
+sub resizeOrMove_triangle {
+&dbfGuiResetCanvasBind;
+    my $dx   = 0;
+    my $dy   = 0;
+    my $mode = 0;    # 0 => move
+                     # 1 => resize
+    my $pct  = 0.2;
+    my $oldx = 0;
+    my $oldy = 0;
+    my $triangle;
+    $design_canvas->CanvasBind('<1>' => sub {
+                    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+                    my $id      = $design_canvas->find(qw/withtag current/);
+                    my @tagList = $design_canvas->gettags($id);
+                 if($tagList[0] eq "Triangle"){
+                    my @coords  = $design_canvas->coords($id);
+if($coords[2] == $coords[4]){
+                    my $width   = $coords[2] - $coords[0];
+                    my $height  = $coords[5] - $coords[3];
+                   if($coords[2] > $coords[0]){
+                    if(($x < $coords[0] + 0.1 * $width) && (($y < $coords[1] + 0.1 * $height) || ($y > $coords[1] - 0.1 * $height))) {$dx =  1;}
+                 elsif($x > $coords[2] - 0.1 * $width) {$dx = -1;}
+                 else {$dx = 0;}
+                                                }
+                  elsif($coords[2] < $coords[0]){
+                    if(($x > $coords[0] + 0.1 * $width) && (($y < $coords[1] + 0.1 * $height) || ($y > $coords[1] - 0.1 * $height))) {$dx =  1;}
+                 elsif($x < $coords[2] - 0.1 * $width) {$dx = -1;}
+                 else {$dx = 0;}
+                       }
+
+                    if($y < $coords[3] + 0.1 * $height) {$dy =  1;}
+                 elsif($y > $coords[5] - 0.1 * $height) {$dy = -1;}
+                 else {$dy = 0;}
+                            }
+else {
+#----------------------------------------------------------------------------------#
+                    my $width   = $coords[2] - $coords[4];
+                    my $height  = $coords[3] - $coords[1];
+
+                    if(($x < $coords[4] + 0.1 * $width) && ($y < $coords[4] + 0.1 * $height)) {$dx =  1;}
+                 elsif(($x > $coords[2] - 0.1 * $width) && ($y < $coords[4] + 0.1 * $height)){$dx = -1;}
+                 else {$dx = 0;}
+                if($coords[1] < $coords[4]){
+                    if($y < $coords[1] + 0.1 * $height) {$dy =  1;}
+                 elsif($y > $coords[5] - 0.1 * $height) {$dy = -1;}
+                 else {$dy = 0;}
+                                            }
+                elsif($coords[1] > $coords[4]){
+                   if($y > $coords[1] + 0.1 * $height) {$dy =  1;}
+                 elsif($y < $coords[5] - 0.1 * $height) {$dy = -1;}
+                 else {$dy = 0;}
+                                              }
+
+#-----------------------------------------------------------------------------------#
+      }
+                    $mode = ($dx || $dy) ? 1 : 0;
+                    $oldx = $x;
+                    $oldy = $y;
+                    $triangle = $id;
+                    if ($mode) {
+                        $design_canvas->createPolygon(@coords,
+                                               -outline => 'red',
+                                               -fill => "",
+                                               -tags    => ['TEMP'],
+                                               );
+                    }
+
+                    return;
+                }});
+
+    $design_canvas->CanvasBind('<B1-Motion>' => sub {
+                    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+                    my $id      = $design_canvas->find(qw/withtag current/);
+                    my @tagList = $design_canvas->gettags($id);
+                 if($tagList[0] eq "Triangle"){
+                    if ($mode) {  # resize
+                        my @coords = $design_canvas->coords('TEMP');
+                        my $org_x1 = $coords[0];
+                        my $org_y1 = $coords[1];
+                        my $org_x2 = $coords[2];
+                        my $org_y2 = $coords[3];
+                        my $org_x3 = $coords[4];
+                        my $org_y3 = $coords[5];
+                 if($coords[2] == $coords[4]){  
+                        if    ($dx ==  1){ 
+                                      $coords[0] = $x; $coords[1] = $y;
+                       }elsif ($dx == -1){ 
+                                      $coords[2] = $x; $coords[4] = $x; 
+                       }elsif ($dy == 1){ 
+                                       $coords[2] = $x; $coords[3] = $y;
+                       }elsif ($dy == -1){ 
+                                      $coords[4] = $x ; $coords[5] = $y;
+                       } 
+                                             }
+                 else {
+                       if    ($dx ==  1){ 
+                                      $coords[4] = $x; $coords[5] = $y;
+                       }elsif ($dx == -1){ 
+                                      $coords[2] = $x; $coords[3] = $x; 
+                       }elsif ($dy == 1){ 
+                                       $coords[0] = $x; $coords[1] = $y;
+                       }elsif ($dy == -1){ 
+                                      $coords[3] = $y ; $coords[5] = $y;
+                       } 
+
+                      }   
+                        $design_canvas->coords('TEMP', @coords);
+                    } else {      # move
+                        $design_canvas->move($id => $x - $oldx, $y - $oldy);
+                        $oldx = $x;
+                        $oldy = $y;
+                    }
+                }});
+
+    $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+        my @coords = $design_canvas->coords('TEMP');
+
+        # Delete the rectangle.
+        $design_canvas->delete('TEMP');
+        $design_canvas->coords($triangle => @coords);
+    });
+
+}#sub resizeOrMove_triangle
+
+################################### code to draw, Resize and move Arc ##########################################
+sub draw_arc {
+&dbfGuiResetCanvasBind;
+    $design_canvas->CanvasBind('<1>' => sub {
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+            my $color;
+            if($fillcolor eq ""){$color = "green";}
+            else {$color = $fillcolor;} 
+            my $degree = 127;
+            my $startangle = 30;
+            @arcCoords = ($x, $y, $x, $y);
+
+            $arc = $design_canvas->createArc(
+                                            @arcCoords,
+                                            -outline => $color,
+                                            -fill => $color,
+                                            -extent=> $degree,
+                                            -start=> $startangle, 
+                                            -stipple => 'gray12',
+                                            -width => $thickness,
+                                            );
+        });
+    $design_canvas->CanvasBind('<B1-Motion>' => sub {
+            @arcCoords[2,3] = ($design_canvas->canvasx($Tk::event->x),
+                                $design_canvas->canvasy($Tk::event->y));
+            $design_canvas->coords($arc => @arcCoords);
+        });
+    $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+            $design_canvas->itemconfigure($arc, -tags =>'Arc' );
+        });
+
+}#sub draw_arc
+
+sub resizeOrMove_arc {
+&dbfGuiResetCanvasBind;
+    my $dx   = 0;
+    my $dy   = 0;
+    my $mode = 0;    # 0 => move
+                     # 1 => resize
+    my $pct  = 0.2;
+    my $oldx = 0;
+    my $oldy = 0;
+    my $arc;
+    $design_canvas->CanvasBind('<1>' => sub {
+                    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+                    my $id      = $design_canvas->find(qw/withtag current/);
+                    my @tagList = $design_canvas->gettags($id);
+                 if($tagList[0] eq "Arc"){
+                    my @coords  = $design_canvas->coords($id);
+                    my $width   = $coords[2] - $coords[0];
+                    my $height  = $coords[3] - $coords[1];
+
+                    if($x < $coords[0] + 0.2 * $width) {$dx =  1;}
+                 elsif($x > $coords[2] - 0.2 * $width) {$dx = -1;}
+                 else {$dx = 0;}
+
+                    if($y < $coords[1] + 0.2 * $height) {$dy =  1;}
+                 elsif($y > $coords[3] - 0.2 * $height) {$dy = -1;}
+                 else {$dy = 0;}
+
+                    $mode = ($dx || $dy) ? 1 : 0;
+                    $oldx = $x;
+                    $oldy = $y;
+                    $arc = $id;
+
+                    if ($mode) {
+                        $design_canvas->createArc(@coords,
+                                               -outline => 'red',
+                                               -tags    => ['TEMP'],
+                                               );
+                    }
+
+                    return;
+                }});
+
+    $design_canvas->CanvasBind('<B1-Motion>' => sub {
+                    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+                    my $id      = $design_canvas->find(qw/withtag current/);
+                    my @tagList = $design_canvas->gettags($id);
+                 if($tagList[0] eq "Arc"){
+                    if ($mode) {  # resize
+                        my @coords = $design_canvas->coords('TEMP');
+
+                        if    ($dx ==  1) { $coords[0] = $x }
+                        elsif ($dx == -1) { $coords[2] = $x }
+
+                        if    ($dy ==  1) { $coords[1] = $y }
+                        elsif ($dy == -1) { $coords[3] = $y }
+
+                        $design_canvas->coords('TEMP', @coords);
+                    } else {      # move
+                        $design_canvas->move($id => $x - $oldx, $y - $oldy);
+                        $oldx = $x;
+                        $oldy = $y;
+                    }
+                }});
+
+    $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+        my @coords = $design_canvas->coords('TEMP');
+
+        # Delete the rectangle.
+        $design_canvas->delete('TEMP');
+        $design_canvas->coords($arc => @coords);
+    });
+}#sub resizeOrMove_arc
+################################### code to draw, Resize and move StraightLine ##########################################
+sub draw_straightLine {
+&dbfGuiResetCanvasBind;
+    $design_canvas->CanvasBind('<1>' => sub {
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+            my $color;
+            if($fillcolor eq ""){$color = "green";}
+            else {$color = $fillcolor;} 
+            @stLineCoords = ($x, $y, $x, $y);
+
+            $stLine = $design_canvas->createLine(
+                                            @stLineCoords,
+                                            -fill => $color,
+                                            -arrow => "last",
+                                            -width => $thickness,
+                                            );
+        });
+    $design_canvas->CanvasBind('<B1-Motion>' => sub {
+            @stLineCoords[2,3] = ($design_canvas->canvasx($Tk::event->x),
+                                $design_canvas->canvasy($Tk::event->y));
+            $design_canvas->coords($stLine => @stLineCoords);
+        });
+    $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+            $design_canvas->itemconfigure($stLine, -tags =>'StraightLine' );
+        });
+
+}#sub draw_straightLine
+
+sub resizeOrMove_straightLine {
+&dbfGuiResetCanvasBind;
+    my $dx   = 0;
+    my $dy   = 0;
+    my $mode = 0;    # 0 => move
+                     # 1 => resize
+    my $pct  = 0.2;
+    my $oldx = 0;
+    my $oldy = 0;
+    my $stLine;
+    $design_canvas->CanvasBind('<1>' => sub {
+                    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+                    my $id      = $design_canvas->find(qw/withtag current/);
+                    my @tagList = $design_canvas->gettags($id);
+                 if($tagList[0] eq "StraightLine"){
+                    my @coords  = $design_canvas->coords($id);
+                    my $width   = $coords[2] - $coords[0];
+                    my $height  = $coords[3] - $coords[1];
+                    my $length = sqrt($width*$width + $height*$height);
+                    my $modLength = sqrt(($x-$coords[0])*($x-$coords[0]) + ($y-$coords[1])*($y-$coords[1]));
+                    if($modLength < 0.4 * $length) {$dx =  1;}
+                 elsif($modLength > 0.6 * $length) {$dx = -1;}
+                 else {$dx = 0;}
+
+                    $mode = ($dx) ? 1 : 0;
+                    $oldx = $x;
+                    $oldy = $y;
+                    $stLine = $id;
+
+                    if ($mode) {
+                        $design_canvas->createLine(@coords,
+                                               -fill    => 'red',
+                                               -arrow   => 'last',
+                                               -tags    => ['TEMP'],
+                                               );
+                    }
+
+                    return;
+                }});
+
+    $design_canvas->CanvasBind('<B1-Motion>' => sub {
+                    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+                    my $id      = $design_canvas->find(qw/withtag current/);
+                    my @tagList = $design_canvas->gettags($id);
+                 if($tagList[0] eq "StraightLine"){
+                    if ($mode) {  # resize
+                        my @coords = $design_canvas->coords('TEMP');
+                        if    ($dx ==  1) { $coords[0] = $x; $coords[1] = $y;}
+                        elsif ($dx == -1) { $coords[2] = $x; $coords[3] = $y;}
+                        $design_canvas->coords('TEMP', @coords);
+                    } else {      # move
+                        $design_canvas->move($id => $x - $oldx, $y - $oldy);
+                        $oldx = $x;
+                        $oldy = $y;
+                    }
+                                                   }
+                });
+
+    $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+        my @coords = $design_canvas->coords('TEMP');
+
+        # Delete the rectangle.
+        $design_canvas->delete('TEMP');
+        $design_canvas->coords($stLine => @coords);
+    });
+}#sub resizeOrMove_straightLine
+
+################################### code to draw, Resize and move ZLine ##########################################
+sub draw_zLine {
+&dbfGuiResetCanvasBind;
+    my $color;
+    if($fillcolor eq ""){$color = "green";}
+    else {$color = $fillcolor;} 
+    $design_canvas->CanvasBind('<1>' => sub {
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+            @zLineCoords = ($x, $y, $x, $y);
+
+            $zLineTemp = $design_canvas->createLine(
+                                            @zLineCoords,
+                                            -fill => $color,
+                                            -arrow => "last",
+                                            -width => $thickness,
+                                            );
+        });
+    $design_canvas->CanvasBind('<B1-Motion>' => sub {
+            @zLineCoords[2,3] = ($design_canvas->canvasx($Tk::event->x),
+                                $design_canvas->canvasy($Tk::event->y));
+            $design_canvas->coords($zLineTemp => @zLineCoords);
+        });
+    $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+            my $width = abs($x - $zLineCoords[0]);
+            my $height = abs($y - $zLineCoords[1]);
+            my $x0 =$zLineCoords[0]; my $y0 = $zLineCoords[1];   
+            if($width >$height){
+                 if($x > $zLineCoords[0]){
+                  @zLineCoords = ($x0, $y0, $x0+$width/2, $y0, $x0+$width/2, $y, $x, $y);
+                 }else{
+                  @zLineCoords = ($x0, $y0, $x0-$width/2, $y0, $x0-$width/2, $y, $x, $y);
+                       }
+            }else{
+                 if($y > $zLineCoords[1]){
+                  @zLineCoords = ($x0, $y0, $x0, $y0+$height/2, $x, $y0+$height/2, $x, $y);
+                 }else{
+                  @zLineCoords = ($x0, $y0, $x0, $y0-$height/2, $x, $y0-$height/2, $x, $y);
+                       }
+                 }
+            $design_canvas->delete($zLineTemp);
+            $zLine = $design_canvas->createLine(
+                                            @zLineCoords,
+                                            -fill => $color,
+                                            -arrow => "last",
+                                            -width => $thickness,
+                                            );
+            $design_canvas->itemconfigure($zLine, -tags =>'ZLine' );
+        });
+
+}#sub draw_zLine
+
+sub resizeOrMove_zLine {
+&dbfGuiResetCanvasBind;
+    my $dx   = 0;
+    my $dy   = 0;
+    my $mode = 0;    # 0 => move
+                     # 1 => resize
+    my $pct  = 0.2;
+    my $oldx = 0;
+    my $oldy = 0;
+    my $zLine;
+    $design_canvas->CanvasBind('<1>' => sub {
+                    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+                    my $id      = $design_canvas->find(qw/withtag current/);
+                    my @tagList = $design_canvas->gettags($id);
+                 if($tagList[0] eq "ZLine"){
+                    my @coords  = $design_canvas->coords($id);
+                    my $width   = $coords[6] - $coords[0];
+                    my $height  = $coords[7] - $coords[1];
+                    my $length = sqrt($width*$width + $height*$height);
+                    my $modLength = sqrt(($x-$coords[0])*($x-$coords[0]) + ($y-$coords[1])*($y-$coords[1]));
+                    if($modLength < 0.4 * $length) {$dx =  1;}
+                 elsif($modLength > 0.6 * $length) {$dx = -1;}
+                 else {$dx = 0;}
+
+                    $mode = ($dx) ? 1 : 0;
+                    $oldx = $x;
+                    $oldy = $y;
+                    $zLine = $id;
+
+                    if ($mode) {
+                        $design_canvas->createLine(@coords,
+                                               -fill    => 'red',
+                                               -arrow   => 'last',
+                                               -tags    => ['TEMP'],
+                                               );
+                    }
+
+                    return;
+                }});
+
+    $design_canvas->CanvasBind('<B1-Motion>' => sub {
+                    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+                    my $id      = $design_canvas->find(qw/withtag current/);
+                    my @tagList = $design_canvas->gettags($id);
+                 if($tagList[0] eq "ZLine"){
+                    if ($mode) {  # resize
+                        my @coords = $design_canvas->coords('TEMP');
+                        if    ($dx ==  1) {
+                          if(abs($x - $coords[6]) > abs($y - $coords[7])){ 
+                                 $coords[0] = $x;$coords[1] = $y;
+                                 $coords[2] = $x - ($x - $coords[6])/2; 
+                                 $coords[3] = $y; 
+                                 $coords[4] = $x - ($x - $coords[6])/2; 
+                                 $coords[5] = $coords[7]; 
+       
+                          }else{
+                                 $coords[0] = $x;$coords[1] = $y;
+                                 $coords[2] = $x; 
+                                 $coords[3] = $y - ($y - $coords[7])/2; 
+                                 $coords[4] = $coords[6]; 
+                                 $coords[5] = $y - ($y - $coords[7])/2; 
+                                  }
+                                          }
+                        elsif ($dx == -1) {
+                            if(abs($x - $coords[6]) > abs($y - $coords[7])){ 
+                                 $coords[6] = $x;$coords[7] = $y;
+                                 $coords[2] = $x - ($x - $coords[0])/2; 
+                                 $coords[3] = $coords[1]; 
+                                 $coords[4] = $x - ($x - $coords[0])/2; 
+                                 $coords[5] = $y; 
+       
+                            }else{
+                                 $coords[6] = $x;$coords[7] = $y;
+                                 $coords[2] = $coords[0]; 
+                                 $coords[3] = $y - ($y - $coords[1])/2; 
+                                 $coords[4] = $coords[0]; 
+                                 $coords[5] = $y - ($y - $coords[1])/2; 
+                                  }
+                                          }
+
+                        $design_canvas->coords('TEMP', @coords);
+                    } else {      # move
+                        $design_canvas->move($id => $x - $oldx, $y - $oldy);
+                        $oldx = $x;
+                        $oldy = $y;
+                    }
+                                                   }
+                });
+
+    $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+        my @coords = $design_canvas->coords('TEMP');
+
+        # Delete the rectangle.
+        $design_canvas->delete('TEMP');
+        $design_canvas->coords($zLine => @coords);
+    });
+}#sub resizeOrMove_zLine
+
+####################################################################################################################################
+###############################################  Subroutine To Choose Colors #######################################################
+####################################################################################################################################
+
+########################### creating color popup window ########################
+sub create_color_popup {
+
+use constant NShades   =>  4;
+use constant ColorSize => 20;
+my @Square  = (0  , 0,
+	       1  , 0,
+	       1  , 1,
+	       0  , 1);
+my @Color =
+(
+ [ 'grey0'   , 'grey33'	 , 'grey67'  , 'grey100'  ],
+ map { my $base = $_;
+       [ map { $base . $_ } (4, 3, 2, 1) ] } qw(red green blue cyan magenta yellow brown orange pink salmon sienna SkyBlue wheat tan RosyBrown plum OliveDrab)
+);
+
+my $MW = new MainWindow;
+my $canvas = $MW->Scrolled(qw/Canvas -bg white -xscrollincrement 20 -yscrollincrement 20 -confine 1 -scrollbars se/, -width =>170, -height => 220, -scrollregion => [0, 0, 170, 220]);
+$canvas->Subwidget("xscrollbar")->configure(-width=>8,-borderwidth=>1, );
+$canvas->Subwidget("yscrollbar")->configure(-width=>8,-borderwidth=>1,);
+$canvas->pack(qw/-expand 1, -fill both -side top/);;
+    my $less;
+    if(int($#Color/2) < $#Color/2){ $less = int($#Color/2) + 1;}
+  else{ $less = int($#Color/2);} 
+
+   for my $r (0..$#Color){
+       for my $c (0..NShades-1){
+           my $color   = $Color[$r][$c];
+           if($r <= $#Color/2){
+              @corners = map { $_ * ColorSize } ($c, $r, $c+1, $r+1);
+           }else{
+               my $t = $r -$less;  
+               $c = $c + 4;
+               @corners = map { $_ * ColorSize } ($c, $t, $c+1, $t+1);
+                }
+	   my $id = $canvas->createRectangle(@corners, -fill => $color, -tags => [ $color ]);
+	      $canvas->bind($id, '<1>' => sub { handle_color($canvas) } );
+	}
+    }
+
+    my $v = ColorSize * (@Color/2 + 0.5);
+    my $h = ColorSize *  0.75;
+    my @square = Polygon(\@Square, ColorSize, $h, $v);
+    my $squareID = $canvas->createPolygon(@square, -fill => 'black', -tags => ['current-fill']);
+    #$canvas->bind($squareID, '<1>' => sub { handle_square($canvas) } );
+
+}#sub create_color_popup
+
+sub handle_color {
+    my $canvas = shift;
+    my $ids    = $canvas->find(withtag => 'current');
+    my $id     = shift @$ids;
+    $id or return;
+    my @tags   = $canvas->gettags($id);
+    ($fillcolor) = grep { not /current/ } @tags;
+    $canvas->itemconfigure('current-fill', -fill => $fillcolor);
+}#sub handle_color
+
+sub Polygon{
+    my($corners, $size, $h, $v) = @_;
+    my @corners;
+    for (my $i=0; $i<@$corners; $i+=2)
+    {
+	push @corners, $h + $size * $corners->[$i  ];
+	push @corners, $v + $size * $corners->[$i+1];
+    }
+    @corners
+}#sub Polygon
+
+sub fill_canvas_bind {
+$design_canvas->CanvasBind('<Shift-3>' => sub {
+                    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+                    my $id      = $design_canvas->find(qw/withtag current/);
+                    my @tagList = $design_canvas->gettags($id);
+                    #$design_canvas->itemconfigure($id, -outline=>"", -fill=>"");
+                    if($tagList[0] eq "StraightLine" || $tagList[0] eq "ZLine"){ 
+                            $design_canvas->itemconfigure($id, -fill=>$fillcolor);
+                    }else { $design_canvas->itemconfigure($id, -fill=>$fillcolor, -outline=>$fillcolor);}
+                    });
+}#sub fill_canvas_bind
+
+##########################################################################################################################
+################################################ Creating RTL Psedo Instances ############################################
+##########################################################################################################################
+
+########################################### code to draw, Resize and move FIFO ###########################################
+sub draw_fifo {
+&dbfGuiResetCanvasBind;
+    $design_canvas->CanvasBind('<1>' => sub {
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+            my $color;
+            if($fillcolor eq ""){$color = "green";}
+            else {$color = $fillcolor;} 
+            @fifoCoords = ($x, $y, $x, $y);
+            $fifo = $design_canvas->createRectangle(
+                                            @fifoCoords,
+                                            -outline => $color,
+                                            -fill => $color,
+                                            -stipple => 'fifoBitmap',
+                                            -width => $thickness,
+                                            );
+                   });
+    $design_canvas->CanvasBind('<B1-Motion>' => sub {
+             @fifoCoords[2,3] = ($design_canvas->canvasx($Tk::event->x),
+                                 $design_canvas->canvasy($Tk::event->y));
+             $design_canvas->coords($fifo => @fifoCoords);
+        });
+    $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+            $rad = int (rand(10000));
+            $instName = "U".$rad;
+            $design_canvas->itemconfigure($fifo, -tags =>"FIFO" );
+            $design_canvas->addtag($instName , "withtag", $fifo);
+
+            my $count = 1;  
+       if ( exists $PSEUDO_MODULE_ALREADY{$TOP_MODULE} ) {
+            foreach $key (keys %{$PSEUDO_VINST_ALREADY{$TOP_MODULE}}){
+                 if($key =~ m/^U/){$count++;}
+            }#if exists
+       }#foreach key
+            my $status = &createPseudoRtlFifoInstance(-inst, $instName, -parent, $TOP_MODULE, -cell, "::fifo");
+            if($status == 0){$design_canvas->delete($fifo); return;}
+            &Set_PseudoInstance_attributes(-inst, $instName, -parent, $TOP_MODULE, -name, "fifo".$count, -iname, "fifo".$count."a", -file, "fifo".$count.".v", -clk, "clk", -rst, "reset_", -width, 32, -depth, 8, -input, "data_d".$count."[31:0]", -output, "fifo".$count."_out[31:0]", -rd_en, "ctl1", -wr_en, "ctl2");
+#            &dbfGenRtlFifoModule(-inst, $instName);
+        });
+
+}#sub draw_fifo
+
+sub resizeOrMove_fifo {
+&dbfGuiResetCanvasBind;
+    my $dx   = 0;
+    my $dy   = 0;
+    my $mode = 0;    # 0 => move
+                     # 1 => resize
+    my $pct  = 0.2;
+    my $oldx = 0;
+    my $oldy = 0;
+    my $fifo;
+    $design_canvas->CanvasBind('<1>' => sub {
+                    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+                    my $id      = $design_canvas->find(qw/withtag current/);
+                    my @tagList = $design_canvas->gettags($id);
+                 if($tagList[0] eq "FIFO"){
+                    my @coords  = $design_canvas->coords($id);
+                    my $width   = $coords[2] - $coords[0];
+                    my $height  = $coords[3] - $coords[1];
+
+                    if($x < $coords[0] + 0.2 * $width) {$dx =  1;}
+                 elsif($x > $coords[2] - 0.2 * $width) {$dx = -1;}
+                 else {$dx = 0;}
+
+                    if($y < $coords[1] + 0.2 * $height) {$dy =  1;}
+                 elsif($y > $coords[3] - 0.2 * $height) {$dy = -1;}
+                 else {$dy = 0;}
+
+                    $mode = ($dx || $dy) ? 1 : 0;
+                    $oldx = $x;
+                    $oldy = $y;
+                    $fifo = $id;
+
+                    if ($mode) {
+                        $design_canvas->createRectangle(@coords,
+                                               -outline => 'red',
+                                               -tags    => ['TEMP'],
+                                               );
+                    }
+
+                    return;
+                }});
+
+    $design_canvas->CanvasBind('<B1-Motion>' => sub {
+                    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+                    my $id      = $design_canvas->find(qw/withtag current/);
+                    my @tagList = $design_canvas->gettags($id);
+                 if($tagList[0] eq "FIFO"){
+                    if ($mode) {  # resize
+                        my @coords = $design_canvas->coords('TEMP');
+
+                        if    ($dx ==  1) { $coords[0] = $x }
+                        elsif ($dx == -1) { $coords[2] = $x }
+
+                        if    ($dy ==  1) { $coords[1] = $y }
+                        elsif ($dy == -1) { $coords[3] = $y }
+
+                        $design_canvas->coords('TEMP', @coords);
+                    } else {      # move
+                        $design_canvas->move($id => $x - $oldx, $y - $oldy);
+                        $oldx = $x;
+                        $oldy = $y;
+                    }
+                }});
+
+    $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+        my @coords = $design_canvas->coords('TEMP');
+
+        # Delete the rectangle.
+        $design_canvas->delete('TEMP');
+        $design_canvas->coords($fifo => @coords);
+    });
+}#sub resizeOrMove_fifo
+
+#######################################  code to draw, Resize and move MUX  ###########################################
+sub draw_mux {
+&dbfGuiResetCanvasBind;
+    $design_canvas->CanvasBind('<1>' => sub {
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+            my $color;
+            if($fillcolor eq ""){$color = "green";}
+            else {$color = $fillcolor;} 
+            @muxCoords = ($x, $y, $x, $y, $x, $y, $x, $y);
+
+            $mux = $design_canvas->createPolygon(
+                                            @muxCoords,
+                                            -outline => $color,
+                                            -fill => $color,
+                                            -stipple => 'gray12',
+                                            -width => $thickness,
+                                            );
+        });
+    $design_canvas->CanvasBind('<B1-Motion>' => sub {
+                    my $x = $design_canvas->canvasx($Tk::event->x); 
+                    my $y = $design_canvas->canvasx($Tk::event->y); 
+                       $muxCoords[2] = $x; 
+                       $muxCoords[3] = $muxCoords[1] - ($y - $muxCoords[1])/4;
+                       $muxCoords[4] = $x;
+                       $muxCoords[5] = $y;
+                       $muxCoords[6] = $muxCoords[0];
+                       $muxCoords[7] = $muxCoords[5] - ($y - $muxCoords[1])/4;
+   
+            $design_canvas->coords($mux => @muxCoords);
+        });
+    $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+            $rad = int (rand(10000));
+            $instName = "MUX".$rad;
+            $design_canvas->itemconfigure($mux, -tags =>"MUX" );
+            $design_canvas->addtag($instName , "withtag", $mux);
+            my $count = 1;  
+       if ( exists $PSEUDO_MODULE_ALREADY{$TOP_MODULE} ) {
+            foreach $key (keys %{$PSEUDO_VINST_ALREADY{$TOP_MODULE}}){
+                 if($key =~ m/^MUX/){$count++;}
+            }#if exists
+       }#foreach key
+            my $status = &createPseudoRtlInstance(-inst, $instName, -parent, $TOP_MODULE, -cell, "::combo");
+            if($status == 0){$design_canvas->delete($mux); return;}
+            &Set_PseudoInstance_attributes(-inst, $instName, -parent, $TOP_MODULE, -name, "combo".$count,-input, "ctl_d".$count."[2:0]", -output, "combo".$count."_out[2:0]");
+
+        });
+
+}#sub draw_mux
+
+sub resizeOrMove_mux {
+&dbfGuiResetCanvasBind;
+    my $dx   = 0;
+    my $dy   = 0;
+    my $mode = 0;    # 0 => move
+                     # 1 => resize
+    my $pct  = 0.2;
+    my $oldx = 0;
+    my $oldy = 0;
+    my $mux;
+    $design_canvas->CanvasBind('<1>' => sub {
+                    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+                    my $id      = $design_canvas->find(qw/withtag current/);
+                    my @tagList = $design_canvas->gettags($id);
+                 if($tagList[0] eq "MUX"){
+                    my @coords  = $design_canvas->coords($id);
+                    my $width   = abs($coords[2] - $coords[0]);
+                    my $height  = abs($coords[5] - $coords[1]); # height should be $coords[5] - $coords[3]
+                    if($coords[0] < $coords[2]){
+                       if($x < $coords[0] + 0.2 * $width) {$dx =  1;}
+                       elsif($x > $coords[2] - 0.2 * $width) {$dx = -1;}
+                       else {$dx = 0;}  
+                    }else{
+                       if($x < $coords[2] + 0.2 * $width) {$dx =  1;}
+                       elsif($x > $coords[0] - 0.2 * $width) {$dx = -1;}
+                       else {$dx = 0;}
+                        }
+
+                    if($y < $coords[1] + 0.2 * $height) {$dy =  1;}
+                 elsif($y > $coords[5] - 0.2 * $height) {$dy = -1;}
+                 else {$dy = 0;}
+
+                    $mode = ($dx || $dy) ? 1 : 0;
+                    $oldx = $x;
+                    $oldy = $y;
+                    $mux = $id;
+
+                    if ($mode) {
+                        $design_canvas->createPolygon(@coords,
+                                               -outline => 'red',
+                                               -fill => "",
+                                               -tags    => ['TEMP'],
+                                               );
+                    }
+
+                    return;
+                }});
+
+    $design_canvas->CanvasBind('<B1-Motion>' => sub {
+                    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+                    my $id      = $design_canvas->find(qw/withtag current/);
+                    my @tagList = $design_canvas->gettags($id);
+                 if($tagList[0] eq "MUX"){
+                    if ($mode) {  # resize
+                        my @coords = $design_canvas->coords('TEMP');
+                        my $org_x1 = $coords[0];
+                        my $org_y1 = $coords[1];
+                        my $org_x2 = $coords[2];
+                        my $org_y2 = $coords[3];
+                        my $org_x3 = $coords[4];
+                        my $org_y3 = $coords[5];
+                        my $org_x4 = $coords[6];
+                        my $org_y4 = $coords[7];
+
+                        if    (($dx ==  1) && ($dy ==  0)){ 
+                                if($org_x1 < $org_x2){$coords[0] = $x; $coords[6] = $x;}       
+                                else                 {$coords[2] = $x; $coords[4] = $x;}
+                       }elsif (($dx == -1) && ($dy ==  0)){ 
+                                if($org_x1 < $org_x2){$coords[2] = $x; $coords[4] = $x;}       
+                                else                 {$coords[0] = $x; $coords[6] = $x;}
+                       }elsif (($dy ==  1) && ($dx ==  0)) { 
+                                      $coords[1] = $y; my $ydiff = $org_y1- $y; $coords[3] = $coords[3] - $ydiff;
+                       }elsif (($dy == -1) && ($dx ==  0)) { 
+                                      $coords[5] = $y; my $ydiff = $org_y3- $y; $coords[7] = $coords[7] - $ydiff;
+                       }elsif (($dx == 1) && ($dy == -1)) { 
+                                if($org_x1 < $org_x2){$coords[6] = $x; $coords[7] = $y; $coords[0] = $x;}       
+                                else                 {$coords[4] = $x; $coords[5] = $y; $coords[2] = $x;}
+                                      #$coords[6] = $x; $coords[7] = $y; $coords[5] = $y;  
+                       }elsif (($dx == -1) && ($dy ==  1)) { 
+                                if($org_x1 < $org_x2){$coords[2] = $x; $coords[3] = $y; $coords[4] = $x;}       
+                                else                 {$coords[0] = $x; $coords[1] = $y; $coords[6] = $x;}
+                                      #$coords[2] = $x; $coords[3] = $y;  $coords[1] = $y; 
+                       }elsif (($dx == 1) && ($dy ==  1)) { 
+                                if($org_x1 < $org_x2){$coords[0] = $x; $coords[1] = $y; $coords[6] = $x;}       
+                                else                 {$coords[2] = $x; $coords[3] = $y; $coords[4] = $x;}
+                                     # $coords[0] = $x; $coords[1] = $y;$coords[3] = $y; 
+                       }elsif (($dx == -1) && ($dy == -1)) { 
+                                if($org_x1 < $org_x2){$coords[4] = $x; $coords[5] = $y; $coords[2] = $x;}       
+                                else                 {$coords[6] = $x; $coords[7] = $y; $coords[0] = $x;}
+                                      #$coords[4] = $x; $coords[5] = $y; $coords[7] = $y;  
+
+                       } 
+                        $design_canvas->coords('TEMP', @coords);
+                    } else {      # move
+                        $design_canvas->move($id => $x - $oldx, $y - $oldy);
+                        $oldx = $x;
+                        $oldy = $y;
+                    }
+                }});
+
+    $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+        my @coords = $design_canvas->coords('TEMP');
+
+        # Delete the rectangle.
+        $design_canvas->delete('TEMP');
+        $design_canvas->coords($mux => @coords);
+    });
+
+}#sub resizeOrMove_mux
+
+#######################################  code to draw, Resize and move Adder ###########################################
+ 
+ sub draw_circle {
+&dbfGuiResetCanvasBind;
+    $design_canvas->CanvasBind('<1>' => sub {
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+            my $color;
+            if($fillcolor eq ""){$color = "green";}
+            else {$color = $fillcolor;} 
+            @circleCoords = ($x, $y, $x, $y);
+
+            $circle = $design_canvas->createOval(
+                                            @circleCoords,
+                                            -outline => $color,
+                                            -fill => $color,
+                                            -stipple => 'gray12',
+                                            -width => $thickness,
+                                            );
+        });
+    $design_canvas->CanvasBind('<B1-Motion>' => sub {
+                    my $x = $design_canvas->canvasx($Tk::event->x); 
+                    my $y = $design_canvas->canvasx($Tk::event->y); 
+                    my $x1 = $x - $circleCoords[0];
+                    my $y1 = $y - $circleCoords[1];   
+                    if($x1 >= $y1){$circleCoords[2] = $x;
+                                   $circleCoords[3] = $circleCoords[1] + ($x - $circleCoords[0]);}
+                  else{$circleCoords[2] = $circleCoords[0] + ($y - $circleCoords[1]);
+                       $circleCoords[3] = $y;}
+            $design_canvas->coords($circle => @circleCoords);
+        });
+    $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+            $rad = int (rand(10000));
+            $instName = "A".$rad;
+            $design_canvas->itemconfigure($circle, -tags =>"Adder" );
+            $design_canvas->addtag($instName , "withtag", $circle);
+
+            my $count = 1;  
+       if ( exists $PSEUDO_MODULE_ALREADY{$TOP_MODULE} ) {
+            foreach $key (keys %{$PSEUDO_VINST_ALREADY{$TOP_MODULE}}){
+                 if($key =~ m/^A/){$count++;}
+            }#if exists
+       }#foreach key
+            my $status = &createPseudoRtlInstance(-inst, $instName, -parent, $TOP_MODULE, -cell, "::datapath");
+            if($status == 0){$design_canvas->delete($circle); return;}
+            &Set_PseudoInstance_attributes(-inst, $instName, -parent, $TOP_MODULE, -name, "dp".$count, -operand, "+", -input, "fifo".$count."_out_d1[7:0],fifo".$count."_out_d2[7:0]", -output, "dp".$count."_out[7:0]", -clk, "clk");
+        });
+
+}#sub draw_circle
+
+sub resizeOrMove_circle {
+&dbfGuiResetCanvasBind;
+    my $dx   = 0;
+    my $dy   = 0;
+    my $mode = 0;    # 0 => move
+                     # 1 => resize
+    my $pct  = 0.2;
+    my $oldx = 0;
+    my $oldy = 0;
+    my $circle;
+    $design_canvas->CanvasBind('<1>' => sub {
+                    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+                    my $id      = $design_canvas->find(qw/withtag current/);
+                    my @tagList = $design_canvas->gettags($id);
+                  if($tagList[0] eq "Adder"){
+                    my @coords  = $design_canvas->coords($id);
+                    my $width   = $coords[2] - $coords[0];
+                    my $height  = $coords[3] - $coords[1];
+
+                    if($x < $coords[0] + 0.2 * $width) {$dx =  1;}
+                 elsif($x > $coords[2] - 0.2 * $width) {$dx = -1;}
+                 else {$dx = 0;}
+
+                    if($y < $coords[1] + 0.2 * $height) {$dy =  1;}
+                 elsif($y > $coords[3] - 0.2 * $height) {$dy = -1;}
+                 else {$dy = 0;}
+
+                    $mode = ($dx || $dy) ? 1 : 0;
+                    $oldx = $x;
+                    $oldy = $y;
+                    $circle = $id;
+
+                    if ($mode) {
+                        $design_canvas->createOval(@coords,
+                                               -outline => 'red',
+                                               -tags    => ['TEMP'],
+                                               );
+                    }
+
+                    return;
+                }});
+
+    $design_canvas->CanvasBind('<B1-Motion>' => sub {
+                    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+                    my $id      = $design_canvas->find(qw/withtag current/);
+                    my @tagList = $design_canvas->gettags($id);
+                  if($tagList[0] eq "Adder"){
+                    if ($mode) {  # resize
+                        my @coords = $design_canvas->coords('TEMP');
+                        my $org_x1 = $coords[0];
+                        my $org_y1 = $coords[1];
+                        my $org_x2 = $coords[2];
+                        my $org_y2 = $coords[3];
+
+                        if    ($dx ==  1) { $coords[0] = $x; my $xdiff = $x - $org_x1; $coords[1] =$coords[1] + $xdiff;}
+                        elsif ($dx == -1) { $coords[2] = $x; my $xdiff = $org_x2 - $x; $coords[3] =$coords[3] - $xdiff;}
+
+                        if    ($dy ==  1) { $coords[1] = $y; my $ydiff = $y - $org_y1; $coords[0] =$coords[0] + $ydiff}
+                        elsif ($dy == -1) { $coords[3] = $y; my $ydiff = $org_y2 - $y; $coords[2] =$coords[2] - $ydiff}
+
+                        $design_canvas->coords('TEMP', @coords);
+                    } else {      # move
+                        $design_canvas->move($id => $x - $oldx, $y - $oldy);
+                        $oldx = $x;
+                        $oldy = $y;
+                    }
+                }});
+
+    $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+        my @coords = $design_canvas->coords('TEMP');
+
+        # Delete the rectangle.
+        $design_canvas->delete('TEMP');
+        $design_canvas->coords($circle => @coords);
+    });
+}#sub resizeOrMove_circle
+
+################################### code to draw, Resize and move Flop ##########################################
+sub draw_flop {
+&dbfGuiResetCanvasBind;
+    $design_canvas->CanvasBind('<1>' => sub {
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+            my $color;
+            if($fillcolor eq ""){$color = "green";}
+            else {$color = $fillcolor;} 
+            @flopCoords = ($x, $y, $x, $y, $x, $y, $x, $y, $x, $y, $x, $y, $x, $y);
+
+            $flop = $design_canvas->createPolygon(
+                                            @flopCoords,
+                                            -outline => $color,
+                                            #-fill => $color,
+                                            #-stipple => 'gray12',
+                                            -width => $thickness,
+                                            );
+        });
+    $design_canvas->CanvasBind('<B1-Motion>' => sub {
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+               $flopCoords[2] = $flopCoords[0] + ($y - $flopCoords[1])*3/4;
+               $flopCoords[3] = $flopCoords[1];
+               $flopCoords[4] = $flopCoords[0] + ($y - $flopCoords[1])*3/4;
+               $flopCoords[5] = $y;
+               $flopCoords[6] = $flopCoords[0];
+               $flopCoords[7] = $y;
+               $flopCoords[8] = $flopCoords[0];
+               $flopCoords[9] = $y - ($y- $flopCoords[1])*3/10;
+               $flopCoords[10] = $flopCoords[0] + ($y- $flopCoords[1])*1/10;
+               $flopCoords[11] = $y - ($y- $flopCoords[1])*5/20;
+               $flopCoords[12] = $flopCoords[0];
+               $flopCoords[13] = $y - ($y- $flopCoords[1])*2/10;
+
+            $design_canvas->coords($flop => @flopCoords);
+        });
+    $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+            $rad = int (rand(10000));
+            $instName = "FLOP".$rad;
+            $design_canvas->itemconfigure($flop, -tags =>"FLOP" );
+            $design_canvas->addtag($instName , "withtag", $flop);
+            my $count = 1;  
+       if ( exists $PSEUDO_MODULE_ALREADY{$TOP_MODULE} ) {
+            foreach $key (keys %{$PSEUDO_VINST_ALREADY{$TOP_MODULE}}){
+                 if($key =~ m/^FLOP/){$count++;}
+            }#if exists
+       }#foreach key
+            my $status = &createPseudoRtlInstance(-inst, $instName, -parent, $TOP_MODULE, -cell, "::flop");
+            if($status == 0){$design_canvas->delete($flop); return;}
+            &Set_PseudoInstance_attributes(-inst, $instName, -parent, $TOP_MODULE, -name, "flop".$count,-input, "data[7:0]", -output, "data_d1[7:0]", -clk, "clk", -rst, "reset_");
+        });
+
+}#sub draw_flop
+
+sub resizeOrMove_flop{
+&dbfGuiResetCanvasBind;
+    my $dx   = 0;
+    my $dy   = 0;
+    my $mode = 0;    # 0 => move
+                     # 1 => resize
+    my $pct  = 0.2;
+    my $oldx = 0;
+    my $oldy = 0;
+    my $flop;
+    $design_canvas->CanvasBind('<1>' => sub {
+                    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+                    my $id      = $design_canvas->find(qw/withtag current/);
+                    my @tagList = $design_canvas->gettags($id);
+                 if($tagList[0] eq "FLOP"){
+                    my @coords  = $design_canvas->coords($id);
+                    my $width   = $coords[2] - $coords[0];
+                    my $height  = $coords[5] - $coords[1];
+
+                    if($x < $coords[0] + 0.2 * $width) {$dx =  1;}
+                 elsif($x > $coords[2] - 0.2 * $width) {$dx = -1;}
+                 else {$dx = 0;}
+
+                    if($y < $coords[1] + 0.2 * $height) {$dy =  1;}
+                 elsif($y > $coords[5] - 0.2 * $height) {$dy = -1;}
+                 else {$dy = 0;}
+
+                    $mode = ($dx || $dy) ? 1 : 0;
+                    $oldx = $x;
+                    $oldy = $y;
+                    $flop = $id;
+
+                    if ($mode) {
+                        $design_canvas->createPolygon(@coords,
+                                               -outline => 'red',
+                                               -tags    => ['TEMP'],
+                                               );
+                    }
+
+                    return;
+                }});
+
+    $design_canvas->CanvasBind('<B1-Motion>' => sub {
+                    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+                    my $id      = $design_canvas->find(qw/withtag current/);
+                    my @tagList = $design_canvas->gettags($id);
+                 if($tagList[0] eq "FLOP"){
+                    if ($mode) {  # resize
+                        my @coords = $design_canvas->coords('TEMP');
+                        my $org_x1 = $coords[0];
+                        my $org_y1 = $coords[1];
+                        my $org_x2 = $coords[2];
+                        my $org_y5 = $coords[5];
+#--------------------------------------------------------------------------------------------------------------------------------#
+#                        if    ($dx ==  1) { $coords[0] = $x; my $xdiff = $x -$org_x1; $coords[6] = $x;$coords[8] = $x;$coords[10] = $coords[10]+$xdiff; $coords[12] = $x;}
+#                        elsif ($dx == -1) { $coords[2] = $x;$coords[4] = $x;}
+#
+#                        if    ($dy ==  1) { $coords[1] = $y;$coords[3] = $y }
+#                        elsif ($dy == -1) { $coords[5] = $y;$coords[7] = $y }
+#----------------------------------------------------------------------------------------------------------------------------------#
+                        if    ($dx ==  1) { $coords[0] = $x; my $xdiff = $x -$org_x1; $coords[1] = $coords[1] + $xdiff*4/3;
+                                            $coords[3] = $coords[1]; $coords[6] = $x; $coords[8] = $x; 
+                                            $coords[9] = $coords[5] - ($coords[5] - $coords[1])*3/10; 
+                                            $coords[10] = $coords[0] + ($coords[5] - $coords[1])*1/10; 
+                                            $coords[11] = $coords[5] - ($coords[5] - $coords[1])*5/20; 
+                                            $coords[12] = $x; $coords[13] = $coords[5] - ($coords[5] - $coords[1])*2/10; 
+                                           }
+                        elsif ($dx == -1) { $coords[2] = $x; my $xdiff = $x -$org_x2; $coords[4] = $x; 
+                                            $coords[5] = $coords[5] + $xdiff*4/3;$coords[7] = $coords[5];
+                                            $coords[9] = $coords[5] - ($coords[5] - $coords[1])*3/10; 
+                                            $coords[10] = $coords[0] + ($coords[5] - $coords[1])*1/10; 
+                                            $coords[11] = $coords[5] - ($coords[5] - $coords[1])*5/20; 
+                                            $coords[13] = $coords[5] - ($coords[5] - $coords[1])*2/10;
+                                           }
+
+                        if    ($dy ==  1) { $coords[1] = $y; my $ydiff = $y - $org_y1; $coords[0] = $coords[0] + $ydiff*3/4;
+                                            $coords[3] = $y; $coords[6] = $coords[0]; $coords[8] = $coords[0];
+                                            $coords[9] = $coords[5] - ($coords[5] - $coords[1])*3/10; 
+                                            $coords[10] = $coords[0] + ($coords[5] - $coords[1])*1/10; 
+                                            $coords[11] = $coords[5] - ($coords[5] - $coords[1])*5/20; 
+                                            $coords[12] = $coords[0]; $coords[13] = $coords[5] - ($coords[5] - $coords[1])*2/10;
+
+                                          }
+                        elsif ($dy == -1) { $coords[5] = $y;my $ydiff = $y - $org_y5; $coords[7] = $y;
+                                            $coords[2] = $coords[2] + $ydiff*3/4; $coords[4] = $coords[2]; 
+                                            $coords[9] = $coords[5] - ($coords[5] - $coords[1])*3/10; 
+                                            $coords[10] = $coords[0] + ($coords[5] - $coords[1])*1/10; 
+                                            $coords[11] = $coords[5] - ($coords[5] - $coords[1])*5/20; 
+                                            $coords[13] = $coords[5] - ($coords[5] - $coords[1])*2/10;
+                                          }
+
+                        $design_canvas->coords('TEMP', @coords);
+                    } else {      # move
+                        $design_canvas->move($id => $x - $oldx, $y - $oldy);
+                        $oldx = $x;
+                        $oldy = $y;
+                    }
+                }});
+
+    $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+        my @coords = $design_canvas->coords('TEMP');
+
+        # Delete the rectangle.
+        $design_canvas->delete('TEMP');
+        $design_canvas->coords($flop => @coords);
+    });
+}#sub resizeOrMove_flop
+
+############################# making popup to edit objects #######################
+
+sub read_parameters1 {
+my $fileName = $_[0];
+#&dbfGuiResetCanvasBind;
+$design_canvas->CanvasBind('<Control-Button-3>' => sub {
+                    my @LABELS = (); 
+                    my $readComp = 0;
+                    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+                    my @id      = $design_canvas->find(qw/withtag current/);
+                    my @tagList = $design_canvas->gettags($id[0]);
+                    my $closeread = "End".$tagList[0];
+                    push(@LABELS, $tagList[1]);
+                 if($tagList[0] eq ""){}
+                 else{
+                  open(READ, $fileName);
+                  while(<READ>){
+                     if($_ =~/^$tagList[0]/){       
+                        $readComp = 1;
+                      }         
+                  elsif($_ =~/^$closeread/){
+                        $readComp = 0;
+                        last;
+                      }
+                      if($readComp == 1){
+                         my $label = (split(/\s+/, $_))[0];
+                         push(@LABELS, $label);
+                      }
+                   }#while reading
+                &create_popup_ToEditPmt(\@LABELS);
+
+                  }});   
+}#sub read_parameters1
+
+##################################  Added this subroutine to avoid parameter_file reading ############################
+
+sub create_parameter {
+my $tag = $_[0];
+my @TOP_MODULE = ("TOP_MODULE", "Name", "clkSignals", "rstSignals");
+my @TST_WIRE = ("TST_WIRE", "Name", "signalWidth");
+my @Adder = ("Adder", "Name", "Operand", "Input", "Output", "Clock"); 
+my @FIFO = ("FIFO", "Name", "Iname", "File", "Clock", "Reset", "Width", "Depth", "Input", "Output", "rd_en", "wr_en");
+my @MUX = ("MUX", "Name", "Input", "Output");
+my @FLOP = ("FLOP", "Name", "Input", "Output", "Clock", "Reset");
+my @MODULE = ("TST_MODULE","Size");
+
+   if($tag eq $TOP_MODULE[0]){return(\@TOP_MODULE);}
+elsif($tag eq $TST_WIRE[0]) {return(\@TST_WIRE);}
+elsif($tag eq $Adder[0]){return(\@Adder);}
+elsif($tag eq $FIFO[0]){return(\@FIFO);}
+elsif($tag eq $MUX[0]){return(\@MUX);}
+elsif($tag eq $FLOP[0]){return(\@FLOP);}
+elsif($tag eq $MODULE[0]){return(\@MODULE);}
+
+}#sub create_parameter
+
+sub read_parameters {
+my $fileName = $_[0];
+#&dbfGuiResetCanvasBind;
+$design_canvas->CanvasBind('<Control-Button-3>' => sub {
+                    my @LABELS = (); 
+                    my $readComp = 0;
+                    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+                    my @id      = $design_canvas->find(qw/withtag current/);
+                    my @tagList = $design_canvas->gettags($id[0]);
+                    my $closeread = "End".$tagList[0];
+                    push(@LABELS, $tagList[1]);
+                    if($tagList[0] eq ""){}
+                 else{my $label = &create_parameter($tagList[0]);
+                      push(@LABELS, @$label);
+                           &create_popup_ToEditPmt(\@LABELS);
+                      }
+                  });   
+}#sub read_parameters
+#######################################################################################################################
+
+sub create_popup_ToEditPmt{
+my $arg = $_[0];
+my @df_parameters = ();
+my @fields = @$arg;
+my $name = shift @fields;
+my $class = shift @fields;
+my ($top_modName, $clk_signals, $rst_signals,$inst_name, $inst_iname, $inst_file, $inst_clk, $inst_clk, $inst_rst, $inst_width, $inst_depth, $inst_input, $inst_output, $inst_rdEn, $inst_wrEn, $inst_operand, $net_name, $net_width,$llx,$lly,$urx,$ury);
+if    ($class eq "TOP_MODULE"){
+       $top_modName = $PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenGetModuleName;
+       $clk_signals = $PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenGetClkSignal;
+       $rst_signals = $PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenGetRstSignal;
+}elsif($class eq "TST_WIRE") {
+       $net_name = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$name}->dbaTstgenGetPseudoNetName;
+       $net_width = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$name}->dbaTstgenGetPseudoNetWidth;
+}elsif($class eq "TST_MODULE") {
+       ($llx,$lly,$urx,$ury) = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$name}->dbPimDBGetInstRelBbox;
+}else {
+       $inst_name = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$name}->dbPimDBGetInstName;
+       $inst_iname = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$name}->dbPimDBGetInstIName;
+       $inst_file = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$name}->dbPimDBGetInstFile;
+       $inst_clk = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$name}->dbPimDBGetInstClk;
+       $inst_rst = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$name}->dbPimDBGetInstRst;
+       $inst_width = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$name}->dbPimDBGetInstWidth;
+       $inst_depth = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$name}->dbPimDBGetInstDepth;
+       $inst_input = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$name}->dbPimDBGetInstInput;
+       $inst_output = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$name}->dbPimDBGetInstOutput;
+       $inst_rdEn = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$name}->dbPimDBGetInstRd_en;
+       $inst_wrEn = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$name}->dbPimDBGetInstWr_en;
+       $inst_operand = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$name}->dbPimDBGetInstOperand;
+}
+
+   if($class eq "FIFO"){@df_parameters = ($inst_name,$inst_iname,$inst_file,$inst_clk,$inst_rst,$inst_width,$inst_depth,$inst_input,$inst_output,$inst_rdEn,$inst_wrEn);}
+elsif($class eq "Adder"){@df_parameters = ($inst_name,$inst_operand,$inst_input,$inst_output,$inst_clk);}
+elsif($class eq "MUX"){@df_parameters = ($inst_name,$inst_input,$inst_output);}
+elsif($class eq "FLOP"){@df_parameters = ($inst_name,$inst_input,$inst_output,$inst_clk,$inst_rst);}
+elsif($class eq "TOP_MODULE"){@df_parameters = ($top_modName,$clk_signals,$rst_signals);}
+elsif($class eq "TST_WIRE"){@df_parameters = ($net_name,$net_width);}
+elsif($class eq "TST_MODULE"){@df_parameters = ($llx.",".$lly.",".$urx.",".$ury);}
+
+if($name eq ""){return;}
+my $mw = MainWindow->new();
+   $mw->title("$name");
+   for (my $i = 0; $i<= $#fields; $i++){
+        ${"Pvar".$i} = $df_parameters[$i];
+        ${"Frame".$i} = $mw->Frame()->pack(-side => 'top',-expand=>1, -fill=>'x');
+        ${"Frame".$i}->Label(-text => $fields[$i])->pack(-side => 'left');
+        if($class eq "TST_MODULE"){
+           ${"Entry".$i} = ${"Frame".$i}->Entry(-textvariable =>\${"Pvar".$i})->pack(-side => 'right',-expand=>1,-fill=>'x'); 
+        }else{ 
+           ${"Entry".$i} = ${"Frame".$i}->Entry(-textvariable =>\${"Pvar".$i}, -width =>8 )->pack(-side => 'right'); 
+        }
+}#for each label
+my $buttonFrame = $mw->Frame()->pack(-side => 'bottom');
+my $okButton = $buttonFrame->Button(-text=>"Ok", -command=> sub{#print "${Pvar0}\n";;
+                                                         my @VALUES = (); 
+                                                     for(my $j = 0; $j<= $#fields; $j++){
+                                                         my $entry_value = ${"Entry".$j}->get();
+                                                         push (@VALUES,$entry_value);
+                                                         }#for 
+                                                         if($class eq "FIFO"){  
+                                                         &Set_PseudoInstance_attributes(-inst, $name, -parent, $TOP_MODULE, -name, $VALUES[0], -iname, $VALUES[1], -file, $VALUES[2], -clk, $VALUES[3], -rst, $VALUES[4], -width, $VALUES[5], -depth, $VALUES[6], -input, $VALUES[7], -output, $VALUES[8], -rd_en, $VALUES[9], -wr_en, $VALUES[10]);
+                                                         }elsif($class eq "Adder"){
+                                                         &Set_PseudoInstance_attributes(-inst, $name, -parent, $TOP_MODULE, -name, $VALUES[0], -operand, $VALUES[1], -input, $VALUES[2], -output, $VALUES[3], -clk, $VALUES[4]);
+                                                         }elsif($class eq "MUX"){
+                                                         &Set_PseudoInstance_attributes(-inst, $name, -parent, $TOP_MODULE, -name, $VALUES[0],-input, $VALUES[1], -output, $VALUES[2]);
+                                                         }elsif($class eq "FLOP"){
+                                                         &Set_PseudoInstance_attributes(-inst, $name, -parent, $TOP_MODULE, -name, $VALUES[0],-input, $VALUES[1], -output, $VALUES[2], -clk, $VALUES[3], -rst, $VALUES[4]);
+                                                         }elsif($class eq "TOP_MODULE"){
+                                                         &Set_TopModule_attributes(-parent, $TOP_MODULE, -topName, $VALUES[0], -clk, $VALUES[1], -rst, $VALUES[2]);
+                                                         }elsif($class eq "TST_WIRE"){
+                                                         &Set_Net_attributes(-net, $name, -parent, $TOP_MODULE, -netName, $VALUES[0], -width, $VALUES[1]);
+                                                         }elsif($class eq "TST_MODULE"){
+                                                             if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$name}){
+                                                                my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$name}->dbPimDBGetInstCellref;
+                                                                my @loc  = split(/\,/, $VALUES[0]);
+                                                                   $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$name}->dbPimDBSetInstRelBbox(@loc);
+                                                                   $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenSetSize(@loc);
+                                                                   &redraw_soft_module($name);
+                                                               } 
+                                                         }  
+                                                          
+                                                         #print "@VALUES\n"; 
+                                                         $mw->destroy();
+                                                         })->pack(-side=>"left");
+my $cancelButton = $buttonFrame->Button(-text=>"Cancel", -command=> sub{$mw->destroy();})->pack(-side=>"left");
+}#sub create_popup_ToEditPmt
+
+sub Set_PseudoInstance_attributes {
+my ($inst, $parent, $name, $iname, $file, $clk, $rst, $width, $depth, $In, $Out, $rd_en, $wr_en, $operand,$top_modName);
+my $noOfArguments = @_;
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-inst"){$inst = $_[$i+1]; }
+if($_[$i] eq "-parent"){$parent = $_[$i+1];}
+if($_[$i] eq "-name"){$name = $_[$i+1]; }
+if($_[$i] eq "-iname"){$iname = $_[$i+1];}
+if($_[$i] eq "-file"){$file = $_[$i+1];}
+if($_[$i] eq "-clk"){$clk = $_[$i+1];}
+if($_[$i] eq "-rst"){$rst = $_[$i+1];}
+if($_[$i] eq "-width"){$width = $_[$i+1];}
+if($_[$i] eq "-depth"){$depth = $_[$i+1];}
+if($_[$i] eq "-input"){$In = $_[$i+1];}
+if($_[$i] eq "-output"){$Out = $_[$i+1];}
+if($_[$i] eq "-rd_en"){$rd_en = $_[$i+1];}
+if($_[$i] eq "-wr_en"){$wr_en = $_[$i+1];}
+if($_[$i] eq "-operand"){$operand = $_[$i+1];}
+if($_[$i] eq "-topName"){$topName = $_[$i+1];}
+                                         }#for all arguments
+    if ( exists $PSEUDO_MODULE_ALREADY{$parent} ) {
+                if (exists $PSEUDO_VINST_ALREADY{$parent}{$inst}){ 
+ #print "aditya se $parent, $inst\n";
+                     $PSEUDO_VINST_ALREADY{$parent}{$inst}->dbPimDBSetInstName($name);
+                     $PSEUDO_VINST_ALREADY{$parent}{$inst}->dbPimDBSetInstIName($iname);
+                     $PSEUDO_VINST_ALREADY{$parent}{$inst}->dbPimDBSetInstFile($file);
+                     $PSEUDO_VINST_ALREADY{$parent}{$inst}->dbPimDBSetInstClk($clk);
+                     $PSEUDO_VINST_ALREADY{$parent}{$inst}->dbPimDBSetInstRst($rst);
+                     $PSEUDO_VINST_ALREADY{$parent}{$inst}->dbPimDBSetInstWidth($width);
+                     $PSEUDO_VINST_ALREADY{$parent}{$inst}->dbPimDBSetInstDepth($depth);
+                     $PSEUDO_VINST_ALREADY{$parent}{$inst}->dbPimDBSetInstInput($In);
+                     $PSEUDO_VINST_ALREADY{$parent}{$inst}->dbPimDBSetInstOutput($Out);
+                     $PSEUDO_VINST_ALREADY{$parent}{$inst}->dbPimDBSetInstRd_en($rd_en);
+                     $PSEUDO_VINST_ALREADY{$parent}{$inst}->dbPimDBSetInstWr_en($wr_en);
+                     $PSEUDO_VINST_ALREADY{$parent}{$inst}->dbPimDBSetInstOperand($operand);
+                     }
+                                                  }
+}#sub Set_PseudoInstance_attributes
+
+sub Set_TopModule_attributes {
+my ($parent, $topName, $clkSignals, $rstSignals);
+my $noOfArguments = @_;
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-parent"){$parent = $_[$i+1];}
+if($_[$i] eq "-topName"){$topName = $_[$i+1];}
+if($_[$i] eq "-clk"){$clkSignals = $_[$i+1];}
+if($_[$i] eq "-rst"){$rstSignals = $_[$i+1];}
+                                         }#for all arguments
+    if ( exists $PSEUDO_MODULE_ALREADY{$parent} ) {
+                $PSEUDO_MODULE_ALREADY{$parent}->dbaTstgenSetModuleName($topName);
+                $PSEUDO_MODULE_ALREADY{$parent}->dbaTstgenSetClkSignal($clkSignals);
+                $PSEUDO_MODULE_ALREADY{$parent}->dbaTstgenSetRstSignal($rstSignals);
+                                                  }
+}#sub Set_TopModule_attributes
+
+sub Set_Net_attributes {
+my ($net, $parent, $netName, $signalWidth);
+my $noOfArguments = @_;
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-net"){$net = $_[$i+1];}
+if($_[$i] eq "-parent"){$parent = $_[$i+1];}
+if($_[$i] eq "-netName"){$netName = $_[$i+1];}
+if($_[$i] eq "-width"){$signalWidth = $_[$i+1];}
+                                         }#for all arguments
+    if ( exists $PSEUDO_VNET_ALREADY{$parent} ) {
+                $PSEUDO_VNET_ALREADY{$parent}->{$net}->dbaTstgenSetPseudoNetName($netName);
+                $PSEUDO_VNET_ALREADY{$parent}->{$net}->dbaTstgenSetPseudoNetWidth($signalWidth);
+                   }
+}#sub Set_Net_attributes
+
+################################################
+sub redraw_soft_module{
+my $inst = $_[0];
+$design_canvas->delete($inst);
+
+if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$inst}){
+   my @loc = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$inst}->dbPimDBGetInstRelBbox;
+   my ($llx,$lly) =  dbfGuiMicron2Gui($loc[0],$loc[1]);
+   my ($urx,$ury) =  dbfGuiMicron2Gui($loc[2],$loc[3]);
+   my $Inst = $design_canvas->createRectangle($llx,$lly,$urx,$ury,-fill=>'red',-stipple=>'gray12',-outline=>'red');
+              $design_canvas->itemconfigure($Inst, -tags =>'TST_MODULE' );
+              $design_canvas->addtag($inst , "withtag", $Inst);
+}
+}#sub redraw_soft_module
+################################################
+
+1;

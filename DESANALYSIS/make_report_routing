@@ -1,0 +1,1361 @@
+sub hash_ValueAscendingNum {
+   $Hash{$a} <=> $Hash{$b};
+}
+
+
+
+sub report_pin_access {
+my $noOfArguments = @_;
+my $printSummary = 0;
+my $printDetail = 0;
+my $print2File = 0;
+
+my %pinOnZ = ();
+my $totPins = 0;
+my %pinsAccesOnZ = ();
+my $totNets = 0;
+my $totInsts = 0;
+
+if($_[0] eq "-h" )  {
+        print "Usage :  report_pin_access\n";
+        print "                           --summary\n";
+        print "                           --detail\n";
+        print "                           -output <filename>\n";
+        print "                           [-debug]\n";
+
+  }
+  else {
+  for(my $i = 0; $i < $noOfArguments; $i++){
+  if($_[$i] eq "-output"){ $RPTFILE = $_[$i+1]; $print2File = 1;}
+  if($_[$i] eq "--detail"){ $printDetail = 1;}
+  if($_[$i] eq "--summary"){ $printSummary = 1;}
+                                           } # for
+
+open(WRITE,">$RPTFILE") if ($print2File == 1);
+print WRITE "DETAIL\n" if ($print2File == 1 && $printDetail == 1);
+print WRITE "------\n" if ($print2File == 1 && $printDetail == 1);
+foreach my $instance ( keys %COMP_ALREADY ) {
+           my $cellref = $CADB{$instance}->dbCadbGetCellref;
+           if ( exists $PLDB{$cellref} ) {
+                my @pins = $PLDB{$cellref}->dbMdbGetPins;
+                   foreach my $pinName ( @pins ) {
+                           my $pinType = $PLDB{$cellref}->dbMdbGetPinType($pinName);
+                            print "INFO-DES-RPT_PN_ACSS : 001 : $pinName $pinType \n";
+                           if ($pinType == 0) {
+                           $totPins++; # increase the count of total number of pins
+                           my @pinRects = $PLDB{$cellref}->dbMdbGetPinRect($pinName);
+                           my %pinZ = ();
+                           my @L = ();
+                           my $pinZStr = "";
+                              foreach my $l (@pinRects) {
+                                      my $pinRectZ = (split(/\s+/,$l))[0];
+                                      $pinZ{$pinRectZ} = 1;
+                                                        }
+                              foreach my $l ( keys %pinZ ) { push(@L,$l); $pinOnZ{$l}++; }
+                                       $pinZStr =  join ",",@L;
+                              my $accessZ = $CADB{$instance}->dbCadbGetPinXLayer($pinName);
+                              my $pl = $accessZ;
+                              $pl =~ s/\(\w+\)//;
+                              $pinsAccesOnZ{$pl}++;
+                              print WRITE "$instance, $cellref, $pinName\($pinZStr\), $accessZ \n" if ($print2File == 1 && $printDetail == 1);
+                                              }#if pin is of type signal
+                                                 }#foreach pin of the cell
+                                         }# if the cell exists
+                                            }# foreach
+
+close(WRITE) if ($print2File == 1);
+my $o_rw = File::Data->new($RPTFILE) if ($print2File == 1 && $printSummary == 1) ;
+my @data2prepend = ();
+print "INFO-DES-RPT_PN_ACSS : 002 : Total number of pin : $totPins \n";
+push(@data2prepend,"Total no. of Pins are $totPins")  if ($print2File == 1 && $printSummary == 1);
+push(@data2prepend,"")  if ($print2File == 1 && $printSummary == 1);
+
+push(@data2prepend,"LayerName :-> No.of Pins")  if ($print2File == 1 && $printSummary == 1);
+foreach my $l ( keys %pinOnZ ) {
+                               print "INFO-DES-RPT_PN_ACSS : 003 : $l :  $pinOnZ{$l}\n";
+$LN = $PTDB{$l}->dbTechGetLayerName;
+$Ln = $PTDB{$l}->dbTechGetLayerNum;
+      $Hash{"$LN"}=$Ln;
+ @key = sort hash_ValueAscendingNum (keys(%Hash));
+#push(@data2prepend,"  $l      :-> $pinOnZ{$l}")  if ($print2File == 1 && $printSummary == 1);
+                               }
+my $n= @key;
+for ($i = 0;$i<$n ;$i++){
+$layer[$i]= shift @key;
+push(@data2prepend,"  $layer[$i]      :-> $pinOnZ{$layer[$i]}")  if ($print2File == 1 && $printSummary == 1);}
+push(@data2prepend,"")  if ($print2File == 1 && $printSummary == 1);
+push(@data2prepend,"LayerName : Pins Access : %Pins Access")  if ($print2File == 1 && $printSummary == 1);
+
+foreach my $l ( keys %pinsAccesOnZ ) {
+$per = $pinsAccesOnZ{$l}*100/$totPins;
+if ($l eq ""){ 
+                               print "INFO-DES-RPT_PN_ACSS : 004 : $l :  $pinsAccesOnZ{$l}\n";
+push(@data2prepend,"  UNC     : $pinsAccesOnZ{$l}          : $per")  if ($print2File == 1 && $printSummary == 1);}
+else {
+push(@data2prepend,"  $l      : $pinsAccesOnZ{$l}           : $per")  if ($print2File == 1 && $printSummary == 1);}
+                               }
+push(@data2prepend,"")  if ($print2File == 1 && $printSummary == 1);
+push(@data2prepend,"")  if ($print2File == 1 && $printSummary == 1);
+$o_rw->prepend(join"\n", @data2prepend) if ($print2File == 1 && $printSummary == 1);
+                        }#if correct arguments
+}#sub report_pin_access
+#--------------------------------------------------------------------------------------------------------------------#
+sub report_inst_old {
+
+#****f* /report_inst
+# NAME
+#    report_inst
+#FUNCTION
+#    report generate --placed,--unplaced,--fixed insts
+#Assumptions
+#    working only placed,unplaced,fixed insts
+#SYNOPSIS
+#    report_inst -output<fileName> --placed --unplaced --fixed
+#INPUTS
+#    options:
+#    -output<fileName> --placed or --unplaced or --fixed
+#OUTPUTS
+#    report file generate
+#****
+
+    my $noOfArguments = @_;
+    if ($noOfArguments < 1 || $_[0] eq "-h"){print "Usage : report_inst -output <fileName>\n";
+                                             print "        --placed\n";
+                                             print "        --fixed\n";
+                                             print "        --unplaced\n";
+                                             print "        note : by default all status are written out\n";
+                                             }#if
+    else {
+          my $placed = 0;
+          my $fixed = 0;
+          my $unplaced = 0;
+          my $DEFAULT = 1;
+     for (my $i = 0; $i< $noOfArguments; $i++){
+          if ($_[$i] eq "-output"){$RPTFILE = $_[$i+1];}
+          if ($_[$i] eq "--placed"){$placed = 1;$DEFAULT = 0;}
+          if ($_[$i] eq "--fixed"){$fixed = 1;$DEFAULT = 0;}
+          if ($_[$i] eq "--unplaced"){$unplaced = 1;$DEFAULT = 0;}
+                                              }#for
+my $placedInsts = 0;
+my $fixedInsts = 0;
+my $unplacedInsts = 0;
+open(WRITE,">$RPTFILE");
+print WRITE "DETAILS OF INSTANCES  \n\n";
+my $numInstances = keys %COMP_ALREADY;
+print WRITE "Total instances : $numInstances\n\n"; 
+if ($placed == 1 || $DEFAULT == 1){
+my @placed_inst = ();
+foreach my $inst (keys %COMP_ALREADY){
+                  my $status = $CADB{$inst}->dbCadbGetStatus;
+                  if ($status eq "PLACED") {$placedInsts++;
+                                            push (@placed_inst,$inst);}
+                                            }#foreach inst
+print WRITE "Total Placed Inst : $placedInsts\n";
+print WRITE "Placed Inst:-";
+foreach  $p (@placed_inst){
+                           print WRITE "\t$p\n\t";
+                          }#foreach placed
+                       }#if placed
+if ($fixed == 1 || $DEFAULT == 1 ){
+my @fixed_inst = ();
+foreach my $inst (keys %COMP_ALREADY){
+                  $status = $CADB{$inst}->dbCadbGetStatus;
+                  if ($status eq "FIXED") {$fixedInsts++;
+                                           push (@fixed_inst,$inst);}
+                                           }#foreach inst
+print WRITE "\n";
+print WRITE "Total Fixed Inst : $fixedInsts\n";
+print WRITE "Fixed Inst:-";
+foreach $fxdinst (@fixed_inst){
+                                print WRITE "\t$fxdinst\n\t";
+                                }#foreach fixed  
+                               }#if fixed
+if ($unplaced == 1 || $DEFAULT == 1){
+my @unplaced_inst = ();
+foreach my $inst (keys %COMP_ALREADY){
+                  $status = $CADB{$inst}->dbCadbGetStatus;
+                  if ($status eq "UNPLACED" || $status eq "UND") {$unplacedInsts++;
+                                             push (@unplaced_inst,$inst);}
+                                        }#foreach inst                    
+print WRITE "\n";
+print WRITE "Total Unplaced Inst $unplacedInsts\n";
+print WRITE "Unplaced Inst:-";
+foreach $unpinst (@unplaced_inst){
+                           print WRITE "\t$unpinst\n\t";
+                                   }#foreach unplaced
+                                 }#if unplaced
+close(WRITE);
+print "INFO-DES : 001 : $RPTFILE report file written out\n";
+}#else                                        
+}#sub report_inst_old
+#-----------------------------------------------------------------------------------------------------------------------#
+sub report_net_wl_old {
+#****f* /report_net_wl_old
+# NAME
+#   report_net_wl_old
+# FUNCTION
+#   find wire length of a nets
+# Assumptions
+#   net wire length of the whole design or some nets
+# SYNOPSIS 
+#   report_net_wl_old --netsName <{list of net Name}> 
+# INPUTS
+#   options:
+#   --netsName <{list of net Name}> : for some nets or
+#   --summary 
+#   --detail 
+# OUTPUTS
+#   Total wire length of nets
+#****
+use Benchmark;
+my $t0 = new Benchmark;
+
+my $noOfArguments = @_;
+if ($noOfArguments < 0 || $_[0] eq '-h'){print "Usage : --netsName <{list of nets Name}> \n";
+                                         print "      : by default all nets \n"; 
+                                         print "      : --summary\n";
+                                         print "      : --detail <fileName>\n";
+                                                                        }#if
+else {
+     my $NETS_NAME = 0;
+     my $summary =0;
+     my $detail = 0;
+     for (my $i = 0;$i < $noOfArguments; $i++){
+          if ($_[$i] eq "--netsName"){$nets = $_[$i+1];
+          $nets =~ s/\{\s*//;
+          $nets =~ s/\s*\}//;
+          @nets = split(/\,/,$nets);
+          $NETS_NAME = 1;}
+          if($_[$i] eq "--summary"){$summary = 1;}
+          if($_[$i] eq "--detail"){$OUTPUT=$_[$i+1];$detail =1;}
+                         }#for
+$numOfnets = 0;
+%NUM_OF_NETS =();
+@net_len =();
+open(WRITE,">$OUTPUT");
+if ($NETS_NAME == 1 ){
+if($detail == 1){
+  print WRITE "Net_Name\t\t\t\t\tNo_of_Comp\t\tEach_Net_Length\n";
+  print WRITE "--------\t\t\t\t\t----------\t\t---------------\n\n";
+                 }#if detail eq 1
+$Total_Net_WL = 0;
+  foreach $nets (@nets){
+    my @nodex = ();
+    my @nodey = ();
+    $total = 0;
+    $numOfnets++; 
+    if (exists $NETS_ALREADY{$nets}){
+        my $noOfComponentsConnected = keys %{$NETS_ALREADY{$nets}};
+        $NUM_OF_NETS{$noOfComponentsConnected} += 1;
+      foreach my $inst (keys %{$NETS_ALREADY{$nets}}){
+        if ($inst eq "PIN"){
+            my $portName = $NETS_ALREADY{$nets}{$inst};
+            my $status = $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortGetStatus;
+          if($status >1){
+             my @portLoc = $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortGetLoc;
+             push(@nodex,$portLoc[0]);
+             push(@nodey,$portLoc[1]);
+          }#if status
+        }#if inst eq PIN
+        elsif($inst eq "\*"){}
+        elsif ( exists $PORTS_ALREADY{$TOP_MODULE}{$inst} ) {
+            my $status = $PORTS_ALREADY{$TOP_MODULE}{$inst}->dbPortGetStatus;
+            if($status >1){
+            my @portLoc = $PORTS_ALREADY{$TOP_MODULE}{$inst}->dbPortGetLoc;
+            push(@nodex,$portLoc[0]);
+            push(@nodey,$portLoc[1]);
+            }#if status 
+          }#elsif inst exists in PORTS_ALREADY
+        else{
+            my $pinName = $NETS_ALREADY{$nets}{$inst};
+            if(exists $CADB{$inst}){
+            my $cellref = $CADB{$inst}->dbCadbGetCellref;
+            my @instLoc = $CADB{$inst}->dbCadbGetLoc;
+            my $instOrient = $CADB{$inst}->dbCadbGetOrient;
+          if (exists $PLDB{$cellref}){
+              my @cellOrigin = $PLDB{$cellref}->dbMdbGetOrigin;
+              my @cellsize = $PLDB{$cellref}->dbMdbGetSize;
+              my @pinRect = $PLDB{$cellref}->dbMdbGetPinRect($pinName);
+              my ($pinllx,$pinlly,$pinurx,$pinury) = (split(/\s+/,$pinRect[0]))[2,3,4,5];
+                  @absolute_pin_rect = &xformCellPinToInstPin($instLoc[0],$instLoc[1],$cellOrigin[0], $cellOrigin[1],$instOrient,$cellsize[0],$cellsize[1],$pinllx,$pinlly,$pinurx,$pinury);
+                  $xmiddle_pin_rect = ($absolute_pin_rect[0]+$absolute_pin_rect[2])/2;
+                  $ymiddle_pin_rect = ($absolute_pin_rect[1]+$absolute_pin_rect[3])/2; 
+                  push(@nodex,$xmiddle_pin_rect);
+                  push(@nodey,$ymiddle_pin_rect); 
+                                              }# if exists
+                                            }#if exists inst in CADB  
+                                         }#else inst
+                                       }#foreach inst
+    @nodex = sort{$a<=>$b}@nodex;
+    @nodey = sort{$a<=>$b}@nodey;
+    my $xmin = $nodex[0];
+    my $ymin = $nodey[0];
+    my $xmax = $nodex[-1];
+    my $ymax = $nodey[-1];
+############################################
+#    my $ymiddle = ($ymin + $ymax)/2;      #
+#   foreach $min (@nodey){                 #
+#    $length = abs ($min - $ymiddle);      #
+#    $total = $total + $length;            #
+#                          }#foreach min   #
+############################################
+    $Y_length_of_bbox = abs($ymax - $ymin);
+    $length_of_bbox = $xmax - $xmin;
+    #$Total_WL = $length_of_bbox + $total;
+    $Total_WL = $length_of_bbox + $Y_length_of_bbox;
+    $net_len[$noOfComponentsConnected]= $net_len[$noOfComponentsConnected] + $Total_WL;
+    $Total_Net_WL = $Total_Net_WL + $Total_WL;
+     if($detail == 1){
+        my $new_nets_name = sprintf("%-50s",$nets);
+        print WRITE "$new_nets_name $noOfComponentsConnected\t\t\t$Total_WL\n";
+                       }#if detail eq 1
+                                  }#if exists nets
+                               }#foreach nets
+      # print"Total Wire length of $numOfnets nets = $Total_Net_WL \n";
+my $wl_in_microns = $Total_Net_WL/$DEF_DATABASE_UNIT;
+if($summary == 0 && $detail == 0){
+print"Total Wire length of $numOfnets nets = $Total_Net_WL in DB units and $wl_in_microns in microns \n";
+    }#if summary eq 0
+}#if nets name given
+#####################################################################################
+#if not given any netName or array of netName then by default all nets are iterated #
+#####################################################################################
+else {
+ if($detail == 1){
+  print WRITE "Net_Name\t\t\t\t\tNo_of_Comp\t\tEach_Net_Length\n";
+  print WRITE "--------\t\t\t\t\t----------\t\t---------------\n\n";
+                 }#if detail eq 1
+$Total_Net_WL = 0;
+  foreach $nets (keys %NETS_ALREADY){
+      my @nodex = ();
+      my @nodey = ();
+      $total = 0;
+      $numOfnets++;
+    if (exists $NETS_ALREADY{$nets}){
+        my $noOfComponentsConnected = keys %{$NETS_ALREADY{$nets}};
+        $NUM_OF_NETS{$noOfComponentsConnected} += 1;
+      foreach my $inst (keys %{$NETS_ALREADY{$nets}}){
+          if ($inst eq "PIN"){
+          my $portName = $NETS_ALREADY{$nets}{$inst};
+          my $status = $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortGetStatus;
+            if($status >1){
+               my @portLoc = $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortGetLoc;
+               push(@nodex,$portLoc[0]);
+               push(@nodey,$portLoc[1]);
+            }#if status
+          }#if inst eq PIN
+          elsif($inst eq "\*"){}
+          elsif ( exists $PORTS_ALREADY{$TOP_MODULE}{$inst} ) {
+            my $status = $PORTS_ALREADY{$TOP_MODULE}{$inst}->dbPortGetStatus;
+            if($status >1){
+            my @portLoc = $PORTS_ALREADY{$TOP_MODULE}{$inst}->dbPortGetLoc;
+            push(@nodex,$portLoc[0]);
+            push(@nodey,$portLoc[1]);
+            }#if status 
+          }#elsif inst exists in PORTS_ALREADY
+          else{
+              my $pinName = $NETS_ALREADY{$nets}{$inst};
+              if(exists $CADB{$inst}){
+              my $cellref = $CADB{$inst}->dbCadbGetCellref;
+              my @instLoc = $CADB{$inst}->dbCadbGetLoc;
+              my $instOrient = $CADB{$inst}->dbCadbGetOrient;
+                if (exists $PLDB{$cellref}){
+                my @cellOrigin = $PLDB{$cellref}->dbMdbGetOrigin;
+                my @cellsize = $PLDB{$cellref}->dbMdbGetSize;
+                my @pinRect = $PLDB{$cellref}->dbMdbGetPinRect($pinName);
+                my ($pinllx,$pinlly,$pinurx,$pinury) = (split(/\s+/,$pinRect[0]))[2,3,4,5];
+                @absolute_pin_rect = &xformCellPinToInstPin($instLoc[0],$instLoc[1],$cellOrigin[0], $cellOrigin[1],$instOrient,$cellsize[0],$cellsize[1],$pinllx,$pinlly,$pinurx,$pinury);
+                $xmiddle_pin_rect = ($absolute_pin_rect[0]+$absolute_pin_rect[2])/2;
+                $ymiddle_pin_rect = ($absolute_pin_rect[1]+$absolute_pin_rect[3])/2; 
+                push(@nodex,$xmiddle_pin_rect);
+                push(@nodey,$ymiddle_pin_rect); 
+                                              }# if exists cellref
+                                     }#if exists inst 
+                              }#else inst
+                }#foreach inst
+      @nodex = sort{$a<=>$b}@nodex;
+      @nodey = sort{$a<=>$b}@nodey;
+      my $xmin = $nodex[0];
+      my $ymin = $nodey[0];
+      my $xmax = $nodex[-1];
+      my $ymax = $nodey[-1];
+#############################################
+#      my $ymiddle = ($ymin + $ymax)/2;     #
+#      foreach $min (@nodey){               #
+#      $length = abs ($min - $ymiddle);     #
+#      $total = $total + $length;           #
+#                     }#foreach min         #
+#############################################
+      $Y_length_of_bbox = abs ($ymax - $ymin);
+      $length_of_bbox = $xmax - $xmin;
+      #$Total_WL = $length_of_bbox + $total;
+      $Total_WL = $length_of_bbox + $Y_length_of_bbox;
+      $net_len[$noOfComponentsConnected]= $net_len[$noOfComponentsConnected] + $Total_WL;
+      $Total_Net_WL = $Total_Net_WL + $Total_WL;
+      if($detail == 1){
+      my $new_nets_name = sprintf("%-50s",$nets);
+      print WRITE "$new_nets_name $noOfComponentsConnected\t\t\t$Total_WL\n";
+                       }#if detail eq 1
+                    }#if exists nets
+               }#foreach nets
+my $wl_in_microns = $Total_Net_WL/$DEF_DATABASE_UNIT;
+if($summary == 0 && $detail == 0){ 
+print"Total Wire length of $numOfnets nets = $Total_Net_WL in DB units and $wl_in_microns in microns \n";
+    }#if summary eq 0
+ }#else
+################################################################################################################################
+#if summary option is given that means there are "Num of Nets" which have                                                      #
+#2pin/inst,3pin/inst---etc(Num_of_pins_conn") connected and the sum wire-length of these nets is "Total Wire Length"           #
+################################################################################################################################ 
+if($summary ==1){
+print "Num_of_pins_conn\tNum of Nets\t\tTotal Wire Length\n";
+@sorted = sort {$a <=> $b} keys %NUM_OF_NETS;
+foreach my $num_of_pins (@sorted){
+print " $num_of_pins\t\t\t$NUM_OF_NETS{$num_of_pins}\t\t\t$net_len[$num_of_pins]\n";
+               }#foreach $num_of_pins
+}#if summary eq 1
+#################################################################################################################################
+}#else
+my $t1 = new Benchmark;
+my $td = timediff($t1,$t0);
+print "command report_net_wl_old took:",timestr($td),"\n";
+}#sub report_net_wl_old
+#-----------------------------------------------------------------------------------------------------------------#
+sub get_nets_lengtharray{
+#*****f* /get_nets_lengtharray
+# NAME
+#  get_nets_lengtharray
+# FUNCTION
+#   calculate the length of each net and return array nets length 
+# Assumptions
+#
+# SYNOPSIS
+#   get_nets_lengtharray 
+# INPUTS
+#   get_nets_lengtharray
+# OUTPUTS
+#    return array nets length 
+#********
+
+use Benchmark;
+my $t0 = new Benchmark;
+
+my @netslength = ();
+foreach $nets (keys %NETS_ALREADY){
+   my @node_x = ();
+   my @node_y = ();
+   $Total_length = 0;
+  if (exists $NETS_ALREADY{$nets}){
+   foreach $inst (keys %{$NETS_ALREADY{$nets}}){
+     if ($inst eq "PIN"){
+       my $portName = $NETS_ALREADY{$nets}{$inst};
+       my $status = $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortGetStatus;
+       if($status >1){
+       my @portLoc = $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortGetLoc;
+       push(@nodex,$portLoc[0]);
+       push(@nodey,$portLoc[1]);
+       }#if status
+     }#if inst eq PIN
+     elsif ($inst eq "\*"){}
+     elsif ( exists $PORTS_ALREADY{$TOP_MODULE}{$inst} ) {
+            my $status = $PORTS_ALREADY{$TOP_MODULE}{$inst}->dbPortGetStatus;
+            if($status >1){
+            my @portLoc = $PORTS_ALREADY{$TOP_MODULE}{$inst}->dbPortGetLoc;
+            push(@nodex,$portLoc[0]);
+            push(@nodey,$portLoc[1]);
+            }#if status 
+     }#elsif inst exists in PORTS_ALREADY
+     else{
+     my $pinName = $NETS_ALREADY{$nets}{$inst};
+        print "DBG-DES-GT_NET_LTH_ARRY : 001 : $inst\n" if ($DEBUG == 400 );
+         if(exists $CADB{$inst}){
+             my $cellref = $CADB{$inst}->dbCadbGetCellref;
+             my @instLoc = $CADB{$inst}->dbCadbGetLoc;
+             my $instOrient = $CADB{$inst}->dbCadbGetOrient;
+                if (exists $PLDB{$cellref}){
+             my @cellOrigin = $PLDB{$cellref}->dbMdbGetOrigin;
+             my @cellsize = $PLDB{$cellref}->dbMdbGetSize;
+             my @pins = $PLDB{$cellref}->dbMdbGetPins;
+             my @pinRect = $PLDB{$cellref}->dbMdbGetPinRect($pinName);
+             my ($pinllx,$pinlly,$pinurx,$pinury) = (split(/\s+/,$pinRect[0]))[2,3,4,5];
+             @absolute_Pinrect = &xformCellPinToInstPin($instLoc[0],$instLoc[1],$cellOrigin[0], $cellOrigin[1],$instOrient,$cellsize[0],$cellsize[1],$pinllx,$pinlly,$pinurx,$pinury);
+             $XMiddle_pin_rect = ($absolute_Pinrect[0]+$absolute_Pinrect[2])/2;
+             $YMiddle_pin_rect = ($absolute_Pinrect[1]+$absolute_Pinrect[3])/2; 
+             push(@node_x,$XMiddle_pin_rect);
+             push(@node_y,$YMiddle_pin_rect);
+                              }#if exists
+                             }#if exists inst in CADB
+                             }#else
+                            }#foreach inst
+             @node_x = sort{$a<=>$b}@node_x;
+             @node_y = sort{$a<=>$b}@node_y;
+             my $x_min = $node_x[0];
+             my $y_min = $node_y[0];
+             my $x_max = $node_x[-1];
+             my $y_max = $node_y[-1];
+           ###############################################
+           #  my $ymiddle = ($y_min + $y_max)/2;         #   
+           #  foreach my $min (@node_y){                 #
+           #  $Length = abs ($min - $ymiddle);           #
+           #  $Total_length = $Total_length + $Length;   #
+           #               }#foreach min                 #
+           ###############################################
+             $Y_Lengthofbbox = abs ($y_max - $y_min);        
+             $Length_of_bbox = $x_max - $x_min;
+             #$Total_wl = $Length_of_bbox + $Total_lengt;
+             $Total_wl = $Length_of_bbox + $Y_Lengthofbbox;
+             if ($Total_wl == 0){}else{
+             push(@netslength,$Total_wl);
+                                }#else
+                             }#if exists
+                      }#foreach nets
+$t1 = new Benchmark;
+my $td = timediff($t1,$t0);
+print "command get_nets_lengtharray took:",timestr($td),"\n";
+
+return(@netslength);
+}#sub get_nets_lengtharray
+#------------------------------------------------------------------------------------------------------------------------------------------#
+sub unplace_insts_old {
+
+#****f* /unplace_insts
+#NAME
+#    unplace_insts
+#FUNCTION
+#    unplaced status,location,orient when cell is core or block or all class
+#Assumptions
+#    works for all types of class
+#SYNOPSIS
+#    unplace_insts -core or -block or -all
+#INPUTS
+#     options:
+#     -core or -block or -all
+#OUTPUT
+#     unplaced status,location and orient 
+#****
+
+my $noOfArguments = @_;
+if($noOfArguments < 1 || $_[0] eq "-h"){print "Usage : unplace_insts -core\n";
+                                        print "      : -block \n";
+                                        print "      : -All \n";
+                                        }#if 
+else{
+     $Core = 0;
+     $Block = 0;
+     $All = 0;
+     for (my $i = 0; $i<$noOfArguments;$i++){
+         if($_[$i] eq "-core"){$core= $_[$i+1];$Core = 1;}
+         if($_[$i] eq "-block"){$block = $_[$i+1];$Block = 1;}
+         if($_[$i] eq "-All"){$all =$_[$i+1];$All = 1;}
+                                            }#for
+if($Core == 1){
+foreach $instance (keys %COMP_ALREADY){
+  if(exists $CADB{$instance}){
+    $cellref = $CADB{$instance}->dbCadbGetCellref;
+   if (exists $PLDB{$cellref}){
+        $class = $PLDB{$cellref}->dbMdbGetClass;
+       #print "class $class\n";
+      if($class eq "CORE"){
+           $status = $CADB{$instance}->dbCadbGetStatus;
+        if(($status eq "PLACED")||($status eq "FIXED")|| ($status eq "UNPLACED")){
+            $unplaced = "UNPLACED";
+            $CADB{$instance}->dbCadbSetStatus($unplaced);
+                                                        }#if status 
+      @location = $CADB{$instance}->dbCadbGetLoc;
+      if (($location[0] ne "") && ($location[1] ne "")){
+           $new_loc_X = 0;
+           $new_loc_Y = 0;
+           $CADB{$instance}->dbCadbSetLoc($new_loc_X,$new_loc_Y);
+                                                       }#if location
+      $orient = $CADB{$instance}->dbCadbGetOrient;
+      if($orient ne ""){
+         $new_orient = "N";
+         $CADB{$instance}->dbCadbSetOrient($new_orient);
+                 }#if orient
+               }#if class 
+            }#if exists cellref         
+         }#if instance exists
+#print "$new_status @new_location $new_orient\n";
+     }#foreach instance
+}#if core
+#---------------------------------------------------------------------------------------------------------------------------------------#
+if($Block == 1){
+foreach $instance (keys %COMP_ALREADY){
+  if(exists $CADB{$instance}){
+    $cellref = $CADB{$instance}->dbCadbGetCellref;
+   if (exists $PLDB{$cellref}){
+        $class = $PLDB{$cellref}->dbMdbGetClass;
+       #print "class $class\n";
+      if($class eq "BLOCK"){
+         $status = $CADB{$instance}->dbCadbGetStatus;
+        if(($status eq "PLACED")||($status eq "FIXED")|| ($status eq "UNPLACED")){
+            $unplaced = "UNPLACED";
+            $CADB{$instance}->dbCadbSetStatus($unplaced);
+                                                         }#if status 
+      @location = $CADB{$instance}->dbCadbGetLoc;
+      if (($location[0] ne "") && ($location[1] ne "")){
+           $new_loc_X = 0;
+           $new_loc_Y = 0;
+           $CADB{$instance}->dbCadbSetLoc($new_loc_X,$new_loc_Y);
+                                                       }#if location
+      $orient = $CADB{$instance}->dbCadbGetOrient;
+      if($orient ne ""){
+         $new_orient = "N";
+         $CADB{$instance}->dbCadbSetOrient($new_orient);
+                           }#if orient
+                         }#if class
+                     }#if exists cellref
+                  }#if exists instance
+          }#foreach instance
+}#if block
+#---------------------------------------------------------------------------------------------------------------------------------------#
+if($All == 1){
+foreach $instance (keys %COMP_ALREADY){
+  if(exists $CADB{$instance}){
+    $cellref = $CADB{$instance}->dbCadbGetCellref;
+   if (exists $PLDB{$cellref}){
+        $status = $CADB{$instance}->dbCadbGetStatus;
+        if(($status eq "PLACED")||($status eq "FIXED")|| ($status eq "UNPLACED")){
+            $unplaced = "UNPLACED";
+            $CADB{$instance}->dbCadbSetStatus($unplaced);
+                                                        }#if status 
+      @location = $CADB{$instance}->dbCadbGetLoc;
+      if (($location[0] ne "") && ($location[1] ne "")){
+           $new_loc_X = 0;
+           $new_loc_Y = 0;
+           $CADB{$instance}->dbCadbSetLoc($new_loc_X,$new_loc_Y);
+                                                       }#if location
+      $orient = $CADB{$instance}->dbCadbGetOrient;
+      if($orient ne ""){
+         $new_orient = "N";
+         $CADB{$instance}->dbCadbSetOrient($new_orient);
+                 }#if orient
+             }#if exists cellref
+        }#if exists instance
+    }#foreach instance
+}#if all
+#---------------------------------------------------------------------------------------------------------------------------------------#
+}#else
+}#sub unplace_insts_old
+##########################################################################################################################################
+
+sub routed_wl_and_resistance {
+
+#****f* /routed_wl_and_resistance
+# NAME
+#   routed_wl_and_resistance
+# FUNCTION
+#   find routed wire length of a nets and resistance
+# Assumptions
+#   net wire length of the whole design 
+# SYNOPSIS 
+#   routed_wl_and_resistance by default all nets
+# INPUTS
+#   options:
+#   --detail 
+#   --res 
+# OUTPUTS
+#   Total routed wire length of nets and total resistance
+#****
+use Benchmark;
+my $t0 = new Benchmark;
+my $noOfArguments = @_;
+if($noOfArguments < 0 || $_[0] eq '-h'){
+  print "Usage : by default all nets\n";
+  print "      : --detail <fileName>\n";
+  print "      : --res <to print resistance>\n";
+}else{
+  my $numOfnets = 0;
+  my $res = 0;
+  my $detail = 0;
+  my $total_resistance = 0;
+  my $total_routing_wl = 0;
+  for (my $i = 0;$i < $noOfArguments; $i++){
+    if($_[$i] eq "--res"){$res = 1;}
+    if($_[$i] eq "--detail") {$OUTPUT=$_[$i+1];$detail =1;}
+  }#for
+  open(WRITE,">$OUTPUT");
+  if($detail == 1){
+    if($res == 1){
+      print WRITE "Net_Name\t\t\t\t\tRouted_Net_Length\t\tRouted_Net_Len_Microns\t\tResistance\n";
+      print WRITE "--------\t\t\t\t\t-----------------\t\t----------------------\t\t----------\n\n";
+    }else{
+      print WRITE "Net_Name\t\t\t\t\tRouted_Net_Length\t\tRouted_Net_Len_Microns\n";
+      print WRITE "--------\t\t\t\t\t-----------------\t\t----------------------\n\n";
+    } 
+  }#if detail eq 1
+  $Total_Net_WL = 0;
+  foreach $nets (keys %NETS_ALREADY){
+#$nets = "TOP/N928";
+    $numOfnets++;
+    my $total_net_wl = 0;
+    my $total_net_wl_microns = 0;
+    my $total_net_resistance = 0;
+    if(exists $NETS_ROUTING_ALREADY{$nets}) {
+      my @data = $NETS_ROUTING_ALREADY{$nets}->dbNetRoutingDBGetRegularRoute;
+      foreach my $segment ( @data ) {
+        my @seg = split(/\s+/,$segment);
+        if($#seg > 6){
+          if(exists $PTDB{$seg[0]}){
+            my $routed_net_length = 0;
+            my $routed_net_length_microns = 0;
+            my $resistance = $PTDB{$seg[0]}->dbTechGetLayerResistance;
+            my $width = $PTDB{$seg[0]}->dbTechGetLayerWidth;
+            #if($seg[2] == $seg[6]){
+            #  $routed_net_length  = $seg[7] - $seg[3];
+            #}else{
+            #  $routed_net_length  = $seg[6] - $seg[2];
+            #}
+            #-----------------------------------------------------------------#
+            my @routeBox = &xformNetSegToPathSeg($segment);
+            if($routeBox[2] == $routeBox[0]){
+              $routed_net_length = $routeBox[3] - $routeBox[1];
+            }else {
+              $routed_net_length = $routeBox[2] - $routeBox[0];
+            }
+            #-----------------------------------------------------------------#
+            $routed_net_length_microns = $routed_net_length/$DEF_DATABASE_UNIT;
+            $resistance_seg = ($routed_net_length_microns/$width)*$resistance;    
+            $total_routing_wl = $total_routing_wl + $routed_net_length;
+            $total_resistance = $total_resistance + $resistance_seg;
+            $total_net_wl = $total_net_wl + $routed_net_length;
+            $total_net_resistance = $total_net_resistance + $resistance_seg;
+          }#if exists routing layer
+        }#if wire is present
+      }#foreach routing data          
+    }#if exists nets_routing_already
+    $total_net_wl_microns = $total_net_wl/$DEF_DATABASE_UNIT;
+    if($detail == 1){
+        my $new_nets_name = sprintf("%-50s",$nets);
+        my $new_total_net_wl = sprintf("%-30s",$total_net_wl);
+        my $new_total_net_wl_microns = sprintf("%-30s",$total_net_wl_microns);
+        my $new_total_net_resistance = sprintf("%-20s",$total_net_resistance);
+      if($res == 1){
+        #print WRITE "$new_nets_name $total_net_wl\t\t\t$total_net_wl_microns\t\t\t$total_net_resistance\n";
+        print WRITE "$new_nets_name $new_total_net_wl $new_total_net_wl_microns $new_total_net_resistance\n";
+      }else{
+        #print WRITE "$new_nets_name $total_net_wl\t\t\t$total_net_wl_microns\n";
+        print WRITE "$new_nets_name $new_total_net_wl $new_total_net_wl_microns\n";
+      }
+    }
+  }#foreach nets
+  my $wl_in_microns = $total_routing_wl/$DEF_DATABASE_UNIT;
+  if($summary == 0 && $detail == 0){ 
+    print"Total Wire length of $numOfnets nets = $total_routing_wl in DB units and $wl_in_microns in microns and Total resistance is $total_resistance\n";
+  }
+}#else
+my $t1 = new Benchmark;
+my $td = timediff($t1,$t0);
+print "command routed_wl_and_resistance took:",timestr($td),"\n";
+close($output);
+}#sub routed_wl_and_resistance
+
+sub sp_routed_wl_and_resistance {
+
+#****f* /routed_wl_and_resistance
+# NAME
+#   routed_wl_and_resistance
+# FUNCTION
+#   find routed wire length of a nets and resistance
+# Assumptions
+#   net wire length of the whole design 
+# SYNOPSIS 
+#   routed_wl_and_resistance by default all nets
+# INPUTS
+#   options:
+#   --detail 
+#   --res 
+# OUTPUTS
+#   Total routed wire length of nets and total resistance
+#****
+use Benchmark;
+my $t0 = new Benchmark;
+my $noOfArguments = @_;
+if($noOfArguments < 0 || $_[0] eq '-h'){
+  print "Usage : by default all nets\n";
+  print "      : --detail <fileName>\n";
+  print "      : --res <to print resistance>\n";
+}else{
+  print"INFO-DES-SP_ROUTD_WL_&_RESIS : 001 : DBU $DEF_DATABASE_UNIT\n";
+  my $numOfnets = 0;
+  my $res = 0;
+  my $detail = 0;
+  my $total_resistance = 0;
+  my $total_routing_wl = 0;
+  for (my $i = 0;$i < $noOfArguments; $i++){
+    if($_[$i] eq "--res"){$res = 1;}
+    if($_[$i] eq "--detail") {$OUTPUT=$_[$i+1];$detail =1;}
+  }#for
+  open(WRITE,">$OUTPUT");
+  if($detail == 1){
+    if($res == 1){
+      print WRITE "Net_Name\t\t\t\t\tRouted_Net_Length\t\tRouted_Net_Len_Microns\t\tResistance\n";
+      print WRITE "--------\t\t\t\t\t-----------------\t\t----------------------\t\t----------\n\n";
+    }else{
+      print WRITE "Net_Name\t\t\t\t\tRouted_Net_Length\t\tRouted_Net_Len_Microns\n";
+      print WRITE "--------\t\t\t\t\t-----------------\t\t----------------------\n\n";
+    } 
+  }#if detail eq 1
+  $Total_Net_WL = 0;
+  foreach $nets (keys %NETS_ALREADY){
+    $numOfnets++;
+    my $total_net_wl = 0;
+    my $total_net_wl_microns = 0;
+    my $total_net_resistance = 0;
+    if(exists $NETS_ROUTING_ALREADY{$nets}) {
+      my @data = ();
+      push(@data,$NETS_ROUTING_ALREADY{$nets}->dbNetRoutingDBGetSpecialRoute);
+      push(@data,$NETS_ROUTING_ALREADY{$nets}->dbNetRoutingDBGetFixedRoute);
+      foreach my $segment ( @data ) {
+        my $value = 0;
+        my ($layername, $width) = (split(/\s+/,$segment))[0, 1];
+        $width = $width/$DEF_DATABASE_UNIT;
+        if ($segment =~ m/\( (\d+) (\d+) \) \( (\d+) \* \)/ ){
+          $value = 1;
+        }
+        if($segment =~ m/\( (\d+) (\d+) \) \( \* (\d+) \)/ ){
+          $value = 2;
+        }
+        if($value == 1 || $value == 2){
+          if(exists $PTDB{$layername}){
+            my $routed_net_length = 0;
+            my $routed_net_length_microns = 0;
+            my $resistance = $PTDB{$layername}->dbTechGetLayerResistance;
+            if ($width == 0){
+              $width = $PTDB{$layername}->dbTechGetLayerWidth;
+            }
+            if($value == 1){
+              $routed_net_length  = abs($3 - $1);
+            }
+            if($value == 2){
+              $routed_net_length  = abs($3 - $2);
+            }
+            $routed_net_length_microns = $routed_net_length/$DEF_DATABASE_UNIT;
+            $resistance_seg = ($routed_net_length_microns/$width)*$resistance;    
+            $total_routing_wl = $total_routing_wl + $routed_net_length;
+            $total_resistance = $total_resistance + $resistance_seg;
+            $total_net_wl = $total_net_wl + $routed_net_length;
+            $total_net_resistance = $total_net_resistance + $resistance_seg;
+print "INFO-DES-SP_ROUTD_WL_&_RESIS : 002 :$segment\n";
+          }#if exists routing layer
+        }#if wire is present
+      }#foreach routing data          
+    }#if exists nets_routing_already
+    $total_net_wl_microns = $total_net_wl/$DEF_DATABASE_UNIT;
+    if($detail == 1){
+        my $new_nets_name = sprintf("%-50s",$nets);
+        my $new_total_net_wl = sprintf("%-30s",$total_net_wl);
+        my $new_total_net_wl_microns = sprintf("%-30s",$total_net_wl_microns);
+        my $new_total_net_resistance = sprintf("%-20s",$total_net_resistance);
+      if($res == 1){
+        #print WRITE "$new_nets_name $total_net_wl\t\t\t$total_net_wl_microns\t\t\t$total_net_resistance\n";
+        print WRITE "$new_nets_name $new_total_net_wl $new_total_net_wl_microns $new_total_net_resistance\n";
+      }else{
+        #print WRITE "$new_nets_name $total_net_wl\t\t\t$total_net_wl_microns\n";
+        print WRITE "$new_nets_name $new_total_net_wl $new_total_net_wl_microns\n";
+      }
+    }
+  }#foreach nets
+  my $wl_in_microns = $total_routing_wl/$DEF_DATABASE_UNIT;
+  if($summary == 0 && $detail == 0){ 
+    print"Total Wire length of $numOfnets nets = $total_routing_wl in DB units and $wl_in_microns in microns and Total resistance is $total_resistance\n";
+  }
+}#else
+my $t1 = new Benchmark;
+my $td = timediff($t1,$t0);
+print "command sp_routed_wl_and_resistance took:",timestr($td),"\n";
+close($output);
+}#sub sp_routed_wl_and_resistance
+#----------------------------------------------------------------------------------------------------------------------------------------------------------------#
+sub unplace_instance {
+use Benchmark;
+my $t0 = new Benchmark;
+my $noOfArguments = @_;
+if($noOfArguments < 1 || $_[0] eq "-h"){print "Usage : unplace_instance \n";
+                                        print "        --block \n";
+                                        print "        --All \n";
+                                        print "        --stdcell\n";
+                                        print "        -ports{list or pattern of ports name}\n";
+                                        print "        -cell{list or pattern of cells name}\n";
+                                        print "        -inst{list or pattern of instance name}\n";
+                                        print "        -celltype{list of cell type}\n";
+                                       }#if 
+else{
+     my $stdcell = 0;
+     my $Block = 0;
+     my $All = 0;
+     my $portList = 0;
+     my $cellList = 0;
+     my $instList = 0;
+     my $Cell_Type = 0;
+     my @ports_list = ();
+     my @cell_list = ();
+     my @inst_list = ();
+     my @cell_type_list = ();
+     for (my $i = 0; $i<$noOfArguments;$i++){
+         if($_[$i] eq "--stdcell"){$std = $_[$i+1];$stdcell = 1;}
+         elsif($_[$i] eq "--block"){$block = $_[$i+1];$Block = 1;}
+         elsif($_[$i] eq "--All"){$all = $_[$i+1];$All = 1;}
+         elsif($_[$i] eq "-ports"){$ports = $_[$i+1]; $portList = 1;
+           $ports =~ s/\{\s*//;
+           $ports =~ s/\s*\}//; 
+           my @ports_name_list = split(/\,/,$ports);
+           foreach my $port_Name (keys %{$PORTS_ALREADY{$TOP_MODULE}}){
+             foreach my $port_opt (@ports_name_list){
+               my $portPattList = &set_port_patt($port_opt,$port_Name);
+               if($portPattList eq ""){next;}
+               push(@ports_list,$portPattList);
+             }#foreach
+           }#foreach
+         }#elsif
+         elsif($_[$i] eq "-cell"){$cell = $_[$i+1];$cellList =1;
+           $cell =~ s/\{\s*//;
+           $cell =~ s/\s*\}//;
+           my @cell_name_list = split(/\,/,$cell);
+           foreach my $cell_Name (keys %PLDB){
+             foreach my $cell_opt (@cell_name_list){
+               my $cellPattList = &set_cell_patt($cell_opt,$cell_Name);
+               if($cellPattList eq ""){next;}
+               push(@cell_list,$cellPattList);
+             }#foreach
+           }#foreach
+         }#elsif
+         elsif($_[$i] eq "-inst"){$inst = $_[$i+1];$instList = 1;
+           $inst =~ s/\{\s*//;
+           $inst =~ s/\s*\}//;
+           my @inst_name_list = split(/\,/,$inst);
+           foreach my $inst_Name (keys %CADB){
+             foreach my $inst_opt (@inst_name_list){
+               my $instPattList = &set_inst_patt($inst_opt,$inst_Name);
+               if($instPattList eq ""){next;}
+               push(@inst_list,$instPattList);
+             }#foreach
+           }#foreach 
+         }#elsif
+        elsif($_[$i] eq "-celltype"){$cell_type = $_[$i+1]; $Cell_Type = 1;
+                                     $cell_type =~ s/\{\s*//;
+                                     $cell_type =~ s/\s*\}//;
+                                     @cell_type_list = split(/\,/,$cell_type);
+        }#elsif
+     }#for
+  if($All == 1){
+     &set_all_unplaced;
+  }#if all
+  
+  elsif($Block == 1){
+        &set_block_unplaced;
+  }#elsif block
+  
+  elsif($stdcell == 1){
+        &set_stdcell_unplaced;
+  }#elsif stdcell
+  
+  elsif($portList == 1){
+  	foreach my $portName (@ports_list){
+  	  &set_ports_unplaced($portName);
+  	}#foreach portName
+  }#elsif port list
+  
+  elsif($cellList == 1){
+  	foreach my $cellName (@cell_list){
+  	   &set_cells_unplaced($cellName);
+  	}#foreach cellName
+  }#elsif cellList
+  
+  elsif($instList == 1){
+  	foreach my $instName (@inst_list){
+  	&set_insts_unplaced($instName);
+  	}#foreach
+  }#elsif instList
+  elsif($Cell_Type == 1){
+   foreach my $cell_type (@cell_type_list){
+   &set_unplaced_celltype($cell_type);
+   }#foreach 
+  }#elsif
+}#else
+my $t1 = new Benchmark;
+my $td = timediff($t1,$t0);
+print "command unplace_instance took:",timestr($td),"\n";
+}#sub unplace_instance
+#-----------------------------------------------------------------------------------------------------------------------------------------------------------#
+sub set_all_unplaced {
+foreach my $instance (keys %COMP_ALREADY){
+  if(exists $CADB{$instance}){
+     my $cellref = $CADB{$instance}->dbCadbGetCellref;
+    if(exists $PLDB{$cellref}){
+       my $status = $CADB{$instance}->dbCadbGetStatus;
+       if(($status eq "PLACED") || ($status eq "FIXED")){
+           $CADB{$instance}->dbCadbSetStatus("UNPLACED");
+       }#if status
+       my @location = $CADB{$instance}->dbCadbGetLoc;
+       if (($location[0] ne "") && ($location[1] ne "")){
+            my $new_loc_x = 0;
+            my $new_loc_y = 0;
+            $CADB{$instance}->dbCadbSetLoc($new_loc_x,$new_loc_y);
+       }#if location
+       my $orient = $CADB{$instance}->dbCadbGetOrient;
+       if($orient ne ""){
+          $CADB{$instance}->dbCadbSetOrient("N");
+       }#if orient
+     }#if exists PLDB
+   }#if exists CADB
+ }#foreach instances
+foreach my $portName (keys %{$PORTS_ALREADY{$TOP_MODULE}}){
+     my $status = $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortGetStatus;
+     if(($status == 0) || ($status == 2)|| ($status == 3)){
+         $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortSetStatus("UNPLACED");
+     }#if status
+     my @portLoc = $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortGetLoc;
+        if(($portLoc[0] ne "") && ($portLoc[1] ne "")){
+            my $new_port_loc_x = 0;
+            my $new_port_loc_y = 0;
+            $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortSetLoc($new_port_loc_x,$new_port_loc_y); 
+        }#if portLoc
+     my $port_orient = $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortGetSide;
+     if($port_orient ne ""){
+        $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortSetSide("N");
+     }#if port_orient 
+   }#foreach
+}#sub set_all_unplaced
+#------------------------------------------------------------------------------------------------------------------------------------------------------------#
+sub set_block_unplaced {
+foreach my $instance  (keys %COMP_ALREADY){
+  if(exists $CADB{$instance}){
+    my $cellref = $CADB{$instance}->dbCadbGetCellref;
+    if (exists $PLDB{$cellref}){
+      my $class = $PLDB{$cellref}->dbMdbGetClass;
+      if($class eq "BLOCK"){
+      my $status = $CADB{$instance}->dbCadbGetStatus;
+      if(($status eq "PLACED") || ($status eq "FIXED")){
+          $CADB{$instance}->dbCadbSetStatus("UNPLACED");
+      }#if status
+      my @location = $CADB{$instance}->dbCadbGetLoc;
+      if(($location[0] ne "") || ($location[1] ne "")){
+          my $new_loc_x = 0;
+          my $new_loc_y = 0;
+          $CADB{$instance}->dbCadbSetLoc($new_loc_x,$new_loc_y);
+      }#if location
+      my $orient = $CADB{$instance}->dbCadbGetOrient;
+      if($orient ne ""){
+         $CADB{$instance}->dbCadbSetOrient("N");
+      }#if orient
+     }#if class eq block
+   }#if exists PLDB
+  }#if exists CADB
+ }#foreach
+}#sub set_block_unplaced
+#--------------------------------------------------------------------------------------------------------------------------------------------------------------#
+sub set_stdcell_unplaced {
+foreach my $instance (keys %COMP_ALREADY){
+  if(exists $CADB{$instance}){
+     my $cellref = $CADB{$instance}->dbCadbGetCellref;
+     if(exists $PLDB{$cellref}){
+        my $class = $PLDB{$cellref}->dbMdbGetClass;
+       if(($class eq "CORE") || ($class eq "core")){
+           my $status = $CADB{$instance}->dbCadbGetStatus;
+         if(($status eq "PLACED") || ($status eq "FIXED")){
+             $CADB{$instance}->dbCadbSetStatus("UNPLACED");
+         }#if status
+         my @location = $CADB{$instance}->dbCadbGetLoc;
+         if(($location[0] ne "") || ($location[1] ne "")){
+             my $new_loc_x = 0;
+             my $new_loc_y = 0;
+             $CADB{$instance}->dbCadbSetLoc($new_loc_x,$new_loc_y);
+         }#if location
+         my $orient = $CADB{$instance}->dbCadbGetOrient;
+         if ($orient ne ""){
+             $CADB{$instance}->dbCadbSetOrient("N");
+         }#if orient
+       }#if class
+     }#if PLDB
+   }#if CADB
+ }#foreach
+}#sub set_stdcell_unplaced
+#------------------------------------------------------------------------------------------------------------------------------------------------------------#
+sub set_ports_unplaced {
+my $portName = $_[0];
+  if(exists $PORTS_ALREADY{$TOP_MODULE}{$portName}){
+     my $status = $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortGetStatus;
+     if(($status == 0) || ($status == 2)|| ($status == 3)){
+         $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortSetStatus("UNPLACED");
+     }#if status
+     my @portLoc = $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortGetLoc;
+        if(($portLoc[0] ne "") && ($portLoc[1] ne "")){
+            my $new_port_loc_x = 0;
+            my $new_port_loc_y = 0;
+         $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortSetLoc($new_port_loc_x,$new_port_loc_y); 
+        }#if portLoc
+     my $port_orient = $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortGetSide;
+     if($port_orient ne ""){
+        $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortSetSide("N");
+     }#if port_orient 
+}#if exists
+else {print "ERR-DES : 001 : port $portName not exists in PORTS_ALREADY \n";} 
+}#sub set_ports_unplaced
+#-------------------------------------------------------------------------------------------------------------------------------------------------------------#
+sub set_cells_unplaced {
+my $cellName = $_[0];
+if(!exists $PLDB{$cellName}){
+print "ERR-DES : 001 : cell $cellName not exists in PLDB\n";}
+else {
+  foreach my $inst (keys %CADB){
+    my $status = $CADB{$inst}->dbCadbGetStatus;
+    my $cellref = $CADB{$inst}->dbCadbGetCellref;
+    if(exists $PLDB{$cellref}){
+       if($cellref eq $cellName){
+         if(($status eq "PLACED") || ($status eq "FIXED")){
+             $CADB{$inst}->dbCadbSetStatus("UNPLACED");
+         }#if status 
+       my @location = $CADB{$inst}->dbCadbGetLoc;
+          if(($location[0] ne "") && ($location[1] ne "")){
+              my $new_loc_x = 0;
+              my $new_loc_y = 0;
+              $CADB{$inst}->dbCadbSetLoc($new_loc_x,$new_loc_y);
+         }#if location
+       my $orient = $CADB{$inst}->dbCadbGetOrient;
+          if($orient ne ""){
+             $CADB{$inst}->dbCadbSetOrient("N");
+          }#if orient    
+        }#if cellref
+      }#if exists  
+    }#foreach
+}#else
+}#sub set_cells_unplaced
+#----------------------------------------------------------------------------------------------------------------------------------------------------------------#
+sub set_insts_unplaced {
+my $instName = $_[0];
+if(exists $CADB{$instName}){
+   my $status = $CADB{$instName}->dbCadbGetStatus;
+   if(($status eq "PLACED") || ($status eq "FIXED")){
+      $CADB{$instName}->dbCadbSetStatus("UNPLACED");
+   }#if status
+   my @location = $CADB{$instName}->dbCadbGetLoc;
+   if(($location[0] ne "") && ($location[1] ne "")){
+       my $new_loc_x = 0;
+       my $new_loc_y = 0;
+       $CADB{$instName}->dbCadbSetLoc($new_loc_x,$new_loc_y);
+   }#if location
+   my $orient = $CADB{$instName}->dbCadbGetOrient;
+   if($orient ne ""){
+      $CADB{$instName}->dbCadbSetOrient("N");
+   }#if orient
+ }#if exists
+ else {print "ERR-DES : 001 : instance $instName not exists in CADB\n";}
+}#sub set_insts_unplaced
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------#
+sub set_cell_patt {
+my $cell_opt = $_[0];
+my $cellName = $_[1];
+my $new_cell = "";
+if(exists $PLDB{$cellName}){
+  if($cell_opt =~ m/\*$cell_opt\*/){
+     $cell_opt =~ s/^\*/\.\*/;
+     $cell_opt =~ s/\*$/\.\*/;
+     if($cellName =~ m/$cell_opt/){$new_cell = $cellName;}
+     }#if 
+   elsif($cell_opt =~ m/\*$cell_opt/){
+         $cell_opt =~ s/^\*/\.\*/;
+         if($cellName =~ m/$cell_opt/){$new_cell = $cellName;}
+   }#elsif
+   elsif($cell_opt =~ m/$cell_opt\*/){
+         $cell_opt =~ s/\**$/\.\*/;
+         if($cellName =~ m/$cell_opt/){$new_cell = $cellName;}
+   }#elsif
+   elsif($cell_opt =~ m/^$cellName$/){$new_cell = $cellName;} 
+  }#if exists PLDB
+return($new_cell);
+}#sub set_cell_patt
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------#
+sub set_inst_patt {
+my $inst_opt = $_[0];
+my $instName = $_[1];
+my $new_inst = "";
+if(exists $CADB{$instName}){
+   if($inst_opt =~ m/\*$inst_opt\*/){
+      $inst_opt =~ s/^\*/\.\*/;
+      $inst_opt =~ s/\*$/\.\*/;
+      if($instName =~ m/$inst_opt/){$new_inst = $instName;}
+   }#if
+   elsif ($inst_opt =~ m/\*$inst_opt/){
+          $inst_opt =~ s/^\*/\.\*/;
+          if($instName =~ m/$inst_opt/){$new_inst = $instName;}
+   }#elsif
+   elsif ($inst_opt =~ m/$inst_opt\*/){
+          $inst_opt =~ s/\**$/\.\*/;
+          if($instName =~ m/$inst_opt/){$new_inst = $instName;}
+   }#elsif
+   elsif($inst_opt =~ m/^$instName$/){$new_inst = $instName;}
+}#if exist CADB
+return ($new_inst);
+}#sub set_inst_patt
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------#
+sub set_port_patt {
+my $port_opt = $_[0];
+my $portName = $_[1];
+my $new_port = "";
+if(exists $PORTS_ALREADY{$TOP_MODULE}{$portName}){
+  if($port_opt =~ m/\*$port_opt\*/){
+     $port_opt =~ s/^\*/\.\*/;
+     $port_opt =~ s/\*$/\.\*/;
+     if($portName =~ m/$port_opt/){$new_port = $portName;}
+  }#if 
+  elsif ($port_opt =~ m/\*$port_opt/){
+         $port_opt =~ s/^\*/\.\*/;
+         if($portName =~ m/$port_opt/){$new_port = $portName;}
+  }#elsif 
+  elsif ($port_opt =~ m/$port_opt\*/){
+         $port_opt =~ s/\**$/\.\*/;
+         if($portName =~ m/$port_opt/){$new_port = $portName;}
+  }#elsif 
+  elsif($port_opt =~ m/^$portName$/){$new_port = $portName;}
+}#if exists
+return($new_port);
+}#sub set_port_patt
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------#
+sub set_unplaced_celltype {
+my $cell_type = $_[0];
+my $new_loc_x = 0;
+my $new_loc_y = 0;
+  foreach my $instName (keys %CADB){
+    my $macroName = $CADB{$instName}->dbCadbGetCellref;
+    if(exists $PLDB{$macroName}){
+    my $type = $PLDB{$macroName}->dbMdbGetType;
+    if($type == 0){my $macro_type = "comb";
+      if ($macro_type eq $cell_type){
+          $CADB{$instName}->dbCadbSetStatus("UNPLACED");
+          $CADB{$instName}->dbCadbSetLoc($new_loc_x,$new_loc_y);
+          $CADB{$instName}->dbCadbSetOrient("N");
+      }#if macro_type eq cell_type
+    }#if type eq 0
+    if($type == 1){my $macro_type = "seq";
+       if($macro_type eq $cell_type){
+          $CADB{$instName}->dbCadbSetStatus("UNPLACED");
+          $CADB{$instName}->dbCadbSetLoc($new_loc_x,$new_loc_y);
+          $CADB{$instName}->dbCadbSetOrient("N");
+       }#if macro_type eq cell_type
+     }#if type eq 1
+  }#if exists PLDB
+}#foreach instName
+}#sub set_unplaced_celltype
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------#
+sub report_instance {
+use Benchmark;
+my $t0 = new Benchmark;
+
+my $noOfArguments = @_;
+if($noOfArguments < 1 || $_[0] eq "-h"){print "Usage : report_instance -output <fileName>\n";
+                                        print "       	               --inst{list of instance Name}\n";
+                                        print "       	               --cell{list of cell Name}\n";
+                                        print "       	               --placed\n";
+                                        print "       	               --fixed\n";
+                                        print "       	               --unplaced\n";
+                                       }#if
+else {
+       my $placed = 0;
+       my $fixed = 0;
+       my $unplaced = 0;
+       my $DEFAULT = 1;
+       my $instList = 0;
+       my $cellList = 0;
+       my @inst_name_list = ();
+       my @cell_name_list = ();
+  for (my $i = 0; $i < $noOfArguments; $i++){
+       if($_[$i] eq "-output"){$RPTFILE = $_[$i+1];}
+       if($_[$i] eq "--placed"){$placed = 1;$DEFAULT = 0;}
+       if($_[$i] eq "--fixed"){$fixed = 1;$DEFAULT = 0;}
+       if($_[$i] eq "--unplaced"){$unplaced = 1;$DEFAULT = 0;}
+       if($_[$i] eq "--inst"){$inst = $_[$i+1];$instList =1;
+                              $DEFAULT = 0;
+                              $inst =~ s/\{\s*//;
+                              $inst =~ s/\s*\}//;
+                              @inst_name_list = split(/\,/,$inst);
+                              }#if inst
+       if($_[$i] eq "--cell"){$cell = $_[$i+1];$cellList = 1;
+                              $DEFAULT = 0;
+                              $cell =~ s/\{\s*//;
+                              $cell =~ s/\s*\}//;
+                              @cell_name_list = split(/\,/,$cell);
+                             }#if cell
+  }#for
+my $placedInsts  = 0;
+my $fixedInsts = 0;
+my $unplacedInsts = 0;
+open(WRITE,">$RPTFILE");
+print WRITE "DETAILS OF INSTANCES \n";
+my $numOfInstances = keys %COMP_ALREADY;
+print WRITE"Total instances : $numOfInstances\n\n";
+if ($placed == 1 || $DEFAULT == 1){
+my @placed_inst = ();
+  foreach my $inst (keys %COMP_ALREADY){
+          my $status = $CADB{$inst}->dbCadbGetStatus;
+          if ($status eq "PLACED") {
+              $placedInsts++;
+              push (@placed_inst,$inst);
+          }#if status
+  }#foreach inst
+  print WRITE "Total Placed Inst : $placedInsts\n";
+  print WRITE "Placed Inst:-";
+  foreach my $p (@placed_inst){
+          print WRITE "\t$p\n\t";
+  }#foreach placed
+}#if placed
+if ($fixed == 1 || $DEFAULT == 1 ){
+my @fixed_inst = ();
+  foreach my $inst (keys %COMP_ALREADY){
+          my $status = $CADB{$inst}->dbCadbGetStatus;
+          if ($status eq "FIXED") {
+              $fixedInsts++;
+              push (@fixed_inst,$inst);
+          }#if
+  }#foreach inst
+  print WRITE "\n";
+  print WRITE "Total Fixed Inst : $fixedInsts\n";
+  print WRITE "Fixed Inst:-";
+  foreach my $fxdinst (@fixed_inst){
+          print WRITE "\t$fxdinst\n\t";
+  }#foreach fixed  
+}#if fixed
+if ($unplaced == 1 || $DEFAULT == 1){
+my @unplaced_inst = ();
+  foreach my $inst (keys %COMP_ALREADY){
+          my $status = $CADB{$inst}->dbCadbGetStatus;
+          if ($status eq "UNPLACED" || $status eq "UND") {
+              $unplacedInsts++;
+              push (@unplaced_inst,$inst);
+          }#if
+  }#foreach inst                    
+  print WRITE "\n";
+  print WRITE "Total Unplaced Inst $unplacedInsts\n";
+  print WRITE "Unplaced Inst:-";
+  foreach my $unpinst (@unplaced_inst){
+        print WRITE "\t$unpinst\n\t";
+  }#foreach unplaced
+}#if unplaced
+print WRITE"\n";
+if(($instList == 1) && ($DEFAULT == 0)){
+foreach my $instName (@inst_name_list){
+        if(exists $CADB{$instName}){
+           my $status = $CADB{$instName}->dbCadbGetStatus;
+           print WRITE"$instName $status\n";
+        }#if exists CADB
+}#foreach instName
+}#if instList
+if(($cellList == 1) && ($DEFAULT == 0)){
+foreach my $cellref (@cell_name_list){
+  foreach my $instName (keys %CADB){
+    my $cell_Name = $CADB{$instName}->dbCadbGetCellref;
+    if($cell_Name eq $cellref){
+       my $status = $CADB{$instName}->dbCadbGetStatus;
+       print WRITE "$instName $cellref $status\n";
+    }#if
+  }#foreach
+ print WRITE"\n";
+}#foreach
+}#if cellList
+}#else
+my $t1 = new Benchmark;
+my $td = timediff($t1,$t0);
+print "Command report_instance took:",timestr($td),"\n";
+}#sub report_instance
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------#
+1;

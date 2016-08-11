@@ -1,0 +1,298 @@
+sub set_inst_box {
+ my $numOfArg = @_;
+ 
+ if($_[0] eq "-h" || $_[0] eq "-H" || $_[0] eq "-help" || $_[0] eq "-HELP"){
+    print "Usage: set_inst_box --stdCell (to set bbox for std cells)\n";
+    print "                    --block (to set bbox for block inst)\n";
+    print "                    --all (to set bbox for all inst)\n";
+ }else{
+    my ($setBboxForStdCell, $setBboxForBlock, $setBboxForAll) = (0, 0, 0);
+    for(my $i=0; $i<$numOfArg; $i++){
+        if($_[$i] eq "--stdCell"){$setBboxForStdCell = 1;}
+        if($_[$i] eq "--block"){$setBboxForBlock = 1;}
+        if($_[$i] eq "--all"){$setBboxForAll = 1;}
+    }
+    if($setBboxForStdCell == 0 && $setBboxForBlock == 0 && $setBboxForAll == 0){
+       $setBboxForAll = 1;
+    }
+    $DEF_DATABASE_UNIT = $GLOBAL->dbfGlobalGetDBU;
+    foreach $instance (keys %CADB){
+       my @instLoc = $CADB{$instance}->dbCadbGetLoc;
+       my $orient = $CADB{$instance}->dbCadbGetOrient;
+       my $cellref = $CADB{$instance}->dbCadbGetCellref;
+       if(exists $PLDB{$cellref}){
+          my $class = $PLDB{$cellref}->dbMdbGetClass;
+          if($setBboxForAll == 0){
+             if($class eq "CORE" && $setBboxForStdCell == 1){
+             }elsif($class eq "BLOCK" && $setBboxForBlock == 1){
+             }else{next;}  
+          }
+          my @cellSize = $PLDB{$cellref}->dbMdbGetSize;
+          my $width = $cellSize[0]*$DEF_DATABASE_UNIT;
+          my $height = $cellSize[1]*$DEF_DATABASE_UNIT; 
+          
+          my ($llx,$lly,$urx,$ury) = &utilLocToBbox($instLoc[0], $instLoc[1], $orient, $width, $height);
+          $CADB{$instance}->dbCadbSetbBox($llx,$lly,$urx,$ury);
+          # Rajeev : someone added this code with GUI ease intention .. but its killing the DB ...
+          #&set_instance_pinRects($instance);
+          #&set_instance_obsRects($instance);
+       }#if exists cellref
+    }#foreach instance 
+ }
+}#sub set_inst_box
+#--------------------------------------------------------------------------------------------------------------------------------------------------------------------#
+
+sub utilLocToBbox {
+ my ($xorigin, $yorigin, $orient, $width, $height) = @_;
+ my ($llx, $lly, $urx, $ury) = ($xorigin, $yorigin, $xorigin, $yorigin);
+ 
+ if ( $orient eq "N" || $orient eq "FN" ||
+      $orient eq "S" || $orient eq "FS" ) {
+   $urx += $width;
+   $ury += $height;
+ }
+ elsif ( $orient eq "W" || $orient eq "FW" ||
+         $orient eq "E" || $orient eq "FE" ) {
+   $urx += $height;
+   $ury += $width;
+ }
+ else {
+      print "WARN-UTIL-LOC-BBOX : 001 : Illegal orientation $orient\n";
+      }
+ 
+ return ($llx, $lly, $urx, $ury);
+}#sub utilLocToBbox
+
+#
+# Arguments are references to array, example call with (\@box1, \@box2);
+#
+sub utilRectOverlap {
+
+my ($llx1, $lly1, $urx1, $ury1) = @{$_[0]};
+my ($llx2, $lly2, $urx2, $ury2) = @{$_[1]};
+
+if ( ($llx1 < $urx2) && ($llx2 < $urx1) && ($lly1 < $ury2) && ($lly2 < $ury1) ) {
+  return 1;
+}
+return 0;
+
+}#sub utilRectOverlap
+
+#
+# Arguments are references to array, example call with (\@box1, \@box2);
+#
+sub utilRectOverlapOrTouch {
+
+my ($llx1, $lly1, $urx1, $ury1) = @{$_[0]};
+my ($llx2, $lly2, $urx2, $ury2) = @{$_[1]};
+
+if ( ($llx1 <= $urx2) && ($llx2 <= $urx1) && ($lly1 <= $ury2) && ($lly2 <= $ury1) ) {
+  return 1;
+}
+return 0;
+
+}#sub utilRectOverlapOrTouch
+
+#
+# Arguments are references to array, example call with (\@box1, \@box2);
+# Check @box1 is entirely inside @box2
+#
+sub utilRectInside {
+
+my ($llx1, $lly1, $urx1, $ury1) = @{$_[0]};
+my ($llx2, $lly2, $urx2, $ury2) = @{$_[1]};
+
+if ( ($llx1 > $llx2) && ($urx1 < $urx2) && ($lly1 > $lly2) && ($ury1 < $ury2) ) {
+  return 1;
+}
+return 0;
+
+}#sub utilRectInside
+
+#
+# Arguments are references to array, example call with (\@box1, \@box2);
+# Check @box1 is inside (possibly touching) @box2
+#
+sub utilRectInsideOrTouch {
+
+my ($llx1, $lly1, $urx1, $ury1) = @{$_[0]};
+my ($llx2, $lly2, $urx2, $ury2) = @{$_[1]};
+
+if ( ($llx1 >= $llx2) && ($urx1 <= $urx2) && ($lly1 >= $lly2) && ($ury1 <= $ury2) ) {
+  return 1;
+}
+return 0;
+
+}#sub utilRectInsideOrTouch
+
+#
+# Bloat rect on all directions [L B R T]
+# Arguments are references to array, example call with (\@box, \@bloat);
+#
+sub utilBloatRect {
+
+my $boxref = $_[0];
+my $bloat = $_[1];
+
+$boxref->[0] -= $bloat->[0];
+$boxref->[1] -= $bloat->[1];
+$boxref->[2] += $bloat->[2];
+$boxref->[3] += $bloat->[3];
+
+}#sub utilBloatRect
+
+#--------------------------------------------------------------------------------------------------------------------------------------------------------------------#
+
+#################################### Setting the PIN Rects for Instance  #########################################
+#sub set_instance_pinRects {
+#my $InstanceName = $_[0];
+#if (exists $COMP_ALREADY{$InstanceName}){ 
+#   my @arr_total = ();
+#   my @location = $CADB{$InstanceName}->dbCadbGetLoc;
+#   my $orient =   $CADB{$InstanceName}->dbCadbGetOrient;
+#   my $cellref =  $CADB{$InstanceName}->dbCadbGetCellref;
+###############################   pins for instance  ################################
+#      my @cellOrigin = $PLDB{$cellref}->dbMdbGetOrigin;
+#      my @cellSize = $PLDB{$cellref}->dbMdbGetSize;
+#      my @pins = $PLDB{$cellref}->dbMdbGetPins;
+#         foreach $pinName ( @pins ) {
+#              my @arr_pinRect = ();
+#              my $pinDire = $PLDB{$cellref}->dbMdbGetPinDir($pinName);
+#              my @RECTS = $PLDB{$cellref}->dbMdbGetPinRect($pinName);
+#
+#              my ($layer, $llx2, $lly2, $urx2, $ury2)=(split(/\s+/,$RECTS[0]))[0,2,3,4,5];
+#              my @TextRect = &xformCellPinToInstPin($location[0],$location[1],$cellOrigin[0], $cellOrigin[1],$orient,$cellSize[0],$cellSize[1],$llx2,$lly2,$urx2,$ury2);
+#              my $midx = ($TextRect[0] + $TextRect[2])/2;
+#              my $midy = ($TextRect[1] + $TextRect[3])/2;
+#              push(@arr_pinRect, [($pinName,$midx,$midy)]);
+#                 foreach $rectLine ( @RECTS ) {
+#                      my ($layer, $rllx1, $rlly1, $rurx1, $rury1)=(split(/\s+/,$rectLine))[0,2,3,4,5];
+#                      my $color = $PTDB{$layer}->dbTechGetLayerColor;
+####################### changing the orientation of Pin Rectangles according to Instance orientation ######################## 
+#                 my @PinRect = &xformCellPinToInstPin($location[0],$location[1],$cellOrigin[0], $cellOrigin[1],$orient,$cellSize[0],$cellSize[1],$rllx1,$rlly1,$rurx1,$rury1);
+#                      push(@arr_pinRect, [($color,$PinRect[0],$PinRect[1],$PinRect[2],$PinRect[3])]);
+#                                                }# for rectangle
+#                      push(@arr_total, [@arr_pinRect]); 
+#                                                         }#for pins
+#$CADB{$InstanceName}->dbCadbSetPinRects(@arr_total);
+# }#if instance exists in db
+#}#sub set_instance_pinRects
+
+#################################### Setting the PIN Rects for Instance  #########################################
+#sub set_instance_obsRects {
+#my $InstanceName = $_[0];
+#my @arr_obsRect = ();
+#if (exists $COMP_ALREADY{$InstanceName}){ 
+#    my @location = $CADB{$InstanceName}->dbCadbGetLoc;
+#    my $orient =   $CADB{$InstanceName}->dbCadbGetOrient;
+#    my $cellref =  $CADB{$InstanceName}->dbCadbGetCellref;
+#    my @cellSize = $PLDB{$cellref}->dbMdbGetSize;
+#    my @cellOrigin = $PLDB{$cellref}->dbMdbGetOrigin;
+#    my @OBS = $PLDB{$cellref}->dbMdbGetObs;
+#    foreach $obsLine ( @OBS ) {
+#         my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$obsLine))[0,2,3,4,5];
+#         my $color = $PTDB{$layer}->dbTechGetLayerColor;
+#         my @obsRect = &xformCellPinToInstPin($location[0],$location[1],$cellOrigin[0], $cellOrigin[1],$orient,$cellSize[0],$cellSize[1],$llx,$lly,$urx,$ury); 
+#         push(@arr_obsRect, [($color,$obsRect[0],$obsRect[1],$obsRect[2],$obsRect[3])]);
+#    }#foreach obsLine
+#    $CADB{$InstanceName}->dbCadbSetObsRects(@arr_obsRect);
+# }#if instance exists in db
+#}#sub set_instance_obsRects 
+#########################################################################################################
+sub set_instance_location {
+#******set_instance_location
+# NAME
+#  set_instance_location
+# FUNCTION
+#  set the instance location
+#SYNOPSIS
+#  set_instance_location -instance -loc -status -orient
+#INPUTS
+#  options :
+#            -instance<{inst1,inst2....}>
+#            -loc<{llx,lly....}>
+#            -status<{st1,st2....}>
+#            -orient<{or1,or2....}>
+#OUTPUTS
+#        changed the location,status,orient (for instance)
+#******
+
+use Benchmark;
+my $t0 = new Benchmark;
+my $noOfArguments = @_;
+if ($noOfArguments < 1 || $_[0] eq "-h"){print "Usage : set_instance_location\n";
+                                         print "      : -instance<{inst1,inst2....}>\n";
+                                         print "      : -loc<{llx,lly....}>\n";
+                                         print "      : -status<{st1,st2....}>\n";
+                                         print "      : -orient<{or1,or2....}>\n";
+}#if
+else {
+       my @inst = ();
+       my @location =();
+       my @status = ();
+       my @orient = ();
+       for(my $i =0; $i < $noOfArguments; $i++){
+           if($_[$i] eq "-instance"){$instanceName = $_[$i+1];
+           $instanceName =~ s/\{\s*//;
+           $instanceName =~ s/\s*\}//;
+           @inst = (split(/\,/,$instanceName));
+           }
+           if($_[$i] eq "-loc"){$loc = $_[$i+1];
+           $loc =~s/\{\s*//;
+           $loc =~ s/\s*\}//;
+           @location = (split(/\,/,$loc));
+           }
+           if($_[$i] eq "-status"){$sta_tus = $_[$i+1];
+           $sta_tus =~s/\{\s*//;
+           $sta_tus =~s/\s*\}//;
+           @status = (split(/\,/,$sta_tus));
+           }
+           if($_[$i] eq "-orient"){$ori = $_[$i+1];
+           $ori =~s/\{\s*//;
+           $ori =~s/\s*\}//;
+           @orient = (split(/\,/,$ori));
+           }#if
+       }#for
+       my $num_of_inst = @inst;
+       for (my $i =0; $i < $num_of_inst;$i++){
+            $instance=$inst[$i];
+            $inst_status=$status[$i];
+            my $llx = shift(@location);
+            my $lly = shift(@location);
+            if (exists $TEMP{$instance}){
+              if (exists $CADB{$instance}){
+                  $CADB{$instance}->dbCadbSetLoc($llx,$lly);
+                  $CADB{$instance}->dbCadbSetStatus($inst_status);
+                  my $cellref = $CADB{$instance}->dbCadbGetCellref;
+                  if (exists $PLDB{$cellref}){
+                  my $class = $PLDB{$cellref}->dbMdbGetClass;
+                  if(($class eq "BLOCK")||($class eq "Block")){
+                      my $Orient = "";
+                      my $num_of_ori = @orient;
+                      if ($num_of_ori == 0){$Orient = "N";}
+                      else{$Orient = shift (@orient);}
+                         # print "$instance $Orient\n";
+                      $CADB{$instance}->dbCadbSetOrient($Orient);
+                  }#if class block 
+                }#if exists cellref
+              }#if exists CADB 
+              elsif (exists $PORTS_ALREADY{$TOP_MODULE}{$instance} ) {
+                $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetLoc($llx,$lly);
+                $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetStatus($inst_status);
+              }#elsif
+              else{
+                   print "ERR-UTS-SET_INST_LOC : 001 : $instance is neither a port nor a component\n";
+              }#else
+            }#if exists TEMP
+            else {
+                  print "WARN-UTS-SET_INST_LOC : 002 : Instance $instance not found in TEMP hash\n";
+            }#else
+       }#for
+}#else
+my $t1 = new Benchmark;
+my $td = timediff($t1,$t0);
+print "command set_instance_location took:",timestr($td),"\n";
+}#sub set_instance_location
+
+
+1;

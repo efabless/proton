@@ -1,0 +1,187 @@
+sub activate_gcellViewTab{
+    $GLOBAL->dbGlobalSetActiveAnalysisTab("gCell");
+    $GLOBAL->dbGlobalSetActiveCanvas("gcell_view");
+    $gcell_canvas->CanvasFocus;
+}#sub activate_gcellViewTab
+
+sub display_gcell{
+use Benchmark;
+my $t0 = new Benchmark;
+
+my $canvas = $_[0];
+my $netDisplay = $_[1];
+my $display = $_[2];
+
+my ($shiftx, $shifty) = (20, 20);
+my $box = [0, 0, 540, 540];
+############################## Making Bounding Chip Boundary ###################################
+my $DBSCALEFACTOR = $DEF_DATABASE_UNIT;
+   if (exists $DIE_ALREADY{dieArea}){
+      $guiDiellx = $DIE_ALREADY{dieArea}[0];
+      $guiDielly = $DIE_ALREADY{dieArea}[1];
+      $guiDieurx = $DIE_ALREADY{dieArea}[2];
+      $guiDieury = $DIE_ALREADY{dieArea}[3];
+
+      $guiMuDiellx = $guiDiellx/$DBSCALEFACTOR;
+      $guiMuDielly = $guiDielly/$DBSCALEFACTOR;
+      $guiMuDieurx = $guiDieurx/$DBSCALEFACTOR;
+      $guiMuDieury = $guiDieury/$DBSCALEFACTOR;
+   }#if dieArea exists
+
+my $guiWidth = abs($guiMuDieurx - $guiMuDiellx) ;
+my $guiHeight = abs($guiMuDieury - $guiMuDielly) ;
+my $dieHMultFact  = 500/$guiHeight;
+my $dieWMultFact  = 500/$guiWidth;
+if($dieHMultFact < $dieWMultFact ) {$MICRONFACTOR = $dieHMultFact; }
+else {$MICRONFACTOR =  $dieWMultFact;}
+   $GLOBAL->dbGlobalSetMicronFactor($MICRONFACTOR);
+######################################################################################################
+my @Color =('plum1', 'plum2', 'plum3', 'plum4', 'SkyBlue1', 'SkyBlue2', 'SkyBlue3', 'SkyBlue4', 'blue1', 'blue2', 'blue3', 'blue4', 'green1', 'green2', 'green3', 'green4', 'yellow1', 'yellow2', 'yellow3', 'yellow4', 'orange1', 'orange2','orange3', 'orange4', 'tomato1', 'tomato2', 'tomato3', 'tomato4', 'magenta1', 'magenta2', 'magenta3', 'magenta4', 'red1', 'red2', 'red3', 'red4');
+my $mulFact = $MICRONFACTOR/$DBSCALEFACTOR;
+my @gSize = &get_num_gcell;
+my @numNets = $GCellArray[0][0]->dbgGcellGetMinMaxNets;
+
+my $MinNoOfNets = $numNets[0];
+my $MaxNoOfNets = $numNets[1];
+my $colorRange = int(($MaxNoOfNets - $MinNoOfNets)/36); 
+if($colorRange <= 0){$colorRange = 1;}
+my $len = @Color;
+my $noOfNets = 0;
+my $color = "white";
+my $index = "";
+
+for(my $i=0; $i<$gSize[0]; $i++){
+    for(my $j=0; $j<$gSize[1]; $j++){
+        my @coords = $GCellArray[$i][$j]->dbgGcellGetBBox;
+        my $netstat = $GCellArray[$i][$j]->dbgGcellGetNetStat;
+        my @netStat = split(/,/,$netstat);
+
+        my $llx1 = $shiftx + $coords[0]*$mulFact;    
+        my $lly1 = $shifty + $coords[1]*$mulFact;    
+        my $urx1 = $shiftx + $coords[2]*$mulFact;    
+        my $ury1 = $shifty + $coords[3]*$mulFact;
+
+        if    ($netDisplay eq "local"){
+               $noOfNets = $netStat[0];
+        }elsif($netDisplay eq "semilocal"){
+               $noOfNets = $netStat[1];
+        }elsif($netDisplay eq "semiglobal"){
+               $noOfNets = $netStat[2];
+        }elsif($netDisplay eq "global"){
+               $noOfNets = $netStat[3];
+        }  
+        if($noOfNets == $MinNoOfNets){ $color = "Grey67";
+        }else { 
+               $index = int(($noOfNets - $MinNoOfNets)/$colorRange); 
+            if($index == (($noOfNets - $MinNoOfNets)/$colorRange)){$index = $index - 1;}
+            if($index < $len){ $color = $Color[$index];
+            }else            { $color = "white";
+            }  
+        }        
+           $canvas->createRectangle($llx1,$lly1,$urx1,$ury1, -tags=>$i.",".$j, -outline=>"black", -fill=> $color);
+    }#for coloumns
+}#for rows
+
+&gcell_print_xy($canvas, $shiftx, $shifty, 500, 500);        
+$canvas->focusForce;
+$canvas->viewArea(@$box, -border => 0);
+my @box_org = $canvas->getView();
+&design_ZoomIn_ZoomOut($canvas,\@box_org);
+
+$t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "gcell display took:",timestr($td),"\n";
+}#sub display_gcell
+
+##########################################################################################################
+
+sub gcell_canvasToDisplay {
+my @arg = @_;
+my $canvas = $arg[0];
+my $llx = $arg[1];
+my $lly = $arg[2];
+my $width = $arg[3];
+my $height = $arg[4];
+
+my @xy = $canvas->eventLocation();
+my $x = $xy[0];
+my $y = $xy[1];
+my @id      = $canvas->find(qw/withtag current/);
+my @tagList = $canvas->gettags($id[0]);
+my @Index = split(/,/,$tagList[0]);
+my $netstat = $GCellArray[$Index[0]][$Index[1]]->dbgGcellGetNetStat;
+my @netStat = split(/,/,$netstat);
+
+my $t1= sprintf("localNets = %d\n", $netStat[0]);
+my $t2= sprintf("Semilocal = %d\n", $netStat[1]);
+my $t3= sprintf("semiglobal= %d\n", $netStat[2]);
+my $t4= sprintf("globalNets= %d\n", $netStat[3]);
+
+if ((($x >= $llx) && ($x <= ($llx + $width))) && (($y >= $lly) && ($y <= ($lly + $height)))) {
+$canvas->createRectangle($x,$y,$x+140,$y+90, -outline=>"green",-fill=>"white",-tags=>"NETTEXT");
+$canvas->createText($x+70,$y+70, -text=>$t1 ,-tags=>"NETTEXT");
+$canvas->createText($x+70,$y+50, -text=>$t2 ,-tags=>"NETTEXT");
+$canvas->createText($x+70,$y+30, -text=>$t3 ,-tags=>"NETTEXT");
+$canvas->createText($x+70,$y+10, -text=>$t4 ,-tags=>"NETTEXT");
+ }
+}#sub gcell_canvasToDisplay
+
+sub gcell_print_xy {
+my @arg = @_;
+my $Canvas = $arg[0];
+$Canvas->CanvasBind("<Button-1>"=> [sub {&gcell_canvasToDisplay(@arg); }]);
+$Canvas->CanvasBind("<B1-ButtonRelease>"=> [sub{$Canvas->delete(NETTEXT);}]);
+            
+}#sub gcell_print_xy
+
+##########################################################################################################
+sub display_legends {
+my $popupWindow = MainWindow->new();
+$popupWindow->title("color legends");
+
+my @Color =('plum1', 'plum2', 'plum3', 'plum4', 'SkyBlue1', 'SkyBlue2', 'SkyBlue3', 'SkyBlue4', 'blue1', 'blue2', 'blue3', 'blue4', 'green1', 'green2', 'green3', 'green4', 'yellow1', 'yellow2', 'yellow3', 'yellow4', 'orange1', 'orange2','orange3', 'orange4', 'tomato1', 'tomato2', 'tomato3', 'tomato4', 'magenta1', 'magenta2', 'magenta3', 'magenta4', 'red1', 'red2', 'red3', 'red4');
+
+my $canvas  = $popupWindow->Scrolled(qw/Canvas -bg white -xscrollincrement 50 -yscrollincrement 50 -confine 1 -scrollbars se/, -width => 340, -height => 280, -scrollregion => [0, 0, 340, 260]);
+$canvas->Subwidget("xscrollbar")->configure(-width=>10,-borderwidth=>1);
+$canvas->Subwidget("yscrollbar")->configure(-width=>10,-borderwidth=>1);
+$canvas->pack(qw/-expand 1 -side top/);
+
+my $Frame1 = $popupWindow->Frame()->pack(-side => 'bottom');
+#my $graphButton = $Frame1->Button(-text=> "Graph",-padx=>0, -pady=>0,-relief=>'groove',-command=> sub{})->pack(-side=>'left');
+my $exitButton = $Frame1->Button(-text=> "Exit",-command=> sub{$popupWindow->destroy;})->pack(-side=>'left');
+
+my @numNets = $GCellArray[0][0]->dbgGcellGetMinMaxNets;
+my $colorRange = int(($numNets[1] - $numNets[0])/36); 
+if($colorRange <= 0){$colorRange = 1;}
+
+$canvas->createText(170,10, -text=>"RangeOfNets->from Nets in previos color upto in that color");
+$canvas->createRectangle(10,70,50,30, -fill=>"Grey67", -outline=>"black");
+$canvas->createText(30,50, -text=>"0");
+for(my $i=0; $i< 6; $i++){
+  for(my $j=0; $j< 6; $j++){
+      my $llx = 50 + 40*$j;
+      my $lly = 30 + 40*($i+1);
+      my $urx = 50 + 40*($j+1);
+      my $ury = 30 + 40*$i;
+      my $color = $Color[$j+$i*6];
+      my $tx = ($llx+$urx)/2;
+      my $ty = ($lly+$ury)/2;
+      my $Range = $colorRange*($j+$i*6 + 1);
+      #my $LRange = $colorRange*($j+$i*6) + 1;
+      #my $URange = $colorRange*($j+$i*6 + 1);
+      $canvas->createRectangle($llx, $lly,$urx, $ury, -fill=>$color);
+      $canvas->createText($tx, $ty, -text=>$Range);
+      #$canvas->createText($tx, $ty, -text=>$LRange."-".$URange);
+  }#for columns
+}#for rows
+$canvas->createRectangle(290,270,330,230, -fill=>"white", -outline=>"black");
+my $maxRange = $colorRange*36;
+if($numNets[1] > $maxRange){
+   $canvas->createText(310,250, -text =>$numNets[1]);
+}else {
+   $canvas->createText(310,250, -text =>"> $maxRange");
+} 
+}#sub display_legends
+
+
+1;

@@ -1,0 +1,143 @@
+sub rpt_inst_map{
+
+#****f* /rpt_inst_map
+# NAME
+#   rpt_inst_map
+# FUNCTION
+#   generates a hashes temp and tempr
+# Assumption
+#   temp hash populated
+# SYNOPSIS
+#   usage : rpt_inst_map
+# INPUTS
+#   rpt_inst_map
+# OUTPUTS
+#   inst_rpt file generates
+#****
+
+my $noOfArguments = @_;
+open(FH,">inst_rpt");
+if(%TEMP){
+ print "INFO-LIBLYIS-RPT_INST_MAP : 001 : write_graph command has already run and written a graphfile \n";
+ foreach $inst(keys %TEMP){
+   if( exists $TEMP{$inst} ){
+       print FH "$inst $TEMP{$inst}\n";
+                               }#if exists
+                              }#foreach inst temp hash
+                            }#if temp exists
+else {
+print "WARN-LIBLYIS-RPT_INST_MAP : 002 : when write_graph cmd not run then TEMP hash populated \n";
+#-----------------------------------------------if TEMP hash is not populated then-----------------------------------------#
+%TEMP = ();
+%TEMPR = ();
+my $cnt = 0;
+foreach $port(keys %{$PORTS_ALREADY{$TOP_MODULE}}){
+        $TEMP{$port} = $cnt;
+        print FH "$port $TEMP{$port}\n";   
+        $cnt++;
+                                  }#foreach port already
+foreach $inst(keys %COMP_ALREADY){
+              $TEMP{$inst}=$cnt;
+              print FH "$inst $TEMP{$inst}\n";
+              $cnt++;
+                                  }#foreach inst comp already
+foreach my $inst (keys %TEMP){
+        my $n = $TEMP{$inst};
+        $TEMPR{$n} = $inst;
+                                  }#foreach inst temp   
+}#else 
+}#sub rpt_inst_map
+#--------------------------------------------------------------------------------------------------------------------------#
+sub read_rpt_inst_map {
+
+#****f* /read_rpt_inst_map 
+# NAME
+#   read_rpt_inst_map
+# FUNCTION
+#   reads inst_rpt file
+# Assumptions
+#   two hash populated
+# SYNOPSIS
+#   usage : read_rpt_inst_map
+# INPUTS
+#   read_rpt_inst_map
+# OUTPUTS
+#   hash populates
+#****
+ 
+%STEMP = ();
+%STEMPR = ();
+$INPUT_FILE = "inst_rpt";
+if ( -e $INPUT_FILE){
+open(FH,"$INPUT_FILE");
+while(<FH>){
+chomp();
+($instance,$instance_num) = (split(/\s+/,$_))[0,1];
+#print "$instance $instance_num\n";
+$STEMP{$instance}=$instance_num;
+$STEMPR{$instance_num} = $instance;
+print "INFO-LIBLYIS-RED_RPT_INST_MAP : 001 : File exists and is readable \n";
+       }#while
+   }#if file exists 
+}#sub read_rpt_inst_map
+#--------------------------------------------------------------------------------------------------------------------------#
+sub hier_rpt_inst_map {
+my $noOfArguments = @_;
+open(FH,">hier_inst_rpt");
+if(%HIER_TEMP){
+print "INFO-LIBLYIS-HR_RPT_INST_MAP : 001 : write_hier_place_graph has already run and written a graph file\n";
+foreach $inst(keys %HIER_TEMP){
+print FH"$inst $HIER_TEMP{$inst}\n";
+                               }#foreach inst 
+                             }#if temp exists
+else {
+print "WARN-LIBLYIS-HR_RPT_INST_MAP : 002 : when write_hier_place_graph cmd not run then HIER_TEMP hash populated \n";
+#-----------------------------------if HIER_TEMP hash is not populated then-------------------------------------#
+%HIER_TEMP = ();
+%HIER_TEMPR = ();
+my $count = 0;
+my @output_pins = $PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenGetOutput;
+foreach $out_inst (@output_pins){
+$HIER_TEMP{$out_inst} = $count;
+$count++;
+}#foreach inst
+my @input_pins = $PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenGetInput;
+foreach $in_inst(@input_pins){
+$HIER_TEMP{$in_inst} = $count;
+$count++;
+}#foreach inst
+my @bidi_pins = $PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenGetBidi;
+foreach $bidi_inst(@bidi_pins){
+$HIER_TEMP{$bidi_inst} = $count;
+$count++;
+}#foreach inst
+
+foreach my $inst (keys %{$PSEUDO_VINST_ALREADY{$TOP_MODULE}}){
+$HIER_TEMP{$inst} = $count;
+$count++;
+}#foreach inst  
+foreach my $inst (keys %HIER_TEMP){
+           print "INFO-LIBLYIS-HR_RPT_INST_MAP : 003 : inst $inst $HIER_TEMP{$inst}\n";
+                                  }#foreach
+}#else
+}#sub hier_rpt_inst_map
+#--------------------------------------------------------------------------------------------------------------#
+sub read_hier_rpt_inst_map{
+%SHIER_TEMP = ();
+%SHIER_TEMPR = ();
+$INPUT_FILE = "hier_inst_rpt";
+if(-e $INPUT_FILE){
+open(FH,"$INPUT_FILE");
+while(<FH>){
+chomp();
+($inst_name,$inst_num) = (split(/\s+/,$_))[0,1];
+print "INFO-LIBLYIS : 004 : $inst_name $inst_num\n";
+$SHIER_TEMP{$inst_name} = $inst_num;
+$SHIER_TEMPR{$inst_num} = $inst_name;
+print "INFO-LIBLYIS : 005 : File exists and is readable \n";
+                   }#while
+                  }#if file exists
+}#sub read_hier_rpt_inst_map
+#---------------------------------------------------------------------------------------------------------------#
+
+1;

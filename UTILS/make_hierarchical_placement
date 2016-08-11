@@ -1,0 +1,2486 @@
+sub print_design_hierarchy 
+{
+  my $start_module =  $GLOBAL->dbfGlobalGetTOP();
+  &print_sub_design_hierarchy($start_module,0);
+  &edit_complete_hierarchy();
+  &print_design_hierarchy_from_earlyProto_DB ();
+  print "\n" ;
+}#sub print_design_hierarchy
+
+sub print_sub_design_hierarchy 
+{
+  my $moduleName = $_[0];
+  my $tabNo = $_[1];
+  my $space_in_beg = "";
+  for (my $temp_count = 0 ; $temp_count < $tabNo ; $temp_count++) {
+    $space_in_beg = $space_in_beg. "  ";
+  }
+  if(!defined($moduleName)) {
+    return ;
+  }
+  if( !exists $MODULE_ALREADY{$moduleName} ) {
+    return ;
+  }
+  print "\n$space_in_beg -------------------------------" ;
+  print "\n$space_in_beg Design hierarchy of $moduleName" ;
+  print "\n$space_in_beg -------------------------------" ;
+  print "\n$space_in_beg   Hierarchical instances of the module are " ;
+  print "\n$space_in_beg   -----------------------------------------" ;
+  my @insts0 =  $MODULE_ALREADY{$moduleName}->dbVNOMGetHierInst;
+  my @insts =  sort {$a cmp $b} @insts0 ;
+  foreach my $inst ( @insts) {
+    my $cellref = $MODULE_ALREADY{$moduleName}->dbVNOMGetHierInstCell($inst);
+    print "\nINFO-UTS : 001 : $space_in_beg     $inst - ref : $cellref" ;
+    &print_sub_design_hierarchy($cellref,$tabNo+2);
+  }
+  print "\n$space_in_beg   Leaf instances of the module are " ;
+  print "\n$space_in_beg   ---------------------------------" ;
+  @insts0 =  $MODULE_ALREADY{$moduleName}->dbVNOMGetLeafInst;
+  @insts =  sort {$a cmp $b} @insts0 ;
+  foreach my $inst ( @insts) {
+    my $cellref = $MODULE_ALREADY{$moduleName}->dbVNOMGetLeafInstCell($inst);
+    print "\nINFO-UTS : 002 : $space_in_beg     $inst - ref : $cellref" ;
+  }
+}#sub print_sub_design_hierarchy
+
+sub edit_complete_hierarchy 
+{
+  my $start_module =  $GLOBAL->dbfGlobalGetTOP();
+  edit_current_hierarchy($start_module,0);
+}#sub edit_complete_hierarchy
+
+sub edit_current_hierarchy 
+{
+  my $moduleName = $_[0] ;
+  if(!defined($moduleName)) {
+    return ;
+  }
+  if( !exists $MODULE_ALREADY{$moduleName} ) {
+    return ;
+  }
+  my $tabNo = $_[1];
+  my $space_in_beg = "";
+  for (my $temp_count = 0 ; $temp_count < $tabNo ; $temp_count++) {
+    $space_in_beg = $space_in_beg. "  ";
+  }
+  print "\n$space_in_beg -------------------------------" ;
+  print "\n$space_in_beg Design hierarchy of $moduleName" ;
+  print "\n$space_in_beg -------------------------------" ;
+  print "\n$space_in_beg   Hierarchical instances of the module are " ;
+  print "\n$space_in_beg   -----------------------------------------" ;
+  if ( exists $PSEUDO_MODULE_ALREADY{$moduleName} ) {
+    if ( !exists $PSEUDO_VINST_ALREADY{$moduleName} ) {
+      &dbfTstgenLoadVNOMInsts($moduleName);
+      &dbfTstgenLoadVNOMNets($moduleName);
+    }
+    if ( !exists $PSEUDO_VNET_ALREADY{$moduleName} ) {
+      &dbfTstgenLoadVNOMNets($moduleName);
+    }
+  }else {
+    dbfTstgenEditModule($moduleName);
+  }
+  my @insts0 =  $MODULE_ALREADY{$moduleName}->dbVNOMGetHierInst;
+  my @insts =  sort {$a cmp $b} @insts0 ;
+  foreach my $inst ( @insts) {
+    my $cellref = $MODULE_ALREADY{$moduleName}->dbVNOMGetHierInstCell($inst);
+    print "\nINFO-UTS : 001 : $space_in_beg     $inst - ref : $cellref" ;
+    edit_current_hierarchy($cellref,$tabNo+2);
+  }
+  print "\n$space_in_beg   Leaf instances of the module are " ;
+  print "\n$space_in_beg   ---------------------------------" ;
+  @insts0 =  $MODULE_ALREADY{$moduleName}->dbVNOMGetLeafInst;
+  @insts =  sort {$a cmp $b} @insts0 ;
+  foreach my $inst ( @insts) {
+    my $cellref = $MODULE_ALREADY{$moduleName}->dbVNOMGetLeafInstCell($inst);
+    print "\nINFO-UTS : 002 : $space_in_beg     $inst - ref : $cellref" ;
+  }
+}#sub edit_current_hierarchy
+
+sub print_design_hierarchy_from_earlyProto_DB 
+{
+  my $start_module =  $GLOBAL->dbfGlobalGetTOP();
+  &print_sub_design_hierarchy_from_earlyProto_DB($start_module,0);
+  print "\n" ;
+}#sub print_design_hierarchy_from_earlyProto_DB
+
+sub print_sub_design_hierarchy_from_earlyProto_DB 
+{
+  my $moduleName = $_[0];
+  my $tabNo = $_[1];
+  my $space_in_beg = "";
+  for (my $temp_count = 0 ; $temp_count < $tabNo ; $temp_count++) {
+    $space_in_beg = $space_in_beg. "  ";
+  }
+  if(!defined($moduleName)) {
+    return ;
+  }
+  if( !exists $PSEUDO_MODULE_ALREADY{$moduleName} ) {
+    return ;
+  }
+  print "\n$space_in_beg -------------------------------" ;
+  print "\n$space_in_beg Design hierarchy of $moduleName" ;
+  print "\n$space_in_beg -------------------------------" ;
+  print "\n$space_in_beg   Hierarchical instances of the module are " ;
+  print "\n$space_in_beg   -----------------------------------------" ;
+  my @insts0 =  keys %{$PSEUDO_VINST_ALREADY{$moduleName}} ;
+  my @insts =  sort {$a cmp $b} @insts0 ;
+  foreach my $inst ( @insts) {
+    if($inst eq "PIN") {
+      next ;
+    }
+    my $cellref = $PSEUDO_VINST_ALREADY{$moduleName}{$inst}->dbPimDBGetInstCellref();
+    if ( !exists $PLDB{$cellref} ) {
+      my $curr_inst_name = $PSEUDO_VINST_ALREADY{$moduleName}{$inst}->dbPimDBGetInstName();
+      print "\nINFO-UTS : 001 : $space_in_beg     $curr_inst_name - ref : $cellref" ;
+      &print_sub_design_hierarchy_from_earlyProto_DB($cellref,$tabNo+2);
+    }
+  }
+  print "\n$space_in_beg   Leaf instances of the module are " ;
+  print "\n$space_in_beg   ---------------------------------" ;
+  @insts0 =  keys %{$PSEUDO_VINST_ALREADY{$moduleName}} ;
+  @insts =  sort {$a cmp $b} @insts0 ;
+  foreach my $inst ( @insts) {
+    if($inst eq "PIN") {
+      next ;
+    }
+    my $cellref = $MODULE_ALREADY{$moduleName}->dbVNOMGetLeafInstCell($inst);
+    if ( exists $PLDB{$cellref} ) {
+      print "\nINFO-UTS : 002 : $space_in_beg     $inst - ref : $cellref" ;
+    }
+  }
+}#sub print_sub_design_hierarchy_from_earlyProto_DB
+
+################################################################################
+# The hierarchical placement begins here.It will place the TOP_MODULE
+# and then store the location in the TOP_MODULE floorplan. After that
+# it will store the pin location of the instances in a floorplan for
+# instance. Name of the floor plan will be full hierarchical name of the
+# instance. After that it will run placement for the reference module of 
+# the instances in background and store the names of the instances in an array.
+# Now an infinite process will run in background which will process the array
+# after a fix time and check if a placement is completed.
+# If the placement is completed it will store the location in a floorplan
+# of name equal to full hierarchical name of the instances.
+# And fire the placement for all the instances in the reference of the instance.
+################################################################################
+
+sub place_design_hierarchy_from_earlyProto_DB 
+{
+  my $global_top_module =  $GLOBAL->dbfGlobalGetTOP();
+  if( $_[0] eq '-h') { 
+    print "Usage : place_design_hierarchy_from_earlyProto_DB [ -hier_instance <hier_instance_name> -no_of_level [no_of_level] -max_no_of_parallel_jobs [max_no_of_parallel_jobs]\n";
+    print "                  note : <hier_instance_name> will be full hierarchical name of the start instance.\n";
+    print "                         Placement will start from the start instance.\n";
+    print "                         By default <hier_instance_name> will be $global_top_module.\n";
+    print "                  note : <no_of_level> will be number of levels to be placed including the start instance.\n";
+    print "                         <no_of_level> will be either -1 or greater than 0.\n";
+    print "                         If it is -1. This means whole hierarchy will be placed starting from start instance.\n";
+    print "                         If it is greater than 0. This means so many levels will be placed starting from start instance.\n";
+    print "                         by default <no_of_level> will be -1. This means whole hierarchy will be placed.\n";
+    return ;
+  }
+  my $noOfArguments = @_;
+  my $hierarchical_instance_name = $global_top_module;
+  my $hierarchical_level_no = -1;
+  $MAX_NO_OF_PARALLEL_JOBS = -1;
+  for(my $i=0; $i<$noOfArguments; $i++){
+      if($_[$i] eq "-hier_instance"){$hierarchical_instance_name = $_[$i+1];}
+      if($_[$i] eq "-no_of_level"){$hierarchical_level_no = $_[$i+1];}
+      if($_[$i] eq "-max_no_of_parallel_jobs"){$MAX_NO_OF_PARALLEL_JOBS = $_[$i+1];}
+  }
+  my $start_module = $global_top_module ;
+  my $start_fplan = $global_top_module ;
+  my $START_LEVEL = 0 ;
+  $END_LEVEL = -1 ;
+  if($hierarchical_instance_name ne $global_top_module) {
+    $START_LEVEL = 1 ;
+    my $instance_in_process = $hierarchical_instance_name ;
+    if($hierarchical_instance_name =~ /.*\/.*/) {
+      my @inst_names = split(/\//, $hierarchical_instance_name);
+      $instance_in_process = $inst_names[$#inst_names];
+      $START_LEVEL = $#inst_names + 1  ;
+    }
+    my $parent_module_inprocess = &get_parent_module($hierarchical_instance_name);
+    my $cellref_instance = $MODULE_ALREADY{$parent_module_inprocess}->dbVNOMGetHierInstCell($instance_in_process);
+    if (!exists $MODULE_ALREADY{$cellref_instance}) {
+      print "    ERR-UTS-PL_DES_HR_EP_DB : 001 : Wrong hierarchical name given\n" ;
+      print "    ERR-UTS-PL_DES_HR_EP_DB : 002 : Hierarchical placement cannot be run\n" ;
+      print "    ERR-UTS-PL_DES_HR_EP_DB : 003 : Exitting !!\n" ;
+      return ;
+    }
+    $start_module = $cellref_instance ;
+    $start_fplan = $global_top_module."/".$hierarchical_instance_name ;
+  }
+  if($hierarchical_level_no > 0) {
+    $END_LEVEL = $START_LEVEL + $hierarchical_level_no -1 ; #end level is inclusive
+  }
+  if($start_module eq $global_top_module) {
+    &report_verilog_area ("-module", $start_module) ;
+  }
+  #use Proc::ProcessTable;
+  #$CURRENTPROCESSSTATUS = new Proc::ProcessTable; 
+  use Benchmark;
+  my $t0 = new Benchmark;
+
+  use Cwd;
+  $toolCurrentDir = getcwd();
+  print "\nINFO-UTS-PL_DES_HR_EP_DB : 004 : Current working dir is $toolCurrentDir\n" ;
+  mkdir ("benaras", 0755) ;
+  @list_instance_being_placed_mpl = ();
+  @list_instance_being_placed_plan_1 = ();
+  %hash_of_modules_already_in_pseudoDB = ();
+  %hier_path_name_versus_child_pid = ();
+  %child_pid_status = ();
+  %child_pid_start_time = ();
+  %child_pid_estimated_time = ();
+  $no_of_fork = 0;
+  &place_and_commit_given_module_with_floorplan($start_module,$start_fplan);
+  print "\n" ;
+  while (($#list_instance_being_placed_plan_1 + $#list_instance_being_placed_mpl)  > -2) {
+    for(my $temp_cnt = 0 ; $temp_cnt <= $#list_instance_being_placed_plan_1;$temp_cnt++) {
+      my $hier_inst_name = $list_instance_being_placed_plan_1[$temp_cnt];
+      my $placement_status = &check_placement_status_plan_1($hier_inst_name);
+      if(($placement_status ==1) ||($placement_status ==2)) {
+        splice(@list_instance_being_placed_plan_1,$temp_cnt,1);
+        if($placement_status ==1){
+          &read_placement_curr_instance_plan_1($hier_inst_name);
+        }elsif($placement_status ==2){
+          &read_placement_curr_instance_no_plan_1_output($hier_inst_name);
+        }
+        &fire_placement_curr_instance_mpl($hier_inst_name);
+        my $temp_var =  $#list_instance_being_placed_plan_1 + $#list_instance_being_placed_mpl + 2 ;
+        print "\nINFO-UTS-PL_DES_HR_EP_DB : 005 : total no of placement running (plan_1 + mpl) is $temp_var" ;
+        $temp_var = $#list_instance_being_placed_plan_1 + 1 ;
+        print "\nINFO-UTS-PL_DES_HR_EP_DB : 006 : no of plan_1 running is $temp_var" ;
+        print "\nINFO-UTS-PL_DES_HR_EP_DB : 007 : They are \n    " ;
+        print join "\n     ",@list_instance_being_placed_plan_1;
+        $temp_var = $#list_instance_being_placed_mpl + 1 ;
+        print "\nINFO-UTS-PL_DES_HR_EP_DB : 008 : no of mpl running is $temp_var" ;
+        print "\nINFO-UTS-PL_DES_HR_EP_DB : 009 : They are \n    " ;
+        print join "\n     ",@list_instance_being_placed_mpl;
+      } elsif($placement_status ==0) {
+        next ;
+      } elsif($placement_status == 3) {
+        splice(@list_instance_being_placed_plan_1,$temp_cnt,1);
+        &fire_placement_curr_instance_plan_1($hier_inst_name);
+        my $temp_var =  $#list_instance_being_placed_plan_1 + $#list_instance_being_placed_mpl + 2 ;
+        print "\nINFO-UTS-PL_DES_HR_EP_DB : 010 : total no of placement running (plan_1 + mpl) is $temp_var" ;
+        $temp_var = $#list_instance_being_placed_plan_1 + 1 ;
+        print "\nINFO-UTS-PL_DES_HR_EP_DB : 011 : no of plan_1 running is $temp_var" ;
+        print "\nINFO-UTS-PL_DES_HR_EP_DB : 012 : They are \n    " ;
+        print join "\n     ",@list_instance_being_placed_plan_1;
+        $temp_var = $#list_instance_being_placed_mpl + 1 ;
+        print "\nINFO-UTS-PL_DES_HR_EP_DB : 013 : no of mpl running is $temp_var" ;
+        print "\nINFO-UTS-PL_DES_HR_EP_DB : 014 : They are \n    " ;
+        print join "\n     ",@list_instance_being_placed_mpl;
+      }
+    }
+
+    for($temp_cnt = 0 ; $temp_cnt <= $#list_instance_being_placed_mpl;$temp_cnt++) {
+      my $hier_inst_name = $list_instance_being_placed_mpl[$temp_cnt];
+      my $placement_status = &check_placement_status_mpl($hier_inst_name);
+      if(($placement_status ==1) ||($placement_status ==2)) {
+        splice(@list_instance_being_placed_mpl,$temp_cnt,1);
+        if($placement_status ==1) {
+          &read_placement_curr_instance_mpl($hier_inst_name);
+        }elsif ($placement_status ==2) {
+          &read_placement_curr_instance_no_mpl_output($hier_inst_name);
+        }
+        my $instance_in_process = $hier_inst_name ;
+        if($hier_inst_name =~ /.*\/.*/) {
+          my @inst_names = split(/\//, $hier_inst_name);
+          $instance_in_process = $inst_names[$#inst_names];
+        }
+        my $parent_module_inprocess = &get_parent_module($hier_inst_name);
+        my $cellref_instance = $MODULE_ALREADY{$parent_module_inprocess}->dbVNOMGetHierInstCell($instance_in_process);
+        print "\nINFO-UTS-PL_DES_HR_EP_DB : 015 : Placing sub instances of instance $instance_in_process and module $cellref_instance and path $hier_inst_name" ;
+        my @insts0 =  $MODULE_ALREADY{$cellref_instance}->dbVNOMGetHierInst;
+        my @insts =  sort {$a cmp $b} @insts0 ;
+        foreach my $inst ( @insts) {
+          my $cellref = $MODULE_ALREADY{$start_module}->dbVNOMGetHierInstCell($inst);
+          &fire_placement_curr_instance_plan_1($hier_inst_name."/".$inst);
+        }
+        my $temp_var =  $#list_instance_being_placed_plan_1 + $#list_instance_being_placed_mpl + 2 ;
+        print "\nINFO-UTS-PL_DES_HR_EP_DB : 016 : total no of placement running (plan_1 + mpl) is $temp_var" ;
+        $temp_var = $#list_instance_being_placed_mpl + 1 ;
+        print "\nINFO-UTS-PL_DES_HR_EP_DB : 017 : no of mpl running is $temp_var" ;
+        print "\nINFO-UTS-PL_DES_HR_EP_DB : 018 : They are \n    " ;
+        print join "\n     ",@list_instance_being_placed_mpl;
+        $temp_var = $#list_instance_being_placed_plan_1 + 1 ;
+        print "\nINFO-UTS-PL_DES_HR_EP_DB : 019 : no of plan_1 running is $temp_var" ;
+        print "\nINFO-UTS-PL_DES_HR_EP_DB : 020 : They are \n    " ;
+        print join "\n     ",@list_instance_being_placed_plan_1;
+      } elsif($placement_status ==0) {
+        next ;
+      } elsif($placement_status == 3) {
+        splice(@list_instance_being_placed_mpl,$temp_cnt,1);
+        &fire_placement_curr_instance_mpl($hier_inst_name);
+        my $temp_var =  $#list_instance_being_placed_plan_1 + $#list_instance_being_placed_mpl + 2 ;
+        print "\nINFO-UTS-PL_DES_HR_EP_DB : 021 : total no of placement running (plan_1 + mpl) is $temp_var" ;
+        $temp_var = $#list_instance_being_placed_mpl + 1 ;
+        print "\nINFO-UTS-PL_DES_HR_EP_DB : 022 : no of mpl running is $temp_var" ;
+        print "\nINFO-UTS-PL_DES_HR_EP_DB : 023 : They are \n    " ;
+        print join "\n     ",@list_instance_being_placed_mpl;
+        $temp_var = $#list_instance_being_placed_plan_1 + 1 ;
+        print "\nINFO-UTS-PL_DES_HR_EP_DB : 024 : no of plan_1 running is $temp_var" ;
+        print "\nINFO-UTS-PL_DES_HR_EP_DB : 025 : They are \n    " ;
+        print join "\n     ",@list_instance_being_placed_plan_1;
+      }
+    }
+
+  }
+  $toolCurrentDir = getcwd();
+  print "\nINFO-UTS-PL_DES_HR_EP_DB : 026 : Current working dir is $toolCurrentDir\n" ;
+
+  my $t1 = new Benchmark;
+  my $td = timediff($t1, $t0);
+  undef $t0;
+  undef $t1;
+  print "subroutine place_design_hierarchy_from_earlyProto_DB took:",timestr($td),"\n";
+}#sub place_design_hierarchy_from_earlyProto_DB
+
+sub check_placement_status_mpl
+{
+  print "\nChecking mpl run status" ;
+  my $full_path_name = $_[0];
+  my $child_process_id = $hier_path_name_versus_child_pid{$full_path_name."_"."mpl"};
+  if((exists $child_pid_status{$child_process_id}) && ($child_pid_status{$child_process_id} == 1)){
+    my $process_start_time = $child_pid_start_time{$child_process_id} ;
+    my $current_time = new Benchmark;
+    my $td = timediff($current_time, $process_start_time);
+    undef $current_time;
+    my $time_str_val = timestr($td);
+    $time_str_val =~ s/^\s*//;
+    my @time_val_array = split(/ /,$time_str_val);
+    my $wallclock_sec = $time_val_array[0];
+    if($wallclock_sec > 05*60){
+      kill(9,$child_process_id);
+      kill(9,$child_process_id+1);
+      return 2;
+    }
+    #if($wallclock_sec > 01*60){
+    #  foreach my $currProcess (@{$CURRENTPROCESSSTATUS->table}) {
+    #    my $curr_ppid = $currProcess->ppid() ;
+    #    if($curr_ppid == $child_process_id){
+    #      my $curr_process_time = $currProcess->time() ;
+    #      $curr_process_time /= 1000000;
+    #      my $curr_process_estimated_time = $child_pid_estimated_time{$child_process_id}; #      if($curr_process_time >= $curr_process_estimated_time) {
+    #        print "\nINFO-UTS : 001 : Time taken from the processTable is $curr_process_time" ;
+    #        print "\nINFO-UTS : 002 : Allotted time is $curr_process_estimated_time" ;
+    #        my $curr_pid = $currProcess->pid() ;
+    #        $currProcess->kill(9) ;
+    #        print "\nINFO-UTS : 003 : mpl process $curr_pid exceeded allotted time of $curr_process_estimated_time seconds" ;
+    #        print "\nINFO-UTS : 004 : Killing mpl process $curr_pid" ;
+    #        print "\nINFO-UTS : 005 : Killing mpl parent process $child_process_id " ;
+    #        kill(9,$child_process_id);
+    #        print "\nINFO-UTS : 006 : mpl failed on $full_path_name" ;
+    #        return 2 ;
+    #      }
+    #    }
+    #  }
+    #}
+    return 0 ; # still running
+  }
+  $full_path_name =~ s/\//_/g;
+  if(-e "benaras/$full_path_name/mp_xy.out"){
+    print "\nINFO-UTS : 010 : mpl passed on $full_path_name" ;
+    return 1 ;#Passed and run complete
+  }elsif(-e "benaras/$full_path_name/mpl.log"){
+    #use File::ReadBackwards ;
+    #my $bw_mpl_log = File::ReadBackwards->new( "benaras/$full_path_name/mpl.log" ) or die "can't read 'log_file' $!" ;
+    #my $log_line = "";
+    #undef $log_line ;
+    #if (defined( $log_line = $bw_mpl_log->readline )){
+    #  if ( $log_line =~ m/.*FAILURE.*/ ) {
+    #    print "\nmpl failed in dir benaras/$full_path_name" ;
+    #    return 2 ;#Failed and run complete
+    #  }elsif ( $log_line =~ m/.*problem.*nan/ ) {
+    #    print "\nmpl failed in dir benaras/$full_path_name" ;
+    #    return 2 ;#Failed and run complete
+    #  }elsif ( $log_line =~ m/.*ERROR.*/ ) {
+    #    print "\nmpl failed in dir benaras/$full_path_name" ;
+    #    return 2 ;#Failed and run complete
+    #  }elsif ( $log_line =~ m/.*SUCCESS.*/ ) {
+    #    return 1 ;#PASSED and run complete
+    #  }else{
+    #    return 2 ;#Failed and run complete
+    #  }
+    #}else{
+      print "\nINFO-UTS : 007 : mpl failed on $full_path_name" ;
+      return 2 ;#Failed and run complete
+    #}
+  }else {
+    print "\nWARN-UTS : 008 : mpl.log was not found in dir benaras/$full_path_name, running mpl again " ;
+    print "\nMSG-UTS : 009 : mpl failed on $full_path_name" ;
+    return 3 ;#mpl did not run and run it again
+  }
+}#sub check_placement_status_mpl
+
+sub check_placement_status_plan_1
+{
+  print "\nChecking plan_1 run status" ;
+  my $full_path_name = $_[0];
+  my $child_process_id = $hier_path_name_versus_child_pid{$full_path_name."_"."plan_1"};
+  if((exists $child_pid_status{$child_process_id}) && ($child_pid_status{$child_process_id} == 1)){
+    my $process_start_time = $child_pid_start_time{$child_process_id} ;
+    my $current_time = new Benchmark;
+    my $td = timediff($current_time, $process_start_time);
+    undef $current_time;
+    my $time_str_val = timestr($td);
+    $time_str_val =~ s/^\s*//;
+    my @time_val_array = split(/ /,$time_str_val);
+    my $wallclock_sec = $time_val_array[0];
+    if($wallclock_sec > 05*60){
+      kill(9,$child_process_id);
+      kill(9,$child_process_id+1);
+      return 2;
+    }
+    #if($wallclock_sec > 01*60){
+    #  foreach my $currProcess (@{$CURRENTPROCESSSTATUS->table}) {
+    #    my $curr_ppid = $currProcess->ppid() ;
+    #    if($curr_ppid == $child_process_id){
+    #      my $curr_process_time = $currProcess->time() ;
+    #      $curr_process_time /= 1000000;
+    #      my $curr_process_estimated_time = $child_pid_estimated_time{$child_process_id};
+    #      if($curr_process_time >= $curr_process_estimated_time) {
+    #        print "\nINFO-UTS : 001 : Time taken from the processTable is $curr_process_time" ;
+    #        print "\nINFO-UTS : 002 : Allotted time is $curr_process_estimated_time" ;
+    #        my $curr_pid = $currProcess->pid() ;
+    #        $currProcess->kill(9) ;
+    #        print "\nINFO-UTS : 003 : plan_1 process $curr_pid exceeded allotted time of $curr_process_estimated_time seconds" ;
+    #        print "\nINFO-UTS : 004 : Killing plan_1 process $curr_pid" ;
+    #        print "\nINFO-UTS : 005 : Killing plan_1 parent process $child_process_id " ;
+    #        kill(9,$child_process_id);
+    #        print "\nINFO-UTS : 006 : plan_1 failed on $full_path_name" ;
+    #        return 2 ;
+    #      }
+    #    }
+    #  }
+    #}
+    return 0 ; # still running
+  }
+  $full_path_name =~ s/\//_/g;
+  if(-e "benaras/$full_path_name/xy.out"){
+    print "\nINFO-UTS : 010 : plan_1 passed on $full_path_name" ;
+    return 1 ;#Passed and run complete
+  }elsif(-e "benaras/$full_path_name/plan_1.log"){
+    #use File::ReadBackwards ;
+    #my $bw_plan_1_log = File::ReadBackwards->new( "benaras/$full_path_name/plan_1.log" ) or die "can't read 'log_file' $!" ;
+    #my $log_line = "";
+    #undef $log_line ;
+    #if (defined( $log_line = $bw_plan_1_log->readline )){
+    #  if ( $log_line =~ m/.*FAILURE.*/ ) {
+    #    print "\nplan_1 failed in dir benaras/$full_path_name" ;
+    #    return 2 ;#Failed and run complete
+    #  }elsif ( $log_line =~ m/.*problem.*nan/ ) {
+    #    print "\nplan_1 failed in dir benaras/$full_path_name" ;
+    #    return 2 ;#Failed and run complete
+    #  }elsif ( $log_line =~ m/.*ERROR.*/ ) {
+    #    print "\nplan_1 failed in dir benaras/$full_path_name" ;
+    #    return 2 ;#Failed and run complete
+    #  }elsif ( $log_line =~ m/.*SUCCESS.*/ ) {
+    #    return 1 ;#PASSED and run complete
+    #  }elsif ( $log_line =~ m/.*Created GUI file\.\.\..*/ ) {
+    #    return 1 ;#PASSED and run complete
+    #  }else{
+    #    return 2 ;#Failed and run complete
+    #  }
+    #}else{
+      print "\nINFO-UTS : 007 : plan_1 failed on $full_path_name" ;
+      return 2 ;#Failed and run complete
+    #}
+  }else {
+    print "\nWARN-UTS : 008 : plan_1.log was not found in dir benaras/$full_path_name, running plan_1 again " ;
+    print "\nMSG-UTS : 009 : plan_1 failed on $full_path_name" ;
+    return 3 ;#plan_1 did not run and run it again
+  }
+}#sub check_placement_status_plan_1
+
+sub check_placement_status_plan_4
+{
+  print "\nChecking plan_4 run status" ;
+  my $full_path_name = $_[0];
+  my $child_process_id = $hier_path_name_versus_child_pid{$full_path_name."_"."plan_4"};
+  if((exists $child_pid_status{$child_process_id}) && ($child_pid_status{$child_process_id} == 1)){
+    my $process_start_time = $child_pid_start_time{$child_process_id} ;
+    my $current_time = new Benchmark;
+    my $td = timediff($current_time, $process_start_time);
+    undef $current_time;
+    my $time_str_val = timestr($td);
+    $time_str_val =~ s/^\s*//;
+    my @time_val_array = split(/ /,$time_str_val);
+    my $wallclock_sec = $time_val_array[0];
+    if($wallclock_sec > 05*60){
+      kill(9,$child_process_id);
+      kill(9,$child_process_id+1);
+      return 2;
+    }
+    #if($wallclock_sec > 01*60){
+    #  foreach my $currProcess (@{$CURRENTPROCESSSTATUS->table}) {
+    #    my $curr_ppid = $currProcess->ppid() ;
+    #    if($curr_ppid == $child_process_id){
+    #      my $curr_process_time = $currProcess->time() ;
+    #      $curr_process_time /= 1000000;
+    #      my $curr_process_estimated_time = $child_pid_estimated_time{$child_process_id};
+    #      if($curr_process_time >= $curr_process_estimated_time) {
+    #        print "\nINFO-UTS : 001 : Time taken from the processTable is $curr_process_time" ;
+    #        print "\nINFO-UTS : 002 : Allotted time is $curr_process_estimated_time" ;
+    #        my $curr_pid = $currProcess->pid() ;
+    #        $currProcess->kill(9) ;
+    #        print "\nINFO-UTS : 003 : plan_4 process $curr_pid exceeded allotted time of $curr_process_estimated_time seconds" ;
+    #        print "\nINFO-UTS : 004 : Killing plan_4 process $curr_pid" ;
+    #        print "\nINFO-UTS : 005 : Killing plan_4 parent process $child_process_id " ;
+    #        kill(9,$child_process_id);
+    #        print "\nINFO-UTS : 006 : plan_4 failed on $full_path_name" ;
+    #        return 2 ;
+    #      }
+    #    }
+    #  }
+    #}
+    return 0 ; # still running
+  }
+  $full_path_name =~ s/\//_/g;
+  if(-e "benaras/$full_path_name/detailed_xy.out"){
+    print "\nINFO-UTS : 010 : plan_4 passed on $full_path_name" ;
+    return 1 ;#Passed and run complete
+  }elsif(-e "benaras/$full_path_name/plan_4.log"){
+    #use File::ReadBackwards ;
+    #my $bw_plan_4_log = File::ReadBackwards->new( "benaras/$full_path_name/plan_4.log" ) or die "can't read 'log_file' $!" ;
+    #my $log_line = "";
+    #undef $log_line ;
+    #if (defined( $log_line = $bw_plan_4_log->readline )){
+    #  if ( $log_line =~ m/.*FAILURE.*/ ) {
+    #    print "\nplan_4 failed in dir benaras/$full_path_name" ;
+    #    return 2 ;#Failed and run complete
+    #  }elsif ( $log_line =~ m/.*problem.*nan/ ) {
+    #    print "\nplan_4 failed in dir benaras/$full_path_name" ;
+    #    return 2 ;#Failed and run complete
+    #  }elsif ( $log_line =~ m/.*ERROR.*/ ) {
+    #    print "\nplan_4 failed in dir benaras/$full_path_name" ;
+    #    return 2 ;#Failed and run complete
+    #  }elsif ( $log_line =~ m/.*SUCCESS.*/ ) {
+    #    return 1 ;#PASSED and run complete
+    #  }elsif ( $log_line =~ m/.*Created detailed_xy.out file\.\.\..*/ ) {
+    #    return 1 ;#PASSED and run complete
+    #  }else{
+    #    return 2 ;#Failed and run complete
+    #  }
+    #}else{
+      print "\nINFO-UTS : 007 : plan_4 failed on $full_path_name" ;
+      return 2 ;#Failed and run complete
+    #}
+  }else {
+    print "\nWARN-UTS : 008 : plan_4.log was not found in dir benaras/$full_path_name, running plan_4 again " ;
+    print "\nMSG-UTS : 009 : plan_4 failed on $full_path_name" ;
+    return 3 ;#plan_4 did not run and run it again
+  }
+}#sub check_placement_status_plan_4
+
+
+sub place_and_commit_given_module_with_floorplan
+{
+  my $start_module =  $_[0];
+  my $start_fplan =  $_[1];
+  my $INPUT_NET_FILE = "$start_module.txt";
+  my $NODE_MAP_FILE = "$start_module.nodeMap.txt";
+  my $NODE_PIN_MAP_FILE = "$start_module.node_pin_map.txt";
+  my $NODE_FILE = "nodefile";
+  my $LIB_FILE = "libfile";
+  my $env_proton_home = $GLOBAL->dbfGlobalGetProtonHome;
+  my $placeLogFileName = "hierarchical_placement.log";
+
+
+  &editModule("-module",$start_module);
+
+  #&editModule("-module",$start_module,"-floorplan",$start_fplan);
+
+
+  #if (!exists $hash_of_modules_already_in_pseudoDB{$start_module}){
+  #  &editModule("-module",$start_module,"-floorplan",$start_fplan);
+  #  $hash_of_modules_already_in_pseudoDB{$start_module} = 1;
+  #}elsif (exists $PSEUDO_MODULE_ALREADY{$start_module}){
+  #  $PSEUDO_MODULE_ALREADY{$start_module}->dbaTstgenSetFloorplan($start_fplan);
+  #}
+
+  my $global_top_module =  $GLOBAL->dbfGlobalGetTOP();
+  my $full_path_name = $start_fplan ;
+  $full_path_name =~ s/$global_top_module\///;
+  my $original_full_path_name = $full_path_name ;
+  $full_path_name =~ s/\//_/g;
+  mkdir ("benaras/$full_path_name", 0755) ;
+  print "\nINFO-UTS : 001 : Placing TOP module $start_module" ;
+  $PSEUDO_MODULE_ALREADY{$start_module}->dbaTstgenSetPhysicalDirty(1);
+
+  #Following code is to initialize port of instances
+  #without which the floorplan is not recognized
+  my @output_pins = $PSEUDO_MODULE_ALREADY{$start_module}->dbaTstgenGetOutput;
+  my @input_pins = $PSEUDO_MODULE_ALREADY{$start_module}->dbaTstgenGetInput;
+  my @bidi_pins = $PSEUDO_MODULE_ALREADY{$start_module}->dbaTstgenGetBidi;
+  my @total_pins = (); 
+  push(@total_pins, @output_pins, @input_pins, @bidi_pins);
+  foreach my $pin (@total_pins){
+    $PSEUDO_MODULE_ALREADY{$start_module}->dbaTstgenWipePinRect($pin);
+    $PSEUDO_MODULE_ALREADY{$start_module}->dbaTstgenSetPinStatus($pin, "PLACED");
+    my $pin_layer = "NONE";
+    my @bbox = (0, 0, 1, 1);
+    my $shape = join(" ", $pin_layer, @bbox);
+    $PSEUDO_MODULE_ALREADY{$start_module}->dbaTstgenAddPinRect($pin, $shape);
+  }
+  my @insts0 =  $MODULE_ALREADY{$start_module}->dbVNOMGetHierInst;
+  my @insts =  sort {$a cmp $b} @insts0 ;
+  foreach my $inst ( @insts) {
+    my @org_bbox = &return_pseudo_vinst_size($start_module,$inst);
+    my $width = $org_bbox[2] - $org_bbox[0];
+    my $height = $org_bbox[3] - $org_bbox[1];
+    my @cur_bbox = ();
+    $cur_bbox[0] = 0; 
+    $cur_bbox[1] = 0; 
+    $cur_bbox[2] = $cur_bbox[0] + $width ;
+    $cur_bbox[3] = $cur_bbox[1] + $height ;
+    $PSEUDO_VINST_ALREADY{$start_module}{$inst}->dbPimDBSetInstRelBbox(@cur_bbox);
+    $PSEUDO_VINST_ALREADY{$start_module}{$inst}->dbPimDBSetInstStatus(PLACED);
+    $PSEUDO_VINST_ALREADY{$start_module}{$inst}->dbPimDBSetInstOrient(N);
+
+    my $curr_module = $MODULE_ALREADY{$start_module}->dbVNOMGetHierInstCell($inst);
+    my $curr_module_floor_plan = $start_fplan."\/".$inst;
+    $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenSetFloorplan($curr_module_floor_plan);
+    $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenSetPhysicalDirty(1);
+    my @output_pins = $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenGetOutput;
+    my @input_pins = $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenGetInput;
+    my @bidi_pins = $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenGetBidi;
+    my @total_pins = (); 
+    push(@total_pins, @output_pins, @input_pins, @bidi_pins);
+    foreach my $pin (@total_pins){
+      $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenWipePinRect($pin);
+      $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenSetPinStatus($pin, "PLACED");
+      my $pin_layer = "NONE";
+      my @bbox = (0, 0, 1, 1);
+      my $shape = join(" ", $pin_layer, @bbox);
+      $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenAddPinRect($pin, $shape);
+    }
+  }
+  my @insts0_leaf =  $MODULE_ALREADY{$start_module}->dbVNOMGetLeafInst;
+  my @insts_leaf =  sort {$a cmp $b} @insts0_leaf ;
+  foreach my $inst ( @insts_leaf) {
+    my @org_bbox = &return_pseudo_vinst_size($start_module,$inst);
+    my $width = $org_bbox[2] - $org_bbox[0];
+    my $height = $org_bbox[3] - $org_bbox[1];
+    my @cur_bbox = ();
+    $cur_bbox[0] = 0; 
+    $cur_bbox[1] = 0; 
+    $cur_bbox[2] = $cur_bbox[0] + $width ;
+    $cur_bbox[3] = $cur_bbox[1] + $height ;
+    $PSEUDO_VINST_ALREADY{$start_module}{$inst}->dbPimDBSetInstRelBbox(@cur_bbox);
+    $PSEUDO_VINST_ALREADY{$start_module}{$inst}->dbPimDBSetInstStatus(PLACED);
+    $PSEUDO_VINST_ALREADY{$start_module}{$inst}->dbPimDBSetInstOrient(N);
+  }
+  ##Till here
+
+  #################################################################################
+  #Code for running plan_1 in basic mode                                          #
+  #Starts here.                                                                   #
+  #################################################################################
+  print "\nINFO-UTS : 002 : Placing TOP module $start_module using plan_1" ;
+  $MPL_BINARY_IS_RUNNING = 1;
+  $placeLogFileName = "plan_1.log";
+
+  &write_hier_place_graph ("-module",$start_module,"--incr","--pin");
+  my $no_of_nodes_graph = &get_max_node_number_in_nodefile;
+  my $max_time_allowed = ($no_of_nodes_graph/3000)*6*60 ;
+
+  rename("$INPUT_NET_FILE" , "benaras/$full_path_name/$INPUT_NET_FILE");
+  rename("$NODE_FILE" , "benaras/$full_path_name/$NODE_FILE");
+  rename("$LIB_FILE" , "benaras/$full_path_name/$LIB_FILE");
+  rename("$NODE_MAP_FILE" , "benaras/$full_path_name/$NODE_MAP_FILE");
+  rename("$NODE_PIN_MAP_FILE" , "benaras/$full_path_name/$NODE_PIN_MAP_FILE");
+
+  unlink("mp_xy.in");
+
+  &write_controlFile ("-basic_mode", 1);
+
+  rename("controlfile" , "benaras/$full_path_name/controlfile");
+
+
+  my $forked_pid_plan_1 ;
+  undef $forked_pid_plan_1 ;
+  if(!(-e "benaras/$full_path_name/$placeLogFileName")){ 
+    while (($MAX_NO_OF_PARALLEL_JOBS >0) && (&return_number_of_curr_parallel_jobs_running() >= $MAX_NO_OF_PARALLEL_JOBS)){
+      sleep(5) ;
+    }
+    chdir( "benaras/$full_path_name");
+    while (!defined ($forked_pid_plan_1 = fork())){
+      print "\nWARN-UTS : 003 : Could not fork a new parent process for plan_1" ;
+      sleep(5) ;
+    }
+    if ($forked_pid_plan_1 == 0)  {
+      #exec("$env_eqator_home/3RDBIN/plan_1 $INPUT_NET_FILE $NODE_FILE > $placeLogFileName");
+      exec("$env_proton_home/3RDBIN/plan_1 $INPUT_NET_FILE $NODE_FILE > $placeLogFileName");
+      #my $forked_pid_child_plan_1 ;
+      #undef $forked_pid_child_plan_1 ;
+      #while (!defined ($forked_pid_child_plan_1 = fork())){
+      #  print "\nCould not fork a new child process for plan_1" ;
+      #  sleep(5) ;
+      #}
+      #if ($forked_pid_child_plan_1 == 0)  {
+      #  exec("$env_eqator_home/3RDBIN/plan_1 $INPUT_NET_FILE $NODE_FILE > $placeLogFileName");
+      #  exec("$env_proton_home/3RDBIN/plan_1 $INPUT_NET_FILE $NODE_FILE > $placeLogFileName");
+      #}else{
+      #  print "\nforked a new child process for plan_1\n" ;
+      #  CORE::exit(0) ;
+      #}
+    }else {
+      #waitpid($forked_pid_plan_1,0) ;
+      $no_of_fork++;
+      print "\nINFO-UTS : 004 : $no_of_fork of process forked" ;
+      $hier_path_name_versus_child_pid{$original_full_path_name."_"."plan_1"} = $forked_pid_plan_1 ; 
+      if(!exists $child_pid_status{$forked_pid_plan_1}){
+        $child_pid_status{$forked_pid_plan_1} = 1 ;
+        my $temp_benchmark = new Benchmark ;
+        $child_pid_start_time{$forked_pid_plan_1} = $temp_benchmark ;
+        $child_pid_estimated_time{$forked_pid_plan_1} = $max_time_allowed ;
+      }
+      print "\nINFO-UTS : 005 : forked a new parent process $forked_pid_plan_1 for plan_1\n" ;
+    }
+    chdir( "$toolCurrentDir");
+  }
+
+
+  #while(!(-e "benaras/$full_path_name/xy.out")){ print "" ; }
+  while(!(-e "benaras/$full_path_name/plan_1.log")){ print "" ; }
+  my $plan_1_status = -1 ;
+  while(($plan_1_status = &check_placement_status_plan_1($original_full_path_name)) == 0){ sleep(1) ; }
+
+  if($plan_1_status == 1){
+    unlink("mp_xy.out");
+    unlink("$NODE_MAP_FILE");
+
+    symlink("benaras/$full_path_name/xy.out" , "mp_xy.out");
+    symlink("benaras/$full_path_name/$NODE_MAP_FILE" , "$NODE_MAP_FILE");
+    &read_hier_place_graph($start_module);
+
+    unlink("mp_xy.out");
+    unlink("$NODE_MAP_FILE");
+  }
+
+  print "\nMSG-UTS : 006 : Done Placing TOP module $start_module using plan_1" ;
+  #################################################################################
+  #Code for running plan_1 in basic mode                                          #
+  #Ends here.                                                                     #
+  #################################################################################
+
+  #################################################################################
+  #Code for running mpl                                                           #
+  #Starts here.                                                                   #
+  #################################################################################
+  print "\nINFO-UTS : 007 : 00Placing TOP module $start_module using mpl" ;
+  $placeLogFileName = "mpl.log";
+  &write_hier_place_graph ("-module",$start_module,"--incr","--pin");
+  $no_of_nodes_graph = &get_max_node_number_in_nodefile;
+  $max_time_allowed = ($no_of_nodes_graph/3000)*6*60 ;
+
+  rename("$INPUT_NET_FILE" , "benaras/$full_path_name/$INPUT_NET_FILE");
+  rename("$NODE_FILE" , "benaras/$full_path_name/$NODE_FILE");
+  rename("$LIB_FILE" , "benaras/$full_path_name/$LIB_FILE");
+  rename("$NODE_MAP_FILE" , "benaras/$full_path_name/$NODE_MAP_FILE");
+  rename("$NODE_PIN_MAP_FILE" , "benaras/$full_path_name/$NODE_PIN_MAP_FILE");
+  rename("mp_xy.in" , "benaras/$full_path_name/mp_xy.in");
+
+
+  #while(!(-e "$placeLogFileName")){ 
+  #  if (fork() == 0) {exec("$env_eqator_home/3RDBIN/mpl $INPUT_NET_FILE $NODE_FILE > $placeLogFileName");}
+  #  if (fork() == 0) {exec("$env_proton_home/3RDBIN/mpl $INPUT_NET_FILE $NODE_FILE > $placeLogFileName");}
+  #  sleep(5);
+  #}
+
+  my $forked_pid_mpl ;
+  undef $forked_pid_mpl ;
+  if(!(-e "benaras/$full_path_name/$placeLogFileName")){ 
+    while (($MAX_NO_OF_PARALLEL_JOBS >0) && (&return_number_of_curr_parallel_jobs_running() >= $MAX_NO_OF_PARALLEL_JOBS)){
+      sleep(5) ;
+    }
+    chdir( "benaras/$full_path_name");
+    while (!defined ($forked_pid_mpl = fork())){
+      print "\nWARN-UTS : 008 : Could not fork a new parent process for mpl" ;
+      sleep(5) ;
+    }
+    if ($forked_pid_mpl == 0)  {
+      #exec("$env_eqator_home/3RDBIN/mpl $INPUT_NET_FILE $NODE_FILE > $placeLogFileName");
+      exec("$env_proton_home/3RDBIN/mpl $INPUT_NET_FILE $NODE_FILE > $placeLogFileName");
+      #my $forked_pid_child_mpl ;
+      #undef $forked_pid_child_mpl ;
+      #while (!defined ($forked_pid_child_mpl = fork())){
+      #  print "\nCould not fork a new child process for mpl" ;
+      #  sleep(5) ;
+      #}
+      #if ($forked_pid_child_mpl == 0)  {
+      #  exec("$env_eqator_home/3RDBIN/mpl $INPUT_NET_FILE $NODE_FILE > $placeLogFileName");
+      #  exec("$env_proton_home/3RDBIN/mpl $INPUT_NET_FILE $NODE_FILE > $placeLogFileName");
+      #}else{
+      #  print "\nforked a new child process for mpl\n" ;
+      #  CORE::exit(0) ;
+      #}
+    }else {
+      $no_of_fork++;
+      print "\nINFO-UTS : 009 : $no_of_fork of process forked" ;
+      #waitpid($forked_pid_mpl,0) ;
+      $hier_path_name_versus_child_pid{$original_full_path_name."_"."mpl"} = $forked_pid_mpl ; 
+      if(!exists $child_pid_status{$forked_pid_mpl}){
+        $child_pid_status{$forked_pid_mpl} = 1 ;
+        my $temp_benchmark = new Benchmark ;
+        $child_pid_start_time{$forked_pid_mpl} = $temp_benchmark ;
+        $child_pid_estimated_time{$forked_pid_mpl} = $max_time_allowed ;
+      }
+      print "\nINFO-UTS : 010 : forked a new parent process $forked_pid_mpl for mpl\n" ;
+    }
+    chdir( "$toolCurrentDir");
+  }
+
+
+  #while(!(-e "benaras/$full_path_name/mp_xy.out")){ print "" ;}
+  while(!(-e "benaras/$full_path_name/mpl.log")){ print "" ; }
+  my $mpl_status = -1 ;
+  while(($mpl_status = &check_placement_status_mpl($original_full_path_name)) == 0){ sleep(1) ; }
+
+  if($mpl_status == 1){
+    unlink("mp_xy.out");
+    unlink("mp_pins.out");
+    unlink("$NODE_MAP_FILE");
+    unlink("$NODE_PIN_MAP_FILE");
+
+    symlink("benaras/$full_path_name/mp_xy.out" , "mp_xy.out" );
+    symlink("benaras/$full_path_name/mp_pins.out" , "mp_pins.out"  );
+    symlink("benaras/$full_path_name/$NODE_MAP_FILE" , "$NODE_MAP_FILE"  );
+    symlink("benaras/$full_path_name/$NODE_PIN_MAP_FILE" , "$NODE_PIN_MAP_FILE" );
+
+    &read_hier_place_graph($start_module);
+    &fix_mpl_output;
+    #Need to set the location of the top level ports, in the FLAT data base.
+    #This is to be set in $PORTS_ALREADY.So that no need for any post processing.
+
+    unlink("mp_xy.out");
+    unlink("mp_pins.out");
+    unlink("$NODE_MAP_FILE");
+    unlink("$NODE_PIN_MAP_FILE");
+  }
+
+  print "\nMSG-UTS : 011 : Done Placing TOP module $start_module using mpl" ;
+  $MPL_BINARY_IS_RUNNING = 0;
+  #################################################################################
+  #Code for running mpl                                                           #
+  #Ends here.                                                                     #
+  #################################################################################
+
+  #################################################################################
+  #Code for running plan_4                                                        #
+  #Starts here.                                                                   #
+  #################################################################################
+  #if(($start_module eq $global_top_module) && (0)) {
+  #  print "\nMSG-UTS : 012 : Placing TOP module $start_module using plan_4" ;
+  #  $placeLogFileName = "plan_4.log";
+  #  &write_hier_place_graph ("-module",$start_module,"--incr","--pin");
+  #  $no_of_nodes_graph = &get_max_node_number_in_nodefile;
+  #  $max_time_allowed = ($no_of_nodes_graph/3000)*6*60 ;
+
+  #  rename("$INPUT_NET_FILE" , "benaras/$full_path_name/$INPUT_NET_FILE");
+  #  rename("$NODE_FILE" , "benaras/$full_path_name/$NODE_FILE");
+  #  rename("$LIB_FILE" , "benaras/$full_path_name/$LIB_FILE");
+  #  rename("$NODE_MAP_FILE" , "benaras/$full_path_name/$NODE_MAP_FILE");
+  #  rename("$NODE_PIN_MAP_FILE" , "benaras/$full_path_name/$NODE_PIN_MAP_FILE");
+  #  rename("mp_xy.in" , "benaras/$full_path_name/xy.out");
+
+
+  #  #while(!(-e "$placeLogFileName")){ 
+  #  #  if (fork() == 0) {exec("$env_eqator_home/3RDBIN/plan_4 $INPUT_NET_FILE $NODE_FILE $LIB_FILE > $placeLogFileName");}
+  #  #  if (fork() == 0) {exec("$env_proton_home/3RDBIN/plan_4 $INPUT_NET_FILE $NODE_FILE $LIB_FILE > $placeLogFileName");}
+  #  #  sleep(5);
+  #  #}
+
+  #  my $forked_pid_plan_4 ;
+  #  undef $forked_pid_plan_4 ;
+  #  if(!(-e "benaras/$full_path_name/$placeLogFileName")){ 
+  #    while (($MAX_NO_OF_PARALLEL_JOBS >0) && (&return_number_of_curr_parallel_jobs_running() >= $MAX_NO_OF_PARALLEL_JOBS)){
+  #      sleep(5) ;
+  #    }
+  #    chdir( "benaras/$full_path_name");
+  #    while (!defined ($forked_pid_plan_4 = fork())){
+  #      print "\nWARN-UTS : 013 : Could not fork a new parent process for plan_4" ;
+  #      sleep(5) ;
+  #    }
+  #    if ($forked_pid_plan_4 == 0)  {
+  #      #exec("$env_eqator_home/3RDBIN/plan_4 $INPUT_NET_FILE $NODE_FILE $LIB_FILE > $placeLogFileName");
+  #      exec("$env_proton_home/3RDBIN/plan_4 $INPUT_NET_FILE $NODE_FILE $LIB_FILE > $placeLogFileName");
+  #      #my $forked_pid_child_plan_4 ;
+  #      #undef $forked_pid_child_plan_4 ;
+  #      #while (!defined ($forked_pid_child_plan_4 = fork())){
+  #      #  print "\nCould not fork a new child process for plan_4" ;
+  #      #  sleep(5) ;
+  #      #}
+  #      #if ($forked_pid_child_plan_4 == 0)  {
+  #      #  exec("$env_eqator_home/3RDBIN/plan_4 $INPUT_NET_FILE $NODE_FILE $LIB_FILE > $placeLogFileName");
+  #      #  exec("$env_proton_home/3RDBIN/plan_4 $INPUT_NET_FILE $NODE_FILE $LIB_FILE > $placeLogFileName");
+  #      #}else{
+  #      #  print "\nforked a new child process for plan_4\n" ;
+  #      #  CORE::exit(0) ;
+  #      #}
+  #    }else {
+  #    $no_of_fork++;
+  #    print "\nINFO-UTS : 014 : $no_of_fork of process forked" ;
+  #      #waitpid($forked_pid_plan_4,0) ;
+  #      $hier_path_name_versus_child_pid{$original_full_path_name."_"."plan_4"} = $forked_pid_plan_4 ; 
+  #      if(!exists $child_pid_status{$forked_pid_plan_4}){
+  #        $child_pid_status{$forked_pid_plan_4} = 1 ;
+  #        my $temp_benchmark = new Benchmark ;
+  #        $child_pid_start_time{$forked_pid_plan_4} = $temp_benchmark ;
+  #        $child_pid_estimated_time{$forked_pid_plan_4} = $max_time_allowed ;
+  #      }
+  #      print "\nINFO-UTS : 015 : forked a new parent process $forked_pid_plan_4 for plan_4\n" ;
+  #    }
+  #    chdir( "$toolCurrentDir");
+  #  }
+
+  #  #while(!(-e "benaras/$full_path_name/detailed_xy.out")){ print "" ;}
+  #  while(!(-e "benaras/$full_path_name/plan_4.log")){ print "" ; }
+  #  my $plan_4_status = -1 ;
+  #  while(($plan_4_status = &check_placement_status_plan_4($original_full_path_name)) == 0){ sleep(1) ; }
+
+  #  if($plan_4_status == 1){
+  #    unlink("mp_xy.out");
+  #    unlink("$NODE_MAP_FILE");
+
+  #    symlink("benaras/$full_path_name/detailed_xy.out" , "mp_xy.out" );
+  #    symlink("benaras/$full_path_name/$NODE_MAP_FILE" , "$NODE_MAP_FILE" );
+
+  #    &read_hier_place_graph($start_module);
+
+  #    unlink("mp_xy.out");
+  #    unlink("$NODE_MAP_FILE");
+  #  }
+
+  #  print "\nMSG-UTS : 016 : Done Placing TOP module $start_module using plan_4" ;
+  #  print "\nMSG-UTS : 017 : Done Placing TOP module $start_module\n" ;
+  #}
+  #################################################################################
+  #Code for running plan_4                                                        #
+  #Ends here.                                                                     #
+  #################################################################################
+
+  &commitModuleLocOnly("-module",$start_module);
+
+  #&commitModuleLocOnly("-module",$start_module,"-floorplan",$start_fplan);
+  &purgeModule($start_module);
+
+  #&dbfTstgenUpdateFlplanFromPseudo($start_module,$start_fplan);
+
+  print "\nINFO-UTS : 018 : Committed  TOP module " ;
+
+  foreach my $inst ( @insts) {
+    my $cellref = $MODULE_ALREADY{$start_module}->dbVNOMGetHierInstCell($inst);
+    print "\nINFO-UTS : 019 : $space_in_beg     $inst - ref : $cellref" ;
+    if($original_full_path_name ne $global_top_module) {
+      &fire_placement_curr_instance_plan_1($original_full_path_name."/".$inst);
+    }else{
+      &fire_placement_curr_instance_plan_1($inst);
+    }
+  }
+}#sub place_and_commit_given_module_with_floorplan
+
+sub fire_placement_curr_instance_mpl
+{
+  my $current_level = 1 ;
+  my $full_path_name = $_[0] ;
+  my $instance_in_process = $full_path_name ;
+  if($full_path_name =~ /.*\/.*/) {
+    my @inst_names = split(/\//, $full_path_name);
+    $instance_in_process = $inst_names[$#inst_names];
+    $current_level = $#inst_names +1;
+  }
+  if($END_LEVEL != -1) {
+   if($current_level > $END_LEVEL){
+     return; 
+   }
+  }
+  print "\nINFO-UTS : 001 : Placing Hierarchical instance : $full_path_name" ;
+  print "\nINFO-UTS : 002 : current instance is : $instance_in_process" ;
+
+  my $parent_module_inprocess = &get_parent_module($full_path_name);
+  print "\nINFO-UTS : 003 : parent_module_inprocess is $parent_module_inprocess";
+
+  my $placeLogFileName = "mpl.log";
+  my $cellref = $MODULE_ALREADY{$parent_module_inprocess}->dbVNOMGetHierInstCell($instance_in_process);
+  print "\nINFO-UTS : 004 : cell reference is $cellref";
+  my @hierInsts =  $MODULE_ALREADY{$cellref}->dbVNOMGetHierInst;
+  my @leafInsts = $MODULE_ALREADY{$cellref}->dbVNOMGetLeafInst;
+  if(($#hierInsts +1 + $#leafInsts +1) <= 0){
+    print "\nWARN-UTS : 005 : No instance found " ;
+    print "\nMSG-UTS : 006 : Placing Hierarchical instance not Fired : $full_path_name" ;
+    print "\nMSG-UTS : 007 : returning" ;
+    return ;
+  }
+  if($GLOBAL->dbGlobalGetMinInstForPlacement != -1) {
+    if( ($#hierInsts +1 +$#leafInsts +1) <= $GLOBAL->dbGlobalGetMinInstForPlacement ) {
+      return ;
+    }
+  }
+  if($GLOBAL->dbGlobalGetMinLeafInstForPlacement != -1) {
+    my $no_of_leaf_inst = &get_no_of_leaf_inst_in_hierarchy($cellref);
+    if( $no_of_leaf_inst <= $GLOBAL->dbGlobalGetMinLeafInstForPlacement ) {
+      return ;
+    }
+  }
+  if($GLOBAL->dbGlobalGetMinHierInstForPlacement != -1) {
+    if( ($#hierInsts +1) <= $GLOBAL->dbGlobalGetMinHierInstForPlacement ) {
+      return ;
+    }
+  }
+  #push(@list_instance_being_placed_mpl,$full_path_name);
+
+  my $INPUT_NET_FILE = "$cellref.txt";
+  my $NODE_MAP_FILE = "$cellref.nodeMap.txt";
+  my $NODE_PIN_MAP_FILE = "$cellref.node_pin_map.txt";
+  my $NODE_FILE = "nodefile";
+  my $LIB_FILE = "libfile";
+  my $env_proton_home = $GLOBAL->dbfGlobalGetProtonHome;
+
+  my $global_top_module = $GLOBAL->dbfGlobalGetTOP();
+  my $curr_floor_plan_name = $global_top_module."\/".$full_path_name ; 
+  print "\nINFO-UTS : 008 : Current floorplan in fire_placement_curr_instance_mpl is $curr_floor_plan_name" ; 
+
+  &editModule("-module",$cellref);
+
+  #&editModule("-module",$cellref,"-floorplan",$curr_floor_plan_name);
+
+  #if (!exists $hash_of_modules_already_in_pseudoDB{$cellref}){
+  #  &editModule("-module",$cellref,"-floorplan",$curr_floor_plan_name);
+  #  $hash_of_modules_already_in_pseudoDB{$cellref} = 1;
+  #}elsif (exists $PSEUDO_MODULE_ALREADY{$cellref}){
+  #  $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenSetFloorplan($curr_floor_plan_name);
+  #}
+
+  #$PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenSetFloorplan($curr_floor_plan_name);
+
+
+  $MPL_BINARY_IS_RUNNING = 1;
+  &write_hier_place_graph ("-module",$cellref,"--incr","--pin");
+  my $no_of_nodes_graph = &get_max_node_number_in_nodefile;
+  my $max_time_allowed = ($no_of_nodes_graph/3000)*6*60 ;
+  $MPL_BINARY_IS_RUNNING = 0;
+
+  &commitModuleLocOnly("-module",$cellref);
+  #&commitModuleLocOnly("-module",$cellref,"-floorplan",$curr_floor_plan_name);
+  &purgeModule($cellref);
+  #&dbfTstgenUpdateFlplanFromPseudo($cellref,$curr_floor_plan_name);
+
+  my $original_full_path_name = $full_path_name ;
+  $full_path_name =~ s/\//_/g;
+  mkdir ("benaras/$full_path_name", 0755) ;
+
+  rename("$INPUT_NET_FILE" , "benaras/$full_path_name/$INPUT_NET_FILE");
+  rename("$NODE_FILE" , "benaras/$full_path_name/$NODE_FILE");
+  rename("$LIB_FILE" , "benaras/$full_path_name/$LIB_FILE");
+  rename("$NODE_MAP_FILE" , "benaras/$full_path_name/$NODE_MAP_FILE");
+  rename("$NODE_PIN_MAP_FILE" , "benaras/$full_path_name/$NODE_PIN_MAP_FILE");
+  rename("mp_xy.in" , "benaras/$full_path_name/mp_xy.in");
+
+
+  
+  #while(!(-e "$placeLogFileName")){ 
+  #  if (fork() == 0) {exec("$env_eqator_home/3RDBIN/mpl $INPUT_NET_FILE $NODE_FILE > $placeLogFileName");}
+  #  if (fork() == 0) {exec("$env_proton_home/3RDBIN/mpl $INPUT_NET_FILE $NODE_FILE > $placeLogFileName");}
+  #  sleep(5);
+  #}
+
+  my $forked_pid_mpl ;
+  undef $forked_pid_mpl ;
+  if(!(-e "benaras/$full_path_name/$placeLogFileName")){ 
+    while (($MAX_NO_OF_PARALLEL_JOBS >0) && (&return_number_of_curr_parallel_jobs_running() >= $MAX_NO_OF_PARALLEL_JOBS)){
+      sleep(5) ;
+    }
+    chdir( "benaras/$full_path_name");
+    my $indicator_file_name = "indicator_${cellref}_${instance_in_process}";
+    open(WRITE,">$indicator_file_name");
+    print WRITE "Changed directory to run mpl on module $cellref and instance $instance_in_process \n";
+    close(WRITE);
+    while (!defined ($forked_pid_mpl = fork())){
+      print "\nWARN-UTS : 009 : Could not fork a new parent process for mpl" ;
+      sleep(5) ;
+    }
+    if ($forked_pid_mpl == 0)  {
+      #exec("$env_eqator_home/3RDBIN/mpl $INPUT_NET_FILE $NODE_FILE > $placeLogFileName");
+      exec("$env_proton_home/3RDBIN/mpl $INPUT_NET_FILE $NODE_FILE > $placeLogFileName");
+      #my $forked_pid_child_mpl ;
+      #undef $forked_pid_child_mpl ;
+      #while (!defined ($forked_pid_child_mpl = fork())){
+      #  print "\nCould not fork a new child process for mpl" ;
+      #  sleep(5) ;
+      #}
+      #if ($forked_pid_child_mpl == 0)  {
+      #  exec("$env_eqator_home/3RDBIN/mpl $INPUT_NET_FILE $NODE_FILE > $placeLogFileName");
+      #  exec("$env_proton_home/3RDBIN/mpl $INPUT_NET_FILE $NODE_FILE > $placeLogFileName");
+      #}else{
+      #  print "\nforked a new child process for mpl\n" ;
+      #  CORE::exit(0) ;
+      #}
+    }else {
+      $no_of_fork++;
+      print "\nINFO-UTS : 010 : $no_of_fork of process forked" ;
+      #waitpid($forked_pid_mpl,0) ;
+      $hier_path_name_versus_child_pid{$original_full_path_name."_"."mpl"} = $forked_pid_mpl ; 
+      if(!exists $child_pid_status{$forked_pid_mpl}){
+        $child_pid_status{$forked_pid_mpl} = 1 ;
+        my $temp_benchmark = new Benchmark ;
+        $child_pid_start_time{$forked_pid_mpl} = $temp_benchmark ;
+        $child_pid_estimated_time{$forked_pid_mpl} = $max_time_allowed ;
+      }
+      print "\nINFO-UTS : 011 : forked a new parent process $forked_pid_mpl for mpl\n" ;
+    }
+    chdir( "$toolCurrentDir");
+  }
+
+  push(@list_instance_being_placed_mpl,$original_full_path_name);
+  print "\nINFO-UTS : 012 : Placing Hierarchical instance Fired : \"$original_full_path_name\"" ;
+}#sub fire_placement_curr_instance_mpl
+
+sub fire_placement_curr_instance_plan_1
+{
+  my $current_level = 1 ;
+  my $full_path_name = $_[0] ;
+  my $instance_in_process = $full_path_name ;
+  if($full_path_name =~ /.*\/.*/) {
+    my @inst_names = split(/\//, $full_path_name);
+    $instance_in_process = $inst_names[$#inst_names];
+    $current_level = $#inst_names +1;
+  }
+  if($END_LEVEL != -1) {
+   if($current_level > $END_LEVEL){
+     return; 
+   }
+  }
+  print "\nINFO-UTS : 001 : Placing Hierarchical instance : $full_path_name" ;
+  print "\nINFO-UTS : 002 : current instance is : $instance_in_process" ;
+
+  my $parent_module_inprocess = &get_parent_module($full_path_name);
+  print "\nINFO-UTS : 003 : parent_module_inprocess is $parent_module_inprocess";
+
+  my $placeLogFileName = "plan_1.log";
+  my $cellref = $MODULE_ALREADY{$parent_module_inprocess}->dbVNOMGetHierInstCell($instance_in_process);
+  print "\nINFO-UTS : 004 : cell reference is $cellref";
+  my @hierInsts =  $MODULE_ALREADY{$cellref}->dbVNOMGetHierInst;
+  my @leafInsts = $MODULE_ALREADY{$cellref}->dbVNOMGetLeafInst;
+  if(($#hierInsts +1 + $#leafInsts +1 ) < 0){
+    print "\nWARN-UTS : 005 : No instance found " ;
+    print "\nMSG-UTS : 006 : Placing Hierarchical instance not Fired : $full_path_name" ;
+    print "\nMSG-UTS : 007 : returning" ;
+    return ;
+  }
+  if($GLOBAL->dbGlobalGetMinInstForPlacement != -1) {
+    if( ($#hierInsts +1 +$#leafInsts +1) <= $GLOBAL->dbGlobalGetMinInstForPlacement ) {
+      return ;
+    }
+  }
+  if($GLOBAL->dbGlobalGetMinLeafInstForPlacement != -1) {
+    my $no_of_leaf_inst = &get_no_of_leaf_inst_in_hierarchy($cellref);
+    if( $no_of_leaf_inst <= $GLOBAL->dbGlobalGetMinLeafInstForPlacement ) {
+      return ;
+    }
+  }
+  if($GLOBAL->dbGlobalGetMinHierInstForPlacement != -1) {
+    if( ($#hierInsts +1) <= $GLOBAL->dbGlobalGetMinHierInstForPlacement ) {
+      return ;
+    }
+  }
+
+  #push(@list_instance_being_placed_plan_1,$full_path_name);
+
+  my $INPUT_NET_FILE = "$cellref.txt";
+  my $NODE_MAP_FILE = "$cellref.nodeMap.txt";
+  my $NODE_PIN_MAP_FILE = "$cellref.node_pin_map.txt";
+  my $NODE_FILE = "nodefile";
+  my $LIB_FILE = "libfile";
+  my $env_proton_home = $GLOBAL->dbfGlobalGetProtonHome;
+
+  my $global_top_module = $GLOBAL->dbfGlobalGetTOP();
+  my $curr_floor_plan_name = $global_top_module."\/".$full_path_name ; 
+  print "\nINFO-UTS : 008 : Current floorplan in fire_placement_curr_instance_plan_1 is $curr_floor_plan_name" ; 
+
+  &editModule("-module",$cellref);
+
+  #&editModule("-module",$cellref,"-floorplan",$curr_floor_plan_name);
+
+  #if (!exists $hash_of_modules_already_in_pseudoDB{$cellref}){
+  #  &editModule("-module",$cellref,"-floorplan",$curr_floor_plan_name);
+  #  $hash_of_modules_already_in_pseudoDB{$cellref} = 1;
+  #}elsif (exists $PSEUDO_MODULE_ALREADY{$cellref}){
+  #  $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenSetFloorplan($curr_floor_plan_name);
+  #}
+
+  #$PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenSetFloorplan($curr_floor_plan_name);
+
+
+  $MPL_BINARY_IS_RUNNING = 1;
+  &write_hier_place_graph ("-module",$cellref,"--incr","--pin");
+  my $no_of_nodes_graph = &get_max_node_number_in_nodefile;
+  my $max_time_allowed = ($no_of_nodes_graph/3000)*6*60 ;
+  $MPL_BINARY_IS_RUNNING = 0;
+
+  &commitModuleLocOnly("-module",$cellref);
+  #&commitModuleLocOnly("-module",$cellref,"-floorplan",$curr_floor_plan_name);
+  &purgeModule($cellref);
+  #&dbfTstgenUpdateFlplanFromPseudo($cellref,$curr_floor_plan_name);
+
+  my $original_full_path_name = $full_path_name ;
+  $full_path_name =~ s/\//_/g;
+  mkdir ("benaras/$full_path_name", 0755) ;
+
+  rename("$INPUT_NET_FILE" , "benaras/$full_path_name/$INPUT_NET_FILE");
+  rename("$NODE_FILE" , "benaras/$full_path_name/$NODE_FILE");
+  rename("$LIB_FILE" , "benaras/$full_path_name/$LIB_FILE");
+  rename("$NODE_MAP_FILE" , "benaras/$full_path_name/$NODE_MAP_FILE");
+  rename("$NODE_PIN_MAP_FILE" , "benaras/$full_path_name/$NODE_PIN_MAP_FILE");
+  unlink("mp_xy.in");
+
+  &write_controlFile ("-basic_mode", 1);
+
+  rename("controlfile" , "benaras/$full_path_name/controlfile");
+
+
+  
+  #while(!(-e "$placeLogFileName")){ 
+  #  if (fork() == 0) {exec("$env_eqator_home/3RDBIN/plan_1 $INPUT_NET_FILE $NODE_FILE > $placeLogFileName");}
+  #  if (fork() == 0) {exec("$env_proton_home/3RDBIN/plan_1 $INPUT_NET_FILE $NODE_FILE > $placeLogFileName");}
+  #  sleep(5);
+  #}
+
+  my $forked_pid_plan_1 ;
+  undef $forked_pid_plan_1 ;
+  if(!(-e "benaras/$full_path_name/$placeLogFileName")){ 
+    while (($MAX_NO_OF_PARALLEL_JOBS >0) && (&return_number_of_curr_parallel_jobs_running() >= $MAX_NO_OF_PARALLEL_JOBS)){
+      sleep(5) ;
+    }
+    chdir( "benaras/$full_path_name");
+    my $indicator_file_name = "indicator_${cellref}_${instance_in_process}";
+    open(WRITE,">$indicator_file_name");
+    print WRITE "Changed directory to run plan_1 on module $cellref and instance $instance_in_process \n";
+    close(WRITE);
+    while (!defined ($forked_pid_plan_1 = fork())){
+      print "\nWARN-UTS : 009 : Could not fork a new parent process for plan_1" ;
+      sleep(5) ;
+    }
+    if ($forked_pid_plan_1 == 0)  {
+      #exec("$env_eqator_home/3RDBIN/plan_1 $INPUT_NET_FILE $NODE_FILE > $placeLogFileName");
+      exec("$env_proton_home/3RDBIN/plan_1 $INPUT_NET_FILE $NODE_FILE > $placeLogFileName");
+      #my $forked_pid_child_plan_1 ;
+      #undef $forked_pid_child_plan_1 ;
+      #while (!defined ($forked_pid_child_plan_1 = fork())){
+      #  print "\nCould not fork a new child process for plan_1" ;
+      #  sleep(5) ;
+      #}
+      #if ($forked_pid_child_plan_1 == 0)  {
+      #  exec("$env_eqator_home/3RDBIN/plan_1 $INPUT_NET_FILE $NODE_FILE > $placeLogFileName");
+      #  exec("$env_proton_home/3RDBIN/plan_1 $INPUT_NET_FILE $NODE_FILE > $placeLogFileName");
+      #}else{
+      #  print "\nforked a new child process for plan_1\n" ;
+      #  CORE::exit(0) ;
+      #}
+    }else {
+      $no_of_fork++;
+      print "\nINFO-UTS : 010 : $no_of_fork of process forked" ;
+      #waitpid($forked_pid_plan_1,0) ;
+      $hier_path_name_versus_child_pid{$original_full_path_name."_"."plan_1"} = $forked_pid_plan_1 ; 
+      if(!exists $child_pid_status{$forked_pid_plan_1}){
+        $child_pid_status{$forked_pid_plan_1} = 1 ;
+        my $temp_benchmark = new Benchmark ;
+        $child_pid_start_time{$forked_pid_plan_1} = $temp_benchmark ;
+        $child_pid_estimated_time{$forked_pid_plan_1} = $max_time_allowed ;
+      }
+      print "\nINFO-UTS : 011 : forked a new parent process $forked_pid_plan_1 for plan_1\n" ;
+    }
+    chdir( "$toolCurrentDir");
+  }
+
+  push(@list_instance_being_placed_plan_1,$original_full_path_name);
+  print "\nINFO-UTS : 012 : Placing Hierarchical instance Fired : \"$original_full_path_name\"" ;
+}#sub fire_placement_curr_instance_plan_1
+
+sub read_placement_curr_instance_mpl
+{
+  my $full_path_name = $_[0] ;
+  my $instance_in_process = $full_path_name ;
+  if($full_path_name =~ /.*\/.*/) {
+    my @inst_names = split(/\//, $full_path_name);
+    $instance_in_process = $inst_names[$#inst_names];
+  }
+  print "\nINFO-UTS : 001 : Reading Hierarchical instance placement : $full_path_name" ;
+  print "\nINFO-UTS : 002 : current instance is : $instance_in_process" ;
+
+  my $parent_module_inprocess = &get_parent_module($full_path_name);
+  print "\nINFO-UTS : 003 : parent_module_inprocess is $parent_module_inprocess";
+
+  my $cellref = $MODULE_ALREADY{$parent_module_inprocess}->dbVNOMGetHierInstCell($instance_in_process);
+  print "\nINFO-UTS : 004 : cell reference is $cellref";
+
+  my $NODE_MAP_FILE = "$cellref.nodeMap.txt";
+  my $NODE_PIN_MAP_FILE = "$cellref.node_pin_map.txt";
+  my $global_top_module = $GLOBAL->dbfGlobalGetTOP();
+
+  my $curr_floor_plan_name = $global_top_module."\/".$full_path_name ; 
+  print "\nINFO-UTS : 005 : Current floorplan in read_placement_curr_instance_mpl is $curr_floor_plan_name" ; 
+
+  &editModule("-module",$cellref);
+
+  #&editModule("-module",$cellref,"-floorplan",$curr_floor_plan_name);
+  $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenSetPhysicalDirty(1);
+
+  #if (!exists $hash_of_modules_already_in_pseudoDB{$cellref}){
+  #  &editModule("-module",$cellref,"-floorplan",$curr_floor_plan_name);
+  #  #$hash_of_modules_already_in_pseudoDB{$cellref} = 1;
+  #}elsif (exists $PSEUDO_MODULE_ALREADY{$cellref}){
+  #  $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenSetFloorplan($curr_floor_plan_name);
+  #}
+
+  #$PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenSetFloorplan($curr_floor_plan_name);
+
+  my $original_full_path_name = $full_path_name ;
+  $full_path_name =~ s/\//_/g;
+
+  unlink("mp_xy.out");
+  unlink("mp_pins.out");
+  unlink("$NODE_MAP_FILE");
+  unlink("$NODE_PIN_MAP_FILE");
+
+  symlink("benaras/$full_path_name/mp_xy.out" , "mp_xy.out" );
+  symlink("benaras/$full_path_name/mp_pins.out" , "mp_pins.out" );
+  symlink("benaras/$full_path_name/$NODE_MAP_FILE" , "$NODE_MAP_FILE" );
+  symlink("benaras/$full_path_name/$NODE_PIN_MAP_FILE" , "$NODE_PIN_MAP_FILE" );
+
+  #Following code is to initialize port of instances
+  #without which the floorplan is not recognized
+  my @insts0 =  $MODULE_ALREADY{$cellref}->dbVNOMGetHierInst;
+  my @insts =  sort {$a cmp $b} @insts0 ;
+  foreach my $inst ( @insts) {
+    my $curr_module = $MODULE_ALREADY{$cellref}->dbVNOMGetHierInstCell($inst);
+    my $curr_module_floor_plan = $curr_floor_plan_name."\/".$inst;
+    $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenSetFloorplan($curr_module_floor_plan);
+    $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenSetPhysicalDirty(1);
+    my @output_pins = $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenGetOutput;
+    my @input_pins = $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenGetInput;
+    my @bidi_pins = $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenGetBidi;
+    my @total_pins = (); 
+    push(@total_pins, @output_pins, @input_pins, @bidi_pins);
+    foreach my $pin (@total_pins){
+      $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenWipePinRect($pin);
+      $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenSetPinStatus($pin, "PLACED");
+      my $pin_layer = "NONE";
+      my @bbox = (0, 0, 1, 1);
+      my $shape = join(" ", $pin_layer, @bbox);
+      $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenAddPinRect($pin, $shape);
+    }
+  }
+  ##Till here
+  $MPL_BINARY_IS_RUNNING = 1;
+  &read_hier_place_graph($cellref);
+  &fix_mpl_output;
+  $MPL_BINARY_IS_RUNNING = 0;
+
+
+  unlink("mp_xy.out");
+  unlink("mp_pins.out");
+  unlink("$NODE_MAP_FILE");
+  unlink("$NODE_PIN_MAP_FILE");
+
+  &commitModuleLocOnly("-module",$cellref);
+  #&commitModuleLocOnly("-module",$cellref,"-floorplan",$curr_floor_plan_name);
+  &purgeModule($cellref);
+  #&dbfTstgenUpdateFlplanFromPseudo($cellref,$curr_floor_plan_name);
+
+  print "\nMSG-UTS : 006 : Done reading placement of Hierarchical instance  : \"$original_full_path_name\"" ;
+}#sub read_placement_curr_instance_mpl
+
+sub read_placement_curr_instance_no_mpl_output
+{
+  my $full_path_name = $_[0] ;
+  my $instance_in_process = $full_path_name ;
+  if($full_path_name =~ /.*\/.*/) {
+    my @inst_names = split(/\//, $full_path_name);
+    $instance_in_process = $inst_names[$#inst_names];
+  }
+  print "\nINFO-UTS : 001 : Reading Hierarchical instance placement : $full_path_name" ;
+  print "\nINFO-UTS : 002 : current instance is : $instance_in_process" ;
+
+  my $parent_module_inprocess = &get_parent_module($full_path_name);
+  print "\nINFO-UTS : 003 : parent_module_inprocess is $parent_module_inprocess";
+
+  my $cellref = $MODULE_ALREADY{$parent_module_inprocess}->dbVNOMGetHierInstCell($instance_in_process);
+  print "\nINFO-UTS : 004 : cell reference is $cellref";
+
+  my $global_top_module = $GLOBAL->dbfGlobalGetTOP();
+
+  my $curr_floor_plan_name = $global_top_module."\/".$full_path_name ; 
+  print "\nINFO-UTS : 005 : Current floorplan in read_placement_curr_instance_no_mpl_output is $curr_floor_plan_name" ; 
+
+  &editModule("-module",$cellref);
+
+  #&editModule("-module",$cellref,"-floorplan",$curr_floor_plan_name);
+  $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenSetPhysicalDirty(1);
+
+  #if (!exists $hash_of_modules_already_in_pseudoDB{$cellref}){
+  #  &editModule("-module",$cellref,"-floorplan",$curr_floor_plan_name);
+  #  #$hash_of_modules_already_in_pseudoDB{$cellref} = 1;
+  #}elsif (exists $PSEUDO_MODULE_ALREADY{$cellref}){
+  #  $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenSetFloorplan($curr_floor_plan_name);
+  #}
+
+  #$PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenSetFloorplan($curr_floor_plan_name);
+  my $original_full_path_name = $full_path_name ;
+  $full_path_name =~ s/\//_/g;
+
+  #Following code is to initialize port of instances
+  #without which the floorplan is not recognized
+  my @insts0 =  $MODULE_ALREADY{$cellref}->dbVNOMGetHierInst;
+  my @insts =  sort {$a cmp $b} @insts0 ;
+  foreach my $inst ( @insts) {
+    my $curr_module = $MODULE_ALREADY{$cellref}->dbVNOMGetHierInstCell($inst);
+    my $curr_module_floor_plan = $curr_floor_plan_name."\/".$inst;
+    $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenSetFloorplan($curr_module_floor_plan);
+    $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenSetPhysicalDirty(1);
+    my @output_pins = $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenGetOutput;
+    my @input_pins = $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenGetInput;
+    my @bidi_pins = $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenGetBidi;
+    my @total_pins = (); 
+    push(@total_pins, @output_pins, @input_pins, @bidi_pins);
+    foreach my $pin (@total_pins){
+      $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenWipePinRect($pin);
+      $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenSetPinStatus($pin, "PLACED");
+      my $pin_layer = "NONE";
+      my @bbox = (0, 0, 1, 1);
+      my $shape = join(" ", $pin_layer, @bbox);
+      $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenAddPinRect($pin, $shape);
+    }
+  }
+  ##Till here
+  &fix_mpl_output;
+  &commitModuleLocOnly("-module",$cellref);
+  #&commitModuleLocOnly("-module",$cellref,"-floorplan",$curr_floor_plan_name);
+  &purgeModule($cellref);
+  #&dbfTstgenUpdateFlplanFromPseudo($cellref,$curr_floor_plan_name);
+
+  print "\nMSG-UTS : 006 : Done reading placement of Hierarchical instance  : \"$original_full_path_name\"" ;
+}#sub read_placement_curr_instance_no_mpl_output
+
+sub read_placement_curr_instance_no_plan_1_output
+{
+  my $full_path_name = $_[0] ;
+  my $instance_in_process = $full_path_name ;
+  if($full_path_name =~ /.*\/.*/) {
+    my @inst_names = split(/\//, $full_path_name);
+    $instance_in_process = $inst_names[$#inst_names];
+  }
+  print "\nINFO-UTS : 001 : Reading Hierarchical instance placement : $full_path_name" ;
+  print "\nINFO-UTS : 002 : current instance is : $instance_in_process" ;
+
+  my $parent_module_inprocess = &get_parent_module($full_path_name);
+  print "\nINFO-UTS : 003 : parent_module_inprocess is $parent_module_inprocess";
+
+  my $cellref = $MODULE_ALREADY{$parent_module_inprocess}->dbVNOMGetHierInstCell($instance_in_process);
+  print "\nINFO-UTS : 004 : cell reference is $cellref";
+
+  my $global_top_module = $GLOBAL->dbfGlobalGetTOP();
+
+  my $curr_floor_plan_name = $global_top_module."\/".$full_path_name ; 
+  print "\nINFO-UTS : 005 : Current floorplan in read_placement_curr_instance_no_plan_1_output is $curr_floor_plan_name" ; 
+
+  &editModule("-module",$cellref);
+
+  #&editModule("-module",$cellref,"-floorplan",$curr_floor_plan_name);
+  $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenSetPhysicalDirty(1);
+
+  #if (!exists $hash_of_modules_already_in_pseudoDB{$cellref}){
+  #  &editModule("-module",$cellref,"-floorplan",$curr_floor_plan_name);
+  #  #$hash_of_modules_already_in_pseudoDB{$cellref} = 1;
+  #}elsif (exists $PSEUDO_MODULE_ALREADY{$cellref}){
+  #  $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenSetFloorplan($curr_floor_plan_name);
+  #}
+
+  #$PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenSetFloorplan($curr_floor_plan_name);
+
+  my $original_full_path_name = $full_path_name ;
+  $full_path_name =~ s/\//_/g;
+
+  #Following code is to initialize port of instances
+  #without which the floorplan is not recognized
+  my @insts0 =  $MODULE_ALREADY{$cellref}->dbVNOMGetHierInst;
+  my @insts =  sort {$a cmp $b} @insts0 ;
+  foreach my $inst ( @insts) {
+    my @org_bbox = &return_pseudo_vinst_size($cellref,$inst);
+    my $width = $org_bbox[2] - $org_bbox[0];
+    my $height = $org_bbox[3] - $org_bbox[1];
+    my @cur_bbox = ();
+    $cur_bbox[0] = 0; 
+    $cur_bbox[1] = 0; 
+    $cur_bbox[2] = $cur_bbox[0] + $width ;
+    $cur_bbox[3] = $cur_bbox[1] + $height ;
+    $PSEUDO_VINST_ALREADY{$cellref}{$inst}->dbPimDBSetInstRelBbox(@cur_bbox);
+    $PSEUDO_VINST_ALREADY{$cellref}{$inst}->dbPimDBSetInstStatus(PLACED);
+    $PSEUDO_VINST_ALREADY{$cellref}{$inst}->dbPimDBSetInstOrient(N);
+  }
+  my @insts0_leaf =  $MODULE_ALREADY{$cellref}->dbVNOMGetLeafInst;
+  my @insts_leaf =  sort {$a cmp $b} @insts0_leaf ;
+  foreach my $inst ( @insts_leaf) {
+    my @org_bbox = &return_pseudo_vinst_size($cellref,$inst);
+    my $width = $org_bbox[2] - $org_bbox[0];
+    my $height = $org_bbox[3] - $org_bbox[1];
+    my @cur_bbox = ();
+    $cur_bbox[0] = 0; 
+    $cur_bbox[1] = 0; 
+    $cur_bbox[2] = $cur_bbox[0] + $width ;
+    $cur_bbox[3] = $cur_bbox[1] + $height ;
+    $PSEUDO_VINST_ALREADY{$cellref}{$inst}->dbPimDBSetInstRelBbox(@cur_bbox);
+    $PSEUDO_VINST_ALREADY{$cellref}{$inst}->dbPimDBSetInstStatus(PLACED);
+    $PSEUDO_VINST_ALREADY{$cellref}{$inst}->dbPimDBSetInstOrient(N);
+  }
+  ##Till here
+  &commitModuleLocOnly("-module",$cellref);
+  #&commitModuleLocOnly("-module",$cellref,"-floorplan",$curr_floor_plan_name);
+  &purgeModule($cellref);
+  #&dbfTstgenUpdateFlplanFromPseudo($cellref,$curr_floor_plan_name);
+
+  print "\nMSG-UTS : 006 : Done reading placement of Hierarchical instance  : \"$original_full_path_name\"" ;
+}#sub read_placement_curr_instance_no_plan_1_output
+
+sub read_placement_curr_instance_plan_1
+{
+  my $full_path_name = $_[0] ;
+  my $instance_in_process = $full_path_name ;
+  if($full_path_name =~ /.*\/.*/) {
+    my @inst_names = split(/\//, $full_path_name);
+    $instance_in_process = $inst_names[$#inst_names];
+  }
+  print "\nINFO-UTS : 001 : Reading Hierarchical instance placement : $full_path_name" ;
+  print "\nINFO-UTS : 002 : current instance is : $instance_in_process" ;
+
+  my $parent_module_inprocess = &get_parent_module($full_path_name);
+  print "\nINFO-UTS : 003 : parent_module_inprocess is $parent_module_inprocess";
+
+  my $cellref = $MODULE_ALREADY{$parent_module_inprocess}->dbVNOMGetHierInstCell($instance_in_process);
+  print "\nINFO-UTS : 004 : cell reference is $cellref";
+
+  my $NODE_MAP_FILE = "$cellref.nodeMap.txt";
+  my $NODE_PIN_MAP_FILE = "$cellref.node_pin_map.txt";
+  my $global_top_module = $GLOBAL->dbfGlobalGetTOP();
+
+  my $curr_floor_plan_name = $global_top_module."\/".$full_path_name ; 
+  print "\nINFO-UTS : 005 : Current floorplan in read_placement_curr_instance_plan_1 is $curr_floor_plan_name" ; 
+
+  &editModule("-module",$cellref);
+
+  #&editModule("-module",$cellref,"-floorplan",$curr_floor_plan_name);
+  $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenSetPhysicalDirty(1);
+
+  #if (!exists $hash_of_modules_already_in_pseudoDB{$cellref}){
+  #  &editModule("-module",$cellref,"-floorplan",$curr_floor_plan_name);
+  #  #$hash_of_modules_already_in_pseudoDB{$cellref} = 1;
+  #}elsif (exists $PSEUDO_MODULE_ALREADY{$cellref}){
+  #  $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenSetFloorplan($curr_floor_plan_name);
+  #}
+
+  #$PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenSetFloorplan($curr_floor_plan_name);
+  my $original_full_path_name = $full_path_name ;
+  $full_path_name =~ s/\//_/g;
+
+  unlink("mp_xy.out");
+  unlink("$NODE_MAP_FILE");
+
+  symlink("benaras/$full_path_name/xy.out" , "mp_xy.out" );
+  symlink("benaras/$full_path_name/$NODE_MAP_FILE" , "$NODE_MAP_FILE" );
+
+  #Following code is to initialize port of instances
+  #without which the floorplan is not recognized
+  my @insts0 =  $MODULE_ALREADY{$cellref}->dbVNOMGetHierInst;
+  my @insts =  sort {$a cmp $b} @insts0 ;
+  foreach my $inst ( @insts) {
+    my @org_bbox = &return_pseudo_vinst_size($cellref,$inst);
+    my $width = $org_bbox[2] - $org_bbox[0];
+    my $height = $org_bbox[3] - $org_bbox[1];
+    my @cur_bbox = ();
+    $cur_bbox[0] = 0; 
+    $cur_bbox[1] = 0; 
+    $cur_bbox[2] = $cur_bbox[0] + $width ;
+    $cur_bbox[3] = $cur_bbox[1] + $height ;
+    $PSEUDO_VINST_ALREADY{$cellref}{$inst}->dbPimDBSetInstRelBbox(@cur_bbox);
+    $PSEUDO_VINST_ALREADY{$cellref}{$inst}->dbPimDBSetInstStatus(PLACED);
+    $PSEUDO_VINST_ALREADY{$cellref}{$inst}->dbPimDBSetInstOrient(N);
+  }
+  my @insts0_leaf =  $MODULE_ALREADY{$cellref}->dbVNOMGetLeafInst;
+  my @insts_leaf =  sort {$a cmp $b} @insts0_leaf ;
+  foreach my $inst ( @insts_leaf) {
+    my @org_bbox = &return_pseudo_vinst_size($cellref,$inst);
+    my $width = $org_bbox[2] - $org_bbox[0];
+    my $height = $org_bbox[3] - $org_bbox[1];
+    my @cur_bbox = ();
+    $cur_bbox[0] = 0; 
+    $cur_bbox[1] = 0; 
+    $cur_bbox[2] = $cur_bbox[0] + $width ;
+    $cur_bbox[3] = $cur_bbox[1] + $height ;
+    $PSEUDO_VINST_ALREADY{$cellref}{$inst}->dbPimDBSetInstRelBbox(@cur_bbox);
+    $PSEUDO_VINST_ALREADY{$cellref}{$inst}->dbPimDBSetInstStatus(PLACED);
+    $PSEUDO_VINST_ALREADY{$cellref}{$inst}->dbPimDBSetInstOrient(N);
+  }
+  ##Till here
+  $MPL_BINARY_IS_RUNNING = 1;
+  &read_hier_place_graph($cellref);
+  $MPL_BINARY_IS_RUNNING = 0;
+
+
+  unlink("mp_xy.out");
+  unlink("$NODE_MAP_FILE");
+
+  &commitModuleLocOnly("-module",$cellref);
+  #&commitModuleLocOnly("-module",$cellref,"-floorplan",$curr_floor_plan_name);
+  &purgeModule($cellref);
+  #&dbfTstgenUpdateFlplanFromPseudo($cellref,$curr_floor_plan_name);
+
+  print "\nMSG-UTS : 006 : Done reading placement of Hierarchical instance  : \"$original_full_path_name\"" ;
+}#sub read_placement_curr_instance_plan_1
+
+sub get_parent_module
+{
+  my $hier_inst_name = $_[0];
+  my @inst_names = ($hier_inst_name);
+  if($hier_inst_name =~ /.*\/.*/) {
+    @inst_names = split(/\//, $hier_inst_name);
+  }
+  my $parent_cell_ref =  $GLOBAL->dbfGlobalGetTOP();
+  for(my $i = 0 ; $i < $#inst_names ; $i++){
+    my $curr_inst = $inst_names[$i];  
+    $parent_cell_ref = $MODULE_ALREADY{$parent_cell_ref}->dbVNOMGetHierInstCell($curr_inst);
+  }
+  return $parent_cell_ref;
+}
+
+sub dbfTstgenUniqueModule {
+
+my $moduleName = $_[0];
+my $new_moduleName = $moduleName;
+my $count = -1;
+while ( exists $PSEUDO_MODULE_ALREADY{$new_moduleName}){
+  $new_moduleName = $new_moduleName.$count;
+  $count++;
+}
+
+if ( !exists $MODULE_ALREADY{$moduleName} ) {
+  return;
+}
+
+$TOP_MODULE = $new_moduleName;
+delete $PSEUDO_MODULE_ALREADY{$new_moduleName};
+delete $PSEUDO_VINST_ALREADY{$new_moduleName};
+delete $PSEUDO_VNET_ALREADY{$new_moduleName};
+&dbfTstgenLoadVNOMPins_new_name($moduleName,$new_moduleName);
+$PSEUDO_MODULE_ALREADY{$new_moduleName}->dbaTstgenSetIsModuleTop();
+
+my ($inst, $cellref);
+my @insts = $MODULE_ALREADY{$moduleName}->dbVNOMGetHierInst;
+foreach $inst ( @insts ) {
+  $cellref = $MODULE_ALREADY{$moduleName}->dbVNOMGetHierInstCell($inst);
+  delete $PSEUDO_MODULE_ALREADY{$cellref};
+  delete $PSEUDO_VINST_ALREADY{$cellref};
+  delete $PSEUDO_VNET_ALREADY{$cellref};
+}
+
+foreach $inst ( @insts ) {
+  $cellref = $MODULE_ALREADY{$moduleName}->dbVNOMGetHierInstCell($inst);
+  unless ( exists $PSEUDO_MODULE_ALREADY{$cellref} ) {
+    &dbfTstgenLoadVNOMPins($cellref);
+  }
+}
+
+&dbfTstgenLoadVNOMInsts_new_name($moduleName,$new_moduleName);
+&dbfTstgenLoadVNOMNets_new_name($moduleName,$new_moduleName);
+
+return $new_moduleName ;
+
+}#sub dbfTstgenUniqueModule
+
+sub dbfTstgenLoadVNOMPins_new_name {
+
+my $moduleName = $_[0];
+my $unique_moduleName = $_[0];
+my $moduleType = $MODULE_ALREADY{$moduleName}->dbVNOMGetClass;
+print "INFO-UTS : 001 : Loading pseudo module $moduleName type $moduleType\n";
+$PSEUDO_MODULE_ALREADY{$unique_moduleName} = PseudoModuleModelDB::new();
+$PSEUDO_MODULE_ALREADY{$unique_moduleName}->dbaTstgenSetDirty(0);
+$PSEUDO_MODULE_ALREADY{$unique_moduleName}->dbaTstgenSetModuleName($unique_moduleName);
+$PSEUDO_MODULE_ALREADY{$unique_moduleName}->dbaTstgenSetClass($moduleType);
+
+my $pin;
+my @pins = $MODULE_ALREADY{$moduleName}->dbVNOMGetInput;
+foreach $pin ( @pins ) {
+  $PSEUDO_MODULE_ALREADY{$unique_moduleName}->dbaTstgenAddInput($pin);
+  my $type = $MODULE_ALREADY{$moduleName}->dbVNOMGetInputType($pin);
+  $PSEUDO_MODULE_ALREADY{$unique_moduleName}->dbaTstgenSetInputType($pin, $type);
+  if ( $type == 1 ) {
+    my $bits = $MODULE_ALREADY{$moduleName}->dbVNOMGetInputBits($pin);
+    $PSEUDO_MODULE_ALREADY{$unique_moduleName}->dbaTstgenSetInputBits($pin, $bits);
+  }
+}
+
+@pins = $MODULE_ALREADY{$moduleName}->dbVNOMGetOutput;
+foreach $pin ( @pins ) {
+  $PSEUDO_MODULE_ALREADY{$unique_moduleName}->dbaTstgenAddOutput($pin);
+  my $type = $MODULE_ALREADY{$moduleName}->dbVNOMGetOutputType($pin);
+  $PSEUDO_MODULE_ALREADY{$unique_moduleName}->dbaTstgenSetOutputType($pin, $type);
+  if ( $type == 1 ) {
+    my $bits = $MODULE_ALREADY{$moduleName}->dbVNOMGetOutputBits($pin);
+    $PSEUDO_MODULE_ALREADY{$unique_moduleName}->dbaTstgenSetOutputBits($pin, $bits);
+  }
+}
+
+@pins = $MODULE_ALREADY{$moduleName}->dbVNOMGetBidi;
+foreach $pin ( @pins ) {
+  $PSEUDO_MODULE_ALREADY{$unique_moduleName}->dbaTstgenAddBidi($pin);
+  my $type = $MODULE_ALREADY{$moduleName}->dbVNOMGetBidiType($pin);
+  $PSEUDO_MODULE_ALREADY{$unique_moduleName}->dbaTstgenSetBidiType($pin, $type);
+  if ( $type == 1 ) {
+    my $bits = $MODULE_ALREADY{$moduleName}->dbVNOMGetBidiBits($pin);
+    $PSEUDO_MODULE_ALREADY{$unique_moduleName}->dbaTstgenSetBidiBits($pin, $bits);
+  }
+}
+}#sub dbfTstgenLoadVNOMPins_new_name
+
+sub dbfTstgenLoadVNOMInsts_new_name {
+
+my $moduleName = $_[0];
+my $new_moduleName = $_[0];
+
+my ($inst, $cellref);
+my @insts = $MODULE_ALREADY{$moduleName}->dbVNOMGetHierInst;
+foreach $inst ( @insts ) {
+  $PSEUDO_VINST_ALREADY{$new_moduleName}{$inst} = PseudoInstanceModelDB::new();
+  $PSEUDO_VINST_ALREADY{$new_moduleName}{$inst}->dbPimDBSetParentModule($new_moduleName);
+  $PSEUDO_VINST_ALREADY{$new_moduleName}{$inst}->dbPimDBSetInstName($inst);
+  $cellref = $MODULE_ALREADY{$new_moduleName}->dbVNOMGetHierInstCell($inst);
+  $PSEUDO_VINST_ALREADY{$new_moduleName}{$inst}->dbPimDBSetInstCellref($cellref);
+}
+
+@insts = $MODULE_ALREADY{$moduleName}->dbVNOMGetLeafInst;
+foreach $inst ( @insts ) {
+  $PSEUDO_VINST_ALREADY{$new_moduleName}{$inst} = PseudoInstanceModelDB::new();
+  $PSEUDO_VINST_ALREADY{$new_moduleName}{$inst}->dbPimDBSetParentModule($new_moduleName);
+  $PSEUDO_VINST_ALREADY{$new_moduleName}{$inst}->dbPimDBSetInstName($inst);
+  $cellref = $MODULE_ALREADY{$new_moduleName}->dbVNOMGetLeafInstCell($inst);
+  $PSEUDO_VINST_ALREADY{$new_moduleName}{$inst}->dbPimDBSetInstCellref($cellref);
+  &dbfTstgenCollectVInstBusPins($new_moduleName, $inst);
+}
+
+}#sub dbfTstgenLoadVNOMInsts_new_name
+
+sub dbfTstgenLoadVNOMNets_new_name {
+
+my $moduleName = $_[0];
+my $new_moduleName = $_[0];
+
+my @conns = $MODULE_ALREADY{$moduleName}->dbVNOMGetConn;
+foreach my $conn ( @conns ) {
+
+  #<!-- replace {1st L paren} with {R paren followed by comma} -->
+  $conn =~ s/\(/\)\,/;
+
+  #<!-- replace {2 consecutive R parens {and possibly semicolon} at line end}
+  #       with {only one R paren} -->
+  $conn =~ s/\s*\)\s*\)\s*\;?.*$/\)/;
+
+  my ($cellref, $inst) = ( split(/\s+/, $conn ))[0,1];
+  if (( $MODULE_ALREADY{$moduleName}->dbVNOMHasHierInst($inst) ) 
+     || ( $MODULE_ALREADY{$moduleName}->dbVNOMHasLeafInst($inst) )) {
+  unless ( exists $PSEUDO_VINST_ALREADY{$new_moduleName}{$inst} ) {
+    print "DBG-UTS : 001 : Creating VInst $inst cell $cellref from conn line\n" if ($DEBUG == 328);
+    $PSEUDO_VINST_ALREADY{$new_moduleName}{$inst} = PseudoInstanceModelDB::new();
+    $PSEUDO_VINST_ALREADY{$new_moduleName}{$inst}->dbPimDBSetParentModule($new_moduleName);
+    $PSEUDO_VINST_ALREADY{$new_moduleName}{$inst}->dbPimDBSetInstName($inst);
+    $PSEUDO_VINST_ALREADY{$new_moduleName}{$inst}->dbPimDBSetInstCellref($cellref);
+  }
+
+  my @nets = split(/\s*\)\,\s*/, $conn);
+  my $pinCount = @nets;
+  for ( my $i = 1 ; $i < $pinCount ; $i++ ) {
+    $nets[$i] =~ s/\s*\(\s*/\|/;
+    $nets[$i] =~ s/\s*\)\s*//;
+    my ($pin,$net) = (split(/\s*\|\s*/, $nets[$i]))[0,1];
+    if ( $net eq "" ) {
+      next;
+    }
+
+    $pin =~ s/\.//;
+    print "DBG-UTS : 002 : Extracted pin $pin net $net from pair\n" if ($DEBUG == 328);
+
+#<!-- Determine pin type (single or bus) and direction (input or output)
+#    Leaf cells: bus pins - hashed to PSEUDO_VINST_ALREADY;
+#               wire pins - use PLDB info.
+#    Hier cells: use info in PSEUDO_MODULE_ALREADY.
+# -->
+    my ($type, $dir, $width, $bits, $from, $to);
+    if ( exists $PLDB{$cellref} ) {
+      if ( $PSEUDO_VINST_ALREADY{$new_moduleName}{$inst}->dbPimDBInstHasInputBusPin($pin) ) {
+        $type = "bus";
+        $dir = 0;
+        $bits = $PSEUDO_VINST_ALREADY{$new_moduleName}{$inst}->dbPimDBGetInstInputBusBits($pin);
+        ($from, $to) = &utilGetBitsRange($bits);
+        $width = 1 + abs ($to - $from);
+      }
+      elsif ( $PSEUDO_VINST_ALREADY{$new_moduleName}{$inst}->dbPimDBInstHasOutputBusPin($pin) ) {
+        $type = "bus";
+        $dir = 1;
+        $bits = $PSEUDO_VINST_ALREADY{$new_moduleName}{$inst}->dbPimDBGetInstOutputBusBits($pin);
+        ($from, $to) = &utilGetBitsRange($bits);
+        $width = 1 + abs ($to - $from);
+      }
+      else {
+        $type = "single";
+        $dir = $PLDB{$cellref}->dbMdbGetPinDir($pin);
+        $width = 1;
+      }
+    }
+    elsif ( exists $PSEUDO_MODULE_ALREADY{$cellref} ) {
+      if ( $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenHasInput($pin) ) {
+        $dir = 0;
+        if ( 1 == $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetInputType($pin) ) {
+          $type = "bus";
+          $bits = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetInputBits($pin);
+          ($from, $to) = &utilGetBitsRange($bits);
+          $width = 1 + abs ($to - $from);
+        }
+        else {
+          $type = "single";
+          $width = 1;
+        }
+      }
+      elsif ( $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenHasOutput($pin) ) {
+        $dir = 1;
+        if ( 1 == $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetOutputType($pin) ) {
+          $type = "bus";
+          $bits = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetOutputBits($pin);
+          ($from, $to) = &utilGetBitsRange($bits);
+          $width = 1 + abs ($to - $from);
+        }
+        else {
+          $type = "single";
+          $width = 1;
+        }
+      }
+      elsif ( $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenHasBidi($pin) ) {
+        $dir = 2;
+        if ( 1 == $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetBidiType($pin) ) {
+          $type = "bus";
+          $bits = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetBidiBits($pin);
+          ($from, $to) = &utilGetBitsRange($bits);
+          $width = 1 + abs ($to - $from);
+        }
+        else {
+          $type = "single";
+          $width = 1;
+        }
+      }
+    }# if ( hier cell )
+
+    unless ( defined $type ) {    #<!-- make best possible guess -->
+      if ( $net =~ m/\{.*\}/ ) {
+        $type = "bus";
+        my @subnets = split(/\s*\,\s*/, $net);
+        $width = @subnets;
+        $bits = "\[0:" . ($width - 1) . "\]";
+      }
+      elsif ( $net =~ m/\d*'b[01]+/ ) {
+        ( $width = $net ) =~ s/'b.+$//;
+        if ( $width > 1 ) {
+          $type = "bus";
+        }
+        else {
+          $type = "single";
+        }
+      }
+      else {
+        $type = "single";
+        $width = 1;
+      }
+    }
+
+    my @subpins = ();
+    my @subnets = ();
+    if ( $type eq "bus" && $net =~ m/\{.*\}/ ) {
+      $width = 1;
+      @subpins = utilSplitBusBits("$pin$bits");
+      $net =~ s/^\s*\{\s*//;
+      $net =~ s/\s*\}\s*$//;
+      @subnets = split(/\s*\,\s*/, $net);
+    }
+    else {
+      push(@subpins, $pin);
+      push(@subnets, $net);
+    }
+
+    my $i = 0;
+    foreach my $spin ( @subpins ) {
+      my $snet = $subnets[$i++];
+
+      my $isNetTieLoHi = 0;
+      my $sourceVInst;
+      if ( $snet =~ m/\d*'b[01]+/ ) {
+        $isNetTieLoHi = 1;
+        ($sourceVInst = $snet) =~ s/^\d*'b/'b/;
+        my $count = keys( %{$PSEUDO_VNET_ALREADY{$new_moduleName}} ) ;
+        $snet = "BD0_tie" . $count;
+      }
+  
+      unless ( exists $PSEUDO_VNET_ALREADY{$new_moduleName}->{$snet} ) {
+        $PSEUDO_VNET_ALREADY{$new_moduleName}->{$snet} = PseudoNetModelDB::new();
+        $PSEUDO_VNET_ALREADY{$new_moduleName}->{$snet}->dbaTstgenSetPseudoNetPrefix($snet);
+        $PSEUDO_VNET_ALREADY{$new_moduleName}->{$snet}->dbaTstgenSetPseudoNetParentModule($new_moduleName);
+        $PSEUDO_VNET_ALREADY{$new_moduleName}->{$snet}->dbaTstgenSetPseudoNetType($type);
+        $PSEUDO_VNET_ALREADY{$new_moduleName}->{$snet}->dbaTstgenSetPseudoNetWidth($width);
+      }
+  
+      if ( $isNetTieLoHi ) {
+        $PSEUDO_VNET_ALREADY{$new_moduleName}->{$snet}->dbaTstgenSetPseudoNetSourceFanInList($sourceVInst, "");
+        $PSEUDO_VNET_ALREADY{$new_moduleName}->{$snet}->dbaTstgenSetPseudoNetSinkFanOutList($inst, $spin);
+        next;
+      }
+  
+      my $isTopConn = 0;
+      if ( $PSEUDO_MODULE_ALREADY{$new_moduleName}->dbaTstgenHasInput($snet) ) {
+        $isTopConn = 1;  # PIN is source;
+        $PSEUDO_VNET_ALREADY{$new_moduleName}->{$snet}->dbaTstgenSetPseudoNetTopConnPin($snet);
+      }
+      elsif ( $PSEUDO_MODULE_ALREADY{$new_moduleName}->dbaTstgenHasOutput($snet) ) {
+        $isTopConn = 2;  # PIN is sink;
+        $PSEUDO_VNET_ALREADY{$new_moduleName}->{$snet}->dbaTstgenSetPseudoNetTopConnPin($snet);
+      }
+  
+      if ( $dir == 1 ) {
+        $PSEUDO_VNET_ALREADY{$new_moduleName}->{$snet}->dbaTstgenSetPseudoNetSourceFanInList($inst, $spin);
+        if ( $isTopConn == 2 ) {
+          $PSEUDO_VNET_ALREADY{$new_moduleName}->{$snet}->dbaTstgenSetPseudoNetSinkFanOutList("PIN", $snet);
+          $PSEUDO_VNET_ALREADY{$new_moduleName}->{$snet}->dbaTstgenSetPseudoNetIsTopConn(1);
+        }
+      }
+      elsif ( $dir == 0 ) {
+        $PSEUDO_VNET_ALREADY{$new_moduleName}->{$snet}->dbaTstgenSetPseudoNetSinkFanOutList($inst, $spin);
+        if ( $isTopConn == 1 ) {
+          $PSEUDO_VNET_ALREADY{$new_moduleName}->{$snet}->dbaTstgenSetPseudoNetSourceFanInList("PIN", $snet);
+          $PSEUDO_VNET_ALREADY{$new_moduleName}->{$snet}->dbaTstgenSetPseudoNetIsTopConn(1);
+        }
+      }
+    }# for subpin
+  }# for pin
+  }#if exists in hierInst or leafInst
+}# for $conn
+
+foreach my $net ( keys %{$PSEUDO_VNET_ALREADY{$new_moduleName}} ) {
+  if ( $PSEUDO_VNET_ALREADY{$new_moduleName}->{$net}->dbaTstgenGetPseudoNetIsTopConn ) {
+    my $inst = "PIN";
+    $PSEUDO_VINST_ALREADY{$new_moduleName}{$inst} = PseudoInstanceModelDB::new();
+    $PSEUDO_VINST_ALREADY{$new_moduleName}{$inst}->dbPimDBSetParentModule($new_moduleName);
+    $PSEUDO_VINST_ALREADY{$new_moduleName}{$inst}->dbPimDBSetInstName($inst);
+    $PSEUDO_VINST_ALREADY{$new_moduleName}{$inst}->dbPimDBSetInstCellref($new_moduleName);
+    last;
+  }
+}
+
+}#sub dbfTstgenLoadVNOMNets_new_name
+
+sub check_if_instance_to_be_flatten
+{
+  my $inst_in_process = $_[0] ;
+  my $parent_mod_in_process = $_[1] ;
+  print "\nMSG-UTS : 001 : In check_if_instance_to_be_flatten args are $inst_in_process $parent_mod_in_process\n" ;
+
+  print "MSG-UTS : 002 : Going to call get_no_of_leaf_inst_in_hierarchy cellref is $parent_mod_in_process\n" ;
+  my $no_of_leaf_inst_parent = &get_no_of_leaf_inst_in_hierarchy($parent_mod_in_process);
+
+  my $cellref = $MODULE_ALREADY{$parent_mod_in_process}->dbVNOMGetHierInstCell($inst_in_process);
+  print "MSG-UTS : 003 : Going to call get_no_of_leaf_inst_in_hierarchy cellref is $cellref\n" ;
+  my $no_of_leaf_inst = &get_no_of_leaf_inst_in_hierarchy($cellref);
+
+  my $global_max_inst = $GLOBAL->dbGlobalGetMaxInstance();
+  my $global_min_inst = $GLOBAL->dbGlobalGetMinInstance();
+  print "\nINFO-UTS : 004 : min and max instances values are $global_min_inst and $global_max_inst" ;
+  if($no_of_leaf_inst <= $global_min_inst) {
+    if(($no_of_leaf_inst + $no_of_leaf_inst_parent)  <= $global_max_inst) { 
+      return 1 ;
+    }
+  }else {
+    return 0 ;
+  }
+}
+
+sub get_no_of_leaf_inst_in_hierarchy
+{
+  my $mod_in_process = $_[0] ;
+  print "\nINFO-UTS : 001 : In get_no_of_leaf_inst_in_hierarchy args are $mod_in_process \n" ;
+  my @hierInsts = $MODULE_ALREADY{$mod_in_process}->dbVNOMGetHierInst;
+  my @leafInsts = $MODULE_ALREADY{$mod_in_process}->dbVNOMGetLeafInst;
+  my $no_of_leaf_inst = $#leafInsts+1 ;
+  for(my $temp_cnt = 0 ; $temp_cnt <= $#hierInsts;$temp_cnt++) {
+    my $curr_hier_inst = $hierInsts[$temp_cnt] ;
+    my $cellref = $MODULE_ALREADY{$mod_in_process}->dbVNOMGetHierInstCell($curr_hier_inst);
+    $no_of_leaf_inst += &get_no_of_leaf_inst_in_hierarchy($cellref);
+  }
+  return $no_of_leaf_inst ;
+}
+
+sub check_and_remove_inst_from_vnom_module_and_set_flat_start_module
+{
+  my $parent_mod_in_process = $_[0];
+  my $inst_in_process = $_[1];
+  print "\nINFO-UTS : 001 : In check_and_remove_inst_from_vnom_module_and_set_flat_start_module args are $parent_mod_in_process $inst_in_process\n" ;
+  if($CURRENT_MODULE_FLAT_START_POINT eq "" ){ 
+    if( &check_if_instance_to_be_flatten($inst_in_process, $parent_mod_in_process) ==1) {
+      print "INFO-UTS : 002 : Flattening hierarchy instance $inst_in_process which is in module $parent_mod_in_process\n" ;
+      print "INFO-UTS : 003 : TEMP_PATH is " ;
+      print join "/",@TEMP_PATH;
+      print "\n" ;
+      $MODULE_ALREADY{$parent_mod_in_process}->dbVNOMWipeSingleHierInst($inst_in_process);
+      $CURRENT_MODULE_FLAT_START_POINT = $parent_mod_in_process ; 
+      @CURRENT_TEMP_PATH = @TEMP_PATH ;
+      print "INFO-UTS : 004 : CURRENT_TEMP_PATH is " ;
+      print join "/",@CURRENT_TEMP_PATH;
+      print "\n" ;
+    }
+  }else {
+      #This instances may be needed in some other place,so commented
+      #$MODULE_ALREADY{$parent_mod_in_process}->dbVNOMWipeSingleHierInst($inst_in_process);
+  }
+}
+
+sub check_and_reset_flat_start_module
+{
+  print "\nINFO-UTS : 001 : In check_and_reset_flat_start_module args are $_[0]\n" ;
+  print "\nINFO-UTS : 002 : CURRENT_MODULE_FLAT_START_POINT is $CURRENT_MODULE_FLAT_START_POINT\n" ;
+  if($CURRENT_MODULE_FLAT_START_POINT ne "" ){ 
+    my $current_module_in_process = $_[0] ;
+    if($current_module_in_process eq $CURRENT_MODULE_FLAT_START_POINT) {
+      $CURRENT_MODULE_FLAT_START_POINT = "" ;
+      @CURRENT_TEMP_PATH = () ;
+    }
+  }
+}
+
+sub start_creating_leaf_instance_in_CURRENT_MODULE_FLAT_START_POINT
+{
+  $PORT_NET_CONNECTION = "(" ;
+} 
+
+sub complete_creating_leaf_instance_in_CURRENT_MODULE_FLAT_START_POINT
+{
+  my $cellref = $_[0] ;
+  my $instName = $_[1] ;
+  $PORT_NET_CONNECTION = $PORT_NET_CONNECTION.")" ;
+  my $default_hierarchy_name = "";
+  print "\nINFO-UTS : 001 : TEMP_PATH is " ;
+  print join "/",@TEMP_PATH;
+  print "\nINFO-UTS : 002 : CURRENT_TEMP_PATH is " ;
+  print join "/",@CURRENT_TEMP_PATH;
+  print "\n" ;
+  my $depth = @TEMP_PATH;
+  my $depth_start_point = @CURRENT_TEMP_PATH;
+  for(my $xx = $depth -1 ; $xx >= $depth_start_point-1 ; $xx--) {
+    my $parent = $TEMP_PATH[$xx];
+    $default_hierarchy_name = $parent."/".$default_hierarchy_name;
+  }
+  print "INFO-UTS : 003 : default_hierarchy_name is $default_hierarchy_name\n" ;
+  print "INFO-UTS : 004 : instName is $instName\n" ;
+  my $new_hier_inst_name = $default_hierarchy_name.$instName;
+  print "INFO-UTS : 005 : new_hier_inst_name is $new_hier_inst_name\n" ;
+  $PORT_NET_CONNECTION = $cellref." ".$new_hier_inst_name." ".$PORT_NET_CONNECTION ;
+  print "INFO-UTS : 006 : New connection string is $PORT_NET_CONNECTION ";
+  $MODULE_ALREADY{$CURRENT_MODULE_FLAT_START_POINT}->dbVNOMAddConn($PORT_NET_CONNECTION);
+  $PORT_NET_CONNECTION = "" ;
+  if( exists $PLDB{$cellref}) {
+    my $area = $MODULE_ALREADY{$CURRENT_MODULE_FLAT_START_POINT}->dbVNOMGetArea;
+    my @size = $PLDB{$cellref}->dbMdbGetSize;
+    my $delA = $size[0]*$size[1];
+    $area = $area + $delA;
+    $MODULE_ALREADY{$CURRENT_MODULE_FLAT_START_POINT}->dbVNOMSetArea($area);
+    $MODULE_ALREADY{$CURRENT_MODULE_FLAT_START_POINT}->dbVNOMAddLeafInst($new_hier_inst_name);
+    $MODULE_ALREADY{$CURRENT_MODULE_FLAT_START_POINT}->dbVNOMSetLeafInstCell($new_hier_inst_name,$cellref);
+  }else { # Black box or a module that is defined later in the file
+    $MODULE_ALREADY{$moduleName}->dbVNOMAddHierInst($new_hier_inst_name);
+    $MODULE_ALREADY{$moduleName}->dbVNOMSetHierInstCell($new_hier_inst_name,$cellref);
+    $MODULE_ALREADY{$cellref}= VNOM::new();
+    $MODULE_ALREADY{$cellref}->dbVNOMAddParent($CURRENT_MODULE_FLAT_START_POINT);
+  }
+}
+
+sub add_expr_to_port_net_connection
+{
+  my $curr_pin = $_[0] ;
+  my $curr_net = $_[1] ;
+  my $hierInstName = $_[2] ;
+  my $default_hierarchy_name = "";
+  my $netName = "" ;
+  if ( exists $TEMP_HIER_PORT_NET_MAP{$hierInstName}{$curr_net} ) {
+    $netName = $curr_net;
+    my $depth = @TEMP_PATH;
+    my $depth_start_point = @CURRENT_TEMP_PATH;
+    for(my $xx = $depth -1 ; $xx >= $depth_start_point-1 ; $xx--) {
+      my $parent = $TEMP_PATH[$xx];
+      $default_hierarchy_name = $parent."/".$default_hierarchy_name;
+      if ($parent eq $TOP_MODULE ) { 
+        last; 
+      } else { 
+        if ( exists $TEMP_HIER_PORT_NET_MAP{$TEMP_PATH[$xx]}{$netName} ) {
+          $netName = $TEMP_HIER_PORT_NET_MAP{$TEMP_PATH[$xx]}{$netName};
+        }else {
+          print "INFO-UTS : 001 : previous netName is $netName\n" ;
+          my $new_default_hierarchy_name = "" ;
+          for(my $yy = $depth_start_point -1 ; $yy <= $xx ; $yy++ ) {
+            my $parent = $TEMP_PATH[$yy];
+            if($new_default_hierarchy_name ne "") {
+              $new_default_hierarchy_name = $new_default_hierarchy_name."/".$parent;
+            }else{
+              $new_default_hierarchy_name = $parent;
+            }
+          }
+          $netName = $new_default_hierarchy_name."/".$netName ;
+          last ;
+        }
+      }
+    }
+  }
+  if ($PORT_NET_CONNECTION ne "(" ){
+    $PORT_NET_CONNECTION = $PORT_NET_CONNECTION."," ;
+  }
+  if($netName ne "") {
+    $PORT_NET_CONNECTION = $PORT_NET_CONNECTION .".".$curr_pin."(".$netName.")" ;
+  }else {
+    $default_hierarchy_name = "";
+    for(my $xx = $depth -1 ; $xx >= $depth_start_point-1 ; $xx--) {
+      my $parent = $TEMP_PATH[$xx];
+      $default_hierarchy_name = $parent."/".$default_hierarchy_name;
+    }
+    $PORT_NET_CONNECTION = $PORT_NET_CONNECTION .".".$curr_pin."(".$default_hierarchy_name.$curr_net.")" ;
+  }
+}
+
+sub run_placer_again_input_already
+{
+  my $full_path_name = $_[0] ;
+  my $instance_in_process = $full_path_name ;
+  if($full_path_name =~ /.*\/.*/) {
+    my @inst_names = split(/\//, $full_path_name);
+    $instance_in_process = $inst_names[$#inst_names];
+  }
+  my $parent_module_inprocess = &get_parent_module($full_path_name);
+  my $placeLogFileName = "mpl.log";
+  print "\nINFO-UTS : 001 : instance_in_process is $instance_in_process";
+  print "\nINFO-UTS : 002 : parent_module_inprocess is $parent_module_inprocess";
+  my $cellref = $MODULE_ALREADY{$parent_module_inprocess}->dbVNOMGetHierInstCell($instance_in_process);
+  my $original_full_path_name = $full_path_name ; 
+  $full_path_name =~ s/\//_/g;
+  my $INPUT_NET_FILE = "$cellref.txt";
+  my $NODE_FILE = "nodefile";
+  my $env_proton_home = $GLOBAL->dbfGlobalGetProtonHome;
+  #while(!(-e "$placeLogFileName")){ 
+  #  if (fork() == 0) {exec("$env_eqator_home/3RDBIN/mpl $INPUT_NET_FILE $NODE_FILE > $placeLogFileName");}
+  #  if (fork() == 0) {exec("$env_proton_home/3RDBIN/mpl $INPUT_NET_FILE $NODE_FILE > $placeLogFileName");}
+  #  sleep(5);
+  #}
+  #my $forked_pid_mpl ;
+  #undef $forked_pid_mpl ;
+  #if(!(-e "$placeLogFileName")){ 
+  #  while (!defined ($forked_pid_mpl = fork())){
+  #    print "\nCould not fork a new process for mpl" ;
+  #    sleep(5) ;
+  #  }
+  #  if ($forked_pid_mpl == 0)  {
+  #    exec("$env_eqator_home/3RDBIN/mpl $INPUT_NET_FILE $NODE_FILE > $placeLogFileName");
+  #    exec("$env_proton_home/3RDBIN/mpl $INPUT_NET_FILE $NODE_FILE > $placeLogFileName");
+  #  }else {
+  #    print "\nforked a new process for mpl\n" ;
+  #  }
+  #}
+  my $forked_pid_mpl ;
+  undef $forked_pid_mpl ;
+  if(!(-e "benaras/$full_path_name/$placeLogFileName")){ 
+    while (($MAX_NO_OF_PARALLEL_JOBS >0) && (&return_number_of_curr_parallel_jobs_running() >= $MAX_NO_OF_PARALLEL_JOBS)){
+      sleep(5) ;
+    }
+    chdir( "benaras/$full_path_name");
+    my $second_indicator_file_name = "second_indicator_${cellref}_${instance_in_process}";
+    open(WRITE,">$second_indicator_file_name");
+    print WRITE "Second time changed directory to run mpl on module $cellref and instance $instance_in_process \n";
+    close(WRITE);
+    while (!defined ($forked_pid_mpl = fork())){
+      print "\nWARN-UTS : 003 : Could not fork a new parent process for mpl" ;
+      sleep(5) ;
+    }
+    if ($forked_pid_mpl == 0)  {
+      #exec("$env_eqator_home/3RDBIN/mpl $INPUT_NET_FILE $NODE_FILE > $placeLogFileName");
+      exec("$env_proton_home/3RDBIN/mpl $INPUT_NET_FILE $NODE_FILE > $placeLogFileName");
+      #my $forked_pid_child_mpl ;
+      #undef $forked_pid_child_mpl ;
+      #while (!defined ($forked_pid_child_mpl = fork())){
+      #  print "\nCould not fork a new child process for mpl" ;
+      #  sleep(5) ;
+      #}
+      #if ($forked_pid_child_mpl == 0)  {
+      #  exec("$env_eqator_home/3RDBIN/mpl $INPUT_NET_FILE $NODE_FILE > $placeLogFileName");
+      #  exec("$env_proton_home/3RDBIN/mpl $INPUT_NET_FILE $NODE_FILE > $placeLogFileName");
+      #}else{
+      #  print "\nforked a new child process for mpl\n" ;
+      #  CORE::exit(0) ;
+      #}
+    }else {
+      $no_of_fork++;
+      print "\nINFO-UTS : 004 : $no_of_fork of process forked" ;
+      #waitpid($forked_pid_mpl,0) ;
+      print "\nINFO-UTS : 005 : forked a new parent process $forked_pid_mpl for mpl\n" ;
+    }
+    chdir( "$toolCurrentDir");
+  }
+  print "\nMSG-UTS : 006 : Placing Hierarchical instance Fired : \"$original_full_path_name\"" ;
+}
+
+sub get_max_node_number_in_nodefile
+{
+  use File::ReadBackwards ;
+  my $file_handle_nodefile = File::ReadBackwards->new( "./nodefile" );
+  if($file_handle_nodefile){
+    my $nodefile_line;
+    undef $nodefile_line;
+    my $max_node_number ;
+    if (defined( $nodefile_line = $file_handle_nodefile->readline )){
+      ($max_node_number) = (split(/\s+/,$nodefile_line))[0];
+      return $max_node_number ;
+    }
+  }
+  return -1 ;
+}
+
+sub set_module_flattening_parameter {
+  my $MAX_INSTANCE = 10000;
+  my $MIN_INSTANCE = 100;
+  if( $_[0] eq '-h') { 
+    print "\nUsage : set_module_flattening_parameter [-max_instance <output design info file>]";
+    print "\n          [-min_instance <output design info file>]";
+    print "            note : by default max_instance will be 10000 and min_instance will be 100 \n";
+    return ;
+  }
+  my $noOfArguments = @_;
+  for(my $i = 0; $i < $noOfArguments; $i++){
+    if($_[$i] eq "-max_instance"){$MAX_INSTANCE = $_[$i+1];}
+    if($_[$i] eq "-min_instance"){$MIN_INSTANCE = $_[$i+1];}
+  }
+  $GLOBAL->dbGlobalSetMaxInstance($MAX_INSTANCE);
+  $GLOBAL->dbGlobalSetMinInstance($MIN_INSTANCE);
+}
+
+sub set_module_flattening_selective {
+  if( $_[0] eq '-h') { 
+    print "\nUsage : set_module_flattening_selective";
+    print "            note : by default no module will be flattened\n";
+    return ;
+  }
+  $GLOBAL->dbGlobalSetFlattenSelectively(1);
+}
+
+sub set_minimum_leaf_instance_for_placement {
+  if( $_[0] eq '-h') { 
+    print "\nUsage : set_minimum_leaf_instance_for_placement -number_of_leaf_instance <number_of_leaf_instance>";
+    print "            note : by default placement will be run on all the instances in the hierarchy \n";
+    return ;
+  }
+  my $noOfLeafInst = -1 ;
+  my $noOfArguments = @_;
+  for(my $i = 0; $i < $noOfArguments; $i++){
+    if($_[$i] eq "-number_of_leaf_instance"){$noOfLeafInst = $_[$i+1];}
+  }
+  $GLOBAL->dbGlobalSetMinLeafInstForPlacement($noOfLeafInst);
+}#sub set_minimum_leaf_instance_for_placement {
+
+sub set_minimum_hier_instance_for_placement {
+  if( $_[0] eq '-h') { 
+    print "\nUsage : set_minimum_hier_instance_for_placement -number_of_hier_instance <number_of_hier_instance>";
+    print "            note : by default placement will be run on all the instances in the hierarchy \n";
+    return ;
+  }
+  my $noOfHierInst = -1 ;
+  my $noOfArguments = @_;
+  for(my $i = 0; $i < $noOfArguments; $i++){
+    if($_[$i] eq "-number_of_hier_instance"){$noOfHierInst = $_[$i+1];}
+  }
+  $GLOBAL->dbGlobalSetMinHierInstForPlacement($noOfHierInst);
+}#sub set_minimum_hier_instance_for_placement
+
+sub set_minimum_instance_for_placement {
+  if( $_[0] eq '-h') { 
+    print "\nUsage : set_minimum_instance_for_placement -number_of_leaf_instance <number_of_leaf_instance>";
+    print "            note : by default placement will be run on all the instances in the hierarchy \n";
+    return ;
+  }
+  my $noOfInst = -1 ;
+  my $noOfArguments = @_;
+  for(my $i = 0; $i < $noOfArguments; $i++){
+    if($_[$i] eq "-number_of_leaf_instance"){$noOfInst = $_[$i+1];}
+  }
+  $GLOBAL->dbGlobalSetMinInstForPlacement($noOfInst);
+}#sub set_minimum_instance_for_placement
+
+sub count_number_of_instance_to_be_placed_globally 
+{
+  my $start_module =  $GLOBAL->dbfGlobalGetTOP();
+  %temp_module_hash = ();
+  my $global_total_hier_inst = &count_number_of_instance_to_be_placed_for_given_module($start_module);
+  my $global_total_leaf_inst = &count_number_of_leaf_instance_to_be_placed_for_given_module($start_module);
+  print "\n##########################################################################" ;
+  print "\nTotal No of Instances On Which plan_1/mpl to be run is = $global_total_hier_inst" ;
+  print "\n##########################################################################\n" ;
+  my @temp_array = keys (%temp_module_hash) ;
+  my $total_no_of_uniq_mod = $#temp_array +1 +1;
+  print "\n##########################################################################" ;
+  print "\nTotal No of Modules On Which plan_1/mpl to be run is = $total_no_of_uniq_mod" ;
+  print "\n##########################################################################" ;
+
+  print "\n##########################################################################" ;
+  print "\nTotal No of standard cells and hard macro to be placed  is = $global_total_leaf_inst" ;
+  print "\n##########################################################################\n" ;
+}#sub count_number_of_instance_to_be_placed_globally
+
+sub count_number_of_instance_to_be_placed_for_given_module 
+{
+  my $moduleName = $_[0];
+  if(!defined($moduleName)) {
+    return  0;
+  }
+  if( !exists $MODULE_ALREADY{$moduleName} ) {
+    return  0;
+  }
+  my $total_hier_instance = 0 ;
+  my @insts =  $MODULE_ALREADY{$moduleName}->dbVNOMGetHierInst;
+  foreach my $inst ( @insts) {
+    my $cellref = $MODULE_ALREADY{$moduleName}->dbVNOMGetHierInstCell($inst);
+    my $no_of_leaf_inst = &get_no_of_leaf_inst_in_hierarchy($cellref);
+    my @hierInsts =  $MODULE_ALREADY{$cellref}->dbVNOMGetHierInst;
+    my @leafInsts = $MODULE_ALREADY{$cellref}->dbVNOMGetLeafInst;
+    if((($GLOBAL->dbGlobalGetMinLeafInstForPlacement == -1) ||($no_of_leaf_inst > $GLOBAL->dbGlobalGetMinLeafInstForPlacement ))
+    &&(($GLOBAL->dbGlobalGetMinHierInstForPlacement == -1) ||(($#hierInsts +1) > $GLOBAL->dbGlobalGetMinHierInstForPlacement ))
+    &&(($GLOBAL->dbGlobalGetMinInstForPlacement == -1) ||(($#hierInsts +1 +$#leafInsts +1) > $GLOBAL->dbGlobalGetMinInstForPlacement ))) {
+    if (!exists $temp_module_hash{$cellref}){
+    $temp_module_hash{$cellref} = 1 ;
+    }
+    $total_hier_instance++ ;
+    $total_hier_instance += &count_number_of_instance_to_be_placed_for_given_module($cellref);
+    }
+  }
+  return $total_hier_instance;
+}#sub count_number_of_instance_to_be_placed_for_given_module
+
+sub count_number_of_leaf_instance_to_be_placed_for_given_module 
+{
+  my $moduleName = $_[0];
+  if(!defined($moduleName)) {
+    return  0;
+  }
+  if( !exists $MODULE_ALREADY{$moduleName} ) {
+    return  0;
+  }
+  my @leafInsts =  $MODULE_ALREADY{$moduleName}->dbVNOMGetLeafInst;
+  my $total_leaf_instance = $#leafInsts+1 ;
+  my @insts =  $MODULE_ALREADY{$moduleName}->dbVNOMGetHierInst;
+  foreach my $inst ( @insts) {
+    my $cellref = $MODULE_ALREADY{$moduleName}->dbVNOMGetHierInstCell($inst);
+    my $no_of_leaf_inst = &get_no_of_leaf_inst_in_hierarchy($cellref);
+    my @hierInsts =  $MODULE_ALREADY{$cellref}->dbVNOMGetHierInst;
+    my @leafInsts = $MODULE_ALREADY{$cellref}->dbVNOMGetLeafInst;
+    if((($GLOBAL->dbGlobalGetMinLeafInstForPlacement == -1) ||($no_of_leaf_inst > $GLOBAL->dbGlobalGetMinLeafInstForPlacement ))
+    &&(($GLOBAL->dbGlobalGetMinHierInstForPlacement == -1) ||(($#hierInsts +1) > $GLOBAL->dbGlobalGetMinHierInstForPlacement ))
+    &&(($GLOBAL->dbGlobalGetMinInstForPlacement == -1) ||(($#hierInsts +1 +$#leafInsts +1) > $GLOBAL->dbGlobalGetMinInstForPlacement ))) {
+    $total_leaf_instance += &count_number_of_leaf_instance_to_be_placed_for_given_module($cellref);
+    }
+  }
+  return $total_leaf_instance;
+}#sub count_number_of_leaf_instance_to_be_placed_for_given_module
+
+sub create_placement_command_file_hierarchically 
+{
+  open(HIER_PLACE_CMD,">hier_place_command.tcl");
+  my $start_module =  $GLOBAL->dbfGlobalGetTOP();
+  print HIER_PLACE_CMD "\nedit_module -module $start_module\nplace_graph_mpl_pseudo\ncommitModuleLocOnly -module $start_module\n" ;
+  &create_placement_command_file_hierarchically_sub_module($start_module,0);
+  print HIER_PLACE_CMD "\nedit_module -module $start_module\n" ;
+  close(HIER_PLACE_CMD);
+}#sub create_placement_command_file_hierarchically
+
+sub create_placement_command_file_hierarchically_sub_module 
+{
+  my $moduleName = $_[0];
+  if(!defined($moduleName)) {
+    return ;
+  }
+  if( !exists $MODULE_ALREADY{$moduleName} ) {
+    return ;
+  }
+  my @insts0 =  $MODULE_ALREADY{$moduleName}->dbVNOMGetHierInst;
+  my @insts =  sort {$a cmp $b} @insts0 ;
+  foreach my $inst ( @insts) {
+    my $cellref = $MODULE_ALREADY{$moduleName}->dbVNOMGetHierInstCell($inst);
+    print HIER_PLACE_CMD "\nedit_module -module $cellref\nplace_graph_mpl_pseudo\ncommitModuleLocOnly -module $cellref\n" ;
+  }
+  foreach my $inst ( @insts) {
+    my $cellref = $MODULE_ALREADY{$moduleName}->dbVNOMGetHierInstCell($inst);
+    &create_placement_command_file_hierarchically_sub_module($cellref,$tabNo+2);
+  }
+}#sub create_placement_command_file_hierarchically_sub_module
+
+sub return_number_of_curr_parallel_jobs_running
+{
+  print "\nChecking number of parallel jobs" ;
+  my $no_of_jobs_in_mpl_plan_1_in_list ;
+  $no_of_jobs_in_mpl_plan_1_in_list = $#list_instance_being_placed_plan_1 + $#list_instance_being_placed_mpl + 2;
+  if($no_of_jobs_in_mpl_plan_1_in_list >0) {
+    for(my $temp_cnt = 0 ; $temp_cnt <= $#list_instance_being_placed_plan_1;$temp_cnt++) {
+      my $hier_inst_name = $list_instance_being_placed_plan_1[$temp_cnt];
+      my $placement_status = &check_placement_status_plan_1($hier_inst_name);
+      $hier_inst_name =~ s/\//_/g;
+      if($placement_status ==1){
+        $no_of_jobs_in_mpl_plan_1_in_list--;
+      }elsif ($placement_status ==2) {
+        if(!(-e "benaras/$hier_inst_name/plan_1.log")){
+          my $temp_plan_1_log = "benaras/$hier_inst_name/plan_1.log";
+          print "\nCreating file $temp_plan_1_log" ;
+          open(WRITE,">$temp_plan_1_log");
+          print WRITE "ENEMIES\n";
+          print WRITE "FAILED\n";
+          close(WRITE);
+        }
+        $no_of_jobs_in_mpl_plan_1_in_list--;
+      } elsif($placement_status == 3) {
+        $no_of_jobs_in_mpl_plan_1_in_list--;
+      } elsif($placement_status ==0) {
+        next ;
+      }
+    }
+    for($temp_cnt = 0 ; $temp_cnt <= $#list_instance_being_placed_mpl;$temp_cnt++) {
+      my $hier_inst_name = $list_instance_being_placed_mpl[$temp_cnt];
+      my $placement_status = &check_placement_status_mpl($hier_inst_name);
+      $hier_inst_name =~ s/\//_/g;
+      if($placement_status ==1){
+        $no_of_jobs_in_mpl_plan_1_in_list--;
+      }elsif ($placement_status ==2) {
+        if(!(-e "benaras/$hier_inst_name/mpl.log")){
+          my $temp_mpl_log = "benaras/$hier_inst_name/mpl.log";
+          print "\nCreating file $temp_mpl_log" ;
+          open(WRITE,">$temp_mpl_log");
+          print WRITE "ENEMIES\n";
+          print WRITE "FAILED\n";
+          close(WRITE);
+        }
+        $no_of_jobs_in_mpl_plan_1_in_list--;
+      } elsif($placement_status == 3) {
+        $no_of_jobs_in_mpl_plan_1_in_list--;
+      } elsif($placement_status ==0) {
+        next ;
+      }
+    }
+  }
+  return $no_of_jobs_in_mpl_plan_1_in_list;
+}# sub return_number_of_curr_parallel_jobs_running
+1;

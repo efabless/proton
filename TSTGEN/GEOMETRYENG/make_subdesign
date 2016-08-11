@@ -1,0 +1,217 @@
+#!/bin/perl -w
+sub create_subdesign {
+
+#****f* /create_subdesign 
+# NAME
+#   create_subdesign
+# FUNCTION
+#    Create a subdesign to include only the nets and their connectivity cells or pins for easy debugging
+#    create_subdesign has the following command line options and switches.
+# SYNOPSIS
+# create_subdesign [-nets <{list of net names}>] [-route_info <yes|no>] <-debug>
+#
+# INPUTS
+#      options :
+#      	-nets <{list of net names}>  
+#       -route_info <yes|no> #By default taken to be yes
+#       -debug : This is optional to run the program in debug mode
+# OUTPUTS
+#      The subdesign database will have only the netnames and the components attached to those nets
+#****
+
+my $noOfArguments = @_;
+my $debug = 0;
+ $route_info = "yes";
+ %compsSub = ();
+ @portsSub = ();
+ %netsSub = () ;
+
+#print "No of arguments: $noOfArguments\n";
+if($_[0] eq "-h" )  { 
+ 	print "Usage : create_subdesign \n"; 
+	print "                       -nets <{list of net names}>\n";
+	print "                       -route_info <yes|no>\n"; #by default taken to be yes
+        print "                       <-debug>\n";
+	
+  }
+  else {
+  for(my $i = 0; $i < $noOfArguments; $i++){ 
+  if ($_[$i] eq "-debug") {
+   $debug = 1;
+  }
+  if ($_[$i] eq "-route_info") {
+   if ($_[$i+1] eq "no") { $route_info = "no" ; }
+  }
+  elsif($_[$i] eq "-nets"){  
+	my $nets = $_[$i+1]; 
+	$nets =~ s/\{\s*//; 
+	$nets =~ s/\s*\}//; 
+	@nets = split(/\,/,$nets);
+}  
+} # for
+print "INFO-TST_GEOM-CRTE_DES : 001 : Creating subdesign in progress\n";
+foreach $netName ( @nets ) {
+        if( exists $NETS_ALREADY{$netName} ) {
+		foreach $netInst ( keys %{$NETS_ALREADY{$netName}} ) {
+		#	print "\t$netName : $netInst : $NETS_ALREADY{$netName}{$netInst} \n"  if ($debug);
+			print "INFO-TST_GEOM-CRTE_DES : 002 : $netName : $netInst :$NETS_ALREADY{$netName}{$netInst} \n";  
+			$netsSub{$netName}{$netInst} = $NETS_ALREADY{$netName}{$netInst} ;
+			if ($netInst eq "PIN"){
+				push(@portsSub,$netName);
+			} elsif (exists $compsSub{$netInst}) { }
+			else {$compsSub{$netInst}{inside} =1;}
+		}	
+	} else {
+		print "ERR-TST_GEOM-CRTE_DES : 003 : $netName does not exist in database\n";
+	}
+}
+
+&write_def_sub;
+print "INFO-TST_GEOM-CRTE_DES : 004 : End running the program\n";
+}#end else
+}#end sub create_subdesign
+
+sub write_def_sub {
+my $OUTPUT_DEF = "test.def";
+open (WRITE, ">$OUTPUT_DEF");
+print WRITE "#DEF written from proton verion-212\n"; 
+print WRITE "\n";
+print WRITE "VERSION 5.5 \;\n";
+print WRITE "NAMESCASESENSITIVE ON \;\n";
+print WRITE "DIVIDERCHAR \"\/\" \;\n";
+print WRITE "BUSBITCHARS \"\[\]\" \;\n";
+my $dbu = $GLOBAL->dbfGlobalGetDBU;
+print WRITE "UNITS DISTANCE MICRONS $dbu ;\n";
+print WRITE "DESIGN $TOP_MODULE \;\n";
+if ( exists $DIE_ALREADY{dieArea} ) {
+my $llx = $DIE_ALREADY{dieArea}[0];
+my $lly = $DIE_ALREADY{dieArea}[1];
+my $urx = $DIE_ALREADY{dieArea}[2];
+my $ury = $DIE_ALREADY{dieArea}[3];
+
+print WRITE "DIEAREA ( $llx $lly ) ( $urx $ury ) \;\n";
+print WRITE "\n";
+}
+@rows = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetRows;
+foreach my $l (@rows) {
+        @sl = split(/\s+/,$l);
+        print WRITE "ROW $sl[0] $sl[1] $sl[2] $sl[3] $sl[4] DO $sl[5] BY $sl[6] STEP $sl[7] $sl[8] \;\n";
+                      }# foreach row
+#print join " \;\n", @rows; print "\n";
+print WRITE "\n\n";
+
+my $temp = @portsSub;
+print WRITE "PINS $temp \;\n";
+foreach $pinName ( @portsSub ) {
+        my @netName = $PORTS_ALREADY{$moduleName}{$pinName}->dbPortGetConn;
+        my $dir = $PORTS_ALREADY{$moduleName}{$pinName}->dbPortGetDir;
+        my $signal = $PORTS_ALREADY{$moduleName}{$pinName}->dbPortGetSignal;
+        print WRITE "\- $pinName \+ NET $netName[0] \+ DIRECTION $dir \+ USE $signal \n";
+        my @loc = $PORTS_ALREADY{$moduleName}{$pinName}->dbPortGetLoc;
+        my $status = $PORTS_ALREADY{$moduleName}{$pinName}->dbPortGetStatus;
+	
+	if ($route_info eq "yes") {
+	my $layer = $PORTS_ALREADY{$moduleName}{$pinName}->dbPortGetLayer($layer);
+        my @size=$PORTS_ALREADY{$moduleName}{$pinName}->dbPortGetSize($W,$H);
+	my $x1 = -$size[0]/2;
+	my $x2 = $size[0]/2;
+	print WRITE " \+ LAYER $layer \( $x1 0 \) \( $x2 $size[1] \) \n";
+        }
+	
+	if ( $status == 0  || $status == 1 ) { 
+        print WRITE " \;\n";
+                            }
+        elsif( $status == 2 ) {            
+        my $orient = $PORTS_ALREADY{$moduleName}{$pinName}->dbPortGetSide;
+        print WRITE " \+ PLACED \( $loc[0] $loc[1] \) $orient \;\n";
+                            }
+        elsif( $status == 3 ) {
+        my $orient = $PORTS_ALREADY{$moduleName}{$pinName}->dbPortGetSide;
+        print WRITE " \+ FIXED \( $loc[0] $loc[1] \) $orient \;\n";
+                            }
+}#foreach
+print WRITE "END PINS\n\n";
+
+
+my $temp = keys %compsSub;
+print WRITE "COMPONENTS $temp \;\n";
+foreach $instance ( keys %compsSub ) {
+        if( exists $CADB{$instance} ){
+        my $cellref =  $CADB{$instance}->dbCadbGetCellref;
+        print WRITE "- $instance $cellref \n";
+           my @loc = $CADB{$instance}->dbCadbGetLoc; 
+           my $status = $CADB{$instance}->dbCadbGetStatus; 
+           my $orient = $CADB{$instance}->dbCadbGetOrient; 
+              if ( $status eq "PLACED" || $status eq "FIXED" ) { print WRITE "\+ $status \( $loc[0] $loc[1] \) $orient "; }
+                                     }
+        print WRITE "\;\n";
+}
+print WRITE "END COMPONENTS\n\n";
+
+my $spnetCnt = 0;
+$temp = keys %netsSub;
+print WRITE "SPECIALNETS $temp \;\n";
+foreach my $netName (keys %netsSub){ 
+        if ( exists $NADB{$netName} ) { $netType = $NADB{$netName}->dbNadbGetNetType; }
+        print "DBG-TST_GEOM : 001 : $netName : $netType " if ($DEBUG) ;
+        if ( ($netType == 1) || ($netType == 2) ) {
+        print WRITE " - $netName\n";
+        foreach $instance (keys %{$NETS_ALREADY{$netName}}){
+        print WRITE "\t\( $instance $NETS_ALREADY{$netName}{$instance} \)\n";
+                                                              }#foreach instance attached
+        if ($route_info eq "yes"){
+        if (exists $NETS_ROUTING_ALREADY{$netName}){
+        my @routes = $NETS_ROUTING_ALREADY{$netName}->dbNetRoutingDBGetSpecialRoute;
+        my $l1 = shift @routes;
+        print WRITE "\t \+ ROUTED $l1\n";
+        foreach my $l (@routes){
+        print WRITE "\t NEW  $l \n";
+                                   }#foreach
+        my @fixed_routes = $NETS_ROUTING_ALREADY{$netName}->dbNetRoutingDBGetFixedRoute;
+        my $l2 = shift @fixed_routes;
+        print WRITE "\t \+ FIXED $l2\n";
+        foreach my $r (@fixed_routes){
+        print WRITE "\t NEW  $r \n";
+                                   }#foreach
+        my $power = $NETS_ROUTING_ALREADY{$netName}->dbNetGetType; 
+        print WRITE "\t + USE $power \n";
+                        }#if special net routing
+        print WRITE "\t\;\n";
+                             }#if route_info
+                        }#if the net is special net
+                    }#foreach
+print  WRITE "END SPECIALNETS\n\n";
+
+my $netCnt = $temp - $spnetCnt;
+print WRITE "NETS $netCnt \;\n";
+foreach my $netName (keys %netsSub){
+        my $netType = 0;
+        if ( exists $NADB{$netName} ) {$netType = $NADB{$netName}->dbNadbGetNetType;}
+        if ( $netType == 0 ) { 
+        print WRITE "  - $netName\n";
+        foreach $instance ( keys %{$NETS_ALREADY{$netName}} ){
+        if ( exists $PORTS_ALREADY{$TOP_MODULE}{$instance} ) { 
+        print WRITE " \( PIN $NETS_ALREADY{$netName}{$instance} \)";
+                                                             }
+        else {
+        print WRITE " \( $instance $NETS_ALREADY{$netName}{$instance} \)";
+             }
+        }# for each instance attached
+	if ($route_info eq "yes") {
+	print WRITE "\n + ROUTED ";
+		if (exists $NETS_ROUTING_ALREADY{$netName} ) {
+       			@routes = $NETS_ROUTING_ALREADY{$netName}->dbNetRoutingDBGetRegularRoute;
+	        	print WRITE join "\n    NEW ", @routes ; 
+			print WRITE "\n" ;
+		}
+	}
+        print WRITE "  \;\n";
+                            }# if the net is signal net 
+              
+                                      }
+print WRITE "END NETS\n\n";
+print WRITE "END DESIGN\n";
+
+}#end sub write_def_sub
+
+1;

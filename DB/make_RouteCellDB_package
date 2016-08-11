@@ -1,0 +1,352 @@
+package RouteCellDB;
+
+#L1 : 1st routing layer grid
+#L2 : 2nd routing layer grid
+#L3 : 3rd routing layer grid
+#L4 : 4th routing layer grid
+sub new {
+my $dd = {
+          L1 => {},
+          COST => {},
+          MaxRow => 0,
+          MaxColumn => 0,
+          PINS =>  {},
+          };
+bless $dd, 'RouteCellDB';
+return $dd;
+}# sub new
+
+sub dbInit {
+my ($self,$col,$row)  = @_;
+$self->{MaxRow} = $row+1;
+$self->{MaxColumn} = $col+1;
+}#sub dbInit
+
+#----------------------------- set the pin boxes ---------#
+sub dbRouteCellSetPinBoxes {
+my ($self,$pin,$layer,@box) = @_;
+push(@{$self->{PINS}{$pin}{$layer}},@box);
+}#sub dbRouteCellSetPinBoxes
+
+sub dbRouteCellGetPinBoxes {
+my ($self,$pin,$layer) = @_;
+my @box = @{$self->{PINS}{$pin}{$layer}};
+return(@box);
+}#sub dbRouteCellGetPinBoxes
+
+
+#----------------------------- get and set the cost of the box 
+sub dbRouteCellResetCost {
+my ($self)  = @_;
+undef $self->{COST};
+}#sub dbRouteCellResetCost
+
+sub dbRouteCellSetCostVal {
+my ($self,$col,$row,$val)  = @_;
+my $temp = $self->{MaxColumn};
+my $index = $row*$temp + $col;
+#print "setting $col,$row to $val\n";
+$self->{COST}{$index} = $val;
+}#sub dbRouteCellSetCostVal
+
+sub dbRouteCellGetCostVal {
+my ($self,$col,$row)  = @_;
+my $val = 0;
+my $index = $row*$self->{MaxColumn} + $col;
+   if ( exists $self->{COST}{$index} ) {
+$val = $self->{COST}{$index};
+                                      }
+else { $val = 0 ; }
+print "gettting $col,$row to $val\n";
+return($val);
+}#sub dbRouteCellGetCostVal
+
+sub dbgRouteCellGetCost {
+my($self) = @_;
+   for(my $xx = 1 ; $xx <= $self->{MaxRow}; $xx++ ) {
+      for ( my $yy = 1 ; $yy <= $self->{MaxColumn}; $yy++ ) {
+            my $index = $xx*$self->{MaxColumn} + $yy;
+   if ( exists $self->{COST}{$index} ) {
+$val = $self->{COST}{$index};
+                                      }
+else { $val = 0 ; }
+            print "$val ";
+                                                           }# for all columns
+            print "\n";
+                                                   }# for all rows
+}#sub dbgRouteCellGetCost
+
+
+
+#---------------------- get adjacent boxes -------------#
+sub dbRouteCellGetAdjHVBox {
+my ($self,$layer,$y,$x) = @_;
+print "getting neighbour of $x,$y\n";
+my @boxes = ();
+   print "getting neighbour of $x,$y\n";
+   if ( $x < $self->{MaxColumn}) { push(@boxes,$self->dbRouteCellGetRBox($y,$x)); }
+   if ( $x > 1)                { push(@boxes,$self->dbRouteCellGetLBox($y,$x)); }
+   if ( $y < $self->{MaxRow}) { push(@boxes,$self->dbRouteCellGetNBox($y,$x)); }
+   if ( $y > 1)                { push(@boxes,$self->dbRouteCellGetSBox($y,$x)); }
+return(@boxes);
+}#sub dbRouteCellGetAdjHVBox
+
+sub dbRouteCellGetAdjHBox {
+my ($self,$layer,$y,$x) = @_;
+print "getting neighbour of $x,$y\n";
+my @boxes = ();
+   print "getting neighbour of $x,$y\n";
+   if ( $x < $self->{MaxColumn}) { push(@boxes,$self->dbRouteCellGetRBox($y,$x)); }
+   if ( $x > 1)                { push(@boxes,$self->dbRouteCellGetLBox($y,$x)); }
+return(@boxes);
+}#sub dbRouteCellGetAdjHBox
+
+sub dbRouteCellGetAdjVBox {
+my ($self,$layer,$y,$x) = @_;
+print "getting neighbour of $x,$y\n";
+my @boxes = ();
+   print "getting neighbour of $x,$y\n";
+   if ( $y < $self->{MaxRow}) { push(@boxes,$self->dbRouteCellGetNBox($y,$x)); }
+   if ( $y > 1)                { push(@boxes,$self->dbRouteCellGetSBox($y,$x)); }
+return(@boxes);
+}#sub dbRouteCellGetAdjVBox
+
+sub dbRouteCellGetAdjHVZBox {
+my ($self,$layer,$y,$x) = @_;
+print "getting neighbour of $x,$y\n";
+my @boxes = ();
+   print "getting neighbour of $x,$y\n";
+   if ( $x < $self->{MaxColumn}) { push(@boxes,$self->dbRouteCellGetRBox($y,$x)); }
+   if ( $x > 1)                { push(@boxes,$self->dbRouteCellGetLBox($y,$x)); }
+   if ( $y < $self->{MaxRow}) { push(@boxes,$self->dbRouteCellGetNBox($y,$x)); }
+   if ( $y > 1)                { push(@boxes,$self->dbRouteCellGetSBox($y,$x)); }
+return(@boxes);
+}#sub dbRouteCellGetAdjHVZBox
+
+
+sub dbRouteCellGetLBox {
+my ($self,$y,$x) = @_;
+my @box = [$x-1,$y];
+return(@box);
+}#sub dbRouteCellGetLBox
+
+sub dbRouteCellGetRBox {
+my ($self,$y,$x) = @_;
+my @box = [$x+1,$y];
+return(@box);
+}#sub dbRouteCellGetRBox
+
+sub dbRouteCellGetNBox {
+my ($self,$y,$x) = @_;
+my @box = [$x,$y+1];
+return(@box);
+}#sub dbRouteCellGetNBox
+
+sub dbRouteCellGetSBox {
+my ($self,$y,$x) = @_;
+my @box = [$x,$y-1];
+return(@box);
+}#sub dbRouteCellGetSBox
+
+########################################################################################
+# FanIn Path									       #
+########################################################################################
+
+sub dbgRouteCellGetTpath {
+print "\#------------------------------#\n";
+my($self,$layer) = @_;
+   for(my $xx = 1 ; $xx <= $self->{MaxRow}; $xx++ ) {
+      for ( my $yy = 1 ; $yy <= $self->{MaxColumn}; $yy++ ) {
+            my $index = $xx*$self->{MaxColumn} + $yy;
+   if ( exists $self->{$layer}{$index} ) {
+$val = ${$self->{$layer}{$index}};
+                                      }
+else { $val = 0 ; }
+            print "$val ";
+                                                           }# for all columns
+            print "\n";
+                                                   }# for all rows
+print "\#------------------------------#\n";
+}#sub dbgRouteCellGetTpath
+
+
+sub dbRouteCellSetTpathVal {
+my ($self,$layer,$col,$row,$val)  = @_;
+my $temp = $self->{MaxColumn};
+my $index = $row*$temp + $col;
+#print "setting $index to $val\n";
+${$self->{$layer}{$index}} = $val;
+}#sub dbRouteCellSetTpathVal
+
+sub dbRouteCellGetTpathVal {
+my ($self,$layer,$col,$row)  = @_;
+my $val = 0;
+my $index = $row*$self->{MaxColumn} + $col;
+   if ( exists $self->{$layer}{$index} ) {
+$val = ${$self->{$layer}{$index}};
+                                      }
+else { $val = 0 ; }
+return($val);
+}#sub dbRouteCellGetTpathVal
+
+sub dbRouteCellGetTotalFanInPaths {
+my ($self,$row)  = @_;
+my $count = 0;
+my $temp = $self->{MaxColumn};
+for ( my $xx = 0 ; $xx < $temp ; $xx++ ) {
+      my $index = $row*$temp + $xx;
+      if ( exists $self->{$layer}{$index} ) {
+           my $val = ${$self->{L1}{$index}};
+           $count = $count + ${$self->{L1}{$index}};
+                                         }
+                                         }# for
+return($count);
+}#sub dbRouteCellGetTotalFanInPaths
+
+########################################################################################
+# Slack 									       #
+########################################################################################
+sub dbRouteCellSetSlackVal {
+my ($self,$col,$row,$val)  = @_;
+my $temp = $self->{MaxColumn};
+my $index = $row*$temp + $col;
+${$self->{SLK}{$index}} = $val;
+}#sub dbRouteCellSetSlackVal
+
+sub dbRouteCellGetSlackVal {
+my ($self,$col,$row)  = @_;
+my $val = 0;
+my $index = $row*$self->{MaxColumn} + $col;
+   if ( exists $self->{SLK}{$index} ) {
+$val = ${$self->{SLK}{$index}};
+                                      }
+else { $val = 0 ; }
+return($val);
+}#sub dbRouteCellGetSlackVal
+
+##################################command to print max rows and columns ######################################################
+
+sub dbRouteCellGetMaxRow {
+my ( $self) = @_;
+my $num = $self->{MaxRow};
+return($num);
+}#sub dbRouteCellGetMaxRow
+
+sub dbRouteCellGetMaxCol {
+my ( $self) = @_;
+my $num = $self->{MaxColumn};
+return($num);
+}#sub dbRouteCellGetMaxCol
+
+##################################### commands to print the characteristic map ##################
+
+sub dbgRouteCellPrintReg2RegMap {
+my($self) = @_;
+   for(my $xx = 1 ; $xx <= $self->{FFCount}; $xx++ ) {
+          my $name = $self->{RowIndex}[$xx];
+          print "$name \t";
+      for ( my $yy = 1 ; $yy <= $self->{FFCount}; $yy++ ) {
+            my $index = $xx*$self->{MaxColumn} + $yy;
+   if ( exists $self->{L1}{$index} ) {
+$val = ${$self->{L1}{$index}};
+                                      }
+else { $val = 0 ; }
+            print "$val ";
+                                                           }# for all flip flop columns
+            print "\n";
+                                                   }# for all flip flop rows
+}#sub dbgRouteCellPrintReg2RegMap
+
+sub dbgRouteCellPrintIn2RegMap {
+my($self) = @_;
+my $regOffset = $self->{FFCount};
+
+   for(my $xx = 1 ; $xx <= $self->{FFCount}; $xx++ ) {
+          my $name = $self->{RowIndex}[$xx];
+          print "$name \t";
+      for ( my $yy = $regOffset + 1 ; $yy <= $regOffset + $self->{InCount}; $yy++ ) {
+            my $index = $xx*$self->{MaxColumn} + $yy;
+   if ( exists $self->{L1}{$index} ) {
+$val = ${$self->{L1}{$index}};
+                                      }
+else { $val = 0 ; }
+            print "$val ";
+                                                           }# for all input columns
+            print "\n";
+                                                   }# for all flip flop rows
+}#sub dbgRouteCellPrintIn2RegMap
+
+sub dbgRouteCellPrintReg2OutMap {
+my($self) = @_;
+my $regOffset = $self->{FFCount};
+
+   for(my $xx = $regOffset + 1 ; $xx <= $regOffset + $self->{OutCount}; $xx++ ) {
+          my $name = $self->{RowIndex}[$xx];
+          print "$name \t";
+      for ( my $yy = 1 ; $yy <= $self->{FFCount}; $yy++ ) {
+            my $index = $xx*$self->{MaxColumn} + $yy;
+   if ( exists $self->{L1}{$index} ) {
+$val = ${$self->{L1}{$index}};
+                                      }
+else { $val = 0 ; }
+            print "$val ";
+                                                           }# for all flip flop columns
+            print "\n";
+                                                   }# for all output rows
+}#sub dbgRouteCellPrintReg2OutMap
+##########################################################################################
+
+############################## Reorder Matrix ############################################
+
+sub dbRouteCellRowSwap {
+my($self,$y1,$y2) = @_;
+
+my $name1 = $self->{RowIndex}[$y1];
+my $name2 = $self->{RowIndex}[$y2];
+
+$self->{RowIndex}[$y1] = $name2;
+$self->{RowIndex}[$y2] = $name1;
+
+for(my $xx = 1; $xx <= $self->{MaxColumn}; $xx++) {
+    my $index1 = $y1*$self->{MaxColumn} + $xx;
+    my $index2 = $y2*$self->{MaxColumn} + $xx;
+my $temp1 = 0;
+my $temp2 = 0;
+   if ( exists $self->{L1}{$index1} ) { $temp1 = ${$self->{L1}{$index1}};  }
+   if ( exists $self->{L1}{$index2} ) { $temp2 = ${$self->{L1}{$index2}}; }
+
+##################  swap #######################
+    if ( $temp1 == 0 ) { delete $self->{L1}{$index2} } else { ${$self->{L1}{$index2}} = $temp1 }
+    if ( $temp2 == 0 ) { delete $self->{L1}{$index1} } else { ${$self->{L1}{$index1}} = $temp2 }
+
+                                                  }
+}#sub dbRouteCellRowSwap
+
+
+sub dbRouteCellColumnSwap {
+my($self,$x1,$x2) = @_;
+
+my $name1 = $self->{ColumnIndex}[$x1];
+my $name2 = $self->{ColumnIndex}[$x2];
+
+$self->{ColumnIndex}[$x1] = $name2;
+$self->{ColumnIndex}[$x2] = $name1;
+
+for(my $xx = 1; $xx <= $self->{MaxRow}; $xx++) {
+    my $index1 = $xx*$self->{MaxColumn} + $x1;
+    my $index2 = $xx*$self->{MaxColumn} + $x2;
+
+my $temp1 = 0;
+my $temp2 = 0;
+   if ( exists $self->{L1}{$index1} ) { $temp1 = ${$self->{L1}{$index1}};  }
+   if ( exists $self->{L1}{$index2} ) { $temp2 = ${$self->{L1}{$index2}}; }
+
+##################  swap #######################
+    if ( $temp1 == 0 ) { delete $self->{L1}{$index2} } else { ${$self->{L1}{$index2}} = $temp1 }
+    if ( $temp2 == 0 ) { delete $self->{L1}{$index1} } else { ${$self->{L1}{$index1}} = $temp2 }
+
+                                                  }
+}#sub dbRouteCellColumnSwap
+
+
+1;

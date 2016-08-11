@@ -1,0 +1,1173 @@
+sub dbAnlsDrouteGetNetRouting {
+my $netName = $_[0];
+   if (exists $NETS_ROUTING_ALREADY{$netName} ) {
+       print "INFO-DES : 001 : $netName routing exists\n";
+       @routes = $NETS_ROUTING_ALREADY{$netName}->dbNetRoutingDBGetRegularRoute;
+#       print join "\n", @routes; print "\n";
+#--------------------- ALGO -------------------------# 
+#     get all the instance-pin pairs on the net 
+#     get the cellref of the instance
+#     then get the rects associated with the pin
+#     iterate on each rect and see if it overlaps with a rect shape in the net
+#--------------------- ALGO -------------------------# 
+      foreach my $instance ( keys %{$NETS_ALREADY{$netName}} ) {
+#              if ( $instance eq  'cpucnt/e1rmaden_reg') { $DEBUG = 1} else {next;};
+              my $pinName = $NETS_ALREADY{$netName}{$instance};
+              if ( $instance eq 'PIN' ) { next; } # skip ... if net connects to a IO pin from def
+              elsif ( $instance eq 'PIN' ) { next; } # skip ... if net connects to a IO pin from verilog
+              else  {
+                    if ( exists $COMP_ALREADY{$instance} ) {
+                         my $cellref = $CADB{$instance}->dbCadbGetCellref;
+                         my @instLoc = $CADB{$instance}->dbCadbGetLoc;
+                         my $instOrient = $CADB{$instance}->dbCadbGetOrient;
+                            if ( exists $PLDB{$cellref} ) {
+                         #---- check if the connected pin exists ----#
+                               my @cellOrigin = $PLDB{$cellref}->dbMdbGetOrigin;
+                               my @cellSize = $PLDB{$cellref}->dbMdbGetSize;
+                               my @pins =     $PLDB{$cellref}->dbMdbGetPins;
+                               foreach my $p ( @pins ) {
+                                  if ( $p eq $pinName ) {
+                               my @pinRects = $PLDB{$cellref}->dbMdbGetPinRect($pinName);
+#---------------------------------------------------------------------------------------------------------------#
+                               print "\tDBG-DES : 002 : $netName : $instance : $instOrient : $cellref : $pinName\n" if($DEBUG);
+#                               print join "\n", @pinRects; print "\n";
+                                  foreach my $l ( @pinRects ) {
+                                          my ($pinZ,$pinllx,$pinlly,$pinurx,$pinury) = (split(/\s+/, $l))[0,2,3,4,5];
+                                          my $pinZn = $PTDB{$pinZ}->dbTechGetLayerNum;
+                               #---------- transform the pin rect to die location ---------#
+                                             foreach my $rl ( @routes ) {
+                                                     my $routeZ = (split(/\s+/,$rl))[0];
+                                                     my $routeZn = $PTDB{$routeZ}->dbTechGetLayerNum;
+#                                                     print "$routeZ : $routeZn \n" if ($DEBUG);
+                                                     if ( $pinZn == $routeZn ) {
+                               #----------- check if connect on same layer -------#
+        my @instPinRect = &xformCellPinToInstPin($instLoc[0],$instLoc[1],$cellOrigin[0],$cellOrigin[1],$instOrient,$cellSize[0],$cellSize[1],$pinllx,$pinlly,$pinurx,$pinury);
+        my @routeBox = &xformNetSegToRouteBox($rl);
+                               #--- check if the routebox and pinbox intersect or touch ---#
+                               my $pinRouteOverlap = &dbAnlsDrouteShapeOverlap(@instPinRect,@routeBox);
+                               my $pinRouteTouch = &dbAnlsDrouteShapeTouch(@instPinRect,@routeBox);
+                               if ( $pinRouteTouch == 1 || $pinRouteOverlap == 1) {
+                               print "DBG-DES : 003 : pin $pinName has connection on $routeZ layer\n" if($DEBUG);
+                                         $CADB{$instance}->dbCadbSetPinXLayer($pinName,$pinZ);
+                                                                                  }
+                                                                             }#if the pin layer and route layer matches
+                                                     elsif ( $pinZn == ($routeZn - 2) ) {
+                               #----------- check if connect from upper layer -------#
+        my @instPinRect = &xformCellPinToInstPin($instLoc[0],$instLoc[1],$cellOrigin[0],$cellOrigin[1],$instOrient,$cellSize[0],$cellSize[1],$pinllx,$pinlly,$pinurx,$pinury);
+        my @routeBox = &xformNetSegToRouteBox($rl);
+                               #--- check if the routebox and pinbox intersect or touch ---#
+                               my $pinRouteOverlap = &dbAnlsDrouteShapeOverlap(@instPinRect,@routeBox);
+                               my $pinRouteTouch = &dbAnlsDrouteShapeTouch(@instPinRect,@routeBox);
+                               if ( $pinRouteTouch == 1 || $pinRouteOverlap == 1) {
+                                      #--------------- find the via location -------#
+                               my @via = &xformNetSegToViaLoc($rl);
+                               if ( $DEBUG ) { print join ",", @via ; print "\n"; }
+                               if ( @via == 3 ) {
+                                      #------------- if via location would overlap the pin shape ------#
+                               my $pinViaOverlap = &dbAnlsDrouteShapeOverlap(@instPinRect,$via[1],$via[2],$via[1],$via[2]);
+                               my $pinViaTouch = &dbAnlsDrouteShapeTouch(@instPinRect,$via[1],$via[2],$via[1],$via[2]);
+                                                if ( $pinViaOverlap == 1 || $pinViaTouch == 1 ) {
+                                         print "DBG-DES : 004 : pin $pinName in $pinZ has connection from route in $routeZ layer with via $via[0]\n" if($DEBUG);
+                                         my $tag = $pinZ."(".$via[0].")";
+                                         $CADB{$instance}->dbCadbSetPinXLayer($pinName,$tag);
+                                                                                                }# if via is over the pin
+                                                      }# if via is there
+                                                                                  }#if the segment overlaps with pin
+                                                                             }#if the pin layer and route layer are adjacent
+                                                                        }#foreach line in routing
+                                                              }
+#---------------------------------------------------------------------------------------------------------------#
+                                                        }#if the pinName exist in the cell
+                                                       }#loop through all the pins
+                                                          }#if the cellref of the instance exist in the LEF database
+                                                           }#if the connected instance is found in component database
+                    } #if its a cell instance that it connects to
+                                                                    }# foreach instance of the net
+                                      }
+}#sub dbAnlsDrouteGetNetRouting
+
+#---------------------------------------- Finds Overlap between pin shape and Route Box ----------------#
+sub dbAnlsDrouteShapeOverlap {
+#print "finding overlap between 2 rectangles\n";
+#print join ",",@_; print "\n";
+my $overlap = 0;
+my @overlapRect = &findRectOverlap(@_);
+#print join ",", @overlapRect;
+my $len = @overlapRect;
+if ( $len <= 0 ) {return(0); } else { return(1); }
+}#sub dbAnlsDrouteShapeOverlap
+
+sub dbAnlsDrouteShapeTouch {
+
+}#sub dbAnlsDrouteShapeTouch
+
+sub xformCellPinToInstPin {
+my $instOriginX = shift @_;
+my $instOriginY = shift @_ ;
+my $cellOriginX = shift @_;
+my $cellOriginY = shift @_;
+my $cellOrient = shift @_;
+my $cellW = shift @_;
+my $cellH = shift @_;
+my @cellPinRect = @_;
+my @instPinRect = ();
+my $dbu = $GLOBAL->dbfGlobalGetDBU;
+   # multiply each co-ordinate of rect by DBU
+   $cellPinRect[0] = $cellPinRect[0]+$cellOriginX;
+   $cellPinRect[1] = $cellPinRect[1]+$cellOriginY;
+   $cellPinRect[2] = $cellPinRect[2]+$cellOriginX;
+   $cellPinRect[3] = $cellPinRect[3]+$cellOriginY;
+   $_ *= $dbu for @cellPinRect;
+   $cellW *= $dbu;
+   $cellH *= $dbu;
+
+#----------- orentation cheat-sheet -----------#
+# FE : MYR90 : flip on y-axis and rotate by 90deg
+#  N  : R0 : default
+#  FN : MX : flip along X-axis
+  
+   
+
+#   if ( $cellOrient eq 'N' ){
+#   #default 
+#   $instPinRect[0] = $cellPinRect[0] + $instOriginX;
+#   $instPinRect[1] = $cellPinRect[1] + $instOriginY;
+#   $instPinRect[2] = $cellPinRect[2] + $instOriginX;
+#   $instPinRect[3] = $cellPinRect[3] + $instOriginY;
+#                             }
+#elsif ( $cellOrient eq 'FN'){
+#   # flip along Y-axis
+#   $instPinRect[0] = ($cellW - $cellPinRect[0]) + $instOriginX;
+#   $instPinRect[1] = $cellPinRect[1] + $instOriginY;
+#   $instPinRect[2] = ($cellW - $cellPinRect[2]) + $instOriginX;
+#   $instPinRect[3] = $cellPinRect[3] + $instOriginY;
+#                            }
+#elsif ( $cellOrient eq 'W'){
+#   # rotate by 90 deg 
+#   $instPinRect[0] = ($cellH - $cellPinRect[1]) + $instOriginX;
+#   $instPinRect[1] = $cellPinRect[0] + $instOriginY;
+#   $instPinRect[2] = ($cellH - $cellPinRect[3]) + $instOriginX;
+#   $instPinRect[3] = $cellPinRect[2] + $instOriginY;
+#                            }
+#elsif ( $cellOrient eq 'FW' ){
+#   # rotate by 90 deg and flip along Y-axis 
+#   $instPinRect[0] = $cellPinRect[1] + $instOriginX;
+#   $instPinRect[1] = $cellPinRect[0] + $instOriginY;
+#   $instPinRect[2] = $cellPinRect[3] + $instOriginX;
+#   $instPinRect[3] = $cellPinRect[2] + $instOriginY;
+#                             }
+#elsif ( $cellOrient eq 'S'){
+#   # rotate by 180 deg
+#   $instPinRect[0] = ($cellW - $cellPinRect[0]) + $instOriginX;
+#   $instPinRect[1] = ($cellH - $cellPinRect[1]) + $instOriginY;
+#   $instPinRect[2] = ($cellW - $cellPinRect[2]) + $instOriginX;
+#   $instPinRect[3] = ($cellH - $cellPinRect[3]) + $instOriginY;
+#                            }
+#elsif ( $cellOrient eq 'FS'){
+#   # rotate by 180 deg and flip along Y-axis 
+#   $instPinRect[0] = $cellPinRect[0] + $instOriginX;
+#   $instPinRect[1] = ($cellH - $cellPinRect[1]) + $instOriginY;
+#   $instPinRect[2] = $cellPinRect[2] + $instOriginX;
+#   $instPinRect[3] = ($cellH - $cellPinRect[3]) + $instOriginY;
+#                            }
+#elsif ( $cellOrient eq 'E'){
+#   # rotate by 270 deg
+#   $instPinRect[0] = $cellPinRect[1] + $instOriginX;
+#   $instPinRect[1] = ($cellW - $cellPinRect[0]) + $instOriginY;
+#   $instPinRect[2] = $cellPinRect[3] + $instOriginX;
+#   $instPinRect[3] = ($cellW - $cellPinRect[2]) + $instOriginY;
+#                            }
+#elsif ( $cellOrient eq 'FE'){
+#   # rotate by 270 deg and flip along Y-axis
+#   $instPinRect[0] = ($cellH - $cellPinRect[1]) + $instOriginX ;
+#   $instPinRect[1] = ($cellW - $cellPinRect[0]) + $instOriginY ;
+#   $instPinRect[2] = ($cellH - $cellPinRect[3]) + $instOriginX ;
+#   $instPinRect[3] = ($cellW - $cellPinRect[2]) + $instOriginY ;
+#                            }
+
+###### In above code some times upper coords becomes less than lower #######
+############ We are making here lower coords less than upper ###############
+   if ( $cellOrient eq 'N' ){
+   #default 
+   $instPinRect[0] = $cellPinRect[0] + $instOriginX;
+   $instPinRect[1] = $cellPinRect[1] + $instOriginY;
+   $instPinRect[2] = $cellPinRect[2] + $instOriginX;
+   $instPinRect[3] = $cellPinRect[3] + $instOriginY;
+                             }
+elsif ( $cellOrient eq 'FN'){
+   # flip along Y-axis
+   $instPinRect[0] = ($cellW - $cellPinRect[2]) + $instOriginX;
+   $instPinRect[1] = $cellPinRect[1] + $instOriginY;
+   $instPinRect[2] = ($cellW - $cellPinRect[0]) + $instOriginX;
+   $instPinRect[3] = $cellPinRect[3] + $instOriginY;
+                            }
+elsif ( $cellOrient eq 'W'){
+   # rotate by 90 deg 
+   $instPinRect[0] = ($cellH - $cellPinRect[3]) + $instOriginX;
+   $instPinRect[1] = $cellPinRect[0] + $instOriginY;
+   $instPinRect[2] = ($cellH - $cellPinRect[1]) + $instOriginX;
+   $instPinRect[3] = $cellPinRect[2] + $instOriginY;
+                            }
+elsif ( $cellOrient eq 'FW' ){
+   # rotate by 90 deg and flip along Y-axis 
+   $instPinRect[0] = $cellPinRect[1] + $instOriginX;
+   $instPinRect[1] = $cellPinRect[0] + $instOriginY;
+   $instPinRect[2] = $cellPinRect[3] + $instOriginX;
+   $instPinRect[3] = $cellPinRect[2] + $instOriginY;
+                             }
+elsif ( $cellOrient eq 'S'){
+   # rotate by 180 deg
+   $instPinRect[0] = ($cellW - $cellPinRect[2]) + $instOriginX;
+   $instPinRect[1] = ($cellH - $cellPinRect[3]) + $instOriginY;
+   $instPinRect[2] = ($cellW - $cellPinRect[0]) + $instOriginX;
+   $instPinRect[3] = ($cellH - $cellPinRect[1]) + $instOriginY;
+                            }
+elsif ( $cellOrient eq 'FS'){
+   # rotate by 180 deg and flip along Y-axis 
+   $instPinRect[0] = $cellPinRect[0] + $instOriginX;
+   $instPinRect[1] = ($cellH - $cellPinRect[3]) + $instOriginY;
+   $instPinRect[2] = $cellPinRect[2] + $instOriginX;
+   $instPinRect[3] = ($cellH - $cellPinRect[1]) + $instOriginY;
+                            }
+elsif ( $cellOrient eq 'E'){
+   # rotate by 270 deg
+   $instPinRect[0] = $cellPinRect[1] + $instOriginX;
+   $instPinRect[1] = ($cellW - $cellPinRect[2]) + $instOriginY;
+   $instPinRect[2] = $cellPinRect[3] + $instOriginX;
+   $instPinRect[3] = ($cellW - $cellPinRect[0]) + $instOriginY;
+                            }
+elsif ( $cellOrient eq 'FE'){
+   # rotate by 270 deg and flip along Y-axis
+   $instPinRect[0] = ($cellH - $cellPinRect[3]) + $instOriginX ;
+   $instPinRect[1] = ($cellW - $cellPinRect[2]) + $instOriginY ;
+   $instPinRect[2] = ($cellH - $cellPinRect[1]) + $instOriginX ;
+   $instPinRect[3] = ($cellW - $cellPinRect[0]) + $instOriginY ;
+                            }
+
+return(@instPinRect);
+}#sub xformCellPinToInstPin
+
+sub xformCellPinPolyToInstPin {
+my $instOriginX = shift @_;
+my $instOriginY = shift @_ ;
+my $cellOriginX = shift @_;
+my $cellOriginY = shift @_;
+my $cellOrient = shift @_;
+my $cellW = shift @_;
+my $cellH = shift @_;
+my @cellPinRect = @_;
+my @instPinRect = ();
+my $dbu = $GLOBAL->dbfGlobalGetDBU;
+   # multiply each co-ordinate of rect by DBU
+   $cellW *= $dbu;
+   $cellH *= $dbu;
+
+   for(my $i=0; $i<= $#cellPinRect; $i=$i+2){
+       $cellPinRect[$i] = ($cellPinRect[$i] + $cellOriginX)*$dbu;
+       $cellPinRect[$i+1] = ($cellPinRect[$i+1] + $cellOriginY)*$dbu;
+       if ( $cellOrient eq 'N' ){
+          #default 
+          $instPinRect[$i] = $cellPinRect[$i] + $instOriginX;
+          $instPinRect[$i+1] = $cellPinRect[$i+1] + $instOriginY;
+                                    }
+       elsif ( $cellOrient eq 'FN'){
+          # flip along Y-axis
+          $instPinRect[$i] = ($cellW - $cellPinRect[$i]) + $instOriginX;
+          $instPinRect[$i+1] = $cellPinRect[$i+1] + $instOriginY;
+                                   }
+       elsif ( $cellOrient eq 'W'){
+          # rotate by 90 deg 
+          $instPinRect[$i] = ($cellH - $cellPinRect[$i+1]) + $instOriginX;
+          $instPinRect[$i+1] = $cellPinRect[$i] + $instOriginY;
+                                   }
+       elsif ( $cellOrient eq 'FW' ){
+          # rotate by 90 deg and flip along Y-axis 
+          $instPinRect[$i] = $cellPinRect[$i+1] + $instOriginX;
+          $instPinRect[$i+1] = $cellPinRect[$i] + $instOriginY;
+                                    }
+       elsif ( $cellOrient eq 'S'){
+          # rotate by 180 deg
+          $instPinRect[$i] = ($cellW - $cellPinRect[$i]) + $instOriginX;
+          $instPinRect[$i+1] = ($cellH - $cellPinRect[$i+1]) + $instOriginY;
+                                   }
+       elsif ( $cellOrient eq 'FS'){
+          # rotate by 180 deg and flip along Y-axis 
+          $instPinRect[$i] = $cellPinRect[$i] + $instOriginX;
+          $instPinRect[$i+1] = ($cellH - $cellPinRect[$i+1]) + $instOriginY;
+                                   }
+       elsif ( $cellOrient eq 'E'){
+          # rotate by 270 deg
+          $instPinRect[$i] = $cellPinRect[$i+1] + $instOriginX;
+          $instPinRect[$i+1] = ($cellW - $cellPinRect[$i]) + $instOriginY;
+                                   }
+       elsif ( $cellOrient eq 'FE'){
+          # rotate by 270 deg and flip along Y-axis
+          $instPinRect[$i] = ($cellH - $cellPinRect[$i+1]) + $instOriginX ;
+          $instPinRect[$i+1] = ($cellW - $cellPinRect[$i]) + $instOriginY ;
+                                   }
+
+   }
+
+
+return(@instPinRect);
+}#sub xformCellPinPolyToInstPin
+
+sub xformNetSegToViaLoc {
+my $netSeg = $_[0];
+my @routeBox = ();
+my $dbu = $GLOBAL->dbfGlobalGetDBU;
+my $netSegZ = (split(/\s+/,$netSeg))[0];
+   if ( exists $PTDB{$netSegZ} ) {
+            my $defaultWidth = $PTDB{$netSegZ}->dbTechGetLayerWidth;
+            my $W = $defaultWidth*$dbu; 
+                        if ($netSeg =~ m/\( (\d+) (\d+) \) (\w+)/ ) {
+                            print "DBG-DES : 001 : matched connection to via $3\n" if ($DEBUG);
+                            return($3,$1,$2)
+                                                                  }# if only via
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( (\d+) \* \) (\w+)/ ) {
+                            print "DBG-DES : 002 : matched horizontal without extn with via $1,$2,$3,$4  and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                                  return($4,$3,$2);
+                                                                  }# if horizontal without extn with via
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( (\d+) \* (\d+) \) (\w+)/ ) {
+                           print "DBG-DES : 003 : matched horizontal R-extn with via $1,$2,$3,$4,$5  and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                                  return($5,$3,$2);
+                                                                  }# if horizontal R-extn with via
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( (\d+) \* (\d+) \)/ ) {
+                            print "DBG-DES : 004 : matched  horizontal R-extn without via $1,$2,$3,$4  and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                                  return();
+                                                                  }# if horizontal R-extn without via
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) (\d+) \) \( (\d+) \* \) (\w+)/ ) {
+                            print "DBG-DES : 005 : matched horizontal L-extn with via $1,$2,$3,$4  and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                                  return($5,$4,$2);
+                                                                  }# if horizontal L-extn with via
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) (\d+) \) \( (\d+) \* \)/ ) {
+                            print "DBG-DES : 006 : matched horizontal L-extn without via $1,$2,$3,$4 and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                                  return();
+                                                                  }# if horizontal L-extn without via
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( (\d+) \* \)/ ) {
+                            print "DBG-DES : 007 : matched horizontal without extn without via  $1,$2,$3 and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                                  return();
+                                                                  }# if horizontal without extn without via
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( \* (\d+) \) (\w+)/ ) {
+                            print "DBG-DES : 008 : matched verical without extn with via $1,$2,$3,$4  and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                                  return($4,$1,$3);
+                                                                  }# if verical without extn with via
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( \* (\d+) (\d+) \) (\w+)/ ) {
+                           print "DBG-DES : 009 : matched verical T-extn with via $1,$2,$3,$4,$5  and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                                  return($5,$1,$3);
+                                                                  }# if verical T-extn with via
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( \* (\d+) (\d+) \)/ ) {
+                            print "DBG-DES : 010 : matched  verical T-extn without via $1,$2,$3,$4  and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                                  return();
+                                                                  }# if verical T-extn without via
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) (\d+) \) \( \* (\d+) \) (\w+)/ ) {
+                            print "DBG-DES : 011 : matched verical B-extn with via $1,$2,$3,$4  and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                                  return($5,$1,$4);
+                                                                  }# if verical B-extn with via
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) (\d+) \) \( \* (\d+) \)/ ) {
+                            print "DBG-DES : 012 : matched verical B-extn without via $1,$2,$3,$4 and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                                  return();
+                                                                  }# if verical B-extn without via
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( \* (\d+) \)/ ) {
+                            print "DBG-DES : 013 : matched verical without extn without via  $1,$2,$3 and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                                  return();
+                                                                  }# if verical without extn without via
+                                  }#if the routiung layer exists
+
+
+
+
+}#sub xformNetSegToViaLoc
+
+sub xformNetSegToRouteBox {
+my $netSeg = $_[0];
+my @routeBox = ();
+my $dbu = $GLOBAL->dbfGlobalGetDBU;
+my $netSegZ = (split(/\s+/,$netSeg))[0];
+   if ( exists $PTDB{$netSegZ} ) {
+            my $defaultWidth = $PTDB{$netSegZ}->dbTechGetLayerWidth;
+            my $W = $defaultWidth*$dbu; 
+                        if ($netSeg =~ m/\( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \) (\w+)/ ) {
+                            print "DBG-DES : 001 : matched connection to via $3\n" if ($DEBUG);
+                            my $layerDir = $PTDB{$netSegZ}->dbTechGetLayerDir;
+                            my $layerMinArea = $PTDB{$netSegZ}->dbTechGetLayerArea;
+                            my $minHeight = ceil($layerMinArea * $dbu * $dbu/ $W);
+                            #via is adding a rect for two metal layer and one cut layer
+                            #this is why minHeight will not affect anything
+                            $minHeight = $W;
+                            if ( $layerDir eq "VERTICAL" ) {
+                            my $llx = $1-($W/2);
+                            my $lly = $2-($minHeight/2);
+                            my $urx = $1+($W/2);
+                            my $ury = $2+($minHeight/2);
+                            return($llx,$lly,$urx,$ury);
+                            }elsif ( $layerDir eq "HORIZONTAL" ) {
+                            my $llx = $1-($minHeight/2);
+                            my $lly = $2-($W/2);
+                            my $urx = $1+($minHeight/2);
+                            my $ury = $2+($W/2);
+                            return($llx,$lly,$urx,$ury);
+                            }
+                                                                  }# if only via
+                     elsif ($netSeg =~ m/\( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \) \( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \* \) (\w+)/ ) {
+                            print "DBG-DES : 002 : matched horizontal without extn with via $1,$2,$3,$4  and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                            my $llx = $1-($W/2);
+                            my $lly = $2-($W/2);
+                            my $urx = $3+($W/2);
+                            my $ury = $2+($W/2);
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if horizontal without extn with via
+                     elsif ($netSeg =~ m/\( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \) \( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \* ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \) (\w)/ ) {
+                           print "DBG-DES : 003 : matched horizontal R-extn with via $1,$2,$3,$4,$5  and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                            my $llx = $1-($W/2);
+                            my $lly = $2-($W/2);
+                            my $urx = $3+$4;
+                            my $ury = $2+($W/2);
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if horizontal R-extn with via
+                     elsif ($netSeg =~ m/\( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \) \( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \* ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \)/ ) {
+                            print "DBG-DES : 004 : matched  horizontal R-extn without via $1,$2,$3,$4  and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                            my $llx = $1-($W/2);
+                            my $lly = $2-($W/2);
+                            my $urx = $3+$4;
+                            my $ury = $2+($W/2);
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if horizontal R-extn without via
+                     elsif ($netSeg =~ m/\( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \) \( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \* \) (\w)/ ) {
+                            print "DBG-DES : 005 : matched horizontal L-extn with via $1,$2,$3,$4  and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                            my $llx = $1-$3;
+                            my $lly = $2-($W/2);
+                            my $urx = $4+($W/2);
+                            my $ury = $2+($W/2);
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if horizontal L-extn with via
+                     elsif ($netSeg =~ m/\( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \) \( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \* \)/ ) {
+                            print "DBG-DES : 006 : matched horizontal L-extn without via $1,$2,$3,$4 and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                            my $llx = $1-$3;
+                            my $lly = $2-($W/2);
+                            my $urx = $4+($W/2);
+                            my $ury = $2+($W/2);
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if horizontal L-extn without via
+                     elsif ($netSeg =~ m/\( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \) \( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \* \)/ ) {
+                            print "DBG-DES : 007 : matched horizontal without extn without via  $1,$2,$3 and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                            my $llx = $1-($W/2);
+                            my $lly = $2-($W/2);
+                            my $urx = $3+($W/2);
+                            my $ury = $2+($W/2);
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if horizontal without extn without via
+                     elsif ($netSeg =~ m/\( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \) \( \* ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \) (\w)/ ) {
+                            print "DBG-DES : 008 : matched verical without extn with via $1,$2,$3,$4  and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                            my $llx = $1-($W/2);
+                            my $lly = $2-($W/2);
+                            my $urx = $1+($W/2);
+                            my $ury = $3+($W/2);
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if verical without extn with via
+                     elsif ($netSeg =~ m/\( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \) \( \* ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \) (\w)/ ) {
+                           print "DBG-DES : 009 : matched verical T-extn with via $1,$2,$3,$4,$5  and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                            my $llx = $1-($W/2);
+                            my $lly = $2-($W/2);
+                            my $urx = $1+($W/2);
+                            my $ury = $3+$4;
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if verical T-extn with via
+                     elsif ($netSeg =~ m/\( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \) \( \* ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \)/ ) {
+                            print "DBG-DES : 010 : matched  verical T-extn without via $1,$2,$3,$4  and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                            my $llx = $1-($W/2);
+                            my $lly = $2-($W/2);
+                            my $urx = $1+($W/2);
+                            my $ury = $3+$4;
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if verical T-extn without via
+                     elsif ($netSeg =~ m/\( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \) \( \* ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \) (\w)/ ) {
+                            print "DBG-DES : 011 : matched verical B-extn with via $1,$2,$3,$4  and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                            my $llx = $1-($W/2);
+                            my $lly = $2-$3;
+                            my $urx = $1+($W/2);
+                            my $ury = $4+($W/2);
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if verical B-extn with via
+                     elsif ($netSeg =~ m/\( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \) \( \* ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \)/ ) {
+                            print "DBG-DES : 012 : matched verical B-extn without via $1,$2,$3,$4 and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                            my $llx = $1-($W/2);
+                            my $lly = $2-$3;
+                            my $urx = $1+($W/2);
+                            my $ury = $4+($W/2);
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if verical B-extn without via
+                     elsif ($netSeg =~ m/\( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \) \( \* ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \)/ ) {
+                            print "DBG-DES : 013 : matched verical without extn without via  $1,$2,$3 and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                            my $llx = $1-($W/2);
+                            my $lly = $2-($W/2);
+                            my $urx = $1+($W/2);
+                            my $ury = $3+($W/2);
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if verical without extn without via
+#--------------------- temporary code to support jspeed routing text -------------------------#
+                     elsif ($netSeg =~ m/\( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \) \( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \)/ ) {
+                            print "DBG-DES : 014 : jspeed : matched without extn without via  $1,$2,$3,$4 and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                                      if ( $1 == $3 ) {
+                            my $llx = $1-($W/2);
+                            my $lly = $2-($W/2);
+                            my $urx = $3+($W/2);
+                            my $ury = $4+($W/2);
+                            return($llx,$lly,$urx,$ury);
+                                                     }
+                                   elsif ( $2 == $4 ) {
+                            my $llx = $1-($W/2);
+                            my $lly = $2-($W/2);
+                            my $urx = $3+($W/2);
+                            my $ury = $4+($W/2);
+                            return($llx,$lly,$urx,$ury);
+                                                      }
+                                                                  }# if verical without extn without via
+                     elsif ($netSeg =~ m/\( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \) \( \* ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \)/ ) {
+                            print "DBG-DES : 011 : matched verical B-extn with via $1,$2,$3,$4  and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                            my $llx = $1-($W/2);
+                            my $lly = $2-$3;
+                            my $urx = $1+($W/2);
+                            my $ury = $4+$5;
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if verical B-extn
+
+                     elsif ($netSeg =~ m/\( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \) \( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \* ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \)/ ) {
+                            print "DBG-DES : 011 : matched verical B-extn with via $1,$2,$3,$4  and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                            my $llx = $1-$3;
+                            my $lly = $2-($W/2);
+                            my $urx = $4+$5;
+                            my $ury = $2+($W/2);
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if verical B-extn with via
+
+                                  }#if the routiung layer exists
+}#sub xformNetSegToRouteBox
+
+
+sub xformNetSegToSpecialRouteBox {
+my $netSeg = $_[0];
+my @routeBox = ();
+my $dbu = $GLOBAL->dbfGlobalGetDBU;
+my ($netSegZ, $Width) = (split(/\s+/,$netSeg))[0, 1];
+$netSeg =~ s/-\d+/0/g;
+#print " $netSegZ, $Width\n";
+            my $W = $Width; 
+                        if ($netSeg =~ m/\( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \) (\w+)/ ) {
+                            print "DBG-DES : 001 : matched connection to via $3\n" if ($DEBUG);
+                            my $layerMinArea = $PTDB{$netSegZ}->dbTechGetLayerArea;
+                            my $layerDir = $PTDB{$netSegZ}->dbTechGetLayerDir;
+                            my $minHeight = ceil($layerMinArea * $dbu * $dbu/ $W);
+                            if ( $layerDir eq "VERTICAL" ) {
+                            my $llx = $1-($W/2);
+                            my $lly = $2-($minHeight/2);
+                            my $urx = $1+($W/2);
+                            my $ury = $2+($minHeight/2);
+                            return($llx,$lly,$urx,$ury);
+                            }elsif ( $layerDir eq "HORIZONTAL" ) {
+                            my $llx = $1-($minHeight/2);
+                            my $lly = $2-($W/2);
+                            my $urx = $1+($minHeight/2);
+                            my $ury = $2+($W/2);
+                            return($llx,$lly,$urx,$ury);
+                            }
+                                                                  }# if only via
+                     elsif ($netSeg =~ m/\( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \) \( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \* \) (\w+)/ ) {
+                            print "DBG-DES : 002 : matched horizontal without extn with via $1,$2,$3,$4  and W\=$W $Width $dbu\n" if ($DEBUG);
+                            my $llx = $1;
+                            my $lly = $2-($W/2);
+                            my $urx = $3;
+                            my $ury = $2+($W/2);
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if horizontal without extn with via
+                     elsif ($netSeg =~ m/\( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \) \( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \* ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \) (\w)/ ) {
+                           print "DBG-DES : 003 : matched horizontal R-extn with via $1,$2,$3,$4,$5  and W\=$W $Width $dbu\n" if ($DEBUG);
+                            my $llx = $1;
+                            my $lly = $2-($W/2);
+                            my $urx = $3+$4;
+                            my $ury = $2+($W/2);
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if horizontal R-extn with via
+                     elsif ($netSeg =~ m/\( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \) \( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \* ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \)/ ) {
+                            print "DBG-DES : 004 : matched  horizontal R-extn without via $1,$2,$3,$4  and W\=$W $Width $dbu\n" if ($DEBUG);
+                            my $llx = $1;
+                            my $lly = $2-($W/2);
+                            my $urx = $3+$4;
+                            my $ury = $2+($W/2);
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if horizontal R-extn without via
+                     elsif ($netSeg =~ m/\( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \) \( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \* \) (\w)/ ) {
+                            print "DBG-DES : 005 : matched horizontal L-extn with via $1,$2,$3,$4  and W\=$W $Width $dbu\n" if ($DEBUG);
+                            my $llx = $1-$3;
+                            my $lly = $2-($W/2);
+                            my $urx = $4;
+                            my $ury = $2+($W/2);
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if horizontal L-extn with via
+                     elsif ($netSeg =~ m/\( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \) \( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \* \)/ ) {
+                            print "DBG-DES : 006 : matched horizontal L-extn without via $1,$2,$3,$4 and W\=$W $Width $dbu\n" if ($DEBUG);
+                            my $llx = $1-$3;
+                            my $lly = $2-($W/2);
+                            my $urx = $4;
+                            my $ury = $2+($W/2);
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if horizontal L-extn without via
+                     elsif ($netSeg =~ m/\( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \) \( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \* \)/ ) {
+                            print "DBG-DES : 007 : matched horizontal without extn without via  $1,$2,$3 and W\=$W $Width $dbu\n" if ($DEBUG);
+                            my $llx = $1;
+                            my $lly = $2-($W/2);
+                            my $urx = $3;
+                            my $ury = $2+($W/2);
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if horizontal without extn without via
+                     elsif ($netSeg =~ m/\( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \) \( \* ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \) (\w)/ ) {
+                            print "DBG-DES : 008 : matched verical without extn with via $1,$2,$3,$4  and W\=$W $Width $dbu\n" if ($DEBUG);
+                            my $llx = $1-($W/2);
+                            my $lly = $2;
+                            my $urx = $1+($W/2);
+                            my $ury = $3;
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if verical without extn with via
+                     elsif ($netSeg =~ m/\( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \) \( \* ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \) (\w)/ ) {
+                           print "DBG-DES : 009 : matched verical T-extn with via $1,$2,$3,$4,$5  and W\=$W $Width $dbu\n" if ($DEBUG);
+                            my $llx = $1-($W/2);
+                            my $lly = $2;
+                            my $urx = $1+($W/2);
+                            my $ury = $3+$4;
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if verical T-extn with via
+                     elsif ($netSeg =~ m/\( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \) \( \* ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \)/ ) {
+                            print "DBG-DES : 010 : matched  verical T-extn without via $1,$2,$3,$4  and W\=$W $Width $dbu\n" if ($DEBUG);
+                            my $llx = $1-($W/2);
+                            my $lly = $2;
+                            my $urx = $1+($W/2);
+                            my $ury = $3+$4;
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if verical T-extn without via
+                     elsif ($netSeg =~ m/\( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \) \( \* ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \) (\w)/ ) {
+                            print "DBG-DES : 011 : matched verical B-extn with via $1,$2,$3,$4  and W\=$W $Width $dbu\n" if ($DEBUG);
+                            my $llx = $1-($W/2);
+                            my $lly = $2-$3;
+                            my $urx = $1+($W/2);
+                            my $ury = $4+($W/2);
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if verical B-extn with via
+                     elsif ($netSeg =~ m/\( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \) \( \* ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \)/ ) {
+                            print "DBG-DES : 012 : matched verical B-extn without via $1,$2,$3,$4 and W\=$W $Width $dbu\n" if ($DEBUG);
+                            my $llx = $1-($W/2);
+                            my $lly = $2-$3;
+                            my $urx = $1+($W/2);
+                            my $ury = $4;
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if verical B-extn without via
+                     elsif ($netSeg =~ m/\( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \) \( \* ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \)/ ) {
+                            print "DBG-DES : 013 : matched verical without extn without via  $1,$2,$3 and W\=$W $Width $dbu\n" if ($DEBUG);
+                            my $llx = $1-($W/2);
+                            my $lly = $2;
+                            my $urx = $1+($W/2);
+                            my $ury = $3;
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if verical without extn without via
+#--------------------- temporary code to support jspeed routing text -------------------------#
+                     elsif ($netSeg =~ m/\( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \) \( ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) ([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?) \)/ ) {
+                            print "DBG-DES : 014 : jspeed : matched without extn without via  $1,$2,$3,$4 and W\=$W $Width $dbu\n" if ($DEBUG);
+                                      if ( $1 == $3 ) {
+                            my $llx = $1-($W/2);
+                            my $lly = $2;
+                            my $urx = $3+($W/2);
+                            my $ury = $4;
+                            return($llx,$lly,$urx,$ury);
+                                                     }
+                                   elsif ( $2 == $4 ) {
+                            my $llx = $1;
+                            my $lly = $2-($W/2);
+                            my $urx = $3;
+                            my $ury = $4+($W/2);
+                            return($llx,$lly,$urx,$ury);
+                                                      }
+                                                                  }# if verical without extn without via
+
+}#sub xformNetSegToSpecialRouteBox
+
+
+sub analyze_routing {
+my $noOfArguments = @_;
+my $incList = "";
+my $excludeList = "";
+
+if($_[0] eq "-h" )  {
+        print "Usage :  analyze_routing\n";
+        print "         -nets {net1,net2,...} list of nets to be analysed\n";
+        print "         -excludenets {net1,net2,...} list of nets to be excluded from analysis\n";
+        print "                       <-debug>\n";
+
+  }
+  else {
+  for(my $i = 0; $i < $noOfArguments; $i++){
+  if($_[$i] eq "-nets"){ $incList = $_[$i+1];}
+  if($_[$i] eq "-excludenets"){ $excludeList = $_[$i+1];}
+                                           } # for
+if ( $incList ne "" ) {
+$incList =~ s/\{//;
+$incList =~ s/\}//;
+my @nets = split(/\s*\,\s*/,$incList);
+foreach $netName ( @nets ) {
+        if( exists $NETS_ALREADY{$netName} ) {
+        &dbAnlsDrouteGetNetRouting($netName);
+                                             }
+                           }
+                      }
+else {
+my %excludeNets = ();
+if ( $excludeList ne "" ) {
+$excludeList =~ s/\{//;
+$excludeList =~ s/\}//;
+my @nets = split(/\s*\,\s*/,$excludeList);
+foreach $netName ( @nets ) { $excludeNets{$netName} = 1;}
+                           
+                          }
+foreach $netName ( keys %NETS_ALREADY ) {
+        if ( exists $excludeNets{$netName} ) {
+             print "MSG-DES-ANLZE-ROTNG : 001 : Skipping $netName from route analysis\n";
+                                              } else {
+        &dbAnlsDrouteGetNetRouting($netName);
+                                                      }
+                                        }# foreach net
+     }
+       }# if correct arguments
+}#sub analyze_routing
+
+sub xformNetSegToPathSeg {
+my $netSeg = $_[0];
+my $return_with_via = $_[1];
+my @routeBox = ();
+my $return_with_via_value = 0;
+my $dbu = $GLOBAL->dbfGlobalGetDBU;
+if($return_with_via =~ /--via/){
+  $return_with_via_value = 1;
+}else {
+  $return_with_via_value = 0;
+}
+my $netSegZ = (split(/\s+/,$netSeg))[0];
+   if ( exists $PTDB{$netSegZ} ) {
+            my $defaultWidth = $PTDB{$netSegZ}->dbTechGetLayerWidth;
+            my $W = $defaultWidth*$dbu; 
+                        if ($netSeg =~ m/\( (\d+) (\d+) \) (\w+)/ ) {
+                            print "DBG-DES : 001 : matched connection to via $3\n" if ($DEBUG);
+                            return($1,$2,$1,$2);
+                                                                  }# if only via
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( (\d+) \* \) (\w+)/ ) {
+                            print "DBG-DES : 002 : matched horizontal without extn with via $1,$2,$3,$4  and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                            my $llx = $1;
+                            my $lly = $2;
+                            my $urx = $3;
+                            my $ury = $2;
+                            if($return_with_via_value == 1){
+                              my $via_llx = $urx; 
+                              my $via_lly = $lly; 
+                              return($llx,$lly,$urx,$ury,$via_llx,$via_lly);
+                            }else {
+                              return($llx,$lly,$urx,$ury);
+                            }
+                                                                  }# if horizontal without extn with via
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( (\d+) \* (\d+) \) (\w)/ ) {
+                           print "DBG-DES : 003 : matched horizontal R-extn with via $1,$2,$3,$4,$5  and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                            my $llx = $1;
+                            my $lly = $2;
+                            my $urx = $3+$4;
+                            my $ury = $2;
+                            if($return_with_via_value == 1){
+                              my $via_llx = $urx; 
+                              my $via_lly = $lly; 
+                              return($llx,$lly,$urx,$ury,$via_llx,$via_lly);
+                            }else {
+                              return($llx,$lly,$urx,$ury);
+                            }
+                                                                  }# if horizontal R-extn with via
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( (\d+) \* (\d+) \)/ ) {
+                            print "DBG-DES : 004 : matched  horizontal R-extn without via $1,$2,$3,$4  and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                            my $llx = $1;
+                            my $lly = $2;
+                            my $urx = $3+$4;
+                            my $ury = $2;
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if horizontal R-extn without via
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) (\d+) \) \( (\d+) \* \) (\w)/ ) {
+                            print "DBG-DES : 005 : matched horizontal L-extn with via $1,$2,$3,$4  and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                            my $llx = $1-$3;
+                            my $lly = $2;
+                            my $urx = $4;
+                            my $ury = $2;
+                            if($return_with_via_value == 1){
+                              my $via_llx = $urx; 
+                              my $via_lly = $lly; 
+                              return($llx,$lly,$urx,$ury,$via_llx,$via_lly);
+                            }else {
+                              return($llx,$lly,$urx,$ury);
+                            }
+                                                                  }# if horizontal L-extn with via
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) (\d+) \) \( (\d+) \* \)/ ) {
+                            print "DBG-DES : 006 : matched horizontal L-extn without via $1,$2,$3,$4 and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                            my $llx = $1-$3;
+                            my $lly = $2;
+                            my $urx = $4;
+                            my $ury = $2;
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if horizontal L-extn without via
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) (\d+) \) \( (\d+) \* (\d+) \)/ ) {
+                            print "DBG-DES : 006 : matched horizontal L-extn and R-extn without via $1,$2,$3,$4,$5 and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                            my $llx = $1-$3;
+                            my $lly = $2;
+                            my $urx = $4+$5;
+                            my $ury = $2;
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if horizontal L-extn and R-extn without via
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) (\d+) \) \( (\d+) \* (\d+) \) (\w)/ ) {
+                            print "DBG-DES : 006 : matched horizontal L-extn and R-extn with via $1,$2,$3,$4,$5 and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                            my $llx = $1-$3;
+                            my $lly = $2;
+                            my $urx = $4+$5;
+                            my $ury = $2;
+                            if($return_with_via_value == 1){
+                              my $via_llx = $urx; 
+                              my $via_lly = $lly; 
+                              return($llx,$lly,$urx,$ury,$via_llx,$via_lly);
+                            }else {
+                              return($llx,$lly,$urx,$ury);
+                            }
+                                                                  }# if horizontal L-extn and R-extn with via
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( (\d+) \* \)/ ) {
+                            print "DBG-DES : 007 : matched horizontal without extn without via  $1,$2,$3 and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                            my $llx = $1;
+                            my $lly = $2;
+                            my $urx = $3;
+                            my $ury = $2;
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if horizontal without extn without via
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( \* (\d+) \) (\w)/ ) {
+                            print "DBG-DES : 008 : matched verical without extn with via $1,$2,$3,$4  and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                            my $llx = $1;
+                            my $lly = $2;
+                            my $urx = $1;
+                            my $ury = $3;
+                            if($return_with_via_value == 1){
+                              my $via_llx = $llx; 
+                              my $via_lly = $ury; 
+                              return($llx,$lly,$urx,$ury,$via_llx,$via_lly);
+                            }else {
+                              return($llx,$lly,$urx,$ury);
+                            }
+                                                                  }# if verical without extn with via
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( \* (\d+) (\d+) \) (\w)/ ) {
+                           print "DBG-DES : 009 : matched verical T-extn with via $1,$2,$3,$4,$5  and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                            my $llx = $1;
+                            my $lly = $2;
+                            my $urx = $1;
+                            my $ury = $3+$4;
+                            if($return_with_via_value == 1){
+                              my $via_llx = $llx; 
+                              my $via_lly = $ury; 
+                              return($llx,$lly,$urx,$ury,$via_llx,$via_lly);
+                            }else {
+                              return($llx,$lly,$urx,$ury);
+                            }
+                                                                  }# if verical T-extn with via
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( \* (\d+) (\d+) \)/ ) {
+                            print "DBG-DES : 010 : matched  verical T-extn without via $1,$2,$3,$4  and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                            my $llx = $1;
+                            my $lly = $2;
+                            my $urx = $1;
+                            my $ury = $3+$4;
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if verical T-extn without via
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) (\d+) \) \( \* (\d+) \) (\w)/ ) {
+                            print "DBG-DES : 011 : matched verical B-extn with via $1,$2,$3,$4  and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                            my $llx = $1;
+                            my $lly = $2-$3;
+                            my $urx = $1;
+                            my $ury = $4;
+                            if($return_with_via_value == 1){
+                              my $via_llx = $llx; 
+                              my $via_lly = $ury; 
+                              return($llx,$lly,$urx,$ury,$via_llx,$via_lly);
+                            }else {
+                              return($llx,$lly,$urx,$ury);
+                            }
+                                                                  }# if verical B-extn with via
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) (\d+) \) \( \* (\d+) \)/ ) {
+                            print "DBG-DES : 012 : matched verical B-extn without via $1,$2,$3,$4 and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                            my $llx = $1;
+                            my $lly = $2-$3;
+                            my $urx = $1;
+                            my $ury = $4;
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if verical B-extn without via
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) (\d+) \) \( \* (\d+) (\d+) \)/ ) {
+                            print "DBG-DES : 012 : matched verical B-extn and T-extn without via $1,$2,$3,$4,$5 and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                            my $llx = $1;
+                            my $lly = $2-$3;
+                            my $urx = $1;
+                            my $ury = $4+$5;
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if verical B-extn and T-extn without via
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) (\d+) \) \( \* (\d+) (\d+) \) (\w)/ ) {
+                            print "DBG-DES : 012 : matched verical B-extn and T-extn with via $1,$2,$3,$4,$5 and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                            my $llx = $1;
+                            my $lly = $2-$3;
+                            my $urx = $1;
+                            my $ury = $4+$5;
+                            if($return_with_via_value == 1){
+                              my $via_llx = $llx; 
+                              my $via_lly = $ury; 
+                              return($llx,$lly,$urx,$ury,$via_llx,$via_lly);
+                            }else {
+                              return($llx,$lly,$urx,$ury);
+                            }
+                                                                  }# if verical B-extn and T-extn with via
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( \* (\d+) \)/ ) {
+                            print "DBG-DES : 013 : matched verical without extn without via  $1,$2,$3 and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                            my $llx = $1;
+                            my $lly = $2;
+                            my $urx = $1;
+                            my $ury = $3;
+                            return($llx,$lly,$urx,$ury);
+                                                                  }# if verical without extn without via
+#--------------------- temporary code to support jspeed routing text -------------------------#
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( (\d+) (\d+) \)/ ) {
+                            print "DBG-DES : 014 : jspeed : matched without extn without via  $1,$2,$3,$4 and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                                      if ( $1 == $3 ) {
+                            my $llx = $1;
+                            my $lly = $2;
+                            my $urx = $3;
+                            my $ury = $4;
+                            return($llx,$lly,$urx,$ury);
+                                                     }
+                                   elsif ( $2 == $4 ) {
+                            my $llx = $1;
+                            my $lly = $2;
+                            my $urx = $3;
+                            my $ury = $4;
+                            return($llx,$lly,$urx,$ury);
+                                                      }
+                                                                  }# if verical without extn without via
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) (\d+) \) \( (\d+) (\d+) (\d+) \)/ ) {
+                            if($1 == $4){
+                              print "DBG-DES : 012 : matched verical B-extn and T-extn without via $1,$2,$3,$4,$5,$6 and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                              my $llx = $1;
+                              my $lly = $2-$3;
+                              my $urx = $4;
+                              my $ury = $5+$6;
+                              return($llx,$lly,$urx,$ury);
+                            }elsif($3 == $6){
+                              print "DBG-DES : 012 : matched horizontal L-extn and R-extn without via $1,$2,$3,$4,$5,$6 and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                              my $llx = $1-$3;
+                              my $lly = $2;
+                              my $urx = $4+$6;
+                              my $ury = $5;
+                              return($llx,$lly,$urx,$ury);
+                            }
+                                                                  }# if verical B-extn and T-extn with via
+                     elsif ($netSeg =~ m/\( (\d+) (\d+) (\d+) \) \( (\d+) (\d+) (\d+) \) (\w)/ ) {
+                            if($1 == $4){
+                              print "DBG-DES : 012 : matched verical B-extn and T-extn with via $1,$2,$3,$4,$5,$6 and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                              my $llx = $1;
+                              my $lly = $2-$3;
+                              my $urx = $4;
+                              my $ury = $5+$6;
+                              if($return_with_via_value == 1){
+                                my $via_llx = $urx; 
+                                my $via_lly = $ury; 
+                                return($llx,$lly,$urx,$ury,$via_llx,$via_lly);
+                              }else {
+                                return($llx,$lly,$urx,$ury);
+                              }
+                            }elsif($3 == $6){
+                              print "DBG-DES : 012 : matched horizontal L-extn and R-extn with via $1,$2,$3,$4,$5,$6 and W\=$W $defaultWidth $dbu\n" if ($DEBUG);
+                              my $llx = $1-$3;
+                              my $lly = $2;
+                              my $urx = $4+$6;
+                              my $ury = $5;
+                              if($return_with_via_value == 1){
+                                my $via_llx = $urx; 
+                                my $via_lly = $ury; 
+                                return($llx,$lly,$urx,$ury,$via_llx,$via_lly);
+                              }else {
+                                return($llx,$lly,$urx,$ury);
+                              }
+                            }
+                                                                  }# if verical B-extn and T-extn with via
+
+                                  }#if the routiung layer exists
+}#sub xformNetSegToPathSeg
+
+sub rotate_inst {
+
+#****f* / rotate
+# NAME
+#   rotate
+# FUNCTION
+#   to rotate an instance
+# Assumptions
+#   rotations angle must be multiple of 90 degree
+# SYNOPSIS
+#   rotate -angle <rotation angle> 
+#          -orientation <current orientation>
+#          -bbox <llx,lly,urx,ury>
+# INPUTS
+#   options:
+#   -angle <rotation angle> -orientation <current orientation> -bbox <llx,lly,urx,ury>
+# OUTPUTS
+#   return new orientation with bbox coords  
+#****
+
+my $noOfArg = @_;
+my $angle = 0;
+my $orient = "N";
+my $new_orient = "";
+my @bbox = ();
+my ($coords, $llx,$lly,$urx,$ury) = ("","","","","");
+
+my %flip_orient = ("FN"=>0,"FE"=>90,"FS"=>180,"FW"=>270);
+my %rotate_orient = ("N"=>0,"W"=>90,"S"=>180,"E"=>270);
+my %reverse_flip_orient = reverse %flip_orient;
+my %reverse_rotate_orient = reverse %rotate_orient;
+
+if($noOfArg < 2 || $_[0] eq "-h" || $_[0] eq "-help" || $_[0] eq "-HELP"){
+                                  print "Usage: rotate -angle <angle in degree>\n";
+                                  print "              -orient <orientation>\n"; 
+                                  print "              -bbox <{llx,lly,urx,ury}>\n";
+}else {
+  for(my $i = 0; $i < $noOfArg; $i++){
+     if($_[$i] eq "-angle"){$angle = $_[$i+1];}
+     if($_[$i] eq "-orient"){$orient = $_[$i+1];}
+     if($_[$i] eq "-bbox"){$coords = $_[$i+1]; 
+                           $coords =~ s/\{(.*)\}/\1/;  
+			   @bbox = split(/\,/, $coords);}
+  }
+ my $width = $bbox[2] - $bbox[0];
+ my $height = $bbox[3] - $bbox[1];
+ my $x = int($angle/90);
+ if($x != ($angle/90)){
+      print "WARN-DES-ROTATE : 001 : angle should be multiple of 90\n";
+      return;
+ }else{
+   if($angle >= 0 && $angle <=270){
+   }else{
+      my $y = int($angle/360);
+      $angle = $angle - 360*$y;
+   }        
+ }
+ if($angle == 90){
+    $llx = $bbox[0]+$height; 
+    $lly = $bbox[1]; 
+    $urx = $bbox[0]; 
+    $ury = $bbox[1]+$width; 
+ }elsif($angle == 180){
+    $llx = $bbox[0]+$width; 
+    $lly = $bbox[1]+$height; 
+    $urx = $bbox[0]; 
+    $ury = $bbox[1];
+ }elsif($angle == 270){
+    $llx = $bbox[0]; 
+    $lly = $bbox[1]+$width; 
+    $urx = $bbox[0]+$height; 
+    $ury = $bbox[1];
+ }else{
+    $llx = $bbox[0]; 
+    $lly = $bbox[1]; 
+    $urx = $bbox[0]+$width; 
+    $ury = $bbox[1]+$height;
+ }
+      if(exists $flip_orient{$orient}){
+         my $pAngle = $flip_orient{$orient};
+         my $z = int(($pAngle+$angle)/360);
+         my $nAngle = ($pAngle+$angle) - 360*$z;
+         $new_orient = $reverse_flip_orient{$nAngle};  
+      }elsif(exists $rotate_orient{$orient}){
+         my $pAngle = $rotate_orient{$orient};
+         my $z = int(($pAngle+$angle)/360);
+         my $nAngle = ($pAngle+$angle) - 360*$z;
+         $new_orient = $reverse_rotate_orient{$nAngle};  
+      }
+ print "INFO-DES-ROTATE : 002 : new coords: $llx,$lly,$urx,$ury orient $new_orient\n";
+ return($new_orient,$llx,$lly,$urx,$ury); 
+}#else correct no of arguments
+}#sub rotate_inst
+
+sub flip_inst {
+
+#****f* / flip
+# NAME
+#   flip
+# FUNCTION
+#   flip the instance
+# SYNOPSIS
+#   flip -bbox <llx,lly,urx,ury>
+#        -orient <orientation> 
+# INPUTS
+#   options:
+#   -orient <current orientation> -bbox <llx,lly,urx,ury>
+# OUTPUTS
+#   return new orientation with bbox coords  
+#****
+
+my $noOfArg = @_;
+my $coords = "";
+my $orient = "N";
+my @bbox = ();
+my %flip_orient = ("N"=>"FN","W"=>"FW","S"=>"FS","E"=>"FE","FN"=>"N","FW"=>"W","FS"=>"S","FE"=>"E");
+
+if($noOfArg < 2 || $_[0] eq "-h" || $_[0] eq "-help" || $_[0] eq "-HELP"){
+   print "Usage: flip -bbox <{llx,lly,urx,ury}>\n";
+   print "            -orient <orientation>\n"; 
+}else {
+  for(my $i = 0; $i < $noOfArg; $i++){
+     if($_[$i] eq "-orient"){$orient = $_[$i+1];}
+     if($_[$i] eq "-bbox"){$coords = $_[$i+1]; 
+                           $coords =~ s/\{(.*)\}/\1/;  
+			   @bbox = split(/\,/, $coords);}
+  }
+  my $width = $bbox[2] - $bbox[0];
+  my $height = $bbox[3] - $bbox[1];
+
+  my $llx = $bbox[0]+$width;
+  my $lly = $bbox[1];
+  my $urx = $bbox[0];
+  my $ury = $bbox[1]+$height;
+  my $new_orient = $flip_orient{$orient} if(exists $flip_orient{$orient});
+
+print "INFO-DES-FLIP : 001 : new coords: $llx,$lly,$urx,$ury orient $new_orient\n";
+return($new_orient,$llx,$lly,$urx,$ury);
+
+}#if correct no of arguments
+}#sub flip_inst
+
+
+
+sub getViaBox {
+  my $via_name = $_[0];
+  my $via_x = $_[1];
+  my $via_y = $_[2];
+  my @list_of_line = ();
+  print "via_name is $via_name\n";
+  my @vialayer = $VDB{$via_name}->dbGetViaLayer;
+  foreach my $vial(@vialayer){
+    my $layer = $vial->dbGetViaLayerName;
+    my $type = $PTDB{$layer}->dbTechGetLayerType;
+    my @rect = $vial->dbGetViaRect;
+    foreach my $r (@rect) {
+      my @curr_rect = @$r; 
+      my $llx = $curr_rect[0] + $via_x;
+      my $lly = $curr_rect[1] + $via_y;
+      my $urx = $curr_rect[2] + $via_x;
+      my $ury = $curr_rect[3] + $via_y;
+      my $line = "$layer $llx $lly $urx $ury";
+      print "adding via at $line \n";
+      push (@list_of_line,$line);
+    }
+  }
+   return(@list_of_line);
+}#sub getViaBox
+
+
+1;

@@ -1,0 +1,203 @@
+#!/bin/perl -w
+
+sub dbPlaceCreateFloparray {
+#****f* /dbPlaceCreateFloparray 
+# NAME
+#   dbPlaceCreateFloparray
+# FUNCTION
+#    reads the preplaced database and reorders the S-matrix row|column in the inc|dec order as specified by the user
+#    arrange_datamatrix has the following command line options and switches.
+# SYNOPSIS
+# arrange_datamatrix [-arrange <row|column>] [-order <inc|dec>] <-debug>
+#
+# INPUTS
+#      options :
+#      	-arrange <row|column> : to specify whether row|col has to be rearranged 
+#       -order <inc|dec> : to arrange in inc or dec order
+#       -debug : This is optional to run the program in debug mode
+# OUTPUTS
+#      The S-matrix will be reordered either rowwise or columnwise in the order specified by the user
+#****
+my $debug = 0;
+my $noOfArguments = @_;
+
+#print "No of arguments: $noOfArguments\n";
+if($_[0] eq "-h" )  { 
+ 	print "Usage :  dbPlaceCreateFloparray\n"; 
+        print "                       <-debug>\n";
+	
+  }
+  else {
+  for(my $i = 0; $i < $noOfArguments; $i++){ 
+  if ($_[$i] eq "-debug") {
+   $debug = 1;
+  }
+} # for
+
+#$PLACE{$TOP_MODULE}->dbgPlaceGetTpath;
+
+my @flops = $PLACE{$TOP_MODULE}->dbPlaceGetFlopList;
+my @in_port = $PLACE{$TOP_MODULE}->dbPlaceGetInPortList;
+my @out_port = $PLACE{$TOP_MODULE}->dbPlaceGetOutPortList;
+
+print "DBG-ALGO_PREPL-TR_FLOP_LVL : 001 : Flops are: @flops\n" if ($debug);
+print "DBG-ALGO_PREPL-TR_FLOP_LVL : 002 :Input ports are: @in_port\n" if ($debug);
+print "DBG-ALGO_PREPL-TR_FLOP_LVL : 003 :Output ports are: @out_port\n" if ($debug);
+my $no_flops = @flops;
+my $no_inp = @in_port;
+my $no_out = @out_port;
+my $levels = 0;
+
+&dbPlaceSetDepth;
+
+foreach my $portName ( sort @in_port ) {
+print "INFO-ALGO_PREPL-TR_FLOP_LVL : 004 : $portName ";
+my $currLevel = $PLACE{$TOP_MODULE}->dbPlaceGetPortLevel($portName) ;
+print "INFO-ALGO_PREPL-TR_FLOP_LVL : 005 : current level is $currLevel\n";
+$array_name ="level".$currLevel;
+if ( $debug ) {
+  push(@{$array_name},$portName);
+}
+$levels = $currLevel;
+}
+
+foreach my $portName ( sort @out_port ) {
+print "INFO-ALGO_PREPL-TR_FLOP_LVL : 006 : $portName ";
+my $currLevel = $PLACE{$TOP_MODULE}->dbPlaceGetPortLevel($portName) ;
+print "INFO-ALGO_PREPL-TR_FLOP_LVL : 007 : current level is $currLevel\n";
+$array_name ="level".$currLevel;
+if ( $debug ) {
+  push(@{$array_name},$portName);
+}
+}
+
+foreach my $flopName ( sort @flops ) {
+print "$flopName ";
+my @levels = $PLACE{$TOP_MODULE}->dbPlaceGetFlopLevel($flopName) ;
+#print 'current level is ', $levels[0], ' ', $levels[1], "\n";
+my $currLevel = min($levels[0], $levels[1]);
+print "INFO-ALGO_PREPL-TR_FLOP_LVL : 008 : current level is $currLevel\n";
+$array_name ="level".$currLevel;
+if ( $debug ) {
+  push(@{$array_name}, $flopName);
+}
+if ($levels < $currLevel) { $levels = $currLevel; }
+}
+
+if ( $debug ) {
+  for (my $i = 0; $i <= $levels; $i++) {
+	$array_name ="level".$i;
+	print "INFO-ALGO_PREPL-TR_FLOP_LVL : 009 : Level $i: @{$array_name} \n";
+  }
+} 
+
+}#end else
+}#sub arrange_datamatrix
+
+
+#****f* /dbPlaceTraceClockDomain
+#  dbPlaceTraceClockDomain
+# FUNCTION
+#
+#
+#
+# SYNOPSIS
+#  dbPlaceTraceClockDomain
+#
+#
+#
+# INPUTS
+#
+#
+#
+#       options :
+#
+#
+#
+#       switches :
+#
+#
+#
+# OUTPUTS
+#
+#
+#
+#****
+sub dbPlaceTraceClockDomain {
+my $noOfArguments = @_;
+#----------------- Defaults --------------------#
+my $allClocks = 0;
+my $clear = 0;
+my $verbose = 0;
+
+if( $noOfArguments < 1 || $_[0] eq '-h') {
+  print "Usage : trace_clock_domain --all\n";
+  print "                           -port <portName>\n";
+  print "                           -inst <instName>\n";
+  return;
+}
+
+my ($portName, $instName);
+
+for ( my $i = 0; $i < $noOfArguments; $i++) {
+   if($_[$i] eq "-port") { $portName = $_[$i+1]; }
+elsif($_[$i] eq "-inst") { $instName = $_[$i+1]; }
+elsif($_[$i] eq "--all") { $allClocks = 1;}
+elsif($_[$i] eq "--clear") { $clear = 1;}
+elsif($_[$i] eq "--verbose") { $verbose = 1;}
+} # for
+
+if ( $clear ) {
+  my @flops = $PLACE{$TOP_MODULE}->dbPlaceGetFlopList();
+  foreach my $flopName ( @flops ) {
+    $PLACE{$TOP_MODULE}->dbPlaceSetFlopClockDomain($flopName, "");
+  }# foreach flop
+}
+
+if ( ! $allClocks ) {
+  if ( $instName ne "" && $portName eq "" ) {
+    $portName = &dbPlaceTraceBackReg2In_clock($instName);
+  }
+  if ( $portName ne "" ) {
+    &dbPlaceTraceBFS_clock($portName);
+  }
+}
+else {
+  my @flops = $PLACE{$TOP_MODULE}->dbPlaceGetFlopList();
+  foreach my $flopName ( @flops ) {
+    my $clkDomain = $PLACE{$TOP_MODULE}->dbPlaceGetFlopClockDomain($flopName) ;
+    if ( $clkDomain ne "" ) {
+      next;
+    }
+    my $portName = &dbPlaceTraceBackReg2In_clock($flopName, $allClocks);
+    if ( $portName eq "" ) {
+      next;
+    }
+    &dbPlaceTraceBFS_clock($portName);
+  }# foreach flop
+}
+
+if ( $verbose ) {
+  my @flops = $PLACE{$TOP_MODULE}->dbPlaceGetFlopList;
+  my %domainFlops = ();
+  foreach my $flopName ( sort @flops ) {
+    my $clkDomain = $PLACE{$TOP_MODULE}->dbPlaceGetFlopClockDomain($flopName);
+    if ( defined $clkDomain ) {
+      push(@{$domainFlops{$clkDomain}}, $flopName);
+    }
+  }# foreach flop
+  foreach my $clkDomain ( sort keys %domainFlops ) {
+    if ( $portName ne "" && $portName ne $clkDomain ) {
+      next;
+    }
+    my @flops = @{$domainFlops{$clkDomain}};
+    print "INFO-ALGO_PREPL-TR_CLK_DOMN : 001 : Flops in clock domain $clkDomain:\n";
+    foreach my $flopName ( @flops ) {
+      print "INFO-ALGO_PREPL-TR_CLK_DOMN : 002 : $flopName\n";
+    }
+  }# foreach $clkDomain
+}
+
+}#sub dbPlaceTraceClockDomain
+
+1;

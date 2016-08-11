@@ -1,0 +1,2160 @@
+sub hashValueAscendingNum {
+   $aditya{$a} <=> $aditya{$b};
+}
+
+sub read_lef {
+
+#****f* /read_lef 
+# NAME
+#   read_lef
+# FUNCTION
+#    reads a Cadence LEF format ASCII file, At present the command supports LEF Version 5.6 and older.
+#    read_lef has the following command line options and switches.
+# SYNOPSIS
+# read_lef -lef <fileName> -tech also
+# INPUTS
+#      options :
+#      	-lef <fileName> : lef file name which absolute or relative path
+#      switches :
+#      	-tech {only|also|dont} , "dont" is default
+#	      dont : technology section is not read at all
+#             only : only technology portion of the file is read, MACRO section is skipped
+#             also : both the technology section and MACRO section is read.
+# OUTPUTS
+#      none
+#****
+use Benchmark;
+my $t0 = new Benchmark;
+
+my $noOfArguments = @_;
+
+if( $noOfArguments < 2 || $_[0] eq '-h') { print "Usage : read_lef -lef <input_lef> \n";
+                           print "                 [-tech < only / also / dont>]\n";
+                                           print "      : --file_list\n";
+                         }
+if( $noOfArguments > 5 || $_[0] eq '-h') { print "Usage : read_lef -lef <input_lef> \n";
+                           print "                 [-tech < only / also / dont>]\n";
+                                           print "      : --file_list\n";
+                         }
+if( $noOfArguments == 2 || $noOfArguments >= 4 ) {
+#if( $noOfArguments == 2 || $noOfArguments == 5 ) {
+
+my $READ_TECHNOLOGY = "dont";
+my $file_list = 0;
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-lef"){$INPUT_LEF = $_[$i+1];}
+if($_[$i] eq "-tech"){$READ_TECHNOLOGY = $_[$i+1];}
+if($_[$i] eq "--file_list"){$file_list = 1;}
+                                         } # for
+$GLOBAL->dbfGlobalSetFileName($INPUT_LEF,$READ_TECHNOLOGY);
+if ( (-e $INPUT_LEF) && (-r $INPUT_LEF) ){
+print "INFO-PAR-LEF : 001 : $INPUT_LEF FILE EXISTS AND IS READABLE!\n";
+
+
+
+#######################################################################################
+####              read the technology from lef file                                ####
+#######################################################################################
+
+if($READ_TECHNOLOGY eq "only" || $READ_TECHNOLOGY eq "also"){
+print "INFO-PAR-LEF : 002 : reading technology section from $INPUT_LEF\n";
+print "INFO-PAR-LEF : 003 : If there are multiple site statement but read only one site statement \n";
+open(READ_TECH, "$INPUT_LEF");
+$stop_reading_tech_lef = 0;
+#%TECHNOLOGY_PHYSICAL = ();
+#%PTDB = ();
+#%VDB = ();
+#%VLDB =();
+#%VRDB = ();
+#%VRLDB = ();
+my $newViaLayerInstance = "";
+my $newLayerInstance = ""; 
+my $viaName = "";
+my $layerName = "";
+my $macroName = "";
+my $siteName = "";
+my $start_reading_tech_layers = 0;
+my $start_reading_via_section = 0;
+my $start_reading_viarule_section = 0;
+# fixed mantis issue 0000231 by Rajeev on 12/30/08
+# issue when tech lef is read after macro lef then start_reading_macro_lef has to be initialised to zero
+my $start_reading_macro_lef = 0;
+my $start_reading_site = 0;
+my $polygon_start = 0;
+my $polygon_data = "";
+my $obs_polygon_start = 0;
+my $obs_polygon_data = "";
+while(<READ_TECH>){
+chomp();
+if($_ =~ /^\s*#/ ) { next ; }
+if($_ =~ /\#/ ) { $_ =~ s/\s+#.*$//; }
+$_ =~ s/\s+/ /g;
+$_=~ s/\s+$//g;
+if($_ =~ /^\s*MACRO/){
+                  $stop_reading_tech_lef = 1;
+                  $start_reading_via_section = 0;
+                  $start_reading_viarule_section = 0;
+                  $start_reading_site = 0;
+                  $start_reading_macro_lef = 1;
+                  ($macroName)=(split(/\s+/,$_))[1];
+                  }
+if(($macroName) && ($_ =~ /^END $macroName/)){
+                  $stop_reading_tech_lef = 0;
+                  next;
+                  }
+if($_ =~ /^\s*VIA / ) {
+                     if ($start_reading_viarule_section == 0) {
+                       ($viaName)=(split(/\s+/,$_))[1]; 
+                       $start_reading_via_section = 1; 
+                       $start_reading_tech_layers = 0;
+                     } 
+                     #$start_reading_via_section = 1; 
+                     #($viaName)=(split(/\s+/,$_))[1]; 
+                     }
+if($viaName && ($_ =~ /^END $viaName/ )) {
+                     $start_reading_via_section = 0; 
+                     $start_reading_tech_layers = 0;
+                     if($newViaLayerInstance){
+                        $VDB{$viaName}->dbSetViaLayer($newViaLayerInstance);
+                     }
+                      $newViaLayerInstance = "";
+                     }
+                     
+if($_ =~ /^\s*VIARULE / ){
+                        $start_reading_viarule_section =1;
+                        $start_reading_tech_layers = 0;
+                        ($viaruleName) = (split(/\s+/,$_))[1];
+                           }
+if($viaruleName && ($_ =~ /^END $viaruleName/)){
+                          $start_reading_viarule_section = 0;
+                          $start_reading_tech_layers = 0;
+                          if($newLayerInstance) {
+                            $VRDB{$viaruleName}->dbSetViaRuleLayer($newLayerInstance);
+                          }
+                          $newLayerInstance = "" ;
+                        }          
+if($_ =~ /^\s*LAYER/){
+                     if ($start_reading_via_section == 0) {
+                       ($layerName)=(split(/\s+/,$_))[1]; 
+                       $start_reading_tech_layers = 1 ;
+                    } 
+                     
+                      
+                        
+if($_ =~ /^\s*END $layerName / ) {
+                     $start_reading_via_section = 0; 
+                     $start_reading_tech_layers = 0;
+                     }
+                                          }
+#---------------------------------#
+# Technology SITE Section       #
+#---------------------------------#
+if ( $_ =~ /^\s*SITE/ ) {
+                $siteName = (split(/\s+/,$_))[1];
+                $TECHNOLOGY_PHYSICAL{$siteName}{TYPE} = SITE;
+                  $stop_reading_tech_lef = 0;
+                  $start_reading_via_section = 0;
+                  $start_reading_viarule_section = 0;
+                  $start_reading_site = 1;
+                  $start_reading_macro_lef = 0;
+                          }# if site
+if (/^\s*SITE $siteName/ ... /END $siteName/ ) {
+#               print "DBG : $start_reading_macro_lef\n" if ($DEBUG == 20); 
+               next if ( $start_reading_macro_lef == 1 );
+               if( $_ =~ /CLASS/ ) { $class = (split(/\s+/,$_))[2]; 
+                                     $class =~ s/\;//;
+                                     $TECHNOLOGY_PHYSICAL{$siteName}{CLASS} = $class;
+                                     print "INFO-PAR-LEF : 004 : class : $class\n";
+                                   }
+               elsif( $_ =~ /SIZE/ ) { ($width,$height) = (split(/\s+/,$_))[2,4];
+                                        $height =~ s/\;//;
+                                    $TECHNOLOGY_PHYSICAL{$siteName}{SIZE} = "$width $height"; 
+                                    print "INFO-PAR-LEF : 005 : $siteName $class $width $height\n";
+                                  }
+## fixed the issue Mantis-0000161 by Rajeev
+              if ( $_ =~ /END $siteName/ ) {
+              if( $width > 0 && $height > 0 && $class =~ /core/i ) {
+                                  if ( $class eq "CORE" || $class eq "core" ) {
+                                    my $smallestRowHeight = $GLOBAL->dbGlobalGetRowHeight;
+                                    if (($smallestRowHeight == -1) || ($smallestRowHeight > $height )) {
+                                    $GLOBAL->dbGlobalSetRowHeight($height);
+                                    print "INFO-PAR-LEF : 006 : setting $siteName the row heignt to $height\n";
+                                                                        }
+                                                          }
+                                       next;  
+                                                                    }# if both width and height of core is set
+                                            }# if END of site statement 
+                                                 }# if between the site info construct
+
+#---------------------------------#
+# Technology LAYERS Section       #
+#---------------------------------#
+if($stop_reading_tech_lef == 0 && $start_reading_tech_layers == 1){
+   if(/LAYER $layerName/ ... /END $layerName/){
+                     if($_ =~ /^\s*LAYER/){ ($layerName)=(split(/\s+/,$_))[1];
+                        $TECHNOLOGY_PHYSICAL{$layerName} = \%{$layerName}; 
+                        if(!exists $PTDB{$layerName}) {
+                        my $layerNum = keys %PTDB;
+                        $PTDB{$layerName} = TechDB::new();
+                        $PTDB{$layerName}->dbTechSetLayerName($layerName);
+                        $PTDB{$layerName}->dbTechSetLayerNum($layerNum);
+                        my $spacing_table_start = 0;
+                        my $spacing_table_line = "";
+# changed by Rajeev, pick up color of the layer from Aditya's HashCol has for colors
+#                        my $layerColor = $COLOR_TABLE{$layerNum};
+                        my $layerColor = $HashCol{$layerNum};
+                        $PTDB{$layerName}->dbTechSetLayerColor($layerColor);
+                        }
+                     }
+                     elsif(($_ =~ /TYPE/)||($_ =~ /type/)){ ($layerType)=(split(/\s+/,$_))[2];
+                                       ${$layerName}{'TYPE'} = $layerType;
+                        $PTDB{$layerName}->dbTechSetLayerType($layerType);
+                                     }
+                     elsif($_ =~ /^\s*\bDIRECTION\b\s+/){ ($layerDirection)=(split(/\s+/,$_))[2];
+                                       ${$layerName}{'DIRECTION'} = $layerDirection;
+                        $PTDB{$layerName}->dbTechSetLayerDir($layerDirection);
+                                          }
+                     elsif($_ =~ /^\s*\bWIDTH\b\s+/){
+                           my @w =split(/\s+/, $_);
+                           my $length = @w;
+                           if($length == 4){
+                           $layerWidth = $w[2];
+                           ${$layerName}{WIDTH} = $layerWidth;
+                           $PTDB{$layerName}->dbTechSetLayerWidth($layerWidth);
+                           } else{}
+                                         }
+                     elsif($_ =~ /\bPITCH/) { ($layerPitch)=(split(/\s+/,$_))[2];
+                                       ${$layerName}{'PITCH'} = $layerPitch;
+                        $PTDB{$layerName}->dbTechSetLayerPitch($layerPitch);
+                                          }
+                     elsif($_ =~ /\bAREA/) { ($layerArea)=(split(/\s+/,$_))[2];
+                                       ${$layerName}{'AREA'} = $layerArea;
+                        $PTDB{$layerName}->dbTechSetLayerArea($layerArea);
+                                          }
+                     elsif($_ =~ /\bOFFSET/) { ($layerOffset)=(split(/\s+/,$_))[2];
+                        $PTDB{$layerName}->dbTechSetLayerOffset($layerOffset);
+                     }
+                     elsif($_ =~ /\bSPACINGTABLE\b/){
+                       $spacing_table_start = 1;
+                       $spacing_table_line = "";
+                     }
+                     elsif($_ =~ /\bSPACING\b/) { ($layerSpacing)=(split(/\s+/,$_))[2];
+                       if ( exists ${$layerName}{'SPACING'} ) { 
+                         print "INFO-PAR-LEF : 007 : proton does not use Variable spacing rule .. ignoring data\n";
+                       }else {
+                         ${$layerName}{'SPACING'} = $layerSpacing;
+                         $PTDB{$layerName}->dbTechSetLayerSpacing($layerSpacing);
+                       }
+                     }
+                     elsif($_ =~ /\bRESISTANCE/){ ($layerResistance)=(split(/\s+/,$_))[3];
+                                       ${$layerName}{'RESISTANCE'} = $layerResistance;
+                                        $PTDB{$layerName}->dbTechSetLayerResistance($layerResistance);
+                                          }
+                     elsif($_ =~ /\bCAPACITANCE/){ ($layerCapacitance)=(split(/\s+/,$_))[3];
+                                       ${$layerName}{'CAPACITANCE'} = $layerCapacitance;
+                                          }
+                     elsif($_ =~ /\bEDGECAPACITANCE/){ ($layerEdgeCapacitance)=(split(/\s+/,$_))[2];
+                                       ${$layerName}{'EDGECAPACITANCE'} = $layerEdgeCapacitance;
+                     }                     
+                     if($spacing_table_start == 1 && $_ =~ /\;\s*$/){
+                       $spacing_table_line = $spacing_table_line.":".$_;  
+                       print "$spacing_table_line\n";
+                       my (@spacing_table_data) = (split(/:/,$spacing_table_line));
+                       shift @spacing_table_data;
+                       shift @spacing_table_data;
+                       foreach my $data (@spacing_table_data){
+                         $data =~ s/\s+//;
+                         if($data =~ /PARALLELRUNLENGTH/){ $data =~ s/PARALLELRUNLENGTH\s+//;
+                           $PTDB{$layerName}->dbTechSetLayerParallelRunLengthForSpacingTable($data);
+                         }elsif($data =~ /WIDTH/){$data =~ s/WIDTH\s+//;
+                           $PTDB{$layerName}->dbTechSetLayerWidthForSpacingTable($data);
+                         }
+                       }#foreach
+                       $spacing_table_start = 0;
+                     }else {
+                       $spacing_table_line = $spacing_table_line.":".$_;  
+                     }
+                     }# if between the same layer
+                               }# if reading only the technology portion
+#------------------------------VIA SECTION--------------------------------------#
+if($stop_reading_tech_lef == 0 && $start_reading_via_section == 1){
+#   if(/VIA $viaName/.../END $viaName/){
+                 if($_ =~ m/VIA /){
+                   ($viaName)= (split(/\s+/,$_))[1];
+                   my $viaNum = keys %VDB;
+                   $VDB{$viaName} = ViaDB::new();
+                   $VDB{$viaName}->dbViaSetViaName($viaName);
+                   $VDB{$viaName}->dbViaSetViaNum($viaNum);
+                   }elsif($_ =~/RESISTANCE/){
+                       $p = (split(/\s+/,$_))[2];
+                       $VDB{$viaName}->dbSetViaResistance($p);
+                   }elsif($_ =~ /LAYER/){
+                       if($newViaLayerInstance){
+                       $VDB{$viaName}->dbSetViaLayer($newViaLayerInstance);
+                   }
+                        my($layer) = (split(/\s+/,$_))[2];
+                           $newViaLayerInstance = ViaLayerDB::new();
+                        if($newViaLayerInstance){
+                           $newViaLayerInstance->dbSetViaLayerName($layer);
+                   }
+                   }elsif($_ =~ /^\s*\bRECT\b\s+/){
+                         ($rect[0],$rect[1],$rect[2],$rect[3]) = (split(/\s+/,$_))[2,3,4,5];
+                         if($newViaLayerInstance){
+                            $newViaLayerInstance->dbSetViaRect($rect[0],$rect[1],$rect[2],$rect[3]);                      
+                   }                  
+                   }
+                   # }#if VIA /END
+                 }#if
+#-----------------------------------------VIARULE SECTION---------------------#
+  if($stop_reading_tech_lef == 0 && $start_reading_viarule_section == 1){
+                   if($_ =~ m/VIARULE /){
+                      ($viaruleName) = (split(/\s+/,$_))[1];
+                      my $viaruleNum = keys %VRDB; 
+                      $VRDB{$viaruleName}=ViaRuleDB::new();
+                      $VRDB{$viaruleName}->dbSetViaRuleName($viaruleName);
+                      $VRDB{$viaruleName}->dbSetViaRuleNum($viaruleNum);  
+                      }elsif($_ =~ /LAYER/){
+                      if($newLayerInstance) {
+                        $VRDB{$viaruleName}->dbSetViaRuleLayer($newLayerInstance);
+                      }
+                     my ($layerName) = (split(/\s+/,$_))[2];
+                      $newLayerInstance = ViaRuleLayerDB::new();
+                      if($newLayerInstance) {
+                         $newLayerInstance->dbSetViaRuleLayerName($layerName);
+                      }
+                      }elsif($_ =~ /\bCUTSIZE\b/){
+                         ($cutsize[0],$cutsize[1])= (split(/\s+/,$_))[2,3];
+                         if($newLayerInstance){
+                           $newLayerInstance->dbSetViaRulecutsize($cutsize[0],$cutsize[1]);
+                         }
+                      }elsif($_ =~ /\bCUTSPACING\b/){
+                            ($cutsp[0],$cutsp[1]) = (split(/\s+/,$_))[2,3];
+                          if($newLayerInstance){
+                             $newLayerInstance->dbSetViaRulecutspacing($cutsp[0],$cutsp[1]);
+                          }
+                      }elsif($_ =~ /\bOVERHANG\b/){
+                         ($overhang)= (split(/\s+/,$_))[2];
+                        if($newLayerInstance){
+                           $newLayerInstance->dbSetViaOverhang($overhang);
+                        }
+                      }elsif($_ =~ /\bMETALOVERHANG\b/){
+                         ($metal_over_hang) = (split(/\s+/,$_))[2];
+                        if($newLayerInstance){
+                           $newLayerInstance->dbSetViaMetalOverhang($metal_over_hang);
+                        } 
+                      }elsif($_ =~ /\bENCLOSURE\b/){
+                          ($e[0],$e[1]) = (split(/\s+/,$_))[2,3];
+                        if($newLayerInstance){
+                           $newLayerInstance->dbSetViaRuleEnclosure($e[0],$e[1]);
+                        }
+                      }elsif($_ =~ /\bWIDTH\b/){
+                         ($width[0],$width[1]) = (split(/\s+/,$_))[2,4];
+                        if($newLayerInstance){
+                           $newLayerInstance->dbSetViaRuleWidth($width[0],$width[1]);
+                        }
+                      }elsif($_ =~ /DIRECTION/){
+                         ($dir) = (split(/\s+/,$_))[2];
+                        if($newLayerInstance) {
+                           $newLayerInstance->dbSetViaDir($dir);
+                        }  
+                      }elsif($_ =~ /SPACING/){
+                         ($sp[0],$sp[1])= (split(/\s+/,$_))[2,4];
+                        if($newLayerInstance) {
+                           $newLayerInstance->dbSetViaSpacing($sp[0],$sp[1]);
+                        }
+                      }elsif($_ =~ /RECT/){
+                         ($rect[0],$rect[1],$rect[2],$rect[3]) = (split(/\s+/,$_))[2,3,4,5];
+                        if($newLayerInstance) {
+                           $newLayerInstance->dbSetViaRuleRect($rect[0],$rect[1],$rect[2],$rect[3]);
+                        }
+                      }
+  }#if
+}# while
+    
+close(READ_TECH);
+}# read the technology file
+
+
+
+
+#######################################################################################
+####              read the macro from lef file                                     ####
+#######################################################################################
+         #####  INITIALLIZE #####
+@MACROS = (\%MACROS_ALREADY, \%MACROS_NEWADDED);
+my $macroName = "";
+
+if($READ_TECHNOLOGY eq "dont" || $READ_TECHNOLOGY eq "also"){
+print "INFO-PAR-LEF : 008 : reading macro section from $INPUT_LEF\n";
+open(READ_LEF, "$INPUT_LEF");
+while(<READ_LEF>){
+chomp;
+$_ =~ s/^\s+//;
+if($_ =~ /^\s*#/ ) { next ; }
+if($_ =~ /\#/ ) { $_ =~ s/\s+#.*$//; }
+$_ =~ s/\s+/ /g;
+$_=~ s/\s+$//g;
+
+
+if($_ =~ /^MACRO/){ ($macroName)=(split(/\s+/, $_))[1];
+                                  $polygon_start = 0;
+                                  $polygon_data = "";
+                                  $obs_polygon_start = 0;
+                                  $obs_polygon_data = "";
+                                  %{$macroName}=(); 
+#                                  $MACROS_ALREADY{$macroName} = \%{$macroName};
+                                  if($file_list == 1){
+                                    if(exists $PLDB{$macroName}){
+                                      my $duplicate_file = $INPUT_LEF."_temp_slvr_$macro_cnt";
+                                      $PLDB{$macroName}->dbMdbAddFileNameList($duplicate_file);
+                                      $macro_cnt++;
+                                    }else {
+                                      $PLDB{$macroName} = MacroDB::new();
+                                      $PLDB{$macroName}->dbMdbAddFileNameList($INPUT_LEF);
+                                    }
+                                  }else{
+                                      $PLDB{$macroName} = MacroDB::new();
+                                  }
+ ####    saving the attributes of the macro 
+                                  $macroAttr = $macroName."Attr";
+                                  %{$macroAttr} = ();
+                                  $MACROS_ATTRIBUTE_ALREADY{$macroName} = \%{$macroAttr};
+                                  $Name = "SHIVA_PIN_IS_UNSET";
+                  }# if MACRO
+if(/^MACRO $macroName/ ... /^END $macroName\s*$/){
+          if($_ =~ /^SIZE/){($width,$height)=(split(/\s+/, $_))[1,3]; 
+                             # $area = $width*$height;
+                             # ${$macroName}{'area'} = $area;
+                             $PLDB{$macroName}->dbMdbSetSize($width,$height);
+
+                             $MACROS_ATTRIBUTE_ALREADY{$macroName}{size} = "$width $height";
+                             #print "$MACROS_ATTRIBUTE_ALREADY{$macroName}{size}\n";
+                           }# if SIZE
+          if($_ =~ /^CLASS/){
+                             my @c =split(/\s+/, $_);
+                             my $len = @c;
+                             if ($len == 3) { $class=$c[1]; }
+                             elsif ($len == 4) { $class=$c[1]." ".$c[2]; }
+                             else {print "WARN-PAR-LEF : 009 : CLASS statement for $macroName has syntax problem\n";}
+                             $PLDB{$macroName}->dbMdbSetClass($class);
+                           }# if CLASS
+  #-----------------------------------------------------------Added by Mansi-----------------------------------------------#
+          if($_ =~/\bFOREIGN\b/i){my ($foreignCellName,$foreign_x,$foreign_y,$foreign_orient) = (split(/\s+/,$_))[1,2,3,4];
+                                  $PLDB{$macroName}->dbMdbSetForeignCoords($foreign_x,$foreign_y);
+                                 }
+  #------------------------------------------------------------------------------------------------------------------------#
+          if($_ =~ /^ORIGIN/){
+                             ($xOrig,$yOrig)=(split(/\s+/, $_))[1,2];
+                             $PLDB{$macroName}->dbMdbSetOrigin($xOrig,$yOrig);
+                           }# if ORIGIN
+          if($_ =~ /^PIN/){($Name)=(split(/\s+/,$_))[1];
+                            $polygon_start = 0;
+                            $polygon_data = "";
+            if($Name =~ /\[[0-9]+\]/){  $pinName = $Name; $Name =~ s/\]//;
+                                        ($busName,$busBit)=(split(/\[/,$Name))[0,1];
+                                        print "DBG-PAR-LEF : 010 : busName $busName busbit $busBit \n" if ($DEBUG == 1);
+                                        $pinHash = $macroName.$pinName; 
+                                        ${$macroName}{$pinName} = \%{$pinHash};
+                                        ${$pinHash}{'type'} = "BUS";
+                                        ${$pinHash}{'footprint'} = $busName;
+                                        ${$pinHash}{'bit'} = $busBit;
+                               $PLDB{$macroName}->dbMdbAddPin($pinName);
+                               $PLDB{$macroName}->dbMdbAddPinBusBaseName($pinName,$busName);
+                               $PLDB{$macroName}->dbMdbAddPinBusBit($pinName,$busBit);
+                               $PLDB{$macroName}->dbMdbAddPinBusWidth($pinName,1);
+                                        } # if BUS
+                                   else { $pinName = $Name; $pinHash = $macroName.$pinName;
+                                        ${$macroName}{$pinName} = \%{$pinHash};
+                                        ${$pinHash}{'type'} = "SINGLE";
+                               $PLDB{$macroName}->dbMdbAddPin($pinName);
+                               $PLDB{$macroName}->dbMdbAddPinBusWidth($pinName,0);
+                                        } # if NOT BUS
+                          }# if PIN
+          if($Name eq "SHIVA_PIN_IS_UNSET"){ } else {
+          if(${$macroName}{$pinName}{'type'} eq "SINGLE"){
+                                          my $newpinName =~ s/\\\[/\\\\\[/;
+                                          my $newpinName =~ s/\\\]/\\\\\]/; 
+          if(/^PIN $newpinName/ ... /^END $newpinName/){
+              if($_ =~ /DIRECTION/){ $dir = get_direction($_); 
+                                   ${$macroName.$pinName}{'direction'} = $dir; 
+                                   $PLDB{$macroName}->dbMdbSetPinDir($pinName,$dir);
+                                   $direction = $PLDB{$macroName}->dbMdbGetPinDir($pinName);
+                                   } # if DIRECTION
+#------------------------------------------------------------------------------------------------------------------------#
+          if($_ =~ /\bANTENNAPARTIALMETALAREA\b/i){$PLDB{$macroName}->dbMdbSetAntennaFound($pinName,1);}
+          if($_ =~ /\bANTENNAPARTIALMETALSIDEAREA\b/i){$PLDB{$macroName}->dbMdbSetAntennaFound($pinName,1);}
+          if($_ =~ /\bANTENNAPARTIALCUTAREA\b/i){$PLDB{$macroName}->dbMdbSetAntennaFound($pinName,1);}
+          if($_ =~ /\bANTENNADIFFAREA\b/i){$PLDB{$macroName}->dbMdbSetAntennaFound($pinName,1);}
+          if($_ =~ /\bANTENNAMODEL\b/i){$PLDB{$macroName}->dbMdbSetAntennaFound($pinName,1);}
+          if($_ =~ /\bANTENNAGATEAREA\b/i){$PLDB{$macroName}->dbMdbSetAntennaFound($pinName,1);}
+          if($_ =~ /\bANTENNAMAXAREACAR\b/i){$PLDB{$macroName}->dbMdbSetAntennaFound($pinName,1);}
+          if($_ =~ /\bANTENNAMAXSIDEAREACAR\b/i){$PLDB{$macroName}->dbMdbSetAntennaFound($pinName,1);}
+          if($_ =~ /\bANTENNAMAXCUTCAR\b/i){$PLDB{$macroName}->dbMdbSetAntennaFound($pinName,1);}
+#------------------------------------------------------------------------------------------------------------------------#
+              if($_ =~ /\bUSE\b/){ $useType = (split(/\s+/, $_))[1];
+                                   ${$macroName.$pinName}{'use'} = $useType;
+                                   if ( $useType eq "SIGNAL"  || $useType eq "signal") { $PLDB{$macroName}->dbMdbSetPinIsSignal($pinName); }
+                                   elsif ( $useType eq "POWER" || $useType eq "power" ) { $PLDB{$macroName}->dbMdbSetPinIsPower($pinName); }
+                                   elsif ( $useType eq "GROUND" || $useType eq "ground" ) { $PLDB{$macroName}->dbMdbSetPinIsGround($pinName); }
+                                   elsif ( $useType eq "CLOCK" || $useType eq "clock" ) { $PLDB{$macroName}->dbMdbSetPinIsClock($pinName);
+#####################################################################################################################################################
+# if any macro has a pin that is attributed at USE CLOCK then the macro can be safely assumed in PLDB as function "flop"
+#commenting following two lines, because cell function will be set in read_lib command only
+											#$PLDB{$macroName}->dbMdbSetFunction("flop");
+											#$PLDB{$macroName}->dbMdbSetType("seq");
+                                                                                        }
+                                   
+#####################################################################################################################################################
+                                   else { print "WARN-PAR-LEF : 011 : unknown use for macro $macroName\n"; }
+                             }# if USE
+              if($_ =~ /END $pinName/){ 
+                 $polygon_start = 0;
+                 $polygon_data = "";
+                          if(exists ${$macroName.$pinName}{'use'} ) { } 
+                          else {${$macroName.$pinName}{'use'} = "SIGNAL"; } # setting default USE in LEF
+                                      } # if no USE till end of PIN
+              if($_ =~ /^LAYER / ) { ($layerName)=(split(/\s+/,$_))[1]; 
+                 $polygon_start = 0;
+                 $polygon_data = "";
+                $macroNamePinNameLayerName =  $macroName.$pinName.$layerName;
+                if ( exists ${$macroName}{$pinName}{$macroNamePinNameLayerName} ) {
+                                                  } else {
+                @{$macroNamePinNameLayerName} = ();
+                ${$macroName}{$pinName}{$layerName} =\@{$macroNamePinNameLayerName};
+                                                  }
+                                   }#Layer
+              if( $_ =~ /^RECT/) {
+                  $polygon_start = 0;
+                  $polygon_data = "";
+               push(@{$macroNamePinNameLayerName}, $_);
+               my $data = "$layerName $_";
+               $PLDB{$macroName}->dbMdbAddPinRect($pinName,$data);
+                                 }#Rect
+#--------------------------------------Added by Mansi------------------------------------------------------#
+              if($_ =~ /^POLYGON/){
+                 $polygon_start = 1;
+                 $polygon_data = "";
+              }
+              if($polygon_start == 1){
+                 if($_ =~ /\s*;\s*/){
+                 push(@{$macroNamePinNameLayerName}, $_);
+                 $polygon_data = $polygon_data." ".$_;
+                 $polygon_data =~ s/;//;
+                 my $polygon_layer_with_data = "$layerName $polygon_data";
+                 $PLDB{$macroName}->dbMdbAddPinPolygon($pinName,$polygon_layer_with_data); 
+                 }else{
+                 $polygon_data = $polygon_data." ".$_;
+                 push(@{$macroNamePinNameLayerName}, $_);
+                 }
+                 #push(@{$macroNamePinNameLayerName}, $_);
+                 #my $polygon_data = "$layerName $_";
+              }#if Polygon
+#----------------------------------------------------------------------------------------------------------#
+                                                 }#if between the PIN
+                                                     } # if SINGLE
+          if(${$macroName}{$pinName}{'type'} eq "BUS") {
+          if(/^PIN $busName\[$busBit\]/ ... /^END $busName\[$busBit\]/){
+#             if($_ =~ /DIRECTION/){ ${$macroName.$pinName}{'direction'} = get_direction($_); } # if DIRECTION
+              if($_ =~ /DIRECTION/){ $dir = get_direction($_); 
+                                   ${$macroName.$pinName}{'direction'} = $dir; 
+                                   $PLDB{$macroName}->dbMdbSetPinDir($pinName,$dir);
+                                   } # if DIRECTION
+#------------------------------------------------------------------------------------------------------------------------#
+          if($_ =~ /\bANTENNAPARTIALMETALAREA\b/i){$PLDB{$macroName}->dbMdbSetAntennaFound($pinName,1);}
+          if($_ =~ /\bANTENNAPARTIALMETALSIDEAREA\b/i){$PLDB{$macroName}->dbMdbSetAntennaFound($pinName,1);}
+          if($_ =~ /\bANTENNAPARTIALCUTAREA\b/i){$PLDB{$macroName}->dbMdbSetAntennaFound($pinName,1);}
+          if($_ =~ /\bANTENNADIFFAREA\b/i){$PLDB{$macroName}->dbMdbSetAntennaFound($pinName,1);}
+          if($_ =~ /\bANTENNAMODEL\b/i){$PLDB{$macroName}->dbMdbSetAntennaFound($pinName,1);}
+          if($_ =~ /\bANTENNAGATEAREA\b/i){$PLDB{$macroName}->dbMdbSetAntennaFound($pinName,1);}
+          if($_ =~ /\bANTENNAMAXAREACAR\b/){$PLDB{$macroName}->dbMdbSetAntennaFound($pinName,1);}
+          if($_ =~ /\bANTENNAMAXSIDEAREACAR\b/){$PLDB{$macroName}->dbMdbSetAntennaFound($pinName,1);}
+          if($_ =~ /\bANTENNAMAXCUTCAR\b/){$PLDB{$macroName}->dbMdbSetAntennaFound($pinName,1);}
+#------------------------------------------------------------------------------------------------------------------------#
+              if($_ =~ /USE/){ $useType = (split(/\s+/, $_))[1];
+                                   ${$macroName.$busName.$busBit}{'use'} = $useType;
+                                   if ( $useType eq "SIGNAL"  || $useType eq "signal") { $PLDB{$macroName}->dbMdbSetPinIsSignal($pinName); }
+                                   elsif ( $useType eq "POWER" || $useType eq "power" ) { $PLDB{$macroName}->dbMdbSetPinIsPower($pinName); }
+                                   elsif ( $useType eq "GROUND" || $useType eq "ground" ) { $PLDB{$macroName}->dbMdbSetPinIsGround($pinName); }
+                                   elsif ( $useType eq "CLOCK" || $useType eq "clock" ) { $PLDB{$macroName}->dbMdbSetPinIsClock($pinName); }
+                                   else { print "WARN-PAR-LEF : 012 : unknown use for macro $macroName\n"; }
+                               }# if USE
+              if($_ =~ /END $pinName /){
+                 $polygon_start = 0;
+                 $polygon_data = "";
+                        if(exists ${$macroName.$pinName}{'use'}){}
+                        else {${$macroName.$pinName}{'use'} = "BUS";}
+                              } 
+              if($_ =~ /^LAYER /) { ($layerName) = (split(/\s+/,$_))[1];
+                 $polygon_start = 0;
+                 $polygon_data = "";
+                 $macroNamePinNameLayerName = $macroName.$pinName.$layerName;
+                 if ( exists ${$macroName}{$pinName}{$macroNamePinNameLayerName}){
+                                               } else {
+                @{$macroNamePinNameLayerName} = ();
+                ${$macroName}{$pinName}{$layerName} = \@{$macroNamePinNameLayerName};
+                                            }
+                                          }
+              if( $_ =~ /^RECT/){
+                 $polygon_start = 0;
+                 $polygon_data = "";
+                 push(@{$macroNamePinNameLayerName},$_);
+                 my $data = "$layerName $_ ";
+                 $PLDB{$macroName}->dbMdbAddPinRect($pinName,$data);
+                           }
+#----------------------------------------------------Added by Mansi-----------------------------------------------------------------------#
+              if($_ =~ /^POLYGON/){
+                 $polygon_start = 1;
+                 $polygon_data = "";
+              }
+              if($polygon_start == 1){
+                 if($_ =~ /\s*;\s*/){
+                 push(@{$macroNamePinNameLayerName}, $_);
+                 $polygon_data = $polygon_data." ".$_;
+                 $polygon_data =~ s/;//;
+                 my $polygon_layer_with_data = "$layerName $polygon_data";
+                 $PLDB{$macroName}->dbMdbAddPinPolygon($pinName,$polygon_layer_with_data); 
+                 }else{
+                 $polygon_data = $polygon_data." ".$_;
+                 push(@{$macroNamePinNameLayerName}, $_);
+                 }
+                 #push(@{$macroNamePinNameLayerName}, $_);
+                 #my $polygon_data = "$layerName $_";
+              }#if Polygon
+#------------------------------------------------------------------------------------------------------------------------------------------#
+                                                 }#if between the PIN
+                                                     } # if BUS
+                                                 }   # if the PIN statement is reached
+                                               
+              if(/\bOBS\b/ ... /\bEND\b/ ) {
+                     #$obs_polygon_start = 0;
+                     #$obs_polygon_data = "";
+                   if ( $_ =~ /^LAYER\b/ ) { $obsLayer = (split(/\s+/,$_))[1]; 
+                                             $obs_polygon_start = 0;
+                                             $obs_polygon_data = "";}
+                   elsif ($_ =~ /^RECT\b/ ) { $obsLine = "$obsLayer $_";
+                                              $PLDB{$macroName}->dbMdbAddObs($obsLine);
+                                              $obs_polygon_start = 0;
+                                              $obs_polygon_data = "";
+                                            }
+#----------------------------------------------------Added by Mansi-----------------------------------------------------------------------#
+                   elsif($_ =~ /^POLYGON/) { 
+                     $obs_polygon_start = 1;
+                     $obs_polygon_data = "";
+                   }
+                   if($obs_polygon_start == 1){
+                      if($_ =~ /\s*;\s*/){
+                      $obs_polygon_data = $obs_polygon_data." ".$_;
+                      $obs_polygon_data =~ s/;//;
+                      my $polygon_obs_layer_with_data = "$obsLayer $obs_polygon_data";
+                      $PLDB{$macroName}->dbMdbAddObsPolygon($polygon_obs_layer_with_data); 
+                      }else{
+                      $obs_polygon_data = $obs_polygon_data." ".$_;
+                      }
+                      #my $obs_data = "$obsLayer $_";
+                      #$PLDB{$macroName}->dbMdbAddObsPolygon($obs_data);
+                   }#elsif obs
+#-----------------------------------------------------------------------------------------------------------------------------------------#
+                                         }#if between the OBS statements
+                                            } # between macro limits
+}# while
+my $no_macro = 0; 
+foreach $macro (keys%MACROS_ATTRIBUTE_ALREADY){
+$no_macro++;}
+print "INFO-PAR-LEF : 013 : TOTAL NO. OF MACROS --> $no_macro\n";
+print "INFO-PAR-LEF : 014 : finshed reading macro section\n";
+} # read MACRO also
+
+if($READ_TECHNOLOGY eq "only" || $READ_TECHNOLOGY eq "also"){
+print "INFO-PAR-LEF : 015 : Summary of technology section...\n";
+#format STDOUT_TOP =
+#LayerName   LayerNo   Direction       Type           Pitch     Width    Spacing
+#--------    --------  --------       --------       --------  --------  --------
+#.
+#format STDOUT =
+#@<<<<<<<<   @##       @<<<<<<<<<<    @<<<<<<<<<<   @##.###   @##.###   @##.###
+#$layerName,  $Ln1,        $LD,         $LT,       $LP,       $LW,     $LS
+#.
+#write;
+#&print_pldb_summary;}
+#-------------------------------------------------------------------------#
+#open(TEST,">eqator.log") or die "Can't open up myfile: $!\n";
+format TEST_TOP =
+LayerName   LayerNo   Direction       Type           Pitch     Width    Spacing
+--------    --------  --------       --------       --------  --------  --------
+.
+
+format TEST =
+@<<<<<<<<   @##       @<<<<<<<<<<    @<<<<<<<<<<   @##.###   @##.###   @##.###
+$layerName,  $Ln1,        $LD,         $LT,       $LP,       $LW,     $LS
+.
+&print_pldb_summary;}
+#-------------------------------------------------------------------------#
+}
+else { 
+print "WARN-PAR-LEF : 016 : $INPUT_LEF FILE DOES NOT EXISTS OR IS NOT READABLE.\n";
+return;
+}
+
+             }# if 2 arguments or more
+
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "Command read_lef took:",timestr($td),"\n";
+
+}# sub read_lef
+
+sub get_direction {
+
+    $direction = (split(/\s+/,$_[0]))[1];
+ if($direction eq "INPUT" || $direction eq "input") { $direction = "input";}
+ if($direction eq "OUTPUT" || $direction eq "output") { $direction = "output";}
+ if($direction eq "INOUT" || $direction eq "inout") { $direction = "inout";}
+
+return($direction);
+
+}# sub get_direction
+
+#------------------------------------------------------------------------------------------------------------------#
+
+sub write_lef {
+
+use Benchmark;
+my $t0 = new Benchmark;
+
+my $noOfArguments = @_;
+
+if( $noOfArguments < 2 || $_[0] eq '-h') { print "Usage : write_lef -output <output_lef> \n";
+                           print "                  -tech   < only / also / dont > \n";
+                           print "                  -macros <list of macros> \n";
+                           print "                          note : by defaul all macros written \n";
+                         }
+else { # if correct no. of inputs
+
+# setting the default variable values
+
+my $OUTPUT_TECH_LEF = "dont";
+my @OUTPUT_MACRO_LIST = ();
+
+
+my $noOfMacrosInDatabase = keys %PLDB;
+print "INFO-PAR-LEF : 001 : There are $noOfMacrosInDatabase cells in the system\n";
+
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-output"){$OUTPUT_LEF = $_[$i+1];}
+if($_[$i] eq "-tech"){$OUTPUT_TECH_LEF = $_[$i+1];}
+if($_[$i] eq "-macros"){my $line = $_[$i+1]; $line =~ s/\{//; $line =~ s/\}//; @OUTPUT_MACRO_LIST = split(/\,/,$line); }
+                                         } # for
+
+open ( WRITE_LEF, ">$OUTPUT_LEF");
+print WRITE_LEF "#LEF written from proton verion-$TOOL_VERSION\n";
+if ( $OUTPUT_TECH_LEF eq "only" || $OUTPUT_TECH_LEF eq "also") {
+   &write_tech_lef_call("WRITE_LEF");
+   foreach $layerName ( keys %TECHNOLOGY_PHYSICAL ) {
+           print "INFO-PAR-LEF : 002 : $layerName\n";
+           foreach $tag ( keys %{$TECHNOLOGY_PHYSICAL{$layerName}} ){
+           print "INFO-PAR-LEF : 003 : $tag $TECHNOLOGY_PHYSICAL{$layerName}{$tag}\n";
+                                                                   }#foreach
+                                                    }# foreach
+&via_write("WRITE_LEF");
+&via_rule_write("WRITE_LEF");
+                                }
+
+print "INFO-PAR-LEF : 004 : $OUTPUT_MACRO_LIST , $OUTPUT_TECH_LEF\n";
+if ( @OUTPUT_MACRO_LIST == 0 ) {
+foreach $macroName ( keys %PLDB ) {
+#print "processing $macroName\n";
+my $cellContainsObs = 0;
+#---------------------------------------------------------------------------------------------------------------------#             
+            print WRITE_LEF "MACRO $macroName\n";
+            my @size = $PLDB{$macroName}->dbMdbGetSize;
+            my $class = $PLDB{$macroName}->dbMdbGetClass;
+            print WRITE_LEF "CLASS $class \;\n";
+            if ( $class eq 'BLOCK' ) { 
+            print WRITE_LEF "SYMMETRY X Y R90 \;\n";
+                                     }
+            elsif ( $class eq 'PAD' ) { 
+            print WRITE_LEF "SYMMETRY X Y R90 \;\n";
+                                     }
+            else {
+            print WRITE_LEF "SYMMETRY X Y \;\n";
+                                              }
+            print WRITE_LEF "ORIGIN 0 0 \;\n";
+            print WRITE_LEF "SIZE $size[0] BY $size[1] \;\n";
+            print WRITE_LEF "\n";
+            my @pins = $PLDB{$macroName}->dbMdbGetPins;
+            foreach $pinName (@pins) {
+                         print "DBG-PAR-LEF : 005 : $pinName\n" if ($DEBUG);
+                         my $dir = $PLDB{$macroName}->dbMdbGetPinDir($pinName);
+                            if ( $dir == 0 ) { $pinDir = 'INPUT'; } 
+                         elsif ( $dir == 1 ) { $pinDir = 'OUTPUT'; }
+                         elsif ( $dir == 2 ) { $pinDir = 'INOUT'; }
+                         my $type = $PLDB{$macroName}->dbMdbGetPinType($pinName);
+                            if ( $type == 0 ) { $pinType = 'SIGNAL'; }
+                         elsif ( $type == 1 ) { $pinType = 'POWER'; }
+                         elsif ( $type == 2 ) { $pinType = 'GROUND'; }
+                         elsif ( $type == 3 ) { $pinType = 'CLOCK'; }
+                         print WRITE_LEF "\tPIN $pinName\n";
+                         print WRITE_LEF "\t   DIRECTION $pinDir \;\n";
+                         print WRITE_LEF "\t   USE $pinType \;\n";
+                         #---------------------------- RECTS ------------------------#
+                         my @rects = $PLDB{$macroName}->dbMdbGetPinRect($pinName);
+                            foreach $l ( @rects ) {
+                                     $l =~ s/ RECT//;
+                                     my @L  = split(/\s+/,$l);
+                                     print WRITE_LEF "\t   PORT\n";
+                                     print WRITE_LEF "\t    LAYER $L[0] \;\n";
+                                     print WRITE_LEF "\t     RECT $L[1] $L[2] $L[3] $L[4] \;\n";
+                                     print WRITE_LEF "\t   END\n";
+                                                  }
+#----------------------------------------------Added by Mansi---------------------------------------------------------------#
+                         my @polygon = $PLDB{$macroName}->dbMdbGetPinPolygon($pinName);
+                            foreach  $plgn ( @polygon){
+                                     $plgn =~ s/POLYGON//;
+                                     my @pl_data = split(/\s+/,$plgn);
+                                     my $pl_layer_Name = shift (@pl_data);
+                                my $poly_co_ords = join" ",@pl_data;
+                                print WRITE_LEF "\t   PORT\n";
+                                print WRITE_LEF "\t   LAYER $pl_layer_Name \;\n";
+                                print WRITE_LEF "\t    POLYGON $poly_co_ords \;\n";
+                                print WRITE_LEF "\t   END\n"; 
+                            }#foreach
+#----------------------------------------------------------------------------------------------------------------------------#
+                         print WRITE_LEF "\tEND $pinName\n";
+                         print WRITE_LEF "\n";
+                                     }#foreach pins within MACRO
+#-------------------------------------------------OBS RECT-------------------------------------------------------------------#
+                        my @obs_rect = $PLDB{$macroName}->dbMdbGetObs; 
+                        my @obs_poly = $PLDB{$macroName}->dbMdbGetObsPolygon;
+                        print WRITE_LEF "\tOBS\n"if(@obs_rect != "" || @obs_poly != "");
+                        foreach my $obs_r (@obs_rect){
+                          $obs_r =~ s/RECT//;
+                          my @L  = split(/\s+/,$obs_r);
+                          print WRITE_LEF "\t    LAYER $L[0] \;\n";
+                          print WRITE_LEF "\t     RECT $L[1] $L[2] $L[3] $L[4] \;\n";
+                        }#foreach obs rect
+#-------------------------------------------------OBS POLYGON-------------------------------------------------------------------#
+                        foreach my $obs_ply (@obs_poly){
+                          $obs_ply =~ s/POLYGON//;
+                          my @pl_data = split(/\s+/,$obs_ply);
+                          my $pl_layer_Name = shift (@pl_data);
+                          my $poly_co_ords = join" ",@pl_data;
+                          print WRITE_LEF "\t   LAYER $pl_layer_Name \;\n";
+                          print WRITE_LEF "\t    POLYGON $poly_co_ords \;\n";
+                        }#foreach
+                        print WRITE_LEF "\t   END\n"if(@obs_rect != "" || @obs_poly != ""); 
+            print WRITE_LEF "END $macroName\n";
+            print WRITE_LEF "\n";
+                                            }#foreach
+                               }# if all macros to be written
+
+elsif ( @OUTPUT_MACRO_LIST > 0 ) {
+foreach $macroName ( @OUTPUT_MACRO_LIST) {
+print "INFO-PAR-LEF : 006 : processing $macroName\n";
+my $cellContainsObs = 0;
+            if ( exists $PLDB{$macroName} ) {
+            print WRITE_LEF "MACRO $macroName\n";
+            my @size = $PLDB{$macroName}->dbMdbGetSize;
+            my $class = $PLDB{$macroName}->dbMdbGetClass;
+            print WRITE_LEF "CLASS $class \;\n";
+            if ( $class eq 'BLOCK' ) { 
+            print WRITE_LEF "SYMMETRY X Y R90 \;\n";
+                                     } else {
+            print WRITE_LEF "SYMMETRY X Y \;\n";
+                                              }
+            print WRITE_LEF "ORIGIN 0 0 \;\n";
+            print WRITE_LEF "SIZE $size[0] BY $size[1] \;\n";
+            print WRITE_LEF "\n";
+            my @pins = $PLDB{$macroName}->dbMdbGetPins;
+            foreach $pinName (@pins) {
+                         print "DBG-PAR-LEF : 007 : $pinName\n" if ($DEBUG);
+                         my $dir = $PLDB{$macroName}->dbMdbGetPinDir($pinName);
+                            if ( $dir == 0 ) { $pinDir = 'INPUT'; } 
+                         elsif ( $dir == 1 ) { $pinDir = 'OUTPUT'; }
+                         elsif ( $dir == 2 ) { $pinDir = 'INOUT'; }
+                         my $type = $PLDB{$macroName}->dbMdbGetPinType($pinName);
+                            if ( $type == 0 ) { $pinType = 'SIGNAL'; }
+                         elsif ( $type == 1 ) { $pinType = 'POWER'; }
+                         elsif ( $type == 2 ) { $pinType = 'GROUND'; }
+                         elsif ( $type == 3 ) { $pinType = 'CLOCK'; }
+                         print WRITE_LEF "\tPIN $pinName\n";
+                         print WRITE_LEF "\t   DIRECTION $pinDir \;\n";
+                         print WRITE_LEF "\t   USE $pinType \;\n";
+                         #---------------------------- RECTS ------------------------#
+                         my @rects = $PLDB{$macroName}->dbMdbGetPinRect($pinName);
+                            foreach $l ( @rects ) {
+                                     $l =~ s/ RECT//;
+                                     my @L  = split(/\s+/,$l);
+                                     print WRITE_LEF "\t   PORT\n";
+                                     print WRITE_LEF "\t    LAYER $L[0] \;\n";
+                                     print WRITE_LEF "\t     RECT $L[1] $L[2] $L[3] $L[4] \;\n";
+                                     print WRITE_LEF "\t   END\n";
+                                                  }
+#------------------------------------------------Added by Mansi-----------------------------------------------------------------------------------------#
+                         my @polygon = $PLDB{$macroName}->dbMdbGetPinPolygon($pinName);
+                             foreach  $plgn ( @polygon){
+                                      $plgn =~ s/POLYGON//;
+                                      my @pl_data = split(/\s+/,$plgn);
+                                      my $pl_layer_Name = shift (@pl_data);
+                                my $poly_co_ords = join" ",@pl_data;
+                                print WRITE_LEF "\t   PORT\n";
+                                print WRITE_LEF "\t   LAYER $pl_layer_Name \;\n";
+                                print WRITE_LEF "\t    POLYGON $poly_co_ords \;\n";
+                                print WRITE_LEF "\t   END\n"; 
+                             }#foreach
+#-------------------------------------------------------------------------------------------------------------------------------------------------------#
+                         print WRITE_LEF "\tEND $pinName\n";
+                         print WRITE_LEF "\n";
+                                     }#foreach pins within MACRO
+#-------------------------------------------------OBS RECT-------------------------------------------------------------------#
+                        my @obs_rect = $PLDB{$macroName}->dbMdbGetObs; 
+                        my @obs_poly = $PLDB{$macroName}->dbMdbGetObsPolygon;
+                        print WRITE_LEF "\tOBS\n"if(@obs_rect != "" || @obs_poly != "");
+                        foreach my $obs_r (@obs_rect){
+                          $obs_r =~ s/RECT//;
+                          my @L  = split(/\s+/,$obs_r);
+                          print WRITE_LEF "\t    LAYER $L[0] \;\n";
+                          print WRITE_LEF "\t     RECT $L[1] $L[2] $L[3] $L[4] \;\n";
+                        }#foreach obs rect
+#-------------------------------------------------OBS POLYGON-------------------------------------------------------------------#
+                        foreach my $obs_ply (@obs_poly){
+                          $obs_ply =~ s/POLYGON//;
+                          my @pl_data = split(/\s+/,$obs_ply);
+                          my $pl_layer_Name = shift (@pl_data);
+                          my $poly_co_ords = join" ",@pl_data;
+                          print WRITE_LEF "\t   LAYER $pl_layer_Name \;\n";
+                          print WRITE_LEF "\t    POLYGON $poly_co_ords \;\n";
+                        }#foreach
+                        print WRITE_LEF "\t   END\n"if(@obs_rect != "" || @obs_poly != ""); 
+            print WRITE_LEF "END $macroName\n";
+            print WRITE_LEF "\n";
+                                    }#if macro exists in the PLDB database
+           else { print "WARN-PAR-LEF : 008 : the macro $macroName does not exist in the database\n"; }
+                                            }#foreach
+                               }# if all macros to be written
+            print WRITE_LEF "END LIBRARY\n";
+close(WRITE_LEF);
+                         }# if correct no. of inputs
+
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "Command write_lef took:",timestr($td),"\n";
+
+}#sub write_lef
+
+sub hash_Value_AscendingNum {
+   $bd{$a} <=> $bd{$b};
+}
+
+
+sub print_pldb_summary {
+my $numLayers = keys %PTDB;
+%bd = ();
+foreach my $layerName ( keys %PTDB ) {
+
+ $LN = $PTDB{$layerName}->dbTechGetLayerName;
+ $Ln = $PTDB{$layerName}->dbTechGetLayerNum;
+      $bd{$LN}=$Ln;
+                          }#foreach
+  my @key = sort hash_Value_AscendingNum (keys(%bd));
+#print " layer name are @key\n";
+    my $n = @key;
+         for (my $i = 0; $i<$n; $i++){
+                $layerName = $key[$i];
+                $Ln1 = $PTDB{$layerName}->dbTechGetLayerNum;
+                $LP = $PTDB{$layerName}->dbTechGetLayerPitch;
+                $LT = $PTDB{$layerName}->dbTechGetLayerType;
+                $LW = $PTDB{$layerName}->dbTechGetLayerWidth;
+                $LS = $PTDB{$layerName}->dbTechGetLayerSpacing;
+                $LD = $PTDB{$layerName}->dbTechGetLayerDir;
+if ($NOLOG == 0) {
+ write TEST;}
+ select (STDOUT);
+ $~ = "TEST";
+ $^ = "TEST_TOP"; 
+ write();
+
+                            }#for                      
+                        
+                              
+}# sub print_pldb_summary
+#------------------------------------------------------------------VIA WRITE--------------------------------------------------#
+
+sub hash_Value_AscendingNumber {
+    $vd{$a} <=> $vd{$b};
+}#sub hash_Value_AscendingNumber
+
+
+sub via_write {
+  my $filehandle = $_[0];
+  foreach my $viaName(keys %VDB){
+    $VN = $VDB{$viaName}->dbViaGetViaName;
+    $Vn = $VDB{$viaName}->dbViaGetViaNum;
+    $vd{$VN} = $Vn;
+  }#foreach
+  my @v = sort hash_Value_AscendingNumber(keys(%vd));
+  my $n = @v;
+  for (my $i = 0; $i<$n; $i++) {
+    my $viaName = $v[$i];
+    print $filehandle "VIA $viaName DEFAULT \n";
+    my $r = $VDB{$viaName}->dbGetViaResistance;
+    print $filehandle "\t RESISTANCE $r ;\n";
+    my @vialayer = $VDB{$viaName}->dbGetViaLayer;
+    foreach $vial(@vialayer){
+      my $layer = $vial->dbGetViaLayerName;
+      print $filehandle "\t LAYER $layer ;\n"; 
+      @rect = $vial->dbGetViaRect;
+      foreach $r (@rect) {
+        print $filehandle "\t\t RECT @$r ; \n"; 
+      }#foreach rect
+    }#foreach   
+    print $filehandle "END $viaName\n";
+    print $filehandle "\n"; 
+  }#for     
+}#sub via_write
+
+#-----------------------------------------------------------------------VIARULE WRITE----------------------------------------------#
+sub hash_AscendingNumber {
+    $vdr{$a} <=> $vdr{$b};
+}#sub hash_AscendingNumber
+
+
+sub via_rule_write {
+  my $filehandle = $_[0];
+  foreach my $viaruleName(keys%VRDB){  
+    my $VRN = $VRDB{$viaruleName}->dbGetViaRuleName;
+    my $VRn = $VRDB{$viaruleName}->dbGetViaRuleNum;
+    $vdr{$VRN}=$VRn;
+  }#foreach
+  my @vr = sort hash_AscendingNumber(keys(%vdr));
+  my $n = @vr;
+  for (my $i =0;$i<$n; $i++){
+    $viaruleName = $vr[$i];
+    print $filehandle "VIARULE $viaruleName GENERATE\n";
+    my @via_rule_layer = $VRDB{$viaruleName}->dbGetViaRuleLayer;
+    foreach $layerInstance (@via_rule_layer){
+      my $layerName = $layerInstance->dbGetViaRuleLayerName;
+      print $filehandle "\t LAYER $layerName ;\n";
+      my $layerDirection = $layerInstance->dbGetViaDir;
+      if($layerDirection){
+        print $filehandle "\t\tDIRECTION $layerDirection ;\n";
+      }
+      my @cutsize = $layerInstance->dbGetViaRulecutsize;
+      if(@cutsize){
+        print $filehandle "\t\tCUTSIZE $cutsize[0] $cutsize[1] ;\n";
+      }
+      my @cutsp = $layerInstance->dbGetViaRulecutspacing;
+      if(@cutsp){
+        print $filehandle "\t\tCUTSPACING $cutsp[0] $cutsp[1] ;\n";
+      }
+      my @enclosure = $layerInstance->dbGetViaRuleEnclosure;
+      if(@enclosure){
+        print $filehandle "\t\tENCLSOURE $enclosure[0] $enclosure[1] ;\n";
+      }
+      my $over_hang = $layerInstance->dbGetViaOverhang;
+      if($over_hang){
+        print $filehandle "\t\tOVERHANG $over_hang ;\n";
+      }
+      my $metalover_hang = $layerInstance->dbGetViaMetalOverhang;
+      if($metalover_hang){
+        print $filehandle "\t\tMETALOVERHANG $metalover_hang ;\n";
+      }
+      my @w = $layerInstance->dbGetViaRuleWidth;
+      if(@w){
+        print $filehandle "\t\tWIDTH $w[0] To $w[1] ;\n";
+      }
+      my @layerRect = $layerInstance->dbGetViaRuleRect;
+      foreach $lr(@layerRect){
+        if(@layerRect){
+          print $filehandle "\t\tRECT @$lr ;\n";
+        }
+      }
+      my @layerSpacing = $layerInstance->dbGetViaSpacing;
+      if (@layerSpacing){
+        print $filehandle "\t\tSPACING $layerSpacing[0] BY $layerSpacing[1] ;\n";
+      }
+    }#foreach
+    print $filehandle "END $viaruleName\n";
+    print $filehandle "\n";    
+  }#for viarulelayer
+}#sub via_rule_write  
+
+############################################################################
+####################### Combining Macro Lef ################################
+############################################################################
+sub combine_lef {
+my $noOfArg = @_;
+my ($list_str, $path, $outFile) = ("", "", ""); 
+my @lef_list = ();
+if($noOfArg < 4 || $_[0] eq "-h" || $_[0] eq "-help"){
+   print "Usage: combine_lef -lef <lef1,lef2,.....>\n";
+   print "                   -path <path having list of lef files>\n";
+   print "                   -out  <output lef file>\n";
+}else{
+   for(my $i=0; $i<$noOfArg; $i++){
+       if($_[$i] eq "-lef") {$list_str = $_[$i+1];}
+       if($_[$i] eq "-path"){ $path = $_[$i+1];}
+       if($_[$i] eq "-out") {$outFile = $_[$i+1];}
+   }
+   
+   #$list_str =~ s/\{(.*)\}/\1/;
+   my @list1 = split(/\,/, $list_str);
+   push(@lef_list, @list1);
+
+   if($path ne "" && -e $path ){
+      my @list2 = `find $path -name \\*\\.lef`;
+      $_ =~ s/\s*$//g for @list2;
+      push(@lef_list, @list2);
+   }
+   open (WRITE_LEF, ">$outFile");
+   foreach my $lef (@lef_list){
+     if(-e $lef){
+        open(READ_LEF, "$lef");
+        while(<READ_LEF>){
+          chomp();
+          print WRITE_LEF "$_\n";
+        }#while reading
+        close READ_LEF;
+        print WRITE_LEF "\n";
+     }else {
+        print "WARN: $lef does not exist\n";
+     }#if file does not exist
+   }#foreach lef 
+   close WRITE_LEF;
+}
+}#sub combine_lef
+
+############################################################################
+sub write_lef_for_router {
+use Benchmark;
+my $t0 = new Benchmark;
+
+my $noOfArguments = @_;
+
+if( $noOfArguments < 2 || $_[0] eq '-h') { print "Usage : write_lef_for_router -output <output_lef> \n";
+                           print "                  -tech   < only / also / dont > \n";
+                           print "                          note : by defaul all macros written \n";
+                         }
+else {
+my $OUTPUT_TECH_LEF = "dont";
+
+my $noOfMacrosInDatabase = keys %PLDB;
+print "INFO-PAR-LEF : 001 : There are $noOfMacrosInDatabase cells in the system\n";
+for(my $i = 0; $i < $noOfArguments; $i++){
+  if($_[$i] eq "-output"){$OUTPUT_LEF = $_[$i+1];}
+  if($_[$i] eq "-tech"){$OUTPUT_TECH_LEF = $_[$i+1];}
+} # for
+open ( WRITE_LEF_FOR_ROUTER, ">$OUTPUT_LEF");
+if ( $OUTPUT_TECH_LEF eq "only" || $OUTPUT_TECH_LEF eq "also") {
+  foreach $layerName ( keys %TECHNOLOGY_PHYSICAL ) {
+    print "INFO-PAR-LEF : 002 : $layerName\n";
+    foreach $tag ( keys %{$TECHNOLOGY_PHYSICAL{$layerName}} ){
+      print "INFO-PAR-LEF : 003 : $tag $TECHNOLOGY_PHYSICAL{$layerName}{$tag}\n";
+    }#foreach
+  }# foreach
+#------------------------------------------layer write---------------------------------------#
+my %layer_hash = ();
+  foreach my $layerName (keys %PTDB){
+    my $LN = $PTDB{$layerName}->dbTechGetLayerName;
+    my $Ln = $PTDB{$layerName}->dbTechGetLayerNum;
+    $layer_hash{$Ln} = $LN;
+  }#foreach
+  foreach my $layerNum (sort {$a <=> $b} keys %layer_hash){
+    my $layerName = $layer_hash{$layerNum};
+    my ($width,$spacing,$dir,$type) = &write_layer($layerName);
+    my $max_pitch_for_horizontal = "";
+    my $max_pitch_for_vertical = "";
+    if($dir eq "HORIZONTAL"){
+      $max_pitch_for_horizontal = &get_pitch_for_track($dir);
+    }elsif($dir eq "VERTICAL"){
+      $max_pitch_for_vertical = &get_pitch_for_track($dir);
+    }
+    my $new_metal_layer = &metal_layer_name_changed($layerName); 
+    if($layerName =~ /(METAL|M)/){
+      print WRITE_LEF_FOR_ROUTER "LAYER $new_metal_layer\n"if($type eq "ROUTING");
+    }else{
+      print WRITE_LEF_FOR_ROUTER "LAYER $layerName\n";
+    }
+    print WRITE_LEF_FOR_ROUTER "\tTYPE $type \;\n"if($type ne "UND"); 
+    print WRITE_LEF_FOR_ROUTER "\tWIDTH $width \;\n"if($width != 0);
+    print WRITE_LEF_FOR_ROUTER "\tSPACING $spacing \;\n"if($spacing != 0);
+    print WRITE_LEF_FOR_ROUTER "\tPITCH $max_pitch_for_horizontal \;\n"if($dir eq "HORIZONTAL");
+    print WRITE_LEF_FOR_ROUTER "\tPITCH $max_pitch_for_vertical \;\n"if($dir eq "VERTICAL");
+    print WRITE_LEF_FOR_ROUTER "\tDIRECTION $dir \;\n"if($dir ne "UND");
+    if($layerName =~ /(METAL|M)/){
+      print WRITE_LEF_FOR_ROUTER "END $new_metal_layer\n" if($type eq "ROUTING");
+    }else {
+      print WRITE_LEF_FOR_ROUTER "END $layerName\n";
+    }
+    print WRITE_LEF_FOR_ROUTER "\n";
+  }#foreach
+#---------------------------------------------------------------------------------------------------------------------------------#
+#---------------------------------------via write-------------------------------------------#
+my %via_hash = ();
+  foreach my $viaName(keys %VDB){
+    my $VN = $VDB{$viaName}->dbViaGetViaName;
+    my $Vn = $VDB{$viaName}->dbViaGetViaNum;
+    $via_hash{$Vn} = $VN;
+  }#foreach
+  foreach my $viaNum (sort{$a <=> $b} keys %via_hash){
+    my $viaName = $via_hash{$viaNum};
+    print WRITE_LEF_FOR_ROUTER "VIA $viaName DEFAULT\n";
+    my @vialayer = $VDB{$viaName}->dbGetViaLayer;
+    foreach my $vial(@vialayer){
+      my $layer = $vial->dbGetViaLayerName;
+      my $type = $PTDB{$layer}->dbTechGetLayerType;
+      my $new_metal_layer = &metal_layer_name_changed($layer); 
+      if($layer =~ /(METAL|M)/){
+        print WRITE_LEF_FOR_ROUTER "\t LAYER $new_metal_layer \;\n"if($type eq "ROUTING"); 
+      }else {
+        print WRITE_LEF_FOR_ROUTER "\t LAYER $layer \;\n"; 
+      }
+      my @rect = $vial->dbGetViaRect;
+      foreach my $r (@rect) {
+        print WRITE_LEF_FOR_ROUTER "\t\t RECT @$r \; \n"; 
+      }#foreach rect
+    }#foreach   
+    print WRITE_LEF_FOR_ROUTER "END $viaName\n";
+    print WRITE_LEF_FOR_ROUTER"\n"; 
+  }#for
+#---------------------------------------------------------------------------------------------------------------------------------#
+}#if
+print "INFO-PAR-LEF : 004 : $OUTPUT_MACRO_LIST , $OUTPUT_TECH_LEF\n";
+  foreach $macroName ( keys %PLDB ) {
+    print WRITE_LEF_FOR_ROUTER "MACRO $macroName\n";
+    my @size = $PLDB{$macroName}->dbMdbGetSize;
+    my @origin = $PLDB{$macroName}->dbMdbGetOrigin;
+    print WRITE_LEF_FOR_ROUTER "ORIGIN $origin[0] $origin[1] \;\n";
+    print WRITE_LEF_FOR_ROUTER "SIZE $size[0] BY $size[1] \;\n";
+    print WRITE_LEF_FOR_ROUTER "\n";
+    my @pins = $PLDB{$macroName}->dbMdbGetPins;
+    foreach $pinName (@pins) {
+        my $dir = $PLDB{$macroName}->dbMdbGetPinDir($pinName);
+        if ( $dir == 0 ) { $pinDir = 'INPUT'; } 
+        elsif ( $dir == 1 ) { $pinDir = 'OUTPUT'; }
+        elsif ( $dir == 2 ) { $pinDir = 'INOUT'; }
+        my $type = $PLDB{$macroName}->dbMdbGetPinType($pinName);
+        if ( $type == 0 ) { $pinType = 'SIGNAL'; }
+        elsif ( $type == 1 ) { $pinType = 'POWER'; }
+        elsif ( $type == 2 ) { $pinType = 'GROUND'; }
+        elsif ( $type == 3 ) { $pinType = 'CLOCK'; }
+        print WRITE_LEF_FOR_ROUTER "\tPIN $pinName\n";
+        print WRITE_LEF_FOR_ROUTER "\t   DIRECTION $pinDir \;\n";
+        print WRITE_LEF_FOR_ROUTER "\t   USE $pinType \;\n";
+        #---------------------------- RECTS ------------------------#
+        my @rects = $PLDB{$macroName}->dbMdbGetPinRect($pinName);
+        foreach $l ( @rects ) {
+          $l =~ s/ RECT//;
+          my @L  = split(/\s+/,$l);
+          my $layer = $L[0];
+          my $type = $PTDB{$L[0]}->dbTechGetLayerType;
+          my $new_metal_layer = &metal_layer_name_changed($layer);
+          print WRITE_LEF_FOR_ROUTER "\t   PORT\n";
+          if($layer =~ /(METAL|M)/){
+            print WRITE_LEF_FOR_ROUTER "\t    LAYER $new_metal_layer \;\n"if($type eq "ROUTING");
+          }else {
+            print WRITE_LEF_FOR_ROUTER "\t    LAYER $L[0] \;\n";
+          }
+          print WRITE_LEF_FOR_ROUTER "\t     RECT $L[1] $L[2] $L[3] $L[4] \;\n";
+          print WRITE_LEF_FOR_ROUTER "\t   END\n";
+        }#foreach rect
+#----------------------------------------------Added by Mansi---------------------------------------------------------------#
+        my @polygon = $PLDB{$macroName}->dbMdbGetPinPolygon($pinName);
+        foreach  my $plgn ( @polygon){
+          $plgn =~ s/POLYGON//;
+          my @pl_data = split(/\s+/,$plgn);
+          my $pl_layer_Name = shift (@pl_data);
+          my $type = $PTDB{$pl_layer_Name}->dbTechGetLayerType;
+          my $new_metal_layer = &metal_layer_name_changed($pl_layer_Name);
+        
+          #############################################################
+          #my $poly_co_ords = join" ",@pl_data;
+          my @rectangles = &break_polygon_into_rects(\@pl_data);
+          print WRITE_LEF_FOR_ROUTER "\t   PORT\n";
+          if($pl_layer_Name =~ /(METAL|M)/){
+            print WRITE_LEF_FOR_ROUTER "\t   LAYER $new_metal_layer \;\n"if($type eq "ROUTING");
+          }else {
+            print WRITE_LEF_FOR_ROUTER "\t   LAYER $pl_layer_Name \;\n";
+          }
+          foreach my $rect(@rectangles){
+            print WRITE_LEF_FOR_ROUTER "\t    RECT @$rect \;\n";
+          }
+          print WRITE_LEF_FOR_ROUTER "\t   END\n"; 
+        }#foreach plgn
+#----------------------------------------------------------------------------------------------------------------------------#
+        print WRITE_LEF_FOR_ROUTER "\tEND $pinName\n";
+        print WRITE_LEF_FOR_ROUTER "\n";
+      }#foreach pins within MACRO
+#-------------------------------------write obs------------------------------------------------------------------------------#
+      print WRITE_LEF_FOR_ROUTER "\tOBS \n"; 
+      my @obs = $PLDB{$macroName}->dbMdbGetObs;
+      foreach my $obs (@obs){
+        $obs =~ s/ RECT//;
+        my @obs_data = (split(/\s+/,$obs));
+        my $obs_layer = shift (@obs_data);
+        my $type = $PTDB{$obs_layer}->dbTechGetLayerType;
+        my $new_metal_layer = &metal_layer_name_changed($obs_layer);
+        my $co_ords = join " ",@obs_data;
+        if($obs_layer =~ /(METAL|M)/){
+          print WRITE_LEF_FOR_ROUTER "\t LAYER $new_metal_layer \;\n"if($type eq "ROUTING");
+        }else {
+          print WRITE_LEF_FOR_ROUTER "\t LAYER $obs_layer \;\n";
+        }
+        print WRITE_LEF_FOR_ROUTER "\t RECT $co_ords\n";  
+      }#foreach obs 
+#-------------------------------------------write obs polygon----------------------------------------------------------------------#
+      my @obs_polygon = $PLDB{$macroName}->dbMdbGetObsPolygon; 
+      foreach my $obs_plgn (@obs_polygon){
+        $obs_plgn =~ s/POLYGON//;
+        my @obs_pl_data = split(/\s+/,$obs_plgn);
+        my $obs_pl_layer_Name = shift(@obs_pl_data);
+        my $type = $PTDB{$obs_pl_layer_Name}->dbTechGetLayerType;
+        my $new_metal_layer = &metal_layer_name_changed($obs_pl_layer_Name);
+        #########################################################################
+        my @obs_rectangles =  &break_polygon_into_rects(\@obs_pl_data);
+        if($obs_pl_layer_Name =~ /(METAL|M)/){
+            print WRITE_LEF_FOR_ROUTER "\t   LAYER $new_metal_layer \;\n"if($type eq "ROUTING");
+        }else {
+            print WRITE_LEF_FOR_ROUTER "\t   LAYER $obs_pl_layer_Name \;\n";
+        }
+        foreach my $rect(@obs_rectangles){
+          print WRITE_LEF_FOR_ROUTER "\t    RECT @$rect \;\n";
+        }
+      }#foreach
+      print WRITE_LEF_FOR_ROUTER "\tEND\n";
+#----------------------------------------------------------------------------------------------------------------------------#
+      print WRITE_LEF_FOR_ROUTER "END $macroName\n";
+      print WRITE_LEF_FOR_ROUTER "\n";
+    }#foreach
+    print WRITE_LEF_FOR_ROUTER "END LIBRARY\n";
+close (WRITE_LEF_FOR_ROUTER); 
+}#else
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "Command write_lef took:",timestr($td),"\n";
+}#sub write_lef_for_router
+#-------------------------------------------------------------------------------------------------------------------------------------#
+sub write_layer {
+my $layer = $_[0];
+if(exists $PTDB{$layer}){
+  my $width = $PTDB{$layer}->dbTechGetLayerWidth;
+  my $spacing = $PTDB{$layer}->dbTechGetLayerSpacing; 
+  my $dir = $PTDB{$layer}->dbTechGetLayerDir;
+  my $type = $PTDB{$layer}->dbTechGetLayerType;
+  return($width,$spacing,$dir,$type);
+}#if exists
+}#sub write_layer 
+
+#######################################################################################################
+############################# Code to break polygon in rectangles #####################################
+#######################################################################################################
+sub break_polygon_into_rects{
+ my @x_y_combined_list = @{$_[0]};
+ my @rect_list = @{$_[1]} ;
+ 
+ my @rect_point_list = () ;
+ my $number_of_points = @x_y_combined_list/2;
+ my %point_vs_xval = ();
+ my %point_vs_yval = ();
+ my %xval_vs_pointlist = ();
+ my %yval_vs_pointlist = ();
+ my $curr_x_val ;
+ my $curr_y_val ;
+ 
+ if($number_of_points == 5){
+    my @xx = ();
+    my @yy = ();
+    for(my $i=0; $i<$number_of_points; $i++){
+        push(@xx, $x_y_combined_list[$i*2]);
+        push(@yy, $x_y_combined_list[$i*2+1]);
+    }
+    @xx = sort{$a<=>$b} @xx;
+    @yy = sort{$a<=>$b} @yy;
+    push(@rect_list, [$xx[0], $yy[0], $xx[-1], $yy[-1]]);
+    return @rect_list;
+ }
+ 
+ for(my $i=0;$i<$number_of_points;$i++) {
+   $curr_x_val = $x_y_combined_list[$i*2];
+   $curr_y_val = $x_y_combined_list[$i*2+1];
+   if(exists $point_vs_xval{$curr_x_val.",".$curr_y_val}){next;}
+   $point_vs_xval{$curr_x_val.",".$curr_y_val} = $curr_x_val;
+   $point_vs_yval{$curr_x_val.",".$curr_y_val} = $curr_y_val;
+   if(exists $xval_vs_pointlist{$curr_x_val}){
+      push(@{$xval_vs_pointlist{$curr_x_val}}, $curr_x_val.",".$curr_y_val);
+   }else{
+      $xval_vs_pointlist{$curr_x_val} = [$curr_x_val.",".$curr_y_val];
+   }
+   if(exists $yval_vs_pointlist{$curr_y_val}){
+      push(@{$yval_vs_pointlist{$curr_y_val}}, $curr_x_val.",".$curr_y_val);
+   }else{
+      $yval_vs_pointlist{$curr_y_val} = [$curr_x_val.",".$curr_y_val];
+   }
+ }
+ 
+ my @sorted_point_vs_yval = sort {$a<=>$b} (keys(%yval_vs_pointlist));
+ my $min_y_val = $sorted_point_vs_yval[0];
+ my @array_points_with_min_y_val = @{$yval_vs_pointlist{$min_y_val}};
+ 
+ my @sorted_array_points_by_x_val_with_min_y_val = sort{(split(/\,/,$a))[0]<=> (split(/\,/,$b))[0]} @array_points_with_min_y_val; #sorting array using x value of point
+ 
+ my $first_minx_point_for_min_y_val = $sorted_array_points_by_x_val_with_min_y_val[0];
+ my $first_minx = (split(/\,/, $first_minx_point_for_min_y_val))[0];
+ my @array_points_with_first_min_x_val = @{$xval_vs_pointlist{$first_minx}};
+ my @sorted_array_points_by_y_val_with_first_min_x_val =  sort{(split(/\,/,$a))[1]<=> (split(/\,/,$b))[1]} @array_points_with_first_min_x_val; #sorting array using y value of point
+ my $second_miny_point_for_first_minx = $sorted_array_points_by_y_val_with_first_min_x_val[1];
+ my $second_miny_for_first_minx = (split(/\,/, $second_miny_point_for_first_minx))[1];
+ 
+ my $second_minx_point_for_min_y_val = $sorted_array_points_by_x_val_with_min_y_val[1];
+ my $second_minx = (split(/\,/, $second_minx_point_for_min_y_val))[0];
+ my @array_points_with_second_min_x_val = @{$xval_vs_pointlist{$second_minx}};
+ my @sorted_array_points_by_y_val_with_second_min_x_val =  sort{(split(/\,/,$a))[1]<=> (split(/\,/,$b))[1]} @array_points_with_second_min_x_val; #sorting array using y value of point
+ my $second_miny_point_for_second_minx = $sorted_array_points_by_y_val_with_second_min_x_val[1];
+ my $second_miny_for_second_minx = (split(/\,/, $second_miny_point_for_second_minx))[1];
+ 
+ if($second_miny_for_first_minx <= $second_miny_for_second_minx){
+    my $insideY = check_point_inside_rect(\@sorted_point_vs_yval,\%yval_vs_pointlist,[$first_minx, $min_y_val, $second_minx, $second_miny_for_first_minx]);
+    if($insideY ne ""){
+       push(@rect_point_list, $first_minx, $min_y_val, $second_minx, $insideY);
+    }else{
+       push(@rect_point_list, $first_minx, $min_y_val, $second_minx, $second_miny_for_first_minx);
+    }
+ }elsif($second_miny_for_first_minx > $second_miny_for_second_minx){
+    my $insideY = check_point_inside_rect(\@sorted_point_vs_yval,\%yval_vs_pointlist,[$first_minx, $min_y_val, $second_minx, $second_miny_for_second_minx]);
+    if($insideY ne ""){
+       push(@rect_point_list, $first_minx, $min_y_val, $second_minx, $insideY);
+    }else{
+       push(@rect_point_list, $first_minx, $min_y_val, $second_minx, $second_miny_for_second_minx);
+    }
+ }
+ 
+ push(@rect_list, [@rect_point_list]);
+ 
+ my @new_x_y_combined_list = ();
+ my ($point_1_found, $point_2_found, $point_3_found, $point_4_found) = (0,0,0,0);
+ for(my $i=0; $i<$#x_y_combined_list; $i=$i+2){
+     if($x_y_combined_list[$i] == $rect_point_list[0] && $x_y_combined_list[$i+1] == $rect_point_list[1]){
+        $point_1_found = 1;
+     }elsif($x_y_combined_list[$i] == $rect_point_list[2] && $x_y_combined_list[$i+1] == $rect_point_list[1]){
+        $point_2_found = 1;
+     }elsif($x_y_combined_list[$i] == $rect_point_list[2] && $x_y_combined_list[$i+1] == $rect_point_list[3]){
+        $point_3_found = 1;
+     }elsif($x_y_combined_list[$i] == $rect_point_list[0] && $x_y_combined_list[$i+1] == $rect_point_list[3]){
+        $point_4_found = 1;
+     }else{
+        push(@new_x_y_combined_list,$x_y_combined_list[$i],$x_y_combined_list[$i+1]);  
+     }
+ }
+ if($point_1_found == 0){
+    push(@new_x_y_combined_list,$rect_point_list[0],$rect_point_list[1]);  
+ }
+ if($point_2_found == 0 ){
+    push(@new_x_y_combined_list,$rect_point_list[2],$rect_point_list[1]);  
+ }
+ if($point_3_found == 0 ){
+    push(@new_x_y_combined_list,$rect_point_list[2],$rect_point_list[3]);  
+ }
+ if($point_4_found == 0 ){
+    push(@new_x_y_combined_list,$rect_point_list[0],$rect_point_list[3]);  
+ }
+ 
+ if(@new_x_y_combined_list > 7){ return &break_polygon_into_rects(\@new_x_y_combined_list, \@rect_list);}
+ return @rect_list;
+}#sub break_polygon_into_rects
+
+
+sub check_point_inside_rect{
+ my @sorted_point_vs_yval = @{$_[0]};
+ my %yval_vs_pointlist = %{$_[1]};
+ my @bbox = @{$_[2]};
+ #print "@sorted_point_vs_yval | @bbox\n"; 
+ my @inside_minY = ();
+ foreach my $y_val (@sorted_point_vs_yval){
+   if($y_val > $bbox[1] && $y_val < $bbox[3]){
+      my @array_points = @{$yval_vs_pointlist{$y_val}};
+      #print "$y_val => @array_points\n";
+      foreach my $p (@array_points){
+        my $x_val = (split(/\,/,$p))[0];
+        if($x_val > $bbox[0] && $x_val < $bbox[2]){
+           push(@inside_minY, $y_val);
+        }
+      }
+   }
+ }
+ @inside_minY = sort{$a<=>$b} @inside_minY;
+ return $inside_minY[0];
+}#sub check_point_inside_rect
+
+
+sub test_lef {
+ use Tk;
+ use Tk::WorldCanvas;
+ my $mw = MainWindow->new();
+ my $frame1= $mw->Frame()->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+ my $frame2= $mw->Frame()->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+ my $c = $frame1->Scrolled('WorldCanvas', -scrollbars=>'se',-bg =>'black',-width=>300, -height=>300)->pack(qw/-side left -expand 1 -fill both/);
+ $c->Subwidget('xscrollbar')->configure(-takefocus => 0);
+ $c->Subwidget('yscrollbar')->configure(-takefocus => 0);
+ $c->configure(-confine => 1);
+ my $c1 = $frame2->Scrolled('WorldCanvas', -scrollbars=>'se',-bg =>'black',-width=>300, -height=>300)->pack(qw/-side left -expand 1 -fill both/);
+ $c1->Subwidget('xscrollbar')->configure(-takefocus => 0);
+ $c1->Subwidget('yscrollbar')->configure(-takefocus => 0);
+ $c1->configure(-confine => 1);
+
+ #my @coords = (2,1, 3,1, 3,6, 4,6, 4,2, 7,2, 7,3, 6,3, 6,5, 7,5, 7,6, 6,6, 6,8, 5,8, 5,10, 3,10, 3,8, 1,8, 1,6, 2,6, 2,4, 1,4, 1,3, 2,3, 2,1);
+ #my @coords = (9.69, 4.32, 8.77, 4.32, 8.77, 7.395, 8.31, 7.395, 8.31, 4.945, 6.69, 4.945, 6.69, 7.395, 6.23, 7.395, 6.23, 4.595, 8.31, 4.595, 8.31, 2.8, 6.23, 2.8, 6.23, 1.46, 6.69, 1.46, 6.69, 2.45, 8.31, 2.45, 8.31, 1.46, 8.77, 1.46, 8.77, 2.92, 9.69, 2.92, 9.69, 4.32);
+ #my @coords = (8.77, 7.395, 8.31, 7.395, 8.31, 4.945, 6.69, 4.945, 6.69, 7.395, 6.23 ,7.395, 6.23, 4.595, 8.77 ,4.595);
+ #my @coords = (10.77, 5.86, 5.87, 5.86, 5.87, 4.99, 1.31, 4.99, 1.31, 3.2, 2.155, 3.2, 2.155, 4.59, 6.27, 4.59, 6.27, 5.51, 10.42, 5.51, 10.42, 3.12, 10.77, 3.12, 10.77, 5.86);
+ my @coords = (7.04, 1.115, 6.57, 1.115, 6.57, 3.005, 3.455, 3.005, 3.455, 1.47, 2.005, 1.47, 2.005, 7.215, 3.405, 7.215, 3.405, 7.565, 1.655, 7.565, 1.655, 2.585, 1.555, 2.585, 1.555, 1.09, 3.805, 1.09, 3.805, 2.655, 6.22, 2.655, 6.22, 0.765, 7.04, 0.765, 7.04, 1.115);
+
+ $c->createPolygon(@coords, -outline,"red");
+ for(my $i=0; $i<$#coords; $i=$i+2){
+     #$c->createText($coords[$i],$coords[$i+1], -text, $coords[$i]." , ". $coords[$i+1], -fill,"yellow");
+ }
+
+ my @new_coords = &break_polygon_into_rects(\@coords);
+ foreach my $rect(@new_coords){
+     #print "rect @$rect\n";
+    $c1->createRectangle(@$rect, -outline,"red");
+ }
+
+ $c->viewAll;
+ $c1->viewAll;
+ MainLoop;
+}#sub test_lef
+
+########################################################################################
+##################### Writing tech lef from Macro lef ##################################
+########################################################################################
+sub write_tech_lef{
+ use Benchmark;
+ my $t0 = new Benchmark;
+ my $numOfArg = @_;
+ if($numOfArg < 2 || $_[0] eq "-h" || $_[0] eq "-help"){
+    print "Usage write_tech_lef  -layer_dir_map <layer direction map file>\n";
+    print "                      -cell {cell1,cell2....} (default value is all cells in library\n";
+ }else{
+    my @macroList = ();
+    my $layer_map;
+    for(my $xx=0; $xx<$numOfArg; $xx++){
+        if($_[$xx] eq "-layer_dir_map"){$layer_map = $_[$xx+1];}
+        if($_[$xx] eq "-cell"){
+           my $cell_str = $_[$xx+1];
+           $cell_str =~ s/\{//;
+           $cell_str =~ s/\}//;
+           @macroList = split(/\,/,$cell_str);
+        }
+    }
+    my %LAYER_VS_DIR = ();
+    my %LAYER_VS_WIDTH = ();
+    my %LAYER_VS_SPACING = ();
+
+    open(READ, $layer_map);
+    while(<READ>){
+       my ($layer, $dir) = split(/\s+/,$_);
+       $LAYER_VS_DIR{$layer} = $dir;
+    }
+    close READ;
+
+    if(@macroList < 1){@macroList = keys %PLDB;}
+    foreach $macroName ( @macroList ) {
+      my %LAYER_RECT_BBOX = ();
+      my @pins = $PLDB{$macroName}->dbMdbGetPins;
+      foreach $pinName (@pins) {
+        my @rects = $PLDB{$macroName}->dbMdbGetPinRect($pinName);
+        foreach $rectLine ( @rects ) {
+           my($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$rectLine))[0,2,3,4,5];   
+           if(!exists $LAYER_RECT_BBOX{$layer}){
+              $LAYER_RECT_BBOX{$layer} = [$llx.",".$lly.",".$urx.",".$ury];
+           }else{
+              push(@{$LAYER_RECT_BBOX{$layer}}, $llx.",".$lly.",".$urx.",".$ury);
+           }
+        }#foreach rect
+        my @polygon = $PLDB{$macroName}->dbMdbGetPinPolygon($pinName);
+        foreach my $polyLine ( @polygon){
+           my @poly_coord = split(/\s+/,$polyLine);
+           my $layer = shift @poly_coord;
+           shift @poly_coord;
+           my @rects = &break_polygon_into_rects(\@poly_coord);
+           foreach my $rect (@rects){
+              my ($llx, $lly, $urx, $ury) = @$rect;
+              if(!exists $LAYER_RECT_BBOX{$layer}){
+                 $LAYER_RECT_BBOX{$layer} = [$llx.",".$lly.",".$urx.",".$ury];
+              }else{
+                 push(@{$LAYER_RECT_BBOX{$layer}}, $llx.",".$lly.",".$urx.",".$ury);
+              }
+           }#foreach poly rect
+        }#foreach polygon
+      }#foreach pin
+      my @obs_rect = $PLDB{$macroName}->dbMdbGetObs;
+      foreach my $obsLine ( @obs_rect ) {
+        my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$obsLine))[0,2,3,4,5];
+        if(!exists $LAYER_RECT_BBOX{$layer}){
+           $LAYER_RECT_BBOX{$layer} = [$llx.",".$lly.",".$urx.",".$ury];
+        }else{
+           push(@{$LAYER_RECT_BBOX{$layer}}, $llx.",".$lly.",".$urx.",".$ury);
+        }
+      } 
+      my @obs_polygon = $PLDB{$macroName}->dbMdbGetObsPolygon;
+      foreach my $polyLine ( @obs_polygon){
+         my @poly_coord = split(/\s+/,$polyLine);
+         my $layer = shift @poly_coord;
+         shift @poly_coord;
+         my @rects = &break_polygon_into_rects(\@poly_coord);
+         foreach my $rect (@rects){
+            my ($llx, $lly, $urx, $ury) = @$rect;
+            if(!exists $LAYER_RECT_BBOX{$layer}){
+               $LAYER_RECT_BBOX{$layer} = [$llx.",".$lly.",".$urx.",".$ury];
+            }else{
+               push(@{$LAYER_RECT_BBOX{$layer}}, $llx.",".$lly.",".$urx.",".$ury);
+            }
+         }#foreach poly rect
+      }#foreach polygon
+      foreach my $layer (keys %LAYER_RECT_BBOX){
+        my @arr_bbox = @{$LAYER_RECT_BBOX{$layer}};
+        #print "ad @arr_bbox\n";
+        my $layerDir = $LAYER_VS_DIR{$layer};
+        my ($minW, $minS) = &calculateMinWidthAndMinSpacing(\@arr_bbox, $layerDir);
+        if($minW != 0 && $minW ne ""){
+           if(exists $LAYER_VS_WIDTH{$layer}){
+              if($minW < $LAYER_VS_WIDTH{$layer}){
+                 $LAYER_VS_WIDTH{$layer} = $minW;
+              }
+           }else{
+              $LAYER_VS_WIDTH{$layer} = $minW;
+           }
+        }
+        if($minS != 0 && $minS ne ""){
+           if(exists $LAYER_VS_SPACING{$layer}){
+              if($minS < $LAYER_VS_SPACING{$layer}){
+                 $LAYER_VS_SPACING{$layer} = $minS;
+              }
+           }else{
+              $LAYER_VS_SPACING{$layer} = $minS;
+           }
+        }
+      }#foreach layer
+    }#foreach macro
+    foreach my $layer (keys %LAYER_VS_SPACING){
+      print "LAYER: $layer  WIDTH: $LAYER_VS_WIDTH{$layer}   SPACING: $LAYER_VS_SPACING{$layer}\n";
+    }
+ }
+ my $t1 = new Benchmark;
+ my $td = timediff($t1, $t0);
+ print "Command write_tech_lef took:",timestr($td),"\n";
+}#sub write_tech_lef
+
+sub calculateMinWidthAndMinSpacing{
+ my @arr_bbox = @{$_[0]};
+ my $dir = $_[1];
+ my %temp = ();
+ if($dir eq "HORIZONTAL"){
+    @arr_bbox = sort{(split(/\,/,$a))[1]<=> (split(/\,/,$b))[1]} @arr_bbox;
+    for(my $i=0; $i<=$#arr_bbox; $i++){
+        my @first_rect_bbox = split(/\,/,$arr_bbox[$i]);
+        if(($first_rect_bbox[2] -$first_rect_bbox[0]) > ($first_rect_bbox[3] - $first_rect_bbox[1])){
+           ################### width calculation #####################
+           my $width = $first_rect_bbox[3] - $first_rect_bbox[1];
+           if(exists $temp{"W"}){
+              if($width < $temp{"W"}){
+                 $temp{"W"} = $width;
+              }
+           }else{
+              $temp{"W"} = $width;
+           }
+        }#if vertical stripe
+        ################### spacing calculation #####################
+        for(my $j=$i+1; $j<=$#arr_bbox; $j++){
+            my @second_rect_bbox = split(/\,/,$arr_bbox[$j]);
+            if(($second_rect_bbox[2] -$second_rect_bbox[0]) < ($second_rect_bbox[3] - $second_rect_bbox[1])){
+            }#if vertical stripe
+        
+            if(($second_rect_bbox[1] > $first_rect_bbox[3]) && (($first_rect_bbox[0] > $second_rect_bbox[0] && $first_rect_bbox[0] < $second_rect_bbox[2]) || ($second_rect_bbox[0] > $first_rect_bbox[0] && $second_rect_bbox[0] < $first_rect_bbox[2]))){
+               my $spacing = $second_rect_bbox[1] - $first_rect_bbox[3];
+               #print "aditya @first_rect_bbox | @second_rect_bbox\n" if($spacing < 0.005);
+               if(exists $temp{"S"}){
+                  if($spacing < $temp{"S"}){
+                     $temp{"S"} = $spacing;
+                  }
+               }else{
+                  $temp{"S"} = $spacing;
+               }
+            }
+        }
+    }
+    return($temp{"W"}, $temp{"S"});
+ }elsif($dir eq "VERTICAL"){
+    @arr_bbox = sort{(split(/\,/,$a))[0]<=> (split(/\,/,$b))[0]} @arr_bbox;
+    for(my $i=0; $i<=$#arr_bbox; $i++){
+        my @first_rect_bbox = split(/\,/,$arr_bbox[$i]);
+        if(($first_rect_bbox[3] -$first_rect_bbox[1]) < ($first_rect_bbox[2] - $first_rect_bbox[0])){
+           ################### width calculation #####################
+           my $width = $first_rect_bbox[2] - $first_rect_bbox[0];
+           if(exists $temp{"W"}){
+              if($width < $temp{"W"}){
+                 $temp{"W"} = $width;
+              }
+           }else{
+              $temp{"W"} = $width;
+           }
+        }#if horizontal stripe
+        ################### spacing calculation #####################
+        for(my $j=$i+1; $j<=$#arr_bbox; $j++){
+            my @second_rect_bbox = split(/\,/,$arr_bbox[$j]);
+            if(($second_rect_bbox[3] -$second_rect_bbox[1]) < ($second_rect_bbox[2] - $second_rect_bbox[0])){next;}#if vertical stripe
+            if(($second_rect_bbox[0] > $first_rect_bbox[2]) && (($first_rect_bbox[1] > $second_rect_bbox[1] && $first_rect_bbox[1] < $second_rect_bbox[3]) || ($second_rect_bbox[1] > $first_rect_bbox[1] && $second_rect_bbox[1] < $first_rect_bbox[3]))){
+               my $spacing = $second_rect_bbox[0] - $first_rect_bbox[2];
+               if(exists $temp{"S"}){
+                  if($spacing < $temp{"S"}){
+                     $temp{"S"} = $spacing;
+                  }
+               }else{
+                  $temp{"S"} = $spacing;
+               }
+            }
+        }
+    }
+    return($temp{"W"}, $temp{"S"});
+ }else{return (0,0);}
+}#sub calculateMinWidthAndMinSpacing
+
+
+########################################################################################
+##################### Writing cell list in xml format ##################################
+########################################################################################
+sub getLefCellList{
+ use Benchmark;
+ my $t0 = new Benchmark;
+ my $numOfArg = @_;
+ #%XML_WRITTEN_CELL = ();
+ if($numOfArg < 2 || $_[0] eq "-h" || $_[0] eq "-help"){
+    print "Usage getLefCellList  -lef < direction map file>\n";
+    print "                      -output <ouput file name>\n";
+    print "                      --end <to close file>\n";
+ }else{
+    my ($lef, $out, $file_end) = ("", "cell_list.xml",0);
+    for(my $xx=0; $xx<$numOfArg; $xx++){
+        if($_[$xx] eq "-lef"){$lef = $_[$xx+1];}
+        if($_[$xx] eq "-output"){$out = $_[$xx+1];}
+        if($_[$xx] eq "--end"){$file_end = 1;}
+    }
+    my $num = keys %XML_WRITTEN_CELL;
+    if((keys %XML_WRITTEN_CELL) <= 0 ){
+       open (XML_WRITE, ">$out"); 
+       print XML_WRITE "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n";
+       print XML_WRITE "<root>\n";
+    }else{
+      open (XML_WRITE, ">>$out"); 
+    }
+    if(-e $out){
+       foreach my $macro (keys %PLDB){
+         if(exists $XML_WRITTEN_CELL{$macro}){
+         }else{
+            print XML_WRITE "<cell><name>$macro</name><lib>$lef</lib></cell>\n";
+            $XML_WRITTEN_CELL{$macro} = 1;
+         }
+       }
+    }
+    if($file_end == 1){
+      print XML_WRITE "</root>\n";
+    }
+    close(XML_WRITE);
+ 
+ }
+ my $t1 = new Benchmark;
+ my $td = timediff($t1, $t0);
+ print "Command getLefCellList took:",timestr($td),"\n";
+}#sub getLefCellList
+
+############################################################################################
+sub lefCombiner_old {
+use Benchmark;
+my $t0 = new Benchmark;
+my $noOfArguments = @_;
+if($noOfArguments < 0 || $_[0] eq "-h"){ print "Usage : lefCombiner\n";
+                                         print "      : -output <output_lef>\n";
+                                         print "      : -lef <lef1,lef2,lef3,lef4>\n";
+                                         print "      : -dir <pathName>\n"; 
+                                         print "      : --redefineMacro\n";
+                                       }
+else {
+  my $OUTPUT_LEF = "";
+  my @lef_list = ();
+  my $path_of_the_dir = "";
+  my $write_fh = "";
+  for(my $i=0; $i < $noOfArguments; $i++){
+    if($_[$i] eq "-output"){$OUTPUT_LEF = $_[$i+1];}
+    if($_[$i] eq "-lef"){ my $lef_list = $_[$i+1]; 
+	                  $lef_list =~ s/\{\s*//; 
+	                  $lef_list =~ s/\s*\}//; 
+	                  @lef_list = split(/\,/,$lef_list);
+                        }
+    if($_[$i] eq "-dir"){$path_of_the_dir = $_[$i+1];}
+  }#for
+
+    if($path_of_the_dir ne "" && -d $path_of_the_dir ){
+        @lef_list = `find $path_of_the_dir -name \\*\\.lef`;
+    }
+    open($write_fh,">$OUTPUT_LEF");
+     my @lef_file_list = ();
+     my $path_str = "";
+     foreach my $lef_file (@lef_list){
+       if($lef_file eq "."|| $lef_file eq ".."){next;}
+       chomp($lef_file);
+       my $temp_file = $lef_file;
+       my (@lef) = split(/\//,$temp_file);
+       my $lef_fileName = pop(@lef);
+       $path_str = join "/",@lef;
+       push(@lef_file_list,$lef_fileName);
+     }#foreach
+     my @sorted_lef_file = sort {$a cmp $b} @lef_file_list;
+     foreach my $lef (@sorted_lef_file){
+       my $full_path = $path_str."/".$lef;
+       &read_lef("-lef",$full_path ,"-tech", "also");
+       push(@new_list,$full_path);
+     }#foreach
+     &write_lef_combiner(\@new_list,$write_fh);
+}#else
+my $t1 = new Benchmark;
+my $td = timediff($t1,$t0);
+print "Command lefCombiner took:" ,timestr($td),"\n";
+}#sub lefCombiner_old
+############################################################################################
+sub lefCombiner {
+use Benchmark;
+my $t0 = new Benchmark;
+my $noOfArguments = @_;
+if($noOfArguments < 0 || $_[0] eq "-h"){ print "Usage : lefCombiner\n";
+                                         print "      : -output <output_lef>\n";
+                                         print "      : -lef <lef1,lef2,lef3,lef4>\n";
+                                         print "      : -dir <pathName>\n"; 
+                                         print "      : --redefineMacro\n";
+                                       }
+else {
+  my $OUTPUT_LEF = "";
+  my @lef_list = ();
+  my $path_of_the_dir = "";
+  my $write_fh = "";
+  my $redefineMacro = 0;
+  for(my $i=0; $i < $noOfArguments; $i++){
+    if($_[$i] eq "-output"){$OUTPUT_LEF = $_[$i+1];}
+    if($_[$i] eq "-lef"){ my $lef_list = $_[$i+1]; 
+	                  $lef_list =~ s/\{\s*//; 
+	                  $lef_list =~ s/\s*\}//; 
+	                  @lef_list = split(/\,/,$lef_list);
+                        }
+    if($_[$i] eq "-dir"){$path_of_the_dir = $_[$i+1];}
+    if($_[$i] eq "--redefineMacro"){$redefineMacro = 1;}
+  }#for
+
+  if($path_of_the_dir ne "" && -d $path_of_the_dir ){
+    @lef_list = `find $path_of_the_dir -name \\*\\.lef`;
+  }
+  open($write_fh,">$OUTPUT_LEF");
+  my @lef_file_list = ();
+  my $path_str = "";
+  foreach my $lef_file (@lef_list){
+    if($lef_file eq "."|| $lef_file eq ".."){next;}
+      chomp($lef_file);
+      my $temp_file = $lef_file;
+      my (@lef) = split(/\//,$temp_file);
+      my $lef_fileName = pop(@lef);
+      $path_str = join "/",@lef;
+      push(@lef_file_list,$lef_fileName);
+    }#foreach
+    my @sorted_lef_file = sort {$a cmp $b} @lef_file_list;
+    foreach my $lef (@sorted_lef_file){
+      my $full_path = $path_str."/".$lef;
+      if(!%PTDB){
+        &read_lef("-lef",$full_path ,"-tech", "also","--file_list");
+      }else {
+        &read_lef("-lef",$full_path ,"--file_list");
+      }
+    }#foreach
+    my $start_macro = 0;
+    my $end_macro = 0;
+      if($redefineMacro == 1){
+        &write_lef("-output",$OUTPUT_LEF,"-tech","also");
+      }else{
+        &write_tech_lef_call($write_fh);
+        &via_write($write_fh);
+        &via_rule_write($write_fh);
+        foreach my $macro (keys %PLDB){
+        if($given_file == 1){
+        }else {
+          my @list_of_file = $PLDB{$macro}->dbMdbGetFileNameList;
+          foreach my $file (@list_of_file){
+            #print "$macro => $file\n";
+             if($file !~ /_temp_slvr_/){
+               #print "$macro => $file\n";
+               open(READ_LEF,$file);
+               my %MACRO_CNT = ();
+               while(<READ_LEF>){
+                 chomp();
+                 if($_ =~ /^\s*MACRO\s*\b$macro\b/){
+                   my $macroName = (split(/\s+/,$_))[1];
+                   $start_macro = 1;
+                   $end_macro = 0;
+                   $MACRO_CNT{$macro} += 1;
+                 }elsif($_ =~ /^\s*END\s*\b$macro\b/){
+                   $start_macro = 0;
+                   $end_macro = 1;
+                 }
+                 if($start_macro == 1 && $end_macro == 0 && $MACRO_CNT{$macro} == 1){
+                   print $write_fh "$_\n";
+                 }
+               }#while
+               if($MACRO_CNT{$macro} > 1){
+                 print "WARN : $macro define more than 1 times in $file Please use --redefineMacro\n";
+               }
+             }else {
+               print "WARN : $macro define more than 1 files in $file Please use --redefineMacro\n";
+             }
+          }#foreach
+        }#else 
+          print $write_fh "END $macro\n";
+       }#foreach 
+     }#else 
+print $write_fh "END LIBRARY\n";
+close($write_fh);
+}#else
+my $t1 = new Benchmark;
+my $td = timediff($t1,$t0);
+print "Command lefCombiner took:" ,timestr($td),"\n";
+}#sub lefCombiner
+############################################################################################
+sub write_lef_combiner {
+my @file_list = @{$_[0]};
+my $filehandle = $_[1];
+my $start_macro = 0;
+my $end_macro = 0;
+foreach my $macro (keys %PLDB){
+  my ($found,$macro,$file) = &file_search(\@file_list,$macro,$filehandle);
+  #print "$found => $macro => $file\n";
+  if($found == 1){
+    open(READ_LEF,$file);
+    while(<READ_LEF>){
+    chomp();
+      if($_ =~ /^\s*MACRO\s*$macro/){
+        $end_macro = 0;
+        $start_macro = 1;
+      }if($_ =~ /^\s*END\s*$macro/){
+        $end_macro = 1;
+        $start_macro = 0;
+      }
+      if($start_macro == 1 && $end_macro == 0){
+        print $filehandle "$_\n"; 
+      }
+    }#while
+    print $filehandle "END $macro\n"; 
+  }
+}#foreach
+}#sub write_lef_combiner
+############################################################################################
+sub file_search {
+my @file_list = @{$_[0]};
+my $macro = $_[1];
+my $filehandle = $_[2];
+my $found = 0;
+my $start_macro = 0;
+my $end_macro = 0;
+  foreach my $file (@file_list){
+      open(READ,$file);
+      while(<READ>){
+      chomp();
+      if($_ =~ /^\s*MACRO\s*$macro/){
+        $found = 1;
+        return($found,$macro,$file);
+      }
+      }#while
+  }
+}#sub file_search
+sub write_tech_lef_call {
+my $filehandle = $_[0];
+my %layer_hash = ();
+#foreach my $tag ( keys %TECHNOLOGY_PHYSICAL ) {
+#  if ( exists $TECHNOLOGY_PHYSICAL{$tag}{TYPE} ){
+#    if ( $TECHNOLOGY_PHYSICAL{$tag}{TYPE} eq "SITE" ){
+#        my ($width, $height) = (split(/\s+/,$TECHNOLOGY_PHYSICAL{$tag}{SIZE}))[0,1];
+#        print $filehandle "SITE $tag\n"; 
+#        print $filehandle "  CLASS $TECHNOLOGY_PHYSICAL{$tag}{CLASS} ;\n";
+#        print $filehandle "  SIZE $width BY $height ;\n" ;
+#        print $filehandle "END $tag\n";
+#    }
+#  }
+#}#foreach
+  foreach my $layerName (keys %PTDB){
+    my $LN = $PTDB{$layerName}->dbTechGetLayerName;
+    my $Ln = $PTDB{$layerName}->dbTechGetLayerNum;
+    $layer_hash{$Ln} = $LN;
+  }#foreach
+  foreach my $layerNum (sort {$a <=> $b} keys %layer_hash){
+    my $layerName = $layer_hash{$layerNum};
+    my ($width,$spacing,$dir,$type) = &write_layer($layerName);
+    my $pitch = $PTDB{$layerName}->dbTechGetLayerPitch;
+    my $parallelrunlength = $PTDB{$layerName}->dbTechGetLayerParallelRunLengthForSpacingTable;
+    my @width_list_for_spacing_table = $PTDB{$layerName}->dbTechGetLayerWidthForSpacingTable;
+    print $filehandle "LAYER $layerName\n";
+    print $filehandle "  TYPE $type \;\n"if($type ne "UND"); 
+    print $filehandle "  WIDTH $width \;\n"if($width != 0);
+    print $filehandle "  SPACING $spacing \;\n"if($spacing != 0);
+    print $filehandle "  PITCH $pitch \;\n"if($pitch != 0);
+    print $filehandle "  DIRECTION $dir \;\n"if($dir ne "UND");
+    if($parallelrunlength eq "UND"){ 
+      print $filehandle "  SPACINGTABLE INFLUENCE\n" if(@width_list_for_spacing_table != 0);
+      foreach my $width (@width_list_for_spacing_table){
+        print $filehandle "    WIDTH  $width\n";
+      }#foreach
+    }else {
+      print $filehandle "  SPACINGTABLE \n" if(@width_list_for_spacing_table != 0);
+      print $filehandle "    PARALLELRUNLENGTH $parallelrunlength\n";    
+      foreach my $width (@width_list_for_spacing_table){
+        print $filehandle "    WIDTH  $width\n";
+      }#foreach
+    }
+    print $filehandle "END $layerName\n";
+    print $filehandle "\n";
+  }#foreach
+}#sub write_tech_lef_call
+
+########################################################################################
+############################### Writing lef from def ###################################
+########################################################################################
+sub def2lef{
+  use Benchmark;
+  my $t0 = new Benchmark;
+
+  my $noOfArguments = @_;
+  if($_[0] eq "-h" || $_[0] eq "-H" || $_[0] eq "-help" || $_[0] eq "-HELP"){ 
+     print "Usage : def2lef -output <output lef file> \n";
+     return;   
+  }
+  my $outLef = '';
+  for(my $i = 0; $i < $noOfArguments; $i++){
+      if($_[$i] eq "-output"){$outLef = $_[$i+1];}
+  }
+
+  my $dbu = $GLOBAL->dbfGlobalGetDBU;
+  my $top = $GLOBAL->dbfGlobalGetTOP;
+
+  if($outLef eq ''){
+     $outLef = $top.'.lef';
+  }
+  open(WRITE_LEF, ">$outLef");
+  print WRITE_LEF "MACRO $top\n";
+  print WRITE_LEF "\tCLASS BLOCK \;\n";
+  print WRITE_LEF "\tFOREIGN $top 0.0 0.0 \;\n";
+  print WRITE_LEF "\tSYMMETRY X Y \;\n";
+  print WRITE_LEF "\tORIGIN 0 0 \;\n";
+  if(exists $FLOORPLAN_LOOKUP{"$top/_self_"}){
+     my $flplanID = $FLOORPLAN_LOOKUP{"$top/_self_"};
+     if(exists $FLOORPLAN_ALREADY{$flplanID}){
+        my @dieArea = $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetSize;
+        my $width = ($dieArea[2] - $dieArea[0])/$dbu;
+        my $height = ($dieArea[3] - $dieArea[1])/$dbu;
+        print WRITE_LEF "\tSIZE $width BY $height \;\n";
+        print WRITE_LEF "\n";
+
+        my @pins = keys %{$PORTS_ALREADY{$top}};
+        foreach $pinName (@pins) {
+           my $dir = $PORTS_ALREADY{$top}{$pinName}->dbPortGetDir;
+           my $type = $PORTS_ALREADY{$top}{$pinName}->dbPortGetSignal;
+           print WRITE_LEF "\tPIN $pinName\n";
+           print WRITE_LEF "\t   DIRECTION $dir \;\n";
+           print WRITE_LEF "\t   USE $type \;\n";
+
+           #---------------------------- RECTS ------------------------#
+           my $layer = $PORTS_ALREADY{$top}{$pinName}->dbPortGetLayer;
+           my @loc = $PORTS_ALREADY{$top}{$pinName}->dbPortGetLoc;
+           my @size = $PORTS_ALREADY{$top}{$pinName}->dbPortGetSize;
+           $_ /= $dbu for @loc;
+           $_ /= $dbu for @size;
+
+           print WRITE_LEF "\t   PORT\n";
+           print WRITE_LEF "\t    LAYER $layer \;\n";
+           print WRITE_LEF "\t     RECT $loc[0] $loc[1] ".($loc[0]+$size[0])." ".($loc[1]+$size[1])." \;\n";
+           print WRITE_LEF "\t   END\n";
+           print WRITE_LEF "\tEND $pinName\n";
+           print WRITE_LEF "\n";
+        }#foreach pins
+
+        my @nets = keys %NETS_ROUTING_ALREADY;
+        print WRITE_LEF "\tOBS\n" if(@nets > 0);
+        foreach my $netName (@nets){
+           my $netType = $NADB{$netName}->dbNadbGetNetType;
+           my @fixed_routes = $NETS_ROUTING_ALREADY{$netName}->dbNetRoutingDBGetFixedRoute;
+           if($netType == 0 && (keys %PTDB)> 0){
+              push(@fixed_routes, $NETS_ROUTING_ALREADY{$netName}->dbNetRoutingDBGetRegularRoute);
+              foreach my $segment ( @fixed_routes ){
+                 #print WRITE_LEF"seg:$segment\n";
+                 my @seg = split(/\s+/,$segment);
+                 my @routeBox = xformNetSegToRouteBox($segment);
+                 $_ /= $dbu for @routeBox;
+                 print WRITE_LEF "\t    LAYER $seg[0] \;\n";
+                 print WRITE_LEF "\t     RECT $routeBox[0] $routeBox[1] $routeBox[2] $routeBox[3] \;\n";
+              }
+           }elsif($netType == 1 || $netType == 2 ){
+              push(@fixed_routes, $NETS_ROUTING_ALREADY{$netName}->dbNetRoutingDBGetSpecialRoute);
+              foreach my $segment ( @fixed_routes ) {
+                 my @seg = split(/\s+/,$segment);
+                 my @routeBox = xformNetSegToSpecialRouteBox($segment);
+                 $_ /= $dbu for @routeBox;
+                 print WRITE_LEF "\t    LAYER $seg[0] \;\n";
+                 print WRITE_LEF "\t     RECT $routeBox[0] $routeBox[1] $routeBox[2] $routeBox[3] \;\n";
+              }
+           }
+        }#foreach obs rect
+        print WRITE_LEF "\t   END\n" if(@nets > 0); 
+     }
+  }
+  print WRITE_LEF "END $top\n";
+  close(WRITE_LEF);
+
+  if((keys %PTDB)<= 0){
+     print "WARN:nets are not written out as OBS. Please read lef technology to write them.\n";
+  }
+
+  my $t1 = new Benchmark;
+  my $td = timediff($t1, $t0);
+  print "Command def2lef took:",timestr($td),"\n";
+}#sub def2lef 
+
+########################################################################################
+sub return_via_between_two_given_layers 
+{
+  my $first_layer  = $_[0];
+  my $second_layer  = $_[1];
+  my $first_layer_found  = 0;
+  my $current_via = "NONE";
+  foreach my $layer(keys %PTDB){
+  my $ln = $PTDB{$layer}->dbTechGetLayerNum;
+    $LHASH_TEMP{$layer}= $ln;
+  }
+  my @layers = sort PTDB_asAscendingValue(keys (%LHASH_TEMP));
+  foreach my $layer (@layers) {
+    my $name = $PTDB{$layer}->dbTechGetLayerName;
+    my $type = $PTDB{$layer}->dbTechGetLayerType;
+    if ($type eq "ROUTING") {
+      if($first_layer eq $name){
+        $first_layer_found  = 1;
+      }elsif($second_layer eq $name){
+        if($first_layer_found  == 1){
+          return $current_via;
+        }else{
+          my $temp_layer = $first_layer;
+          $first_layer = $second_layer;
+          $second_layer = $temp_layer;
+          $first_layer_found  = 1;
+        }
+      }else{
+        $first_layer_found  = 0;
+      }
+    }
+    if ($type eq "CUT") {
+       $current_via = $name;
+    }
+  }
+  return "NONE";
+}#sub return_via_between_two_given_layers 
+########################################################################################
+
+1;

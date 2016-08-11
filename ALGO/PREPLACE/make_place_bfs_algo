@@ -1,0 +1,397 @@
+######## forward trace BFS ################
+
+use Benchmark;
+
+# BFS algo primary struct
+my @driverQueue;
+my %driverLevel;
+
+# Local big hash tables
+my %InstIsTerminal;
+my %TerminalShadow;
+
+# ======================================================================
+
+sub dbPlaceTraceBFS_r2r_r2o {
+
+my $bmT0 = new Benchmark;
+my $t0 = $bmT0;
+my $bmCounter = 0;
+
+#$instance = "top/ff1";
+#$instance = "u25";
+#$instance = "u295";
+
+%InstIsTerminal = ();
+%TerminalShadow = ();
+
+foreach my $bfsRootInstance ( keys %COMP_ALREADY ) {
+  my $cellref = $CADB{$bfsRootInstance}->dbCadbGetCellref;
+  unless ( $PLDB{$cellref}->dbMdbGetType == 1 &&
+           $PLDB{$cellref}->dbMdbGetFunction eq "flop" ) {
+    next;  # concerned only about flops now
+  }
+
+  if ( ++$bmCounter % 1000 == 0 ) {
+    my $t1 = new Benchmark;
+    my $td = timediff($t1, $t0);
+    $t0 = $t1;
+    print "$bmCounter source instances in ", timestr($td), "\n";
+  }
+
+  @driverQueue = ();
+  %driverLevel = ();
+  #%driverVisited = ();
+
+  my @sinkInsts = ();
+  my @pins = $PLDB{$cellref}->dbMdbGetPins;
+  foreach my $pinName ( @pins ) {
+#                print "$pinName\n" if ($DEBUG > 3);
+#    $pinType = $PLDB{$cellref}->dbMdbGetPinType($pinName);
+    unless ( $PLDB{$cellref}->dbMdbGetPinType($pinName) == 9 ) { # pin is the primary flop output
+      next;
+    }
+#                     print "$COMP_ALREADY{$instance}{$pinName}\n";
+    my @pinSinkInsts = &dbPlaceTraceGetNetSinks($COMP_ALREADY{$bfsRootInstance}{$pinName});
+    push(@sinkInsts, @pinSinkInsts);
+  }# foreach pin of a flop
+  
+  foreach my $inst ( @sinkInsts ) {
+    #$driverVisited{$inst} = 1; 
+    $driverLevel{$inst} = 1;
+    push(@driverQueue, $inst);
+  }
+  #$driverVisited{$bfsRootInstance} = 2; 
+
+  &dbPlaceTraceBFS_Queue($bfsRootInstance);
+
+}# foreach instance in the component list
+
+my $t1 = new Benchmark;
+my $td = timediff($t1, $bmT0);
+print "Processed $bmCounter instances in ", timestr($td), "\n";
+}#sub dbPlaceTraceBFS_r2r_r2o
+
+# ======================================================================
+
+sub dbPlaceTraceBFS_Queue {
+my $bfsRootInstance = $_[0];
+
+my $bfsRootCol = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByNameCol($bfsRootInstance);
+
+while ( defined ( my $fwdInstance = shift @driverQueue ) ) {
+#                     print "flop found $fwdInstance at $driverLevel{$fwdInstance}\n";
+#                    my $len = @driverQueue;
+#                    print  "$len drivers in the queue\n";
+#                    print "driven is $fwdInstance\n";
+  if ( exists $PORTS_ALREADY{$TOP_MODULE}{$fwdInstance} ) { # print "port $fwdInstance found \n"; 
+    $InstIsTerminal{$fwdInstance} = undef;
+    my $row = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByNameRow($fwdInstance);
+    my $val = $driverLevel{$fwdInstance};
+    $PLACE{$TOP_MODULE}->dbPlaceSetTpathVal($row, $bfsRootCol, $val);
+  }
+  else {
+    my $drvnCellref = $CADB{$fwdInstance}->dbCadbGetCellref;
+    if ( $PLDB{$drvnCellref}->dbMdbGetFunction eq "flop" ) {
+#                     print "flop found $fwdInstance at $driverLevel{$fwdInstance}\n";
+      $InstIsTerminal{$fwdInstance} = undef;
+      my $row = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByNameRow($fwdInstance);
+      my $val = $driverLevel{$fwdInstance};
+      $PLACE{$TOP_MODULE}->dbPlaceSetTpathVal($row, $bfsRootCol, $val);
+    }
+    elsif ( exists $TerminalShadow{$fwdInstance} ) {
+      my $sinkList = $TerminalShadow{$fwdInstance};
+      my @sinkArray = split(':', $sinkList);
+      for ( my $i = 0; $i < @sinkArray; $i += 2 ) {
+        my $row = $sinkArray[$i];
+        my $val = $sinkArray[$i + 1] + $driverLevel{$fwdInstance};
+        $PLACE{$TOP_MODULE}->dbPlaceMinTpathVal($row, $bfsRootCol, $val);
+      }
+    }
+    else {  # expand tracing on combinational instance
+      &dbPlaceTraceBFS_step2($fwdInstance);
+    }
+  }# if fwd instance is not a port
+}# while queue not empty
+
+}# sub dbPlaceTraceBFS_Queue
+
+# ======================================================================
+
+sub dbPlaceTraceBFS_i2r_i2o {
+
+#$instance = "u25";
+#$instance = "u295";
+
+my $bmT0 = new Benchmark;
+my $t0 = $bmT0;
+my $bmCounter = 0;
+
+foreach my $pinName ( keys %{$PORTS_ALREADY{$TOP_MODULE}} ) {
+  my $dir = $PORTS_ALREADY{$TOP_MODULE}{$pinName}->dbPortGetDir;
+            # print "$pinName $dir\n";
+  if ( $dir ne "input" ) {
+    next;
+  }# if input port
+  my @connList = $PORTS_ALREADY{$TOP_MODULE}{$pinName}->dbPortGetConn;
+  if ( @connList != 1 ) {
+    print "ERR-ALGO_PREPL : 001 : pin $pinName has more than one net connected\n";
+    next;
+  }
+  $netName = $connList[0];
+  my $bfsRootInstance = $pinName;
+
+  @driverQueue = ();
+  %driverLevel = ();
+  #%driverVisited = ();
+
+  my @sinkInsts = &dbPlaceTraceGetNetSinks($netName);
+  foreach my $tag ( @sinkInsts ) { # print "driver is $tag\n"; 
+    #$driverVisited{$tag} = 1;
+    $driverLevel{$tag} = 1;
+    push(@driverQueue, $tag); 
+  }
+  #$driverVisited{$bfsRootInstance} = 2;
+
+  &dbPlaceTraceBFS_Queue($bfsRootInstance);
+
+}# for all ports
+
+%InstIsTerminal = ();
+%TerminalShadow = ();
+
+my $t1 = new Benchmark;
+my $td = timediff($t1, $bmT0);
+print "Processed $bmCounter ports in ", timestr($td), "\n";
+}#sub dbPlaceTraceBFS_i2r_i2o
+
+# ======================================================================
+
+sub dbPlaceTraceBFS_step2 {
+my $instance = $_[0];  # assert: $instance is combinational
+#print "\t$instance\n";
+my $level = $driverLevel{$instance};
+
+my $cellref = $CADB{$instance}->dbCadbGetCellref;
+my @pins = $PLDB{$cellref}->dbMdbGetPins;
+#print "now fwd tracing ...\n";
+my @sinkInsts = ();
+foreach $pinName ( @pins ) {
+#                print "$pinName\n";
+  $pinType = $PLDB{$cellref}->dbMdbGetPinType($pinName);
+### if the pin is of type signal  and direction is output ##
+  unless ( $pinType == 0  && $PLDB{$cellref}->dbMdbGetPinDir($pinName) == 1 ) {
+    next;
+  }
+#                print "$pinName\n";
+  my @pinSinkInsts = &dbPlaceTraceGetNetSinks($COMP_ALREADY{$instance}{$pinName});
+  push(@sinkInsts, @pinSinkInsts);
+}# foreach pins of the cell
+
+my $terminated = 1;
+foreach my $tag ( @sinkInsts ) { #print "$tag\n"; 
+  unless ( exists $InstIsTerminal{$tag} || exists $TerminalShadow{$tag} ) {
+    $terminated = 0;
+  }
+  if ( exists $driverLevel{$tag} ) {
+    next;
+  }
+  #$driverVisited{$tag} = 1; 
+  $driverLevel{$tag} = $level + 1;
+  push(@driverQueue, $tag); 
+}
+#$driverVisited{$instance} = 2; 
+
+unless ( $terminated ) {
+  return;
+}
+
+#$InstIsTerminal{$instance} = 1;
+my %sinkHash = ();
+foreach my $tag ( @sinkInsts ) {
+  if ( exists $InstIsTerminal{$tag} ) {
+    my $row = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByNameRow($tag);
+    $sinkHash{$row} = 1;
+  }
+  else {
+    my $sinkList = $TerminalShadow{$tag};
+    my @sinkArray = split(':', $sinkList);
+    for ( my $i = 0; $i < @sinkArray; $i += 2 ) {
+      my $row = $sinkArray[$i];
+      my $hops = $sinkArray[$i + 1] + 1;
+      if ( !exists $sinkHash{$row} || $hops < $sinkHash{$row} ) {
+        $sinkHash{$row} = $hops;
+      }
+    }# for $i
+  }
+}# foreach $tag
+
+my @sinkArray = ();
+foreach my $row ( keys %sinkHash ) {
+  my $hops = $sinkHash{$row};
+  push(@sinkArray, $row);
+  push(@sinkArray, $hops);
+}
+my $sinkList = join(':', @sinkArray);
+$TerminalShadow{$instance} = $sinkList;
+}#sub dbPlaceTraceBFS_step2
+
+# ======================================================================
+
+sub dbPlaceTraceFF_input_depth_BFS {
+my $ffInst = $_[0];
+my $depth = $_[1];
+my $portFound = 0;
+   my $num = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByName($ffInst);
+   my @fanIn = $PLACE{$TOP_MODULE}->dbgPlaceGetFanIns($num);
+   foreach $temp ( @fanIn ) {
+           if ( $PLACE{$TOP_MODULE}->dbPlaceIsInstFlop == 1) { }
+           elsif ( $PLACE{$TOP_MODULE}->PlaceIsInstPort == 1) {
+                                                              }
+                            }# foreach fanIn
+   
+
+}#sub dbPlaceTraceFF_input_depth_BFS
+
+# ======================================================================
+
+sub dbPlaceTraceBFS_clock {
+my $pinName = $_[0];
+
+my $dir = $PORTS_ALREADY{$TOP_MODULE}{$pinName}->dbPortGetDir;
+if ( $dir ne "input" ) {
+  print "ERR-ALGO_PREPL : 001 : $pinName is not an input port\n";
+  return;
+}# if input port
+my @connList = $PORTS_ALREADY{$TOP_MODULE}{$pinName}->dbPortGetConn;
+if ( @connList != 1 ) {
+  print "ERR-ALGO_PREPL : 002 : pin $pinName has more than one net connected\n";
+  return;
+}
+my $netName = $connList[0];
+@driverQueue = ();
+%driverLevel = ();
+
+my @sinkInsts = &dbPlaceTraceGetNetSinks($netName, "clockMode");
+foreach my $tag ( @sinkInsts ) { # print "driver is $tag\n"; 
+  $driverLevel{$tag} = 1;
+  push(@driverQueue, $tag); 
+}
+
+while ( defined ( my $fwdInstance = shift @driverQueue ) ) {
+  unless ( $PLACE{$TOP_MODULE}->dbPlaceGetIsInstFlop($fwdInstance) ) {
+    next;
+  }
+  my $drvnCellref = $CADB{$fwdInstance}->dbCadbGetCellref;
+  if ( $PLDB{$drvnCellref}->dbMdbGetFunction eq "flop" ) {
+    $PLACE{$TOP_MODULE}->dbPlaceSetFlopClockDomain($fwdInstance, $netName);
+  }
+  else {  # step2: expand tracing on combinational instance
+    my $cellref = $CADB{$fwdInstance}->dbCadbGetCellref;
+    my @sinkInsts = ();
+    foreach my $pinName ( $PLDB{$cellref}->dbMdbGetPins ) {
+      if ( $PLDB{$cellref}->dbMdbGetPinType($pinName) == 0 &&
+           $PLDB{$cellref}->dbMdbGetPinDir($pinName) == 1 ) {
+        my @pinSinkInsts = &dbPlaceTraceGetNetSinks(
+                           $COMP_ALREADY{$fwdInstance}{$pinName}, "clockMode");
+        push(@sinkInsts, @pinSinkInsts);
+      }
+    } # foreach pin of the cell
+
+    foreach my $tag ( @sinkInsts ) { #print "$tag\n"; 
+      unless ( exists $driverLevel{$tag} ) {
+        $driverLevel{$tag} = $driverLevel{$fwdInstance} + 1;
+        push(@driverQueue, $tag); 
+      }
+    } # foreach sink
+  } # $fwdInstance is combinational
+} # while queue not empty
+
+@driverQueue = ();
+%driverLevel = ();
+
+}#sub dbPlaceTraceBFS_clock
+
+# ======================================================================
+
+sub dbPlaceTraceBackReg2In_clock {
+my $instance = $_[0];
+my $allClocks = $_[1];
+
+my $portName;
+
+my $cellref = $CADB{$instance}->dbCadbGetCellref();
+unless ( $PLDB{$cellref}->dbMdbGetFunction eq "flop" &&
+         $PLDB{$cellref}->dbMdbGetType == 1 ) {
+  print "ERR-ALGO_PREPL : 001 : $instance is not a flop\n";
+  return $portName;
+}
+
+my @pins = $PLDB{$cellref}->dbMdbGetPins();
+my $netName;
+foreach my $pinName ( @pins ) {
+  if ( $PLDB{$cellref}->dbMdbGetPinType($pinName) == 3 ) {
+    $netName = $COMP_ALREADY{$instance}{$pinName}; 
+    last;
+  }
+}# foreach pin of a register
+
+unless ( defined $netName ) {
+  print "ERR-ALGO_PREPL : 002 : $instance does not have clock pin\n" if (! $allClocks);
+  return $portName;
+}
+
+@driverQueue = ();
+%driverLevel = ();
+
+my $driverInst = &dbPlaceTraceGetNetDriver($netName);
+$driverLevel{$driverInst} = 1;
+push(@driverQueue, $driverInst); 
+
+#############
+# print "\tdriver is $driverInst for $pinName\n";
+#############
+
+while ( defined ( $driverInst = shift @driverQueue ) ) {
+  if ( exists $PORTS_ALREADY{$TOP_MODULE}{$driverInst} ) {
+    $portName = $driverInst;
+    last;
+  }
+  unless ( exists $COMP_ALREADY{$driverInst} ) {
+    print "WARN-ALGO_PRE_PL : 003 : $driverInst is neither an instance nor a port\n";
+    next;
+  }
+  my $driverCellref = $CADB{$driverInst}->dbCadbGetCellref();
+  if ( $PLDB{$driverCellref}->dbMdbGetFunction eq "flop" &&
+       $PLDB{$driverCellref}->dbMdbGetType == 1 ) {
+    # TODO clock domain root is a flop
+    last;
+  }
+  # step2: expand tracing on combinational instance
+  my @driverInsts = ();
+  foreach my $pinName ( $PLDB{$driverCellref}->dbMdbGetPins ) {
+    unless ( $PLDB{$driverCellref}->dbMdbGetPinType($pinName) == 0 &&
+             $PLDB{$driverCellref}->dbMdbGetPinDir($pinName) == 0 ) {
+      next;
+    }
+    my $pinDriverInst = &dbPlaceTraceGetNetDriver(
+                          $COMP_ALREADY{$driverInst}{$pinName}); 
+    push(@driverInsts, $pinDriverInst);
+  } # foreach pin of the cell
+
+  foreach my $tag ( @driverInsts ) { #print "$tag\n"; 
+    unless ( exists $driverLevel{$tag} ) {
+      $driverLevel{$tag} = $driverLevel{$driverInst} + 1;
+      push(@driverQueue, $tag); 
+    }
+  } # foreach Driver
+} # while queue not empty
+
+@driverQueue = ();
+%driverLevel = ();
+
+return $portName;
+
+}#sub dbPlaceTraceBackReg2In_clock
+
+1;

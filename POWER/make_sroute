@@ -1,0 +1,2398 @@
+sub create_stripe {
+
+#****f* /create_stripe
+# NAME
+#    create_stripe
+#FUNCTION
+#    creating net stripe 
+#Assumptions
+#    it will work if layer exists in DB.
+#SYNOPSIS
+#    create_stripe -width <width of metal strip> 
+#                 -start <x1> <y1>  
+#                 -stop <x2> <y2>
+#                 -netName <net name>
+#                 -layer <metal layer>
+#INPUTS
+#    options:
+#    -width <width>, -start <startingX> <startingY> ,
+#    -stop <endingX> <endingY> ,-layer <layerName>
+#    -netName <net name>
+#OUTPUTS
+#    net strip(metal strip) 
+#****
+
+my $noOfArguments = @_;
+
+if( $noOfArguments < 0 || $_[0] eq '-h') { 
+                           print "Usage : create_stripe -width <width> \n";
+                           print "                      -start <x1> <y1> \n";
+                           print "                      -stop <x2> <y2> \n";
+                           print "                      -layer <layerName> \n";
+                           print "                      -netName <netName> \n";
+                         }#if no. of arg not eq
+
+else { # if correct no. of inputs
+
+my $llx; my $lly;
+my $urx; my $ury;
+my $width;
+my $layername;
+my $netName;
+
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-width"){$width = $_[$i+1];}
+if($_[$i] eq "-start"){$x1 = $_[$i+1];$y1 = $_[$i+2];}
+if($_[$i] eq "-stop"){$x2 = $_[$i+1];$y2 = $_[$i+2];}
+if($_[$i] eq "-layer"){$layername = $_[$i+1];}
+if($_[$i] eq "-netName"){$netName = $_[$i+1];}
+                                         } # for
+
+print "INFO-PWR-CR_STRPE : 001 : width is $width\n";
+print "INFO-PWR-CR_STRPE : 002 : start is $x1, $y1\n";
+print "INFO-PWR-CR_STRPE : 003 : stop is $x2,$y2\n";
+print "INFO-PWR-CR_STRPE : 004 : layername is $layername\n";
+print "INFO-PWR-CR_STRPE : 005 : netName is $netName\n";
+
+if ($x1 != $x2 && $y1 != $y2) {
+print "INFO-PWR-CR_STRPE : 006 : either x1 ,x2 or y1,y2 must be equal to each other\n";
+ return;
+                            }#if closed
+
+ foreach my $layerName ( keys %PTDB){
+ 
+         if( $layername eq $layerName){
+
+                      my $num = $PTDB{$layerName}->dbTechGetLayerNum;
+                         $layerColour=$HashCol{$num};
+                         $x = $layerColour;
+print "INFO-PWR-CR_STRPE : 007 : layername is $layerName\n";
+print "INFO-PWR-CR_STRPE : 008 : num are $num\n";
+print "INFO-PWR-CR_STRPE : 009 : col are $layerColour\n";
+                                      }#foreach closed
+                                   }#if closed
+
+if ($x1 == $x2) {
+$llx = $x1-$width/2;
+$lly = $y1;
+$urx = $x2+$width/2;
+$ury = $y2;
+my $line = $layername." ".$netName." ".$width." ".$llx." ".$lly." ".$urx." ".$ury;
+print "INFO-PWR-CR_STRPE : 010 : $line\n";
+if ( $GLOBAL->dbGlobalGetGuiStatus == 1) {
+$design_canvas->createRectangle($llx,$lly,$urx,$ury, -outline,$x,-fill,$x,-stipple,"gray12");
+                             }
+if (exists $NETS_ALREADY{$netName} ) {
+   my $type = $NADB{$netName}->dbNadbGetNetType;
+      if ($type == 1 ) {
+                       $NETS_ROUTING_ALREADY{$netName}->dbNetRoutingDBSetSpecialRoute($line);
+                       }# the net is a special net
+                                     }#if the net exists
+               }#if a vertical stripe closed
+elsif ($y1 == $y2) {
+$llx = $x1;
+$lly = $y1-$width/2;
+$urx = $x2;
+$ury = $y2+$width/2;
+my $line = $layername." ".$netName." ".$width." ".$llx." ".$lly." ".$urx." ".$ury;
+print "INFO-PWR-CR_STRPE : 011 : $line\n";
+if ( $GLOBAL->dbGlobalGetGuiStatus == 1) {
+$design_canvas->createRectangle($llx,$lly,$urx,$ury, -outline,$x,-fill,$x,-stipple,"gray12");
+                             }
+if (exists $NETS_ALREADY{$netName} ) {
+   my $type = $NADB{$netName}->dbNadbGetNetType;
+      if ($type == 1 ) {
+                       $NETS_ROUTING_ALREADY{$netName}->dbNetRoutingDBSetSpecialRoute($line);
+                       }# the net is a special net
+                                     }#if the net exists
+               
+
+
+                  }#elsif a horizontal stripe closed
+}#else
+
+}#sub create_stripe
+
+#####################################################################################################
+
+
+sub create_route {
+
+#****f* /create_route
+# NAME
+#    create_route
+#FUNCTION
+#    creating net route 
+#Assumptions
+#    it will work only if layer exists in DB and either x1=x2 or y1=y2.
+#SYNOPSIS
+#    create_route -layer <metal layer> 
+#                 -width <width of stripe>
+#                 -start <starting point(x,y)>
+#                 -stop <end point(x,y)>
+#                 -netName <net name>
+#INPUTS
+#    options:
+#    -layer <metal layer> ,-width <width of stripe>, 
+#    -start <starting point(x,y)>,-stop <end point(x,y)>,
+#    -netName <net name>
+#OUTPUTS
+#    net route(metal stripe) is created 
+#****
+
+my $noOfArguments = @_;
+
+if( $noOfArguments < 12 || $noOfArguments > 12 || $_[0] eq '-h' ||  $_[0] eq '-help' ||  $_[0] eq '-HELP') { 
+                           print "Usage : create_route  -layer <layerName>\n"; 
+                           print "                      -width <width> \n";
+                           print "                      -start <x1> <y1> \n";
+                           print "                      -stop <x2> <y2> \n";
+                           print "                      -netName <netName> \n";
+                         }#if no. of arg not eq
+
+else { # if correct no. of inputs
+
+my $llx; my $lly;
+my $urx; my $ury;
+my $width;
+my $layername;
+my $netName;
+my $layerColour = "";
+ 
+
+for(my $i = 0; $i < $noOfArguments; $i++){
+    if($_[$i] eq "-layer"){$layername = $_[$i+1];}  
+    if($_[$i] eq "-width"){$width = $_[$i+1];}
+    if($_[$i] eq "-start"){$x1 = $_[$i+1];$y1 = $_[$i+2];}
+    if($_[$i] eq "-stop"){$x2 = $_[$i+1];$y2 = $_[$i+2];}
+    if($_[$i] eq "-netName"){$netName = $_[$i+1];}
+} # for no of arguments
+
+if ($x1 != $x2 && $y1 != $y2) {
+    print "INFO-PWR-CR_RTE : 001 : either x1 ,x2 or y1,y2 must be equal to each other\n";
+    return;
+}#if closed
+
+ foreach my $layer ( keys %PTDB){
+   if($layername eq $layer){
+      my $num = $PTDB{$layer}->dbTechGetLayerNum;
+      $layerColour=$HashCol{$num};
+   }#if layer exists in DB              
+ }#foreach layer
+                                   
+if ($x1 == $x2) {
+$llx = $x1-$width/2;
+$lly = $y1;
+$urx = $x2+$width/2;
+$ury = $y2;
+my $line = $layername." ".$netName." ".$width." ".$llx." ".$lly." ".$urx." ".$ury;
+print "INFO-PWR-CR_RTE : 002 : $line\n";
+if ( $GLOBAL->dbGlobalGetGuiStatus == 1) {
+$design_canvas->createRectangle($llx,$lly,$urx,$ury, -outline,$layerColour,-fill,$layerColour,-stipple,"gray12");
+                             }
+if (exists $NETS_ALREADY{$netName} ) {
+   my $type = $NADB{$netName}->dbNadbGetNetType;
+      if ($type == 1 ) {
+                       $NETS_ROUTING_ALREADY{$netName}->dbNetRoutingDBSetRegularRoute($line);
+                       }# the net is a special net
+                                     }#if the net exists
+               }#if a vertical stripe closed
+elsif ($y1 == $y2) {
+$llx = $x1;
+$lly = $y1-$width/2;
+$urx = $x2;
+$ury = $y2+$width/2;
+my $line = $layername." ".$netName." ".$width." ".$llx." ".$lly." ".$urx." ".$ury;
+print "INFO-PWR-CR_RTE : 003 : $line\n";
+if ( $GLOBAL->dbGlobalGetGuiStatus == 1) {
+$design_canvas->createRectangle($llx,$lly,$urx,$ury, -outline,$layerColour,-fill,$layerColour,-stipple,"gray12");
+                             }
+if (exists $NETS_ALREADY{$netName} ) {
+   my $type = $NADB{$netName}->dbNadbGetNetType;
+      if ($type == 1 ) {
+                       $NETS_ROUTING_ALREADY{$netName}->dbNetRoutingDBSetRegularRoute($line);
+                       }# the net is a special net
+                                     }#if the net exists
+               
+
+
+                  }#elsif a horizontal stripe closed
+}#else
+
+}#sub create_route
+
+
+###################################################################################################
+
+sub create_shape {
+
+#****f* /create_shape
+# NAME
+#    create_shape
+#FUNCTION
+#    creating net stripe 
+#Assumptions
+#    it will work only if layer exists in DB.
+#SYNOPSIS
+#    create_shape -rect <llx,$lly,$urx,$ury> 
+#                 -netName <net name>
+#                 -layer <metal layer>
+#INPUTS
+#    options:
+#    -rect <llx,$lly,$urx,$ury>, -netName <net name>,-layer <layerName>
+#    -netName <net name>
+#OUTPUTS
+#    net strip(metal strip) 
+#****
+
+
+     my $noOfArguments = @_;
+
+if( $noOfArguments < 6 ||$noOfArguments > 6  || $_[0] eq '-h') { 
+                           print "Usage : create_shape  -rect <llx,lly,urx,ury>\n"; 
+                           print "                      -netName <netName> \n";
+                           print "                      -layer <layerName>\n";
+                           
+                         }#if no. of arg not eq
+
+else { # if correct no. of inputs
+
+   my $llx; my $lly;
+   my $urx; my $ury;
+   my $layername;
+   my $netName;
+   my @rectcoord = ();   
+
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-rect"){  
+   my $rect = $_[$i+1];
+      @rectcoord = split(/\,/,$rect);}
+
+if($_[$i] eq "-netName"){$netName = $_[$i+1];}
+if($_[$i] eq "-layer"){$layername = $_[$i+1];}
+
+                                         } # for
+print "INFO-PWR-CR_SPE : 001 : Rect coordinates are @rectcoord\n";
+print "INFO-PWR-CR_SPE : 002 : netName is $netName\n";
+print "INFO-PWR-CR_SPE : 003 : layer is $layername\n";
+
+    $llx = $rectcoord[0];
+    $lly = $rectcoord[1];
+    $urx = $rectcoord[2];
+    $ury = $rectcoord[3];
+
+
+ foreach my $layerName ( keys %PTDB){
+ 
+         if( $layername eq $layerName){
+
+                      my $num = $PTDB{$layerName}->dbTechGetLayerNum;
+                         $layerColour=$HashCol{$num};
+                         $x = $layerColour;
+print "INFO-PWR-CR_SPE : 004 : layername is $layerName\n";
+print "INFO-PWR-CR_SPE : 005 : num are $num\n";
+print "INFO-PWR-CR_SPE : 006 : col are $layerColour\n";
+                                    }#if closed              
+                              }#foreach closed
+                                   
+my $line = $llx." ".$lly." ".$urx." ".$ury." ".$netName." ".$layername;
+print "INFO-PWR-CR_SPE : 007 : $line\n";
+if ( $GLOBAL->dbGlobalGetGuiStatus == 1) {
+$design_canvas->createRectangle($llx,$lly,$urx,$ury, -outline,$x,-fill,$x,-stipple,"gray12");
+                             }
+if (exists $NETS_ALREADY{$netName} ) {
+   my $type = $NADB{$netName}->dbNadbGetNetType;
+      if ($type == 1 ) {
+                       $NETS_ROUTING_ALREADY{$netName}->dbNetRoutingDBSetSpecialRoute($line);
+                       }# the net is a special net
+                                     }#if the net exists
+               }#else
+
+}#sub create_shape
+
+###############################################################################################
+
+sub create_via {
+
+#****f* /create_via
+# NAME
+#    create_via
+#FUNCTION
+#    creating via 
+#Assumptions
+#    it will work if layer exists in DB.
+#SYNOPSIS
+#    create_via -toplayer <top layer> <llx,lly,urx,ury(rect coords)>
+#               -cutlayer <cut layer> <llx,lly,urx,ury(rect coords)>
+#               -bottomlayer <bottom layer> <llx,lly,urx,ury(rect coords)>
+#INPUTS
+#    options:
+#    -toplayer <top layer> <llx,lly,urx,ury(rect coords)>
+#    -cutlayer <cut layer> <llx,lly,urx,ury(rect coords)>
+#    -bottomlayer <bottom layer> <llx,lly,urx,ury(rect coords)>
+#OUTPUTS
+#    metal via 
+#****
+
+my $noOfArguments = @_;
+
+if( $noOfArguments < 9 ||$noOfArguments > 9  || $_[0] eq '-h') { 
+                           print "Usage : create_via  -toplayer <layerName> <llx,lly,urx,ury>\n"; 
+                           print "                    -cutlayer <layerName> <llx,lly,urx,ury>\n"; 
+                           print "                    -bottomlayer <layerName> <llx,lly,urx,ury>\n"; 
+                                                      
+                         }#if no. of arg not eq
+
+else { # if correct no. of inputs
+
+   my $llx1; my $lly1;
+   my $urx1; my $ury1;
+   my $llx2; my $lly2;
+   my $urx2; my $ury2; 
+   my $llx3; my $lly3;
+   my $urx3; my $ury3;
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-toplayer"){
+      $toplayer = $_[$i+1];     
+   my $rect1 = $_[$i+2];
+      @rectcoord1 = split(/\,/,$rect1);}
+if($_[$i] eq "-cutlayer"){
+      $cutlayer = $_[$i+1];  
+   my $rect2 = $_[$i+2];
+      @rectcoord2 = split(/\,/,$rect2);}
+if($_[$i] eq "-bottomlayer"){
+      $bottomlayer = $_[$i+1];  
+   my $rect3 = $_[$i+2];
+      @rectcoord3 = split(/\,/,$rect3);}
+
+                                         } # for
+print "INFO-PWR-CR_VIA : 001 : Top layer is $toplayer, @rectcoord1\n";
+print "INFO-PWR-CR_VIA : 002 : Cut layer is $cutlayer, @rectcoord2\n";
+print "INFO-PWR-CR_VIA : 003 : Bottom layer is $bottomlayer, @rectcoord3\n";
+
+    $llx1 = $rectcoord1[0];
+    $lly1 = $rectcoord1[1];
+    $urx1 = $rectcoord1[2];
+    $ury1 = $rectcoord1[3];
+    $llx2 = $rectcoord2[0];
+    $lly2 = $rectcoord2[1];
+    $urx2 = $rectcoord2[2];
+    $ury2 = $rectcoord2[3];
+    $llx3 = $rectcoord3[0];
+    $lly3 = $rectcoord3[1];
+    $urx3 = $rectcoord3[2];
+    $ury3 = $rectcoord3[3];
+                      
+                foreach my $layerName ( keys %PTDB){
+
+         if( $toplayer eq $layerName){
+
+                      my $num = $PTDB{$layerName}->dbTechGetLayerNum;
+                         $layerColour=$HashCol{$num};
+                         $x1 = $layerColour;
+                                   
+                                    }
+         if ( $cutlayer eq $layerName){
+
+                      my $num = $PTDB{$layerName}->dbTechGetLayerNum;
+                         $layerColour=$HashCol{$num};
+                         $x2 = $layerColour;
+                                  
+                                    }
+         if ( $bottomlayer eq $layerName){
+
+                      my $num = $PTDB{$layerName}->dbTechGetLayerNum;
+                         $layerColour=$HashCol{$num};
+                         $x3 = $layerColour;
+
+                                    }#if closed              
+                              }#foreach closed
+
+                                    
+    my $line = $toplayer." ".$llx1." ".$lly1." ".$urx1." ".$ury1." ".$cutlayer." ".$llx2." ".$lly2." ".$urx2." ".$ury2." ".$bottomlayer." ".$llx3." ".$lly3." ".$urx3." ".$ury3;
+    print "INFO-PWR-CR_VIA : 004 : $line\n";
+
+    if ( $GLOBAL->dbGlobalGetGuiStatus == 1) {
+$design_canvas->createRectangle($llx1,$lly1,$urx1,$ury1, -outline,$x1,-fill,$x1,-stipple,"gray12");
+$design_canvas->createRectangle($llx2,$lly2,$urx2,$ury2, -outline,$x2,-fill,$x2,-stipple,"gray12");
+$design_canvas->createRectangle($llx3,$lly3,$urx3,$ury3, -outline,$x3,-fill,$x3,-stipple,"gray12");
+                                        }
+               }#else
+
+}#sub create_via
+
+
+
+
+###############################################################################################
+sub create_array_via {
+
+#****f* /create_array_via
+# NAME
+#    create_array_via
+#FUNCTION
+#    creating an array of via
+#Assumptions
+#    it will work only if overlap reactangle is given
+#SYNOPSIS
+#    create_array_via -overlap <llx,lly,urx,ury> 
+#                     -cutlayer <cut layer Name> <llx,lly,urx,ury>
+#                     -spacing <spacing across X-axis, spacing across Y-axis>
+#                     -overhangBL <bottom overhang>
+#                     -overhangTL <top overhang>
+#INPUTS
+#    options:
+#    -overlap <llx,lly,urx,ury>, 
+#    -cutlayer <layerName> <llx,lly,urx,ury>,-spacing <x,y>,
+#    -overhangBL <overhang>, -overhangTL <overhang
+#OUTPUTS
+#    array of via in given region
+#****
+
+my $noOfArguments = @_;
+if( $noOfArguments < 11 ||$noOfArguments > 11  || $_[0] eq '-h' || $_[0] eq '-help' || $_[0] eq '-HELP') { 
+                           print "Usage : create_array_via  -overlap <llx,lly,urx,ury>\n";  
+                           print "                          -cutlayer <layerName> <llx,lly,urx,ury>\n";
+                           print "                          -spacing <x,y>\n";      
+                           print "                          -overhangBL <overhang>\n";                               
+                           print "                          -overhangTL <overhang>\n";                               
+                         }#if no. of arg not eq
+
+else { # if correct no. of inputs
+
+   my $llx; my $lly;
+   my $urx; my $ury; 
+   
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-overlap"){
+   my $orect = $_[$i+1];
+      @orectcoord = split(/\,/,$orect);}
+if($_[$i] eq "-cutlayer"){
+      $cutlayer = $_[$i+1];  
+   my $rect = $_[$i+2];
+      @rectcoord = split(/\,/,$rect);}
+if($_[$i] eq "-overhangTL"){
+      $overhangTop = $_[$i+1];
+                           }  
+if($_[$i] eq "-overhangBL"){
+      $overhangBottom = $_[$i+1];
+                           }   
+if($_[$i] eq "-spacing"){
+   my $spacing = $_[$i+1];
+      @spacing = split(/\,/,$spacing);}
+                                         } # for
+print "INFO-PWR-CR_ARRY_VIA : 001 : Cut layer is $cutlayer, @rectcoord\n";
+print "INFO-PWR-CR_ARRY_VIA : 002 : toplayer overhang is $overhangTop\n";
+print "INFO-PWR-CR_ARRY_VIA : 003 : bottomlayer overhang is $overhangBottom\n";
+print "INFO-PWR-CR_ARRY_VIA : 004 : spacing is $spacing[0] by $spacing[1]\n";
+
+   my $olx = $orectcoord[0];
+   my $oly = $orectcoord[1];
+   my $oux = $orectcoord[2];
+   my $ouy = $orectcoord[3];
+    $llx = $rectcoord[0];
+    $lly = $rectcoord[1];
+    $urx = $rectcoord[2];
+    $ury = $rectcoord[3];
+   my $Sh = $spacing[0];
+   my $Sv = $spacing[1];
+                      
+                foreach my $layerName ( keys %PTDB){
+                                            
+                          if ( $cutlayer eq $layerName){
+
+                                     my $num = $PTDB{$layerName}->dbTechGetLayerNum;
+                                        $layerColour=$HashCol{$num};
+                                        $x2 = $layerColour;
+                                         }
+
+                                       }#foreach closed
+
+
+my $line = $cutlayer." ".$llx." ".$lly." ".$urx." ".$ury." "."overhang"." ".$overhangTop." "."overhang"." ".$overhangBottom." "."spacing"." ".$Sh." "."by"." ".$Sv." ".overlapRect." ".$olx." ".$oly." ".$oux." ".$ouy;
+
+print "INFO-PWR-CR_ARRY_VIA : 005 : $line\n";
+
+         if ( $GLOBAL->dbGlobalGetGuiStatus == 1) {
+          
+$design_canvas->createRectangle($olx,$oly,$oux,$ouy, -outline,"white",-fill,"white",-stipple,"gray12");
+         
+             my $viaColumns = (($oux-$olx)-(2*$overhangTop)+$Sh)/(($urx-$llx)+$Sh);
+             my $viaRows = (($ouy-$oly)-(2*$overhangBottom)+$Sv)/(($ury-$lly)+$Sv);
+             my $x = int$viaColumns;
+             my $y = int$viaRows;
+
+                                         
+         if ($viaColumns > $x){
+                                $ohTop = (($oux-$olx)-($x*($urx-$llx+$Sh)-$Sh))/2;
+                               }
+                        else {   
+                                $ohTop = $overhangTop;
+                                 }
+         if ($viaRows > $y)   {
+                                $ohBottom = (($ouy-$oly)-($y*($ury-$lly+$Sv)-$Sv))/2;
+                               }
+                        else { 
+                                $ohBottom = $overhangBottom;
+                                 }
+                                       
+         for (my $i=0; $i< $x ;$i++){
+                        
+                        my $vlx = $olx + $ohTop + $i*(($urx-$llx)+$Sh);
+                        my $vly = $oly + $ohBottom ;
+                        my $vux = $vlx + ($urx-$llx);
+                        my $vuy = $vly + ($ury-$lly);
+
+  $design_canvas->createRectangle($vlx,$vly,$vux,$vuy, -outline,$x2,-fill,$x2,-stipple,"gray12");
+  #$design_canvas->createRectangle($vlx,$vly,$vux,$vuy, -outline,"red",-fill,"red",-stipple,"gray12");
+
+         for (my $j=1; $j < $y ; $j++) {
+                        my $vlx = $olx + $ohTop + $i*(($urx-$llx)+$Sh); 
+                        my $vly = $oly + $ohBottom + $j*(($ury-$lly)+$Sv); ;
+                        my $vux = $vlx + ($urx-$llx);
+                        my $vuy = $vly + ($ury-$lly);
+  $design_canvas->createRectangle($vlx,$vly,$vux,$vuy, -outline,$x2,-fill,$x2,-stipple,"gray12");
+  #$design_canvas->createRectangle($vlx,$vly,$vux,$vuy, -outline,"red",-fill,"red",-stipple,"gray12");
+
+                                               }#for rows
+                                     
+                                   }#for columns
+                        
+                       }#if gui open
+
+
+               }#else
+
+}#sub create_array_via
+
+#########################################################################################################################
+
+sub overlap_rect{
+   my $noOfArguments = @_;
+ if ($noOfArguments < 8){
+ print "WARN-PWR : 001 : reguired no of argument should be 8\n";
+ return ;
+                        }
+
+  my $lx1 = $_[0];
+  my $ly1 = $_[1];
+  my $ux1 = $_[2];
+  my $uy1 = $_[3];
+  my $lx2 = $_[4];
+  my $ly2 = $_[5];
+  my $ux2 = $_[6];
+  my $uy2 = $_[7];
+  my $urx1 = 0;
+  my $llx1 = 0;
+  my $ury1 = 0;
+  my $lly1 = 0;
+  my $urx2 = 0;
+  my $llx2 = 0;
+  my $ury2 = 0;
+  my $lly2 = 0;
+
+   if ($lx1 > $ux1 ) {
+      $urx1 = $lx1;
+      $llx1 = $ux1;
+      $ury1 = $ly1;
+      $lly1 = $uy1;
+
+                     }
+  else   {
+      $urx1 = $ux1;
+      $llx1 = $lx1;
+      $ury1 = $uy1;
+      $lly1 = $ly1;
+         }
+
+
+   if ($lx2 > $ux2) {
+      $urx2 = $lx2;
+      $llx2 = $ux2;      
+      $ury2 = $ly2;
+      $lly2 = $uy2;
+
+                    }
+   else  {
+      $urx2 = $ux2;
+      $llx2 = $lx2;
+      $ury2 = $uy2;
+      $lly2 = $ly2;
+
+         }
+#my @overlap = ();
+  #print "lx1,ly1,ux1,uy1,lx2,ly2,ux2,uy2, is $lx1,$ly1,$ux1,$uy1,$lx2,$ly2,$ux2,$uy2,\n";
+        if (($llx2 <= $llx1 && $llx1 <= $urx2) && ($llx2 <= $urx1 && $urx1 <= $urx2) && ($lly1 <= $lly2 && $lly2 <= $ury1) && ($lly1 <= $ury2 && $ury2 <= $ury1)) 
+                      {
+                       #print "overlaps are $llx1 $lly2 $urx1 $ury2 \n";
+                        push(@overlap, $llx1, $lly2, $urx1, $ury2);
+                      }
+         elsif(($llx1 <= $llx2 && $llx2 <= $urx1) && ($llx1 <= $urx2 && $urx2 <= $urx1) && ($lly2 <= $lly1 && $lly1 <= $ury2) && ($lly2 <= $ury1 && $ury1 <= $ury2)) 
+                      {
+                      # print "overlaps are $llx2 $lly1 $urx2 $ury1 \n";
+                        push(@overlap, $llx2, $lly1, $urx2, $ury1);
+                      
+                      }
+                 else
+                      {
+                        #print "no overlaps \n";
+                      }
+                 
+print "INFO-PWR : 002: ad @overlap\n";
+return(@overlap);
+}#sub overlap_rect
+
+
+
+
+sub overlap_rectangles{
+ my $noOfArguments = @_;
+ if ($noOfArguments < 8){
+ print "WARN-PWR : 001 : reguired no of argument should be greater than 8 and multiple of 4\n";
+ return ;
+                        }
+ if (($noOfArguments % 4) != 0){
+ print "WARN-PWR : 002 : reguired no of argument should be greater than 8 and multiple of 4\n";
+ return ;
+                        }
+for ( my $jj = 0; $jj < $noOfArguments; $jj = $jj+ 4) {
+my $x1 = $_[$jj];
+my $y1 = $_[$jj+1];
+my $x2 = $_[$jj+2];
+my $y2 = $_[$jj+3];
+for ( my $kk = $jj+ 4 ; $kk < $noOfArguments; $kk = $kk + 4) {
+my $x3 = $_[$kk];
+my $y3 = $_[$kk+1];
+my $x4 = $_[$kk+2];
+my $y4 = $_[$kk+3];
+
+&overlap_rect($x1, $y1, $x2, $y2, $x3, $y3, $x4, $y4);
+                                                             }                                                                                                                                                                                                                                             }                                                                                                                                                                                                      # print "my @overlap\n";                                                                                                                
+
+}# sub overlap_rectangles
+
+
+
+#&overlap_rectangles(5, 2, 7, 9, 1, 5, 12, 6, 7, 9, 5, 2, 12, 6, 1, 5, 6, 3, 8, 10, 2, 6, 13, 7, 8, 10, 1, 3, 13, 7, 2, 6);
+
+
+
+#########################################################################################################################
+
+sub add_power_via {
+
+#****f* /add_power_via
+# NAME
+#    add_power_via
+#FUNCTION
+#    add vias in overlapping region
+#Assumptions
+#    it will work only if overlap found
+#SYNOPSIS
+#    add_power_via -rect(metal rectangles) <llx1,lly1,urx1,ury1,llx2,lly2,urx2,ury2> 
+#                  -cutlayer <cut layer Name> <llx,lly,urx,ury>
+#                  -spacing <spacing across X-axis, spacing across Y-axis>
+#                  -overhangBL <overhang across bottom>
+#                  -overhangTL <overhang across top>
+#INPUTS
+#    options:
+#    -rect <llx1,lly1,urx1,ury1,llx2,lly2,urx2,ury2>, 
+#    -cutlayer <layerName> <llx,lly,urx,ury>,-spacing <x,y>,
+#    -overhangBL <overhang>, -overhangTL <overhang>
+#OUTPUTS
+#    create array of via in overlapping region
+#****
+
+my $noOfArguments = @_;
+
+if( $noOfArguments < 11 ||$noOfArguments > 11  || $_[0] eq '-h' || $_[0] eq '-help' || $_[0] eq '-HELP') { 
+                           print "Usage :  add_power_via    -rect <llx1,lly1,urx1,ury1,llx2,lly2.....>\n";  
+                           print "                          -cutlayer <layerName> <llx,lly,urx,ury>\n";
+                           print "                          -spacing <x,y>\n";      
+                           print "                          -overhangBL <overhang>\n";                               
+                           print "                          -overhangTL <overhang>\n";                               
+                         }#if no. of arg not eq
+
+else { # if correct no. of inputs
+   
+for(my $i = 0; $i < $noOfArguments; $i++){
+    if($_[$i] eq "-rect"){
+       my $rect = $_[$i+1];
+       @rectcoord = split(/\,/,$rect);}
+    if($_[$i] eq "-cutlayer"){
+       $cutlayer = $_[$i+1];  
+       my $rect1 = $_[$i+2];
+       @rectcoord1 = split(/\,/,$rect1);}
+    if($_[$i] eq "-overhangTL"){
+       $overhangTop = $_[$i+1];
+                               }  
+    if($_[$i] eq "-overhangBL"){
+       $overhangBottom = $_[$i+1];
+                               }   
+    if($_[$i] eq "-spacing"){
+       $spacing = $_[$i+1];
+       @spacing = split(/\,/,$spacing);}
+      
+}
+&overlap_rectangles(@rectcoord);
+my $n = @overlap;
+   for ($i = 0; $i<$n ;$i=$i+4){
+        $olx = $overlap[$i];
+        $oly = $overlap[$i+1];
+        $oux = $overlap[$i+2];
+        $ouy = $overlap[$i+3];
+#print " $olx,$oly,$oux,$ouy\n"
+     &create_array_via(-overlap, "$olx,$oly,$oux,$ouy", -cutlayer, $cutlayer, "$rectcoord1[0],$rectcoord1[1],$rectcoord1[2],$rectcoord1[3]", -overhangTL, $overhangTop, -overhangBL, $overhangBottom, -spacing, "$spacing[0],$spacing[1]");
+   }#for
+ }
+}#sub add_power_via
+
+########################################################################################
+######################## Add power stripe main #########################################
+########################################################################################
+sub addStripes {
+my $noOfArguments = @_;
+if($noOfArguments <0 || $_[0] eq "-h"){
+					print "Usage : addStripes\n";
+					print "      : -instance <instance Name>\n";
+					print "      : -offset <{list of offset}>\n";
+					print "      : -spacing <{list of spacing>\n";
+					print "      : -dir <{list of dir}>\n";
+					print "      : -side <{list of side}>\n";
+                                        print "      : -net <{list of net}>\n";
+                                        print "      : -layer <{list of layer}>\n";
+                                        print "      : -width <{list of width}>\n";
+                                        print "      : -repeat <{list of width}>\n";
+                                        print "      : -extend <{extend_1:extend_2............}>\n";
+                                      }
+else {
+  my ($instance, $offset, $spacing, $dir, $side, $layer, $width, $repeat, $extend_1, $extend_2);
+  my @offset_arr = (0);
+  my @spacing_arr = (5);
+  my @dir_arr = ();
+  my @side_arr = ();
+  my @net_list = ();
+  my @layer_arr = ();
+  my @width_arr = ();
+  my @repeat_arr = ();
+  my @ext_arr = ();
+
+  for(my $i =0;$i < $noOfArguments;$i++){
+      if($_[$i] eq "-instance"){$instance = $_[$i+1];} 
+      if($_[$i] eq "-offset"){
+         my $offset_str = $_[$i+1];
+         $offset_str =~ s/\{\s*//;
+         $offset_str =~ s/\s*\}//;
+         @offset_arr = split(/\,/,$offset_str);
+      } 
+      if($_[$i] eq "-spacing"){
+         my $spacing_str = $_[$i+1];
+         $spacing_str =~ s/\{\s*//;
+         $spacing_str =~ s/\s*\}//;
+         @spacing_arr = split(/\,/,$spacing_str);
+      } 
+      if($_[$i] eq "-dir"){
+         my $dir_str = $_[$i+1]; 
+         $dir_str =~ s/\{\s*//;
+         $dir_str =~ s/\s*\}//;
+         @dir_arr = split(/\,/,$dir_str);
+      } 
+      if($_[$i] eq "-side"){
+         my $side_str = $_[$i+1]; 
+         $side_str =~ s/\{\s*//;
+         $side_str =~ s/\s*\}//;
+         @side_arr = split(/\,/,$side_str);
+      } 
+      if($_[$i] eq "-net"){
+         my $nets = $_[$i+1];
+         $nets =~ s/\{\s*//;
+         $nets =~ s/\s*\}//;
+         @net_list = split(/\,/,$nets);
+      } 
+      if($_[$i] eq "-layer"){
+         my $layer_str = $_[$i+1]; 
+         $layer_str =~ s/\{\s*//;
+         $layer_str =~ s/\s*\}//;
+         @layer_arr = split(/\,/,$layer_str);
+      } 
+      if($_[$i] eq "-width"){
+         my $width_str = $_[$i+1]; 
+         $width_str =~ s/\{\s*//;
+         $width_str =~ s/\s*\}//;
+         @width_arr = split(/\,/,$width_str);
+      } 
+      if($_[$i] eq "-repeat"){
+         my $repeat_str = $_[$i+1]; 
+         $repeat_str =~ s/\{\s*//;
+         $repeat_str =~ s/\s*\}//;
+         @repeat_arr = split(/\,/,$repeat_str);
+      } 
+      if($_[$i] eq "-extend"){
+         my $ext_str = $_[$i+1]; 
+         $ext_str =~ s/\{\s*//;
+         $ext_str =~ s/\s*\}//;
+         @ext_arr = split(/\,/,$ext_str);
+     } 
+  }#for
+  my $dbu = $GLOBAL->dbfGlobalGetDBU;
+  if(exists $COMP_ALREADY{$instance}){
+     my $cellref = $CADB{$instance}->dbCadbGetCellref;
+     my @loc = $CADB{$instance}->dbCadbGetLoc;
+     if(exists $PLDB{$cellref}){
+        my @size = $PLDB{$cellref}->dbMdbGetSize;
+        my $new_size_x = $size[0]*$dbu;
+        my $new_size_y = $size[1]*$dbu;
+        my $llx = $loc[0];
+        my $lly = $loc[1];
+        my $urx = $loc[0] + $new_size_x;
+        my $ury = $loc[1] + $new_size_y;
+        my @bbox = ($llx, $lly, $urx, $ury);
+        #print "$instance $llx $lly $urx $ury\n";
+        for(my $n=0;$n<=$#net_list;$n++){
+            if($#offset_arr == $#net_list){
+               $offset = $offset_arr[$n]*$dbu;
+            }else{
+               $offset = $offset_arr[0]*$dbu;
+            }
+            if($#spacing_arr == $#net_list){
+               $spacing = $spacing_arr[$n]*$dbu;
+            }else{
+               $spacing = $spacing_arr[0]*$dbu;
+            }
+            if($#dir_arr == $#net_list){
+               $dir = $dir_arr[$n];
+            }else{
+               $dir = $dir_arr[0];
+            }
+            if($#side_arr == $#net_list){
+               $side = $side_arr[$n];
+            }else{
+               $side = $side_arr[0];
+            }
+            if($#layer_arr == $#net_list){
+               $layer = $layer_arr[$n];
+            }else{
+               $layer = $layer_arr[0];
+            }
+            if($#width_arr == $#net_list){
+               $width = $width_arr[$n]*$dbu;
+            }else{
+               $width = $width_arr[0]*$dbu;
+            }
+            if($#repeat_arr == $#net_list){
+               $repeat = $repeat_arr[$n];
+            }else{
+               $repeat = $repeat_arr[0];
+            }
+            if($#ext_arr == $#net_list){
+               ($extend_1, $extend_2) = (split(/\s*\:\s*/,$ext_arr[$n]))[0,1];
+               $extend_1 = $extend_1*$dbu;
+               $extend_2 = $extend_2*$dbu;
+            }else{
+               ($extend_1, $extend_2) = (split(/\s*\:\s*/,$ext_arr[0]))[0,1];
+               $extend_1 = $extend_1*$dbu;
+               $extend_2 = $extend_2*$dbu;
+            }
+            my @data = &create_stripe_from_given_loc("-instloc",$llx,$lly,$urx,$ury, "-bbox", $bbox[0],$bbox[1],$bbox[2],$bbox[3], "-offset", $offset, "-spacing","$spacing","-dir","$dir","-side","$side","-repeat","$repeat","-width","$width","-layer","$layer","-extend","$extend_1","$extend_2","-net","$net_list[$n]"); 
+            @bbox = @{$data[0]};
+            my @line_data = @{$data[1]};
+            foreach my $line (@line_data){
+               #print "$net_list[$n] => $line\n";
+               if(exists $NETS_ROUTING_ALREADY{$net_list[$n]}){
+                 $NETS_ROUTING_ALREADY{$net_list[$n]}->dbNetRoutingDBSetFixedRoute($line);
+               }else {
+                 print "WARN : $net_list[$n] not exists\n";
+               }
+            }#foreach
+        }#for
+     }#if exists in PLDB
+  }#if exists in COMP_ALREADY
+}#else
+}#sub addStripes
+
+sub create_stripe_from_given_loc {
+my $noOfArguments = @_;
+if($noOfArguments <0 || $_[0] eq "-h"){print "Usage : create_stripe_from_given_loc\n";
+                                       print "      : -instloc <llx,lly,urx,ury>\n";
+                                       print "      : -bbox <bbox_llx,bbox_lly,bbox_urx,bbox_ury>\n";
+                                       print "      : -offset <offset or by default it takes 5>\n";
+                                       print "      : -spacing <spacing or by default it takes 5>\n";
+                                       print "      : -dir <l|r|b|t>\n";
+                                       print "      : -side <V | H>\n";
+                                       print "      : -net <netName>\n";
+                                       print "      : -layer <layerName>\n";
+                                       print "      : -width <width>\n";
+                                       print "      : -repeat <number of times>\n";
+                                       print "      : -extend <extend_1:extend_2>\n";
+                                      }
+else {
+  my ($llx, $lly, $urx, $ury);
+  my ($bbox_llx, $bbox_lly, $bbox_urx, $bbox_ury);
+  my $offset = 0;
+  my $spacing = 5;
+  my $dir = "";
+  my $side =  "";
+  my $layer = "";
+  my $width = 0;
+  my $repeat = 1;
+  my $extend_1 = 0;
+  my $extend_2 = 0;
+  my $net = "";
+  for(my $i =0;$i < $noOfArguments;$i++){
+    if($_[$i] eq "-instloc"){$llx = $_[$i+1];$lly = $_[$i+2];
+                             $urx = $_[$i+3];$ury = $_[$i+4];} 
+    if($_[$i] eq "-bbox"){$bbox_llx = $_[$i+1];$bbox_lly = $_[$i+2];
+                             $bbox_urx = $_[$i+3];$bbox_ury = $_[$i+4];} 
+    if($_[$i] eq "-offset"){$offset = $_[$i+1];}
+    if($_[$i] eq "-spacing"){$spacing = $_[$i+1];}
+    if($_[$i] eq "-dir"){$dir = $_[$i+1];} 
+    if($_[$i] eq "-side"){$side = $_[$i+1];} 
+    if($_[$i] eq "-net"){$net = $_[$i+1];} 
+    if($_[$i] eq "-layer"){$layer = $_[$i+1];} 
+    if($_[$i] eq "-width"){$width = $_[$i+1];} 
+    if($_[$i] eq "-repeat"){$repeat = $_[$i+1];} 
+    if($_[$i] eq "-extend"){$extend_1 = $_[$i+1]; $extend_2 = $_[$i+2];} 
+  }#for
+  my $dbu = $GLOBAL->dbfGlobalGetDBU;
+  if(($side eq "l") && ($dir eq "V")) {
+    my @line_data = ();
+    my $x_1;
+    for(my $i=1;$i<=$repeat;$i++){
+      $x_1 = $bbox_llx -($offset+$spacing*$i+ $width*($i-1/2)); 
+      my $y_1 = $lly - $extend_1; 
+      my $x_2 = $bbox_llx - ($offset+$spacing*$i+$width*($i-1/2));
+      my $y_2 = $ury + $extend_2;
+      my $co_ord_l = "( $x_1 $y_1 )";
+      my $co_ord_u = "( * $y_2 )";
+      my $line = $layer." ".$width." + "."SHAPE STRIPE" . " $co_ord_l" . " $co_ord_u";
+      push (@line_data,$line);
+    }#for
+    return([$x_1-$width/2, $bbox_lly, $bbox_urx, $bbox_ury],\@line_data);
+
+  }elsif(($side eq "r") && ($dir eq "V")){
+    my @line_data = ();
+    my $x_2;
+    for(my $i=1;$i<=$repeat;$i++){
+      my $x_1 = $bbox_urx + ($offset+$spacing*$i+$width*($i-1/2)); 
+      my $y_1 = $lly - $extend_1; 
+      $x_2 = $bbox_urx + ($offset+$spacing*$i+$width*($i-1/2));
+      my $y_2 = $ury + $extend_2;
+      my $co_ord_l = "( $x_1 $y_1 )";
+      my $co_ord_u = "( * $y_2 )";
+      my $line = $layer." ".$width." + "."SHAPE STRIPE" . " $co_ord_l" ." $co_ord_u";
+      push (@line_data,$line);
+    }#for
+    return([$bbox_llx, $bbox_lly, $x_2+$width/2, $bbox_ury], \@line_data);
+
+  }elsif(($side eq "b") && ($dir eq "H")){
+    my @line_data = ();
+    my $y_1;
+    for(my $i=1;$i<=$repeat;$i++){
+      my $x_1 = $llx - $extend_1; 
+      $y_1 = $bbox_lly - ($offset+$spacing*$i+$width*($i-1/2)); 
+      my $x_2 = $urx + $extend_2;
+      my $y_2 = $bbox_lly - ($offset+$spacing*$i+$width*($i-1/2));
+      my $co_ord_l = "( $x_1 $y_1 )";
+      my $co_ord_u = "( $x_2 * )";
+      my $line = $layer." ".$width." + "."SHAPE STRIPE" . " $co_ord_l" . " $co_ord_u";
+      push (@line_data,$line);
+    }#for
+    return([$bbox_llx, $y_1-$width/2, $bbox_urx, $bbox_ury], \@line_data);
+
+  }elsif(($side eq "t") && ($dir eq "H")){
+    my @line_data = ();
+    my $y_2;
+    for(my $i=1;$i<=$repeat;$i++){
+      my $x_1 = $llx - $extend_1; 
+      my $y_1 = $bbox_ury + ($offset+$spacing*$i+$width*($i-1/2)); 
+      my $x_2 = $urx + $extend_2;
+      $y_2 = $bbox_ury + ($offset+$spacing*$i+$width*($i-1/2));
+      my $co_ord_l = "( $x_1 $y_1 )";
+      my $co_ord_u = "( $x_2 * )";
+      my $line = $layer." ".$width." + "."SHAPE STRIPE" . " $co_ord_l" . " $co_ord_u";
+      push (@line_data,$line);
+    }#fo
+    return([$bbox_llx, $bbox_lly, $bbox_urx, $y_2+$width/2], \@line_data);
+
+  }elsif(($side eq "t") && ($dir eq "V")){
+  }
+}
+}#sub create_stripe_from_given_loc
+
+#########################################################################################################################
+sub add_customer_stripe {
+my $noOfArguments = @_;
+if($noOfArguments <0 || $_[0] eq "-h"){
+                                      }
+else {
+my $instance = "";
+my $spacing = 5;
+my $dir = "";
+my $net = "";
+my $layer = "";
+my $side = "";
+my $width = "";
+my $repeat = "";
+my $extend_1 = "";
+my $extend_2 = "";
+
+  for(my $i =0;$i < $noOfArguments;$i++){
+    if($_[$i] eq "-instance"){$instance = $_[$i+1];} 
+    if($_[$i] eq "-spacing"){$spacing = $_[$i+1];}
+    if($_[$i] eq "-dir"){$dir = $_[$i+1];} 
+    if($_[$i] eq "-side"){$side = $_[$i+1];} 
+    if($_[$i] eq "-net"){$net = $_[$i+1];} 
+    if($_[$i] eq "-layer"){$layer = $_[$i+1];} 
+    if($_[$i] eq "-width"){$width = $_[$i+1];} 
+    if($_[$i] eq "-repeat"){$repeat = $_[$i+1];} 
+    if($_[$i] eq "-extend"){$extend_1 = $_[$i+1]; $extend_2 = $_[$i+2];} 
+  }#for
+my $dbu = $GLOBAL->dbfGlobalGetDBU;
+if (exists $COMP_ALREADY{$instance}){
+  my $cellref = $CADB{$instance}->dbCadbGetCellref;
+  #print "$instance => $cellref\n";
+  my @loc = $CADB{$instance}->dbCadbGetLoc;
+  if (exists $PLDB{$cellref}){
+    my @size = $PLDB{$cellref}->dbMdbGetSize;
+    my $new_size_x = $size[0]*$dbu;
+    my $new_size_y = $size[1]*$dbu;
+    my $llx = $loc[0];
+    my $lly = $loc[1];
+    my $urx = $loc[0] + $new_size_x;
+    my $ury = $loc[1] + $new_size_y;
+    #print "inst $llx $lly $urx $ury\n";
+    if(($side eq "l") && ($dir eq "V")) {
+      my $x1 = $llx; 
+      my $y1 = $lly; 
+      my $x2 = $llx;
+      my $y2 = $ury; 
+      for(my $i=1;$i<=$repeat;$i++){
+        my $x_1 = $x1 - ($spacing*$i+$width*$i/2); 
+        my $y_1 = $y1 - $extend_1; 
+        my $x_2 = $x1 - ($spacing*$i+$width*$i/2);
+        my $y_2 = $y2 + $extend_2;
+        my $co_ord_l = "( $x_1 $y_1 )";
+        my $co_ord_u = "( * $y_2 )";
+        my $line = $layer." ".$width." + "."SHAPE STRIPE" . " $co_ord_l" . " $co_ord_u";
+        #print "$line\n";
+        $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBSetSpecialRoute($line);
+      }#for
+    }elsif(($side eq "r") && ($dir eq "V")){
+      my $x1 = $urx; 
+      my $y1 = $lly; 
+      my $x2 = $urx;
+      my $y2 = $ury; 
+      for(my $i=1;$i<=$repeat;$i++){
+        my $x_1 = $x1 + ($spacing*$i+$width*$i/2); 
+        my $y_1 = $y1 - $extend_1; 
+        my $x_2 = $x1 + ($spacing*$i+$width*$i/2);
+        my $y_2 = $y2 + $extend_2;
+        my $co_ord_l = "( $x_1 $y_1 )";
+        my $co_ord_u = "( * $y_2 )";
+        my $line = $layer." ".$width." + "."SHAPE STRIPE" . " $co_ord_l" ." $co_ord_u";
+        #print "$net $line\n";
+        $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBSetSpecialRoute($line);
+      }#for
+    }elsif(($side eq "b") && ($dir eq "H")){
+      my $x1 = $llx; 
+      my $y1 = $lly; 
+      my $x2 = $urx;
+      my $y2 = $lly; 
+      for(my $i=1;$i<=$repeat;$i++){
+        my $x_1 = $x1 - $extend_1; 
+        my $y_1 = $y1 - ($spacing*$i+$width*$i/2); 
+        my $x_2 = $x2 + $extend_2;
+        my $y_2 = $y2 - ($spacing*$i+$width*$i/2);
+        my $co_ord_l = "( $x_1 $y_1 )";
+        my $co_ord_u = "( $x_2 * )";
+        my $line = $layer." ".$width." + "."SHAPE STRIPE" . " $co_ord_l" . " $co_ord_u";
+        #print "$line\n";
+        $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBSetSpecialRoute($line);
+      }#for
+    }elsif(($side eq "t") && ($dir eq "H")){
+      my $x1 = $llx; 
+      my $y1 = $lly; 
+      my $x2 = $urx;
+      my $y2 = $lly; 
+      for(my $i=1;$i<=$repeat;$i++){
+        my $x_1 = $x1 - $extend_1; 
+        my $y_1 = $y1 + ($spacing*$i+$width*$i/2); 
+        my $x_2 = $x2 + $extend_2;
+        my $y_2 = $y2 + ($spacing*$i+$width*$i/2);
+        my $co_ord_l = "( $x_1 $y_1 )";
+        my $co_ord_u = "( $x_2 * )";
+        my $line = $layer." ".$width." + "."SHAPE STRIPE" . " $co_ord_l" . " $co_ord_u";
+         #print "$line\n";
+        $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBSetSpecialRoute($line);
+      }#for
+    }elsif(($side eq "t") && ($dir eq "V")){
+    }
+  }
+}
+}#else
+}#sub add_customer_stripe
+
+
+############################################################################################################
+############################################## Power routing ###############################################
+############################################################################
+sub add_power_route{
+  use Math::Polygon;
+  use Math::Polygon::Clip;
+  use Math::Polygon::Calc;
+  use Math::Polygon::Transform;
+  my $noOfArguments = @_;
+  
+  if($noOfArguments < 0 || $_[0] eq '-h') { 
+                             print "Usage : add_power_route -block <list of blocks (default value is all)> \n";
+                             print "                        -net <name (default value is all)> \n";
+                             print "                        -routing_layer <layer name> \n";
+                             print "                        -layer_dir <HORIZONTAL/VERTICAL> \n";
+                             print "                        -routing_side <L/R/T/B> \n";
+                             print "                        -maxDistFromPinPoly2CellBoundary <max distance between cell boundary & layer polygon connected with power route (micron)> \n";
+                             print "                        -maxDistFromCellBoundary2Stripe <max distance between cell boundary & power Stripe (micron)> \n";
+                             print "                        -metalSlotWidth <width of metal slot (micron)> \n";
+                             print "                        -metalSlotSpacing <spacing between metal slots (micron)> \n";
+                             #print "Note: if you provide list of blocks then net should not be a list & vise versa\n";
+  }else{ # if correct no. of inputs
+     my ($routing_layer, $routing_layer_dir, $routing_side) = ("", "", "");
+     my ($pinPoly2CellBoundary, $cellBoundary2Stripe) = (0.2, 200); #### in micron
+     my ($metalSlotWidth, $metalSlotSpacing) = (0, 1);; #### in micron
+     my @blkList = ();
+     my @netList = ();
+     for(my $i = 0; $i < $noOfArguments; $i++){
+         if($_[$i] eq "-block"){
+            my $blk_str = $_[$i+1];
+            $blk_str =~ s/\{\s*//;
+            $blk_str =~ s/\s*\}//;
+            @blkList = split(/\,/,$blk_str);
+         }
+         if($_[$i] eq "-net"){
+            my $net_str = $_[$i+1];
+            $net_str =~ s/\{\s*//;
+            $net_str =~ s/\s*\}//;
+            @netList = split(/\,/,$net_str);
+         }
+         if($_[$i] eq "-routing_layer"){$routing_layer = $_[$i+1];}
+         if($_[$i] eq "-layer_dir"){$routing_layer_dir = $_[$i+1];}
+         if($_[$i] eq "-routing_side"){$routing_side = $_[$i+1];}
+         if($_[$i] eq "-maxDistFromPinPoly2CellBoundary"){$pinPoly2CellBoundary = $_[$i+1];}
+         if($_[$i] eq "-maxDistFromCellBoundary2Stripe"){$cellBoundary2Stripe = $_[$i+1];}
+         if($_[$i] eq "-metalSlotWidth"){$metalSlotWidth = $_[$i+1]; }
+         if($_[$i] eq "-metalSlotSpacing"){$metalSlotSpacing = $_[$i+1];}
+     }#for
+     
+     ################# converting micron value in dbu ###############
+     my $dbu = $GLOBAL->dbfGlobalGetDBU;
+     $pinPoly2CellBoundary *= $dbu;
+     $cellBoundary2Stripe *= $dbu;
+     $metalSlotWidth *= $dbu;
+     $metalSlotSpacing *= $dbu;
+     
+     ############### Making layerNum vs layerName hash ##############
+     my %tempLayerNumVsName = ();
+     foreach my $layerName ( keys %PTDB){
+          my $num = $PTDB{$layerName}->dbTechGetLayerNum;
+          $tempLayerNumVsName{$num} = $layerName; 
+     }#for layerName
+    
+     ##################### if net arg is empty or all ###############
+     if(@netList < 1 || $netList[0] eq "all"){
+        @netList = keys %NETS_ALREADY; 
+     }
+
+     ##################################### routing for all nets #################################
+     foreach my $net (@netList) {
+       my $netType = $NADB{$net}->dbNadbGetNetType;
+       if((exists $NETS_ROUTING_ALREADY{$net}) && ($netType == 1 || $netType == 2)) {
+          my @data = $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBGetFixedRoute;
+          push(@data, $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBGetSpecialRoute); #fixed for JDC
+          my %horizontal_stripe_y = ();
+          my %vertical_stripe_x = ();
+          my %horizontal_stripe_data = ();
+          my %vertical_stripe_data = ();
+          if($#data >= 0){ ##### if routing stripes found
+             foreach my $segment ( @data ) {
+                my $layer = (split(/\s+/,$segment))[0];
+                my @routeBox = get_stripe_layer_coords($segment); # first element is width of stripe
+                if($routeBox[1] == $routeBox[3]){
+                   my $num = keys %vertical_stripe_x;
+                   $vertical_stripe_x{$num} = $routeBox[1];
+                   $vertical_stripe_data{$layer}{$num} = \@routeBox;
+                }else{
+                   my $num = keys %horizontal_stripe_y;
+                   $horizontal_stripe_y{$num} = $routeBox[2];
+                   $horizontal_stripe_data{$layer}{$num} = \@routeBox;
+                }
+             }#foreach segment of routing
+             
+             ####################### arranging vertical/horizontal stripes in bottom2top/left2right #######################
+             my @vertical_stripes = sort{$vertical_stripe_x{$a}<=>$vertical_stripe_x{$b}} (keys %vertical_stripe_x); 
+             my @horizontal_stries = sort{$horizontal_stripe_y{$a}<=>$horizontal_stripe_y{$b}} (keys %horizontal_stripe_y); 
+
+             #################### if -block is empty or all ####################
+             if(@blkList < 1 || $blkList[0] eq "all"){
+                @blkList = keys %{$NETS_ALREADY{$net}};
+             }
+         
+             ########################### adding routes for list of instances #####################
+             foreach my $instance ( @blkList ) {
+                my $pinName = $NETS_ALREADY{$net}{$instance};
+                if(exists $COMP_ALREADY{$instance} ) {
+                   my $cellref = $CADB{$instance}->dbCadbGetCellref;
+                   my @instLoc = $CADB{$instance}->dbCadbGetLoc;
+                   my @instBbox = $CADB{$instance}->dbCadbGetbBox;
+                   my $orient = $CADB{$instance}->dbCadbGetOrient;
+                   if(exists $PLDB{$cellref} ) {
+                      my @cellSize = $PLDB{$cellref}->dbMdbGetSize;
+                      my @cellOrigin = $PLDB{$cellref}->dbMdbGetOrigin;
+                      my @left_stripes = ();
+                      my @right_stripes = ();
+                      my @bottom_stripes = ();
+                      my @top_stripes = ();
+                      ############################### making left & right stripes array ################################
+                      foreach my $stripe_num (@vertical_stripes){
+                         foreach my $l (keys %vertical_stripe_data){
+                            if(exists $vertical_stripe_data{$l}{$stripe_num}){
+                               my @stData = @{$vertical_stripe_data{$l}{$stripe_num}};
+                               if((($instBbox[0] - $stData[1]) > 0 && ($instBbox[0] - $stData[1]) <= $cellBoundary2Stripe) && ($instBbox[1] >= $stData[2] && $instBbox[3] <= $stData[4])){
+                                  push(@left_stripes, $stripe_num);
+                               }elsif((($stData[1] - $instBbox[2]) > 0 && ($stData[1] - $instBbox[2]) <= $cellBoundary2Stripe) && ($instBbox[1] >= $stData[2] && $instBbox[3] <= $stData[4])){
+                                  push(@right_stripes, $stripe_num);
+                               } 
+                            }
+                         }
+                      }
+                      ############################### making top & bottom stripes array ################################
+                      foreach my $stripe_num (@horizontal_stries){
+                         foreach my $l (keys %horizontal_stripe_data){
+                            if(exists $horizontal_stripe_data{$l}{$stripe_num}){
+                               my @stData = @{$horizontal_stripe_data{$l}{$stripe_num}};
+                               if((($instBbox[1] - $stData[2]) > 0 && ($instBbox[1] - $stData[2]) <= $cellBoundary2Stripe) && ($instBbox[0] >= $stData[1] && $instBbox[2] <= $stData[3])){
+                                  push(@bottom_stripes, $stripe_num);
+                               }elsif((($stData[2] - $instBbox[3]) > 0 && ($stData[2] - $instBbox[3]) <= $cellBoundary2Stripe) &&  ($instBbox[0] >= $stData[1] && $instBbox[2] <= $stData[3])){
+                                  push(@top_stripes, $stripe_num);
+                               } 
+                            }
+                         }
+                      }
+                      ################################# processing each pin polygon ###################################
+                      my @poly = $PLDB{$cellref}->dbMdbGetPinPolygon($pinName);
+                      foreach my $poly_line (@poly){
+                        my @poly_coord = split(/\s+/,$poly_line);
+                        my $layer = shift @poly_coord;
+                        if($routing_layer ne "" && $routing_layer ne "all" && $routing_layer ne $layer){next;} #if layer option is set
+                        my $type = $PTDB{$layer}->dbTechGetLayerType;
+                        if($type ne "ROUTING"){next;} #if not a routing layer
+                        my $dir = $routing_layer_dir;
+                        if($dir eq ""){
+                           $dir = $PTDB{$layer}->dbTechGetLayerDir;
+                        }
+                        my $num = $PTDB{$layer}->dbTechGetLayerNum;   
+                        shift @poly_coord;
+
+                        my @coords = &xformCellPinPolyToInstPin($instLoc[0],$instLoc[1],$cellOrigin[0],$cellOrigin[1],$orient,$cellSize[0],$cellSize[1],@poly_coord);
+                        my @p = ();
+                        for(my $i=0; $i<=$#coords; $i=$i+2){
+                            push(@p, [$coords[$i], $coords[$i+1]]);
+                        }
+
+                        my $up_routing_layer_num = $num + 2;
+                        my $down_routing_layer_num = $num - 2;
+
+                        ##### Making imaginary bbox for polygons outside the cell boundary #####
+                        my @imaginaryBbox = @instBbox;
+                        my $cutBboxWidth = $pinPoly2CellBoundary + 1; #in dbu
+                        my @pinBbox = polygon_bbox @p;
+                        if($pinBbox[0] < $instBbox[0]){$imaginaryBbox[0] = $pinBbox[0]; $cutBboxWidth += ($instBbox[0] - $pinBbox[0]);}
+                        if($pinBbox[1] < $instBbox[1]){$imaginaryBbox[1] = $pinBbox[1]; $cutBboxWidth += ($instBbox[1] - $pinBbox[1]);}
+                        if($pinBbox[2] > $instBbox[2]){$imaginaryBbox[2] = $pinBbox[2]; $cutBboxWidth += ($pinBbox[2] - $instBbox[2]);}
+                        if($pinBbox[3] > $instBbox[3]){$imaginaryBbox[3] = $pinBbox[3]; $cutBboxWidth += ($pinBbox[3] - $instBbox[3]);}
+
+                        ################# for left #################
+                        if(($routing_side eq "L" || $routing_side eq "all" || $routing_side eq "") && $dir eq "HORIZONTAL"){
+                           my @bbox_left   = ($imaginaryBbox[0], $imaginaryBbox[1], $imaginaryBbox[0]+$cutBboxWidth, $imaginaryBbox[3]);
+                           my @l = polygon_line_clip (\@bbox_left, @p);
+                           if(@l > 0){
+                              for(my $i=0; $i<=$#l; $i++){
+                                  my ($minx, $miny, $maxx, $maxy) = polygon_bbox @{$l[$i]};
+                                  if(exists $vertical_stripe_data{$tempLayerNumVsName{$up_routing_layer_num}}){
+                                     if(($minx - $instBbox[0]) <= $pinPoly2CellBoundary && @left_stripes > 0){
+                                        my @stData = @{$vertical_stripe_data{$tempLayerNumVsName{$up_routing_layer_num}}{$left_stripes[0]}};
+                                        my $conn_stripe_lower_x = $stData[1] - $stData[0]/2;
+                                        my $st_width = $maxy - $miny;
+                                        if($metalSlotWidth != 0 && $st_width >= (2*$metalSlotWidth+$metalSlotSpacing)){
+                                           my $numMetalSlots = int(($st_width+$metalSlotSpacing)/($metalSlotWidth+$metalSlotSpacing));
+                                           my $st_ref = $miny + ($st_width - $metalSlotWidth*$numMetalSlots - $metalSlotSpacing*($numMetalSlots -1))/2;
+                                           for(my $j=0; $j<$numMetalSlots; $j++){
+                                               my $st_mid_y = $st_ref + $metalSlotWidth/2 + ($metalSlotWidth+$metalSlotSpacing)*$j;
+                                               my $line = $layer." ".$metalSlotWidth." + "."SHAPE STRIPE" . " ( $conn_stripe_lower_x $st_mid_y ) ( $minx * )";
+                                               $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBSetFixedRoute($line);
+                                               $st_cnt++;
+                                           }
+                                        }else{
+                                           my $st_mid_y = ($miny + $maxy)/2;
+                                           my $line = $layer." ".$st_width." + "."SHAPE STRIPE" . " ( $conn_stripe_lower_x $st_mid_y ) ( $minx * )";
+                                           $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBSetFixedRoute($line);
+                                        }
+                                     }
+                                  }elsif(exists $vertical_stripe_data{$tempLayerNumVsName{$down_routing_layer_num}}){
+                                     if(($minx - $instBbox[0]) <= $pinPoly2CellBoundary && @left_stripes > 0){
+                                        my @stData = @{$vertical_stripe_data{$tempLayerNumVsName{$down_routing_layer_num}}{$left_stripes[0]}};
+                                        my $conn_stripe_lower_x = $stData[1] - $stData[0]/2;
+                                        my $st_width = $maxy - $miny;
+                                        if($metalSlotWidth != 0 && $st_width >= (2*$metalSlotWidth+$metalSlotSpacing)){
+                                           my $numMetalSlots = int(($st_width+$metalSlotSpacing)/($metalSlotWidth+$metalSlotSpacing));
+                                           my $st_ref = $miny + ($st_width - $metalSlotWidth*$numMetalSlots - $metalSlotSpacing*($numMetalSlots -1))/2;
+                                           for(my $j=0; $j<$numMetalSlots; $j++){
+                                               my $st_mid_y = $st_ref + $metalSlotWidth/2 + ($metalSlotWidth+$metalSlotSpacing)*$j;
+                                               my $line = $layer." ".$metalSlotWidth." + "."SHAPE STRIPE" . " ( $conn_stripe_lower_x $st_mid_y ) ( $minx * )";
+                                               $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBSetFixedRoute($line);
+                                               $st_cnt++;
+                                           }
+                                        }else{
+                                           my $st_mid_y = ($miny + $maxy)/2;
+                                           my $line = $layer." ".$st_width." + "."SHAPE STRIPE" . " ( $conn_stripe_lower_x $st_mid_y ) ( $minx * )";
+                                           $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBSetFixedRoute($line);
+                                        }
+                                     }
+                                  }#if layer found in vertical stripe
+                              }#foreach polygon
+                           }#if polygons found at left side 
+                        }#if side is left & layer dir is horizontal
+                        ################# for right #################
+                        if(($routing_side eq "R" || $routing_side eq "all" || $routing_side eq "") && $dir eq "HORIZONTAL"){
+                           my @bbox_right   = ($imaginaryBbox[2]-$cutBboxWidth, $imaginaryBbox[1], $imaginaryBbox[2], $imaginaryBbox[3]);
+                           my @r = polygon_line_clip (\@bbox_right, @p);
+                           if(@r > 0){
+                              for(my $i=0; $i<=$#r; $i++){
+                                  my ($minx, $miny, $maxx, $maxy) = polygon_bbox @{$r[$i]};
+                                  if(exists $vertical_stripe_data{$tempLayerNumVsName{$up_routing_layer_num}}){
+                                    if(($instBbox[2] - $maxx) <= $pinPoly2CellBoundary && @right_stripes > 0){
+                                       my @stData = @{$vertical_stripe_data{$tempLayerNumVsName{$up_routing_layer_num}}{$right_stripes[-1]}};
+                                       my $conn_stripe_upper_x = $stData[1] + $stData[0]/2;
+                                       my $st_width = $maxy - $miny;
+                                       if($metalSlotWidth != 0 && $st_width >= (2*$metalSlotWidth+$metalSlotSpacing)){
+                                          my $numMetalSlots = int(($st_width+$metalSlotSpacing)/($metalSlotWidth+$metalSlotSpacing));
+                                          my $st_ref = $miny + ($st_width - $metalSlotWidth*$numMetalSlots - $metalSlotSpacing*($numMetalSlots -1))/2;
+                                          for(my $j=0; $j<$numMetalSlots; $j++){
+                                              my $st_mid_y = $st_ref + $metalSlotWidth/2 + ($metalSlotWidth+$metalSlotSpacing)*$j;
+                                              my $line = $layer." ".$metalSlotWidth." + "."SHAPE STRIPE" . " ( $maxx $st_mid_y ) ( $conn_stripe_upper_x * )";
+                                              $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBSetFixedRoute($line);
+                                              $st_cnt++;
+                                          }
+                                       }else{
+                                          my $st_mid_y = ($miny + $maxy)/2;
+                                          my $line = $layer." ".$st_width." + "."SHAPE STRIPE" . " ( $maxx $st_mid_y ) ( $conn_stripe_upper_x * )";
+                                          $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBSetFixedRoute($line);
+                                       }
+                                    }
+                                  }elsif(exists $vertical_stripe_data{$tempLayerNumVsName{$down_routing_layer_num}}){
+                                    if(($instBbox[2] - $maxx) <= $pinPoly2CellBoundary && @right_stripes > 0){
+                                       my @stData = @{$vertical_stripe_data{$tempLayerNumVsName{$down_routing_layer_num}}{$right_stripes[-1]}};
+                                       my $conn_stripe_upper_x = $stData[1] + $stData[0]/2;
+                                       my $st_width = $maxy - $miny;
+                                       if($metalSlotWidth != 0 && $st_width >= (2*$metalSlotWidth+$metalSlotSpacing)){
+                                          my $numMetalSlots = int(($st_width+$metalSlotSpacing)/($metalSlotWidth+$metalSlotSpacing));
+                                          my $st_ref = $miny + ($st_width - $metalSlotWidth*$numMetalSlots - $metalSlotSpacing*($numMetalSlots -1))/2;
+                                          for(my $j=0; $j<$numMetalSlots; $j++){
+                                              my $st_mid_y = $st_ref + $metalSlotWidth/2 + ($metalSlotWidth+$metalSlotSpacing)*$j;
+                                              my $line = $layer." ".$metalSlotWidth." + "."SHAPE STRIPE" . " ( $maxx $st_mid_y ) ( $conn_stripe_upper_x * )";
+                                              $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBSetFixedRoute($line);
+                                              $st_cnt++;
+                                          }
+                                       }else{
+                                          my $st_mid_y = ($miny + $maxy)/2;
+                                          my $line = $layer." ".$st_width." + "."SHAPE STRIPE" . " ( $maxx $st_mid_y ) ( $conn_stripe_upper_x * )";
+                                          $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBSetFixedRoute($line);
+                                       }
+                                    }
+                                  }#if layer found in vertical stripe
+                              }#foreach polygon
+                           }#if polygons found at right side
+                        }#if side is right & layer dir is horizontal
+                        ################# for bottom #################
+                        if(($routing_side eq "B" || $routing_side eq "all" || $routing_side eq "") && $dir eq "VERTICAL"){
+                           my @bbox_bottom   = ($imaginaryBbox[0], $imaginaryBbox[1], $imaginaryBbox[2], $imaginaryBbox[1]+$cutBboxWidth);
+                           my @b = polygon_line_clip (\@bbox_bottom, @p);
+                           if(@b > 0){
+                              for(my $i=0; $i<=$#b; $i++){
+                                  my ($minx, $miny, $maxx, $maxy) = polygon_bbox @{$b[$i]};
+                                  if(exists $horizontal_stripe_data{$tempLayerNumVsName{$up_routing_layer_num}}){
+                                     if(($miny - $instBbox[1]) <= $pinPoly2CellBoundary && @bottom_stripes > 0){
+                                        my @stData = @{$horizontal_stripe_data{$tempLayerNumVsName{$up_routing_layer_num}}{$bottom_stripes[0]}};
+                                        my $conn_stripe_lower_y = $stData[2] - $stData[0]/2;
+                                        my $st_width = $maxx - $minx;
+                                        if($metalSlotWidth != 0 && $st_width >= (2*$metalSlotWidth+$metalSlotSpacing)){
+                                           my $numMetalSlots = int(($st_width+$metalSlotSpacing)/($metalSlotWidth+$metalSlotSpacing));
+                                           my $st_ref = $minx + ($st_width - $metalSlotWidth*$numMetalSlots - $metalSlotSpacing*($numMetalSlots -1))/2;
+                                           for(my $j=0; $j<$numMetalSlots; $j++){
+                                               my $st_mid_x = $st_ref + $metalSlotWidth/2 + ($metalSlotWidth+$metalSlotSpacing)*$j;
+                                               my $line = $layer." ".$metalSlotWidth." + "."SHAPE STRIPE" . " ( $st_mid_x $conn_stripe_lower_y ) ( * $miny )";
+                                               $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBSetFixedRoute($line);
+                                               $st_cnt++;
+                                           }
+                                        }else{
+                                           my $st_mid_x = ($minx + $maxx)/2;
+                                           my $line = $layer." ".$st_width." + "."SHAPE STRIPE" . " ( $st_mid_x $conn_stripe_lower_y ) ( * $miny )";
+                                           $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBSetFixedRoute($line);
+                                        }
+                                     }
+                                  }elsif(exists $horizontal_stripe_data{$tempLayerNumVsName{$down_routing_layer_num}}){
+                                     if(($miny - $instBbox[1]) <= $pinPoly2CellBoundary && @bottom_stripes > 0){
+                                        my @stData = @{$horizontal_stripe_data{$tempLayerNumVsName{$down_routing_layer_num}}{$bottom_stripes[0]}};
+                                        my $conn_stripe_lower_y = $stData[2] - $stData[0]/2;
+                                        my $st_width = $maxx - $minx;
+                                        if($metalSlotWidth != 0 && $st_width >= (2*$metalSlotWidth+$metalSlotSpacing)){
+                                           my $numMetalSlots = int(($st_width+$metalSlotSpacing)/($metalSlotWidth+$metalSlotSpacing));
+                                           my $st_ref = $minx + ($st_width - $metalSlotWidth*$numMetalSlots - $metalSlotSpacing*($numMetalSlots -1))/2;
+                                           for(my $j=0; $j<$numMetalSlots; $j++){
+                                               my $st_mid_x = $st_ref + $metalSlotWidth/2 + ($metalSlotWidth+$metalSlotSpacing)*$j;
+                                               my $line = $layer." ".$metalSlotWidth." + "."SHAPE STRIPE" . " ( $st_mid_x $conn_stripe_lower_y ) ( * $miny )";
+                                               $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBSetFixedRoute($line);
+                                               $st_cnt++;
+                                           }
+                                        }else{
+                                           my $st_mid_x = ($minx + $maxx)/2;
+                                           my $line = $layer." ".$st_width." + "."SHAPE STRIPE" . " ( $st_mid_x $conn_stripe_lower_y ) ( * $miny )";
+                                           $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBSetFixedRoute($line);
+                                        }
+                                     }
+                                  }#if layer found in horizontal stripe
+                              }#foreach polygon
+                           }#if polygons found at bottom side
+                        }#if side is bottom & layer dir is vertical
+                        ################# for top #################
+                        if(($routing_side eq "T" || $routing_side eq "all" || $routing_side eq "") && $dir eq "VERTICAL"){
+                           my @bbox_top   = ($imaginaryBbox[0], $imaginaryBbox[3]-$cutBboxWidth, $imaginaryBbox[2], $imaginaryBbox[3]);
+                           my @t = polygon_line_clip (\@bbox_top, @p);
+                           if(@t > 0){
+                              for(my $i=0; $i<=$#t; $i++){
+                                  my ($minx, $miny, $maxx, $maxy) = polygon_bbox @{$t[$i]};
+                                  if(exists $horizontal_stripe_data{$tempLayerNumVsName{$up_routing_layer_num}}){
+                                     if(($instBbox[3] - $maxy) <= $pinPoly2CellBoundary && @top_stripes > 0){
+                                        my @stData = @{$horizontal_stripe_data{$tempLayerNumVsName{$up_routing_layer_num}}{$top_stripes[-1]}};
+                                        my $conn_stripe_upper_y = $stData[2] + $stData[0]/2;
+                                        my $st_width = $maxx - $minx;
+                                        if($metalSlotWidth != 0 && $st_width >= (2*$metalSlotWidth+$metalSlotSpacing)){
+                                           my $numMetalSlots = int(($st_width+$metalSlotSpacing)/($metalSlotWidth+$metalSlotSpacing));
+                                           my $st_ref = $minx + ($st_width - $metalSlotWidth*$numMetalSlots - $metalSlotSpacing*($numMetalSlots -1))/2;
+                                           for(my $j=0; $j<$numMetalSlots; $j++){
+                                               my $st_mid_x = $st_ref + $metalSlotWidth/2 + ($metalSlotWidth+$metalSlotSpacing)*$j;
+                                               my $line = $layer." ".$metalSlotWidth." + "."SHAPE STRIPE" . " ( $st_mid_x $maxy ) ( * $conn_stripe_upper_y )";
+                                               $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBSetFixedRoute($line);
+                                               $st_cnt++;
+                                           }
+                                        }else{
+                                           my $st_mid_x = ($minx + $maxx)/2;
+                                           my $line = $layer." ".$st_width." + "."SHAPE STRIPE" . " ( $st_mid_x $maxy ) ( * $conn_stripe_upper_y )";
+                                           $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBSetFixedRoute($line);
+                                        }
+                                     }
+                                  }elsif(exists $horizontal_stripe_data{$tempLayerNumVsName{$down_routing_layer_num}}){
+                                     if(($instBbox[3] - $maxy) <= $pinPoly2CellBoundary && @top_stripes > 0){
+                                        my @stData = @{$horizontal_stripe_data{$tempLayerNumVsName{$down_routing_layer_num}}{$top_stripes[-1]}};
+                                        my $conn_stripe_upper_y = $stData[2] + $stData[0]/2;
+                                        my $st_width = $maxx - $minx;
+                                        if($metalSlotWidth != 0 && $st_width >= (2*$metalSlotWidth+$metalSlotSpacing)){
+                                           my $numMetalSlots = int(($st_width+$metalSlotSpacing)/($metalSlotWidth+$metalSlotSpacing));
+                                           my $st_ref = $minx + ($st_width - $metalSlotWidth*$numMetalSlots - $metalSlotSpacing*($numMetalSlots -1))/2;
+                                           for(my $j=0; $j<$numMetalSlots; $j++){
+                                               my $st_mid_x = $st_ref + $metalSlotWidth/2 + ($metalSlotWidth+$metalSlotSpacing)*$j;
+                                               my $line = $layer." ".$metalSlotWidth." + "."SHAPE STRIPE" . " ( $st_mid_x $maxy ) ( * $conn_stripe_upper_y )";
+                                               $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBSetFixedRoute($line);
+                                               $st_cnt++;
+                                           }
+                                        }else{
+                                           my $st_mid_x = ($minx + $maxx)/2;
+                                           my $line = $layer." ".$st_width." + "."SHAPE STRIPE" . " ( $st_mid_x $maxy ) ( * $conn_stripe_upper_y )";
+                                           $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBSetFixedRoute($line);
+                                        }
+                                     }
+                                  }#if layer found in horizontal stripe
+                              }#foreach polygon
+                           }#if polygons found at top side
+                        }#if side is top & layer dir is vertical
+                        #########################################
+                      }#foreach polygon of pin
+
+                      ################################## processing pin Rectangles  ###########################
+                      my @pinRects = $PLDB{$cellref}->dbMdbGetPinRect($pinName);
+                      foreach $rectLine(@pinRects){
+                        my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$rectLine))[0,2,3,4,5];
+                        if($routing_layer ne "" && $routing_layer ne "all" && $routing_layer ne $layer){next;} #if layer option is set
+                        my $type = $PTDB{$layer}->dbTechGetLayerType;
+                        if($type ne "ROUTING"){next;}
+                        my $dir = $routing_layer_dir;
+                        if($dir eq ""){
+                           $dir = $PTDB{$layer}->dbTechGetLayerDir;
+                        }
+                        my $num = $PTDB{$layer}->dbTechGetLayerNum;   
+                        my @coords = &xformCellPinToInstPin($instLoc[0],$instLoc[1],$cellOrigin[0],$cellOrigin[1],$orient,$cellSize[0],$cellSize[1],$llx,$lly,$urx,$ury);
+
+                        my $up_routing_layer_num = $num + 2;
+                        my $down_routing_layer_num = $num - 2;
+
+                        if($dir eq "HORIZONTAL"){
+                           if(exists $vertical_stripe_data{$tempLayerNumVsName{$up_routing_layer_num}}){
+                              if(($coords[0] - $instBbox[0]) <= $pinPoly2CellBoundary && @left_stripes > 0 && ($routing_side eq "" || $routing_side eq "all" || $routing_side eq "L")) {
+                                 my @stData = @{$vertical_stripe_data{$tempLayerNumVsName{$up_routing_layer_num}}{$left_stripes[0]}};
+                                 my $conn_stripe_lower_x = $stData[1] - $stData[0]/2;
+                                 my $st_width = $coords[3] - $coords[1];
+                                 if($metalSlotWidth != 0 && $st_width >= (2*$metalSlotWidth+$metalSlotSpacing)){
+                                    my $numMetalSlots = int(($st_width+$metalSlotSpacing)/($metalSlotWidth+$metalSlotSpacing));
+                                    my $st_ref = $coords[1] + ($st_width - $metalSlotWidth*$numMetalSlots - $metalSlotSpacing*($numMetalSlots -1))/2;
+                                    for(my $j=0; $j<$numMetalSlots; $j++){
+                                        my $st_mid_y = $st_ref + $metalSlotWidth/2 + ($metalSlotWidth+$metalSlotSpacing)*$j;
+                                        my $line = $layer." ".$metalSlotWidth." + "."SHAPE STRIPE" . " ( $conn_stripe_lower_x $st_mid_y ) ( $coords[0] * )";
+                                        $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBSetFixedRoute($line);
+                                        $st_cnt++;
+                                    }
+                                 }else{
+                                    my $st_mid_y = ($coords[3] + $coords[1])/2;
+                                    my $line = $layer." ".$st_width." + "."SHAPE STRIPE" . " ( $conn_stripe_lower_x $st_mid_y ) ( $coords[0] * )";
+                                    $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBSetFixedRoute($line);
+                                 }
+                              }
+                              if(($instBbox[2] - $coords[2]) <= $pinPoly2CellBoundary && @right_stripes > 0 && ($routing_side eq "" || $routing_side eq "all" || $routing_side eq "R")){
+                                 my @stData = @{$vertical_stripe_data{$tempLayerNumVsName{$up_routing_layer_num}}{$right_stripes[-1]}};
+                                 my $conn_stripe_upper_x = $stData[1] + $stData[0]/2;
+                                 my $st_width = $coords[3] - $coords[1];
+                                 if($metalSlotWidth != 0 && $st_width >= (2*$metalSlotWidth+$metalSlotSpacing)){
+                                    my $numMetalSlots = int(($st_width+$metalSlotSpacing)/($metalSlotWidth+$metalSlotSpacing));
+                                    my $st_ref = $coords[1] + ($st_width - $metalSlotWidth*$numMetalSlots - $metalSlotSpacing*($numMetalSlots -1))/2;
+                                    for(my $j=0; $j<$numMetalSlots; $j++){
+                                        my $st_mid_y = $st_ref + $metalSlotWidth/2 + ($metalSlotWidth+$metalSlotSpacing)*$j;
+                                        my $line = $layer." ".$metalSlotWidth." + "."SHAPE STRIPE" . " ( $coords[2] $st_mid_y ) ( $conn_stripe_upper_x * )";
+                                        $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBSetFixedRoute($line);
+                                        $st_cnt++;
+                                    }
+                                 }else{
+                                    my $st_mid_y = ($coords[3] + $coords[1])/2;
+                                    my $line = $layer." ".$st_width." + "."SHAPE STRIPE" . " ( $coords[2] $st_mid_y ) ( $conn_stripe_upper_x * )";
+                                    $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBSetFixedRoute($line);
+                                 }
+                              }
+                           }elsif(exists $vertical_stripe_data{$tempLayerNumVsName{$down_routing_layer_num}}){
+                              if(($coords[0] - $instBbox[0]) <= $pinPoly2CellBoundary && @left_stripes > 0  && ($routing_side eq "" || $routing_side eq "all" || $routing_side eq "L")){
+                                 my @stData = @{$vertical_stripe_data{$tempLayerNumVsName{$down_routing_layer_num}}{$left_stripes[0]}};
+                                 my $conn_stripe_lower_x = $stData[1] - $stData[0]/2;
+                                 my $st_width = $coords[3] - $coords[1];
+                                 if($metalSlotWidth != 0 && $st_width >= (2*$metalSlotWidth+$metalSlotSpacing)){
+                                    my $numMetalSlots = int(($st_width+$metalSlotSpacing)/($metalSlotWidth+$metalSlotSpacing));
+                                    my $st_ref = $coords[1] + ($st_width - $metalSlotWidth*$numMetalSlots - $metalSlotSpacing*($numMetalSlots -1))/2;
+                                    for(my $j=0; $j<$numMetalSlots; $j++){
+                                        my $st_mid_y = $st_ref + $metalSlotWidth/2 + ($metalSlotWidth+$metalSlotSpacing)*$j;
+                                        my $line = $layer." ".$metalSlotWidth." + "."SHAPE STRIPE" . " ( $conn_stripe_lower_x $st_mid_y ) ( $coords[0] * )";
+                                        $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBSetFixedRoute($line);
+                                        $st_cnt++;
+                                    }
+                                 }else{
+                                    my $st_mid_y = ($coords[3] + $coords[1])/2;
+                                    my $line = $layer." ".$st_width." + "."SHAPE STRIPE" . " ( $conn_stripe_lower_x $st_mid_y ) ( $coords[0] * )";
+                                    $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBSetFixedRoute($line);
+                                 }
+                              }
+                              if(($instBbox[2] - $coords[2]) <= $pinPoly2CellBoundary && @right_stripes > 0  && ($routing_side eq "" || $routing_side eq "all" || $routing_side eq "R")){
+                                 my @stData = @{$vertical_stripe_data{$tempLayerNumVsName{$down_routing_layer_num}}{$right_stripes[-1]}};
+                                 my $conn_stripe_upper_x = $stData[1] + $stData[0]/2;
+                                 my $st_width = $coords[3] - $coords[1];
+                                 if($metalSlotWidth != 0 && $st_width >= (2*$metalSlotWidth+$metalSlotSpacing)){
+                                    my $numMetalSlots = int(($st_width+$metalSlotSpacing)/($metalSlotWidth+$metalSlotSpacing));
+                                    my $st_ref = $coords[1] + ($st_width - $metalSlotWidth*$numMetalSlots - $metalSlotSpacing*($numMetalSlots -1))/2;
+                                    for(my $j=0; $j<$numMetalSlots; $j++){
+                                        my $st_mid_y = $st_ref + $metalSlotWidth/2 + ($metalSlotWidth+$metalSlotSpacing)*$j;
+                                        my $line = $layer." ".$metalSlotWidth." + "."SHAPE STRIPE" . " ( $coords[2] $st_mid_y ) ( $conn_stripe_upper_x * )";
+                                        $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBSetFixedRoute($line);
+                                        $st_cnt++;
+                                    }
+                                 }else{
+                                    my $st_mid_y = ($coords[3] + $coords[1])/2;
+                                    my $line = $layer." ".$st_width." + "."SHAPE STRIPE" . " ( $coords[2] $st_mid_y ) ( $conn_stripe_upper_x * )";
+                                    $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBSetFixedRoute($line);
+                                 }
+                              }
+                           }
+                        }else{
+                           if(exists $horizontal_stripe_data{$tempLayerNumVsName{$up_routing_layer_num}}){
+                              if(($coords[1] - $instBbox[1]) <= $pinPoly2CellBoundary && @bottom_stripes > 0  && ($routing_side eq "" || $routing_side eq "all" || $routing_side eq "B")){
+                                 my @stData = @{$horizontal_stripe_data{$tempLayerNumVsName{$up_routing_layer_num}}{$bottom_stripes[0]}};
+                                 my $conn_stripe_lower_y = $stData[2] - $stData[0]/2;
+                                 my $st_width = $coords[2] - $coords[0];
+                                 if($metalSlotWidth != 0 && $st_width >= (2*$metalSlotWidth+$metalSlotSpacing)){
+                                    my $numMetalSlots = int(($st_width+$metalSlotSpacing)/($metalSlotWidth+$metalSlotSpacing));
+                                    my $st_ref = $coords[0] + ($st_width - $metalSlotWidth*$numMetalSlots - $metalSlotSpacing*($numMetalSlots -1))/2;
+                                    for(my $j=0; $j<$numMetalSlots; $j++){
+                                        my $st_mid_x = $st_ref + $metalSlotWidth/2 + ($metalSlotWidth+$metalSlotSpacing)*$j;
+                                        my $line = $layer." ".$metalSlotWidth." + "."SHAPE STRIPE" . " ( $st_mid_x $conn_stripe_lower_y ) ( * $coords[1] )";
+                                        $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBSetFixedRoute($line);
+                                        $st_cnt++;
+                                    }
+                                 }else{
+                                    my $st_mid_x = ($coords[2] + $coords[0])/2;
+                                    my $line = $layer." ".$st_width." + "."SHAPE STRIPE" . " ( $st_mid_x $conn_stripe_lower_y ) ( * $coords[1] )";
+                                    $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBSetFixedRoute($line);
+                                 }
+                              }
+                              if(($instBbox[3] - $coords[3]) <= $pinPoly2CellBoundary && @top_stripes > 0  && ($routing_side eq "" || $routing_side eq "all" || $routing_side eq "T")){
+                                 my @stData = @{$horizontal_stripe_data{$tempLayerNumVsName{$up_routing_layer_num}}{$top_stripes[-1]}};
+                                 my $conn_stripe_upper_y = $stData[2] + $stData[0]/2;
+                                 my $st_width = $coords[2] - $coords[0];
+                                 if($metalSlotWidth != 0 && $st_width >= (2*$metalSlotWidth+$metalSlotSpacing)){
+                                    my $numMetalSlots = int(($st_width+$metalSlotSpacing)/($metalSlotWidth+$metalSlotSpacing));
+                                    my $st_ref = $coords[0] + ($st_width - $metalSlotWidth*$numMetalSlots - $metalSlotSpacing*($numMetalSlots -1))/2;
+                                    for(my $j=0; $j<$numMetalSlots; $j++){
+                                        my $st_mid_x = $st_ref + $metalSlotWidth/2 + ($metalSlotWidth+$metalSlotSpacing)*$j;
+                                        my $line = $layer." ".$metalSlotWidth." + "."SHAPE STRIPE" . " ( $st_mid_x $coords[3] ) ( * $conn_stripe_upper_y )";
+                                        $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBSetFixedRoute($line);
+                                        $st_cnt++;
+                                    }
+                                 }else{
+                                    my $st_mid_x = ($coords[2] + $coords[0])/2;
+                                    my $line = $layer." ".$st_width." + "."SHAPE STRIPE" . " ( $st_mid_x $coords[3] ) ( * $conn_stripe_upper_y )";
+                                    $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBSetFixedRoute($line);
+                                 }
+                              }
+                           }elsif(exists $horizontal_stripe_data{$tempLayerNumVsName{$down_routing_layer_num}}){
+                              if(($coords[1] - $instBbox[1]) <= $pinPoly2CellBoundary && @bottom_stripes > 0  && ($routing_side eq "" || $routing_side eq "all" || $routing_side eq "B")){
+                                 my @stData = @{$horizontal_stripe_data{$tempLayerNumVsName{$down_routing_layer_num}}{$bottom_stripes[0]}};
+                                 my $conn_stripe_lower_y = $stData[2] - $stData[0]/2;
+                                 my $st_width = $coords[2] - $coords[0];
+                                 if($metalSlotWidth != 0 && $st_width >= (2*$metalSlotWidth+$metalSlotSpacing)){
+                                    my $numMetalSlots = int(($st_width+$metalSlotSpacing)/($metalSlotWidth+$metalSlotSpacing));
+                                    my $st_ref = $coords[0] + ($st_width - $metalSlotWidth*$numMetalSlots - $metalSlotSpacing*($numMetalSlots -1))/2;
+                                    for(my $j=0; $j<$numMetalSlots; $j++){
+                                        my $st_mid_x = $st_ref + $metalSlotWidth/2 + ($metalSlotWidth+$metalSlotSpacing)*$j;
+                                        my $line = $layer." ".$metalSlotWidth." + "."SHAPE STRIPE" . " ( $st_mid_x $conn_stripe_lower_y ) ( * $coords[1] )";
+                                        $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBSetFixedRoute($line);
+                                        $st_cnt++;
+                                    }
+                                 }else{
+                                    my $st_mid_x = ($coords[2] + $coords[0])/2;
+                                    my $line = $layer." ".$st_width." + "."SHAPE STRIPE" . " ( $st_mid_x $conn_stripe_lower_y ) ( * $coords[1] )";
+                                    $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBSetFixedRoute($line);
+                                 }
+                              }
+                              if(($instBbox[3] - $coords[3]) <= $pinPoly2CellBoundary && @top_stripes > 0  && ($routing_side eq "" || $routing_side eq "all" || $routing_side eq "T")){
+                                 my @stData = @{$horizontal_stripe_data{$tempLayerNumVsName{$down_routing_layer_num}}{$top_stripes[-1]}};
+                                 my $conn_stripe_upper_y = $stData[2] + $stData[0]/2;
+                                 my $st_width = $coords[2] - $coords[0];
+                                 if($metalSlotWidth != 0 && $st_width >= (2*$metalSlotWidth+$metalSlotSpacing)){
+                                    my $numMetalSlots = int(($st_width+$metalSlotSpacing)/($metalSlotWidth+$metalSlotSpacing));
+                                    my $st_ref = $coords[0] + ($st_width - $metalSlotWidth*$numMetalSlots - $metalSlotSpacing*($numMetalSlots -1))/2;
+                                    for(my $j=0; $j<$numMetalSlots; $j++){
+                                        my $st_mid_x = $st_ref + $metalSlotWidth/2 + ($metalSlotWidth+$metalSlotSpacing)*$j;
+                                        my $line = $layer." ".$metalSlotWidth." + "."SHAPE STRIPE" . " ( $st_mid_x $coords[3] ) ( * $conn_stripe_upper_y )";
+                                        $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBSetFixedRoute($line);
+                                        $st_cnt++;
+                                    }
+                                 }else{
+                                    my $st_mid_x = ($coords[2] + $coords[0])/2;
+                                    my $line = $layer." ".$st_width." + "."SHAPE STRIPE" . " ( $st_mid_x $coords[3] ) ( * $conn_stripe_upper_y )";
+                                    $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBSetFixedRoute($line);
+                                 }
+                              }
+                           }
+                        }
+                      }# for rectangle
+                  }#if exists in PLDB   
+                }#if exists in COMP_ALREADY
+             }#foreach my instance
+          }#if stripe found
+       }# if routing data is present
+     }#for all nets in the database
+  }#if correct no of arg
+}#sub add_power_route
+
+sub get_stripe_layer_coords {
+my $netSeg = $_[0];
+my @routeBox = ();
+my $dbu = $GLOBAL->dbfGlobalGetDBU;
+my ($netSegZ, $Width) = (split(/\s+/,$netSeg))[0, 1];
+if ($netSeg =~ m/\( (\d+) (\d+) \) (\w+)/ ) {
+    return($Width, $1,$2,$1,$2);
+                                             }# if only via
+elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( (\d+) \* \) (\w+)/ ) {
+       my $llx = $1;
+       my $lly = $2;
+       my $urx = $3;
+       my $ury = $2;
+       return($Width, $llx,$lly,$urx,$ury);
+                                                               }# if horizontal without extn with via
+elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( (\d+) \* (\d+) \) (\w)/ ) {
+       my $llx = $1;
+       my $lly = $2;
+       my $urx = $3;
+       my $ury = $2;
+       return($Width, $llx,$lly,$urx,$ury);
+                                             }# if horizontal R-extn with via
+elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( (\d+) \* (\d+) \)/ ) {
+       my $llx = $1;
+       my $lly = $2;
+       my $urx = $3;
+       my $ury = $2;
+       return($Width, $llx,$lly,$urx,$ury);
+                                             }# if horizontal R-extn without via
+elsif ($netSeg =~ m/\( (\d+) (\d+) (\d+) \) \( (\d+) \* \) (\w)/ ) {
+       my $llx = $1;
+       my $lly = $2;
+       my $urx = $4;
+       my $ury = $2;
+       return($Width, $llx,$lly,$urx,$ury);
+                                             }# if horizontal L-extn with via
+elsif ($netSeg =~ m/\( (\d+) (\d+) (\d+) \) \( (\d+) \* \)/ ) {
+       my $llx = $1;
+       my $lly = $2;
+       my $urx = $4;
+       my $ury = $2;
+       return($Width, $llx,$lly,$urx,$ury);
+                                             }# if horizontal L-extn without via
+elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( (\d+) \* \)/ ) {
+       my $llx = $1;
+       my $lly = $2;
+       my $urx = $3;
+       my $ury = $2;
+       return($Width, $llx,$lly,$urx,$ury);
+                                             }# if horizontal without extn without via
+elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( \* (\d+) \) (\w)/ ) {
+       my $llx = $1;
+       my $lly = $2;
+       my $urx = $1;
+       my $ury = $3;
+       return($Width, $llx,$lly,$urx,$ury);
+                                             }# if verical without extn with via
+elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( \* (\d+) (\d+) \) (\w)/ ) {
+       my $llx = $1;
+       my $lly = $2;
+       my $urx = $1;
+       my $ury = $3;
+       return($Width, $llx,$lly,$urx,$ury);
+                                             }# if verical T-extn with via
+elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( \* (\d+) (\d+) \)/ ) {
+       my $llx = $1;
+       my $lly = $2;
+       my $urx = $1;
+       my $ury = $3;
+       return($Width, $llx,$lly,$urx,$ury);
+                                             }# if verical T-extn without via
+elsif ($netSeg =~ m/\( (\d+) (\d+) (\d+) \) \( \* (\d+) \) (\w)/ ) {
+       my $llx = $1;
+       my $lly = $2;
+       my $urx = $1;
+       my $ury = $4;
+       return($Width, $llx,$lly,$urx,$ury);
+                                             }# if verical B-extn with via
+elsif ($netSeg =~ m/\( (\d+) (\d+) (\d+) \) \( \* (\d+) \)/ ) {
+       my $llx = $1;
+       my $lly = $2;
+       my $urx = $1;
+       my $ury = $4;
+       return($Width, $llx,$lly,$urx,$ury);
+                                             }# if verical B-extn without via
+elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( \* (\d+) \)/ ) {
+       my $llx = $1;
+       my $lly = $2;
+       my $urx = $1;
+       my $ury = $3;
+       return($Width, $llx,$lly,$urx,$ury);
+                                             }# if verical without extn without via
+elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( (\d+) (\d+) \)/ ) {
+                 if ( $1 == $3 ) {
+       my $llx = $1;
+       my $lly = $2;
+       my $urx = $3;
+       my $ury = $4;
+       return($Width, $llx,$lly,$urx,$ury);
+                                }
+              elsif ( $2 == $4 ) {
+       my $llx = $1;
+       my $lly = $2;
+       my $urx = $3;
+       my $ury = $4;
+       return($Width, $llx,$lly,$urx,$ury);
+                                 }
+                                             }# if verical without extn without via
+
+}#sub get_stripe_layer_coords
+
+###############################################################################################
+###############################################################################################
+###############################################################################################
+sub escape_router{
+  use Math::Polygon;
+  use Math::Polygon::Clip;
+  use Math::Polygon::Calc;
+  use Math::Polygon::Transform;
+  my $noOfArguments = @_;
+  
+  if($noOfArguments < 0 || $_[0] eq '-h') { 
+                             print "Usage : escape_router   -block <list of blocks (default value is all)> \n";
+                             #print "                        -net <name (default value is all)> \n";
+                             print "                        -pin <name (default value is all)> \n";
+                             print "                        -routing_layer <layer name> \n";
+                             print "                        -routing_side <L/R/T/B> \n";
+                             print "                        -extended (micron)> \n";
+                             print "                        --lef \n";
+                             #print "Note: if you provide list of blocks then net should not be a list & vise versa\n";
+  }else{ # if correct no. of inputs
+     #open (WRITE, ">>signal_net_single_conn.txt");
+     my ($routing_layer, $routing_side) = ("", "");
+     my $ext_value = 2; #### in micron
+     my $cutBboxWidth = 1;
+     my @blkList = ();
+     #my @netList = ();
+     my @pinList = ();
+     my $write_in_lef = 0;
+     for(my $i = 0; $i < $noOfArguments; $i++){
+         if($_[$i] eq "-block"){
+            my $blk_str = $_[$i+1];
+            $blk_str =~ s/\{\s*//;
+            $blk_str =~ s/\s*\}//;
+            @blkList = split(/\,/,$blk_str);
+         }
+         #if($_[$i] eq "-net"){
+         #   my $net_str = $_[$i+1];
+         #   $net_str =~ s/\{\s*//;
+         #   $net_str =~ s/\s*\}//;
+         #   @netList = split(/\,/,$net_str);
+         #}
+         if($_[$i] eq "-pin"){
+            my $pin_str = $_[$i+1];
+            $pin_str =~ s/\{\s*//;
+            $pin_str =~ s/\s*\}//;
+            @pinList = split(/\,/,$pin_str);
+         }
+         if($_[$i] eq "-routing_layer"){$routing_layer = $_[$i+1];}
+         if($_[$i] eq "-routing_side"){$routing_side = $_[$i+1];}
+         if($_[$i] eq "-extended"){$ext_value = $_[$i+1];}
+         if($_[$i] eq "--lef"){$write_in_lef = 1;}
+     }#for
+     
+     ################# converting micron value in dbu ###############
+     my $dbu = $GLOBAL->dbfGlobalGetDBU;
+     my $micronFact = $GLOBAL->dbGlobalGetMicronFactor;
+     my $MulFactor = $micronFact/$dbu;
+     $ext_value *= $dbu;
+     
+     ############### Making layerNum vs layerName hash ##############
+     #my %tempLayerNumVsName = ();
+     #foreach my $layerName ( keys %PTDB){
+     #     my $num = $PTDB{$layerName}->dbTechGetLayerNum;
+     #     $tempLayerNumVsName{$num} = $layerName; 
+     #}#for layerName
+    
+     #################### if -block is empty or all ####################
+     if(@blkList < 1 || $blkList[0] eq "all"){
+        @blkList = keys %COMP_ALREADY;
+     }
+     ##################################### routing for all nets #################################
+     foreach my $instance ( @blkList ) {
+       #print "instance $instance \n";
+       if(exists $COMP_ALREADY{$instance} ) {
+          my $cellref = $CADB{$instance}->dbCadbGetCellref;
+          my @instLoc = $CADB{$instance}->dbCadbGetLoc;
+          my @instBbox = $CADB{$instance}->dbCadbGetbBox;
+          my $orient = $CADB{$instance}->dbCadbGetOrient;
+          if(exists $PLDB{$cellref} ) {
+             my @pins = ();
+             my @cellSize = $PLDB{$cellref}->dbMdbGetSize;
+             my @cellOrigin = $PLDB{$cellref}->dbMdbGetOrigin;
+             if(@pinList < 1 || $pinList[0] eq "all"){
+                @pins = keys %{$COMP_ALREADY{$instance}} ;
+             }else{
+                #@pins = @pinList;
+                my @inst_pins = keys %{$COMP_ALREADY{$instance}} ;
+                foreach my $inst_pin (@inst_pins){
+                  foreach my $pin(@pinList){
+                     #my $pat = "\.\*".$pin."\.\*";
+                     my @characters = split(//,$pin); 
+                     my $pat = $pin;
+                     $pat =~ s/\*//g;
+                     if($characters[0] eq "*" && $characters[-1] eq "*"){
+                        if($inst_pin =~ /$pat/){
+                           push(@pins, $inst_pin);
+                        }
+                     }elsif($characters[0] eq "*"){
+                        if($inst_pin =~ /$pat\b/){
+                           push(@pins, $inst_pin);
+                        }
+                     }elsif($characters[-1] eq "*"){
+                        if($inst_pin =~ /\b$pat/){
+                           push(@pins, $inst_pin);
+                        }
+                     }else{
+                        if($inst_pin =~ /\b$pat\b/){
+                           push(@pins, $inst_pin);
+                        }
+                     }
+                  }
+                }
+             }
+             ################################# processing each pin polygon ###################################
+             foreach my $pinName (@pins){ 
+               my $netName = $COMP_ALREADY{$instance}{$pinName}; 
+               my $pinType = $PLDB{$cellref}->dbMdbGetPinType($pinName);
+               if($pinType != 0){next;} #consider only signal pins
+               my @poly = $PLDB{$cellref}->dbMdbGetPinPolygon($pinName);
+               foreach my $poly_line (@poly){
+                 my $assign_routing_side;
+                 my @poly_coord = split(/\s+/,$poly_line);
+                 my $layer = shift @poly_coord;
+                 if($routing_layer ne "" && $routing_layer ne "all" && $routing_layer ne $layer){next;} #if layer option is set
+                 my $type = $PTDB{$layer}->dbTechGetLayerType;
+                 if($type ne "ROUTING"){next;} #if not a routing layer
+                 my $dir = $PTDB{$layer}->dbTechGetLayerDir;
+                 my $num = $PTDB{$layer}->dbTechGetLayerNum;   
+                 shift @poly_coord;
+
+                 my @coords = &xformCellPinPolyToInstPin($instLoc[0],$instLoc[1],$cellOrigin[0],$cellOrigin[1],$orient,$cellSize[0],$cellSize[1],@poly_coord);
+                 my @p = ();
+                 for(my $i=0; $i<=$#coords; $i=$i+2){
+                     push(@p, [$coords[$i], $coords[$i+1]]);
+                 }
+
+                 ##### Making imaginary bbox to cut rectangles from polygon #####
+                 my @pinBbox = polygon_bbox @p;
+                 #if($pinBbox[0] <= $instBbox[0] || $pinBbox[1] <= $instBbox[1] || $pinBbox[2] >= $instBbox[2] || $pinBbox[3] >= $instBbox[3]){print "MSG: $instance pin $pinName is at boundary\n";last;}
+                 my @imaginaryBbox = @pinBbox;
+                 my %temp_dir_dis = ("L"=>$pinBbox[0]-$instBbox[0], "R"=>$instBbox[2]-$pinBbox[2], "B"=>$pinBbox[1]-$instBbox[1], "T"=>$instBbox[3]-$pinBbox[3]);
+                 my @sorted_side_array = sort {$temp_dir_dis{$a}<=>$temp_dir_dis{$b}} (keys %temp_dir_dis);
+                 if($routing_side eq "" || $routing_side eq "all"){
+                    $assign_routing_side = $sorted_side_array[0];
+                 }else{
+                    $assign_routing_side = $routing_side;
+                 }
+                 ################# for left #################
+                 if($assign_routing_side eq "L" && $sorted_side_array[0] eq "L"){
+                    my @bbox_left   = ($imaginaryBbox[0], $imaginaryBbox[1], $imaginaryBbox[0]+$cutBboxWidth, $imaginaryBbox[3]);
+                    my @l = polygon_line_clip (\@bbox_left, @p);
+                    if(@l > 0){
+                       for(my $i=0; $i<=$#l; $i++){
+                           my ($minx, $miny, $maxx, $maxy) = polygon_bbox @{$l[$i]};
+                           my @ext_rect = ($instBbox[0]-$ext_value, $miny, $minx, $maxy);
+                           my $midy = ($ext_rect[1] + $ext_rect[3])/2;
+                           my $line = "$layer ( $ext_rect[0] $midy ) ( $ext_rect[2] * )";
+                           if(exists $NETS_ROUTING_ALREADY{$netName}){
+                             $NETS_ROUTING_ALREADY{$netName}->dbNetRoutingDBSetFixedRoute($line);
+                           }else {
+                             #print "WARN: net $netName does not exists\n";
+                           }
+                           #$_ *= $MulFactor for @ext_rect;
+                           #$_ += 20 for @ext_rect;
+                           #my $color = $PTDB{$layer}->dbTechGetLayerColor;
+                           #$design_worldcanvas->createRectangle(@ext_rect, -outline=>$color);
+                       }#foreach polygon
+                    }#if polygons found at left side 
+                 }#if side is left & layer dir is horizontal
+                 ################# for right #################
+                 if($assign_routing_side eq "R" && $sorted_side_array[0] eq "R"){
+                    my @bbox_right   = ($imaginaryBbox[2]-$cutBboxWidth, $imaginaryBbox[1], $imaginaryBbox[2], $imaginaryBbox[3]);
+                    my @r = polygon_line_clip (\@bbox_right, @p);
+                    if(@r > 0){
+                       for(my $i=0; $i<=$#r; $i++){
+                           my ($minx, $miny, $maxx, $maxy) = polygon_bbox @{$r[$i]};
+                           my @ext_rect = ($maxx, $miny, $instBbox[2]+$ext_value, $maxy);
+                           my $midy = ($ext_rect[1] + $ext_rect[3])/2;
+                           my $line = "$layer ( $ext_rect[0] $midy ) ( $ext_rect[2] * )";
+                           if(exists $NETS_ROUTING_ALREADY{$netName}){
+                             $NETS_ROUTING_ALREADY{$netName}->dbNetRoutingDBSetFixedRoute($line);
+                           }else {
+                             #print "WARN: net $netName does not exists\n";
+                           }
+                           #$_ *= $MulFactor for @ext_rect;
+                           #$_ += 20 for @ext_rect;
+                           #my $color = $PTDB{$layer}->dbTechGetLayerColor;
+                           #$design_worldcanvas->createRectangle(@ext_rect, -outline=>$color);
+                       }#foreach polygon
+                    }#if polygons found at right side
+                 }#if side is right & layer dir is horizontal
+                 ################# for bottom #################
+                 if($assign_routing_side eq "B" && $sorted_side_array[0] eq "B"){
+                    my @bbox_bottom   = ($imaginaryBbox[0], $imaginaryBbox[1], $imaginaryBbox[2], $imaginaryBbox[1]+$cutBboxWidth);
+                    my @b = polygon_line_clip (\@bbox_bottom, @p);
+                    if(@b > 0){
+                       for(my $i=0; $i<=$#b; $i++){
+                           my ($minx, $miny, $maxx, $maxy) = polygon_bbox @{$b[$i]};
+                           my @ext_rect = ($minx, $instBbox[1]-$ext_value, $maxx, $miny);
+                           my $midx = ($ext_rect[0] + $ext_rect[2])/2;
+                           my $line = "$layer ( $midx $ext_rect[1] ) ( * $ext_rect[3] )";
+                           if(exists $NETS_ROUTING_ALREADY{$netName}){
+                             $NETS_ROUTING_ALREADY{$netName}->dbNetRoutingDBSetFixedRoute($line);
+                           }else {
+                             #print "WARN: net $netName does not exists\n";
+                           }
+                           #$_ *= $MulFactor for @ext_rect;
+                           #$_ += 20 for @ext_rect;
+                           #my $color = $PTDB{$layer}->dbTechGetLayerColor;
+                           #$design_worldcanvas->createRectangle(@ext_rect, -outline=>$color);
+                       }#foreach polygon
+                    }#if polygons found at bottom side
+                 }#if side is bottom & layer dir is vertical
+                 ################# for top #################
+                 if($assign_routing_side eq "T" && $sorted_side_array[0] eq "T"){
+                    my @bbox_top   = ($imaginaryBbox[0], $imaginaryBbox[3]-$cutBboxWidth, $imaginaryBbox[2], $imaginaryBbox[3]);
+                    my @t = polygon_line_clip (\@bbox_top, @p);
+                    if(@t > 0){
+                       for(my $i=0; $i<=$#t; $i++){
+                           my ($minx, $miny, $maxx, $maxy) = polygon_bbox @{$t[$i]};
+                           my @ext_rect = ($minx, $maxy, $maxx, $instBbox[3]+$ext_value);
+                           my $midx = ($ext_rect[0] + $ext_rect[2])/2;
+                           my $line = "$layer ( $midx $ext_rect[1] ) ( * $ext_rect[3] )";
+                           if(exists $NETS_ROUTING_ALREADY{$netName}){
+                             $NETS_ROUTING_ALREADY{$netName}->dbNetRoutingDBSetFixedRoute($line);
+                           }else {
+                             #print "WARN: net $netName does not exists\n";
+                           }
+                           #$_ *= $MulFactor for @ext_rect;
+                           #$_ += 20 for @ext_rect;
+                           #my $color = $PTDB{$layer}->dbTechGetLayerColor;
+                           #$design_worldcanvas->createRectangle(@ext_rect, -outline=>$color);
+                       }#foreach polygon
+                    }#if polygons found at top side
+                 }#if side is top & layer dir is vertical
+                 #########################################
+                 last; #currently, we are assuming that the pin has one polygon
+               }#foreach polygon of pin
+
+               ################################## processing pin Rectangles  ###########################
+               my @pinRects = $PLDB{$cellref}->dbMdbGetPinRect($pinName);
+               foreach $rectLine(@pinRects){
+                 my $assign_routing_side;
+                 my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$rectLine))[0,2,3,4,5];
+                 if($routing_layer ne "" && $routing_layer ne "all" && $routing_layer ne $layer){next;} #if layer option is set
+                 my $type = $PTDB{$layer}->dbTechGetLayerType;
+                 if($type ne "ROUTING"){next;}
+                 my $dir = $PTDB{$layer}->dbTechGetLayerDir;
+                 my $num = $PTDB{$layer}->dbTechGetLayerNum;   
+                 my @coords = &xformCellPinToInstPin($instLoc[0],$instLoc[1],$cellOrigin[0],$cellOrigin[1],$orient,$cellSize[0],$cellSize[1],$llx,$lly,$urx,$ury);
+
+                 #if($coords[0] <= $instBbox[0] || $coords[1] <= $instBbox[1] || $coords[2] >= $instBbox[2] || $coords[3] >= $instBbox[3]){last;} #if polygon touching  cell boundary 
+                 ####################### finding routing side ##########################
+                 my %temp_dir_dis = ("L"=>$coords[0]-$instBbox[0], "R"=>$instBbox[2]-$coords[2], "B"=>$coords[1]-$instBbox[1], "T"=>$instBbox[3]-$coords[3]);
+                 my @sorted_side_array = sort {$temp_dir_dis{$a}<=>$temp_dir_dis{$b}} (keys %temp_dir_dis);
+                 if($routing_side eq "" || $routing_side eq "all"){
+                    $assign_routing_side = $sorted_side_array[0];
+                 }else{
+                    $assign_routing_side = $routing_side;
+                 }
+                 ################# for left #################
+                 #if($assign_routing_side eq "L" && $sorted_side_array[0] eq "L"){
+                 if($assign_routing_side eq "L"){
+                    my @ext_rect = ($instBbox[0]-$ext_value, $coords[1], $coords[0], $coords[3]);
+                    if($write_in_lef == 0){
+                       my $midy = ($ext_rect[1] + $ext_rect[3])/2;
+                       my $line = "$layer ( $ext_rect[0] $midy ) ( $ext_rect[2] * )";
+                       if(exists $NETS_ROUTING_ALREADY{$netName}){
+                         $NETS_ROUTING_ALREADY{$netName}->dbNetRoutingDBSetFixedRoute($line);
+                         #print WRITE "$netName $instance $pinName ($ext_rect[0], $ext_rect[1])\n";
+                       }
+                    }else {
+                      my @pin_coords = &xformInstPinToCellPin($instLoc[0],$instLoc[1],$cellOrigin[0],$cellOrigin[1],$orient,$cellSize[0],$cellSize[1],@ext_rect);
+                      my $line = "$layer RECT  @pin_coords ;";
+                      $PLDB{$cellref}->dbMdbAddPinRect($pinName,$line); 
+                    }
+                    #$_ *= $MulFactor for @ext_rect;
+                    #$_ += 20 for @ext_rect;
+                    #my $color = $PTDB{$layer}->dbTechGetLayerColor;
+                    #$design_worldcanvas->createRectangle(@ext_rect, -outline=>$color);
+                 }#if side is left
+                 ################# for right #################
+                 #if($assign_routing_side eq "R" && $sorted_side_array[0] eq "R"){
+                 if($assign_routing_side eq "R"){
+                    my @ext_rect = ($coords[2], $coords[1], $instBbox[2]+$ext_value, $coords[3]);
+                    if($write_in_lef == 0){
+                       my $midy = ($ext_rect[1] + $ext_rect[3])/2;
+                       my $line = "$layer ( $ext_rect[0] $midy ) ( $ext_rect[2] * )";
+                       if(exists $NETS_ROUTING_ALREADY{$netName}){
+                         $NETS_ROUTING_ALREADY{$netName}->dbNetRoutingDBSetFixedRoute($line);
+                         #print WRITE "$netName $instance $pinName ($ext_rect[2], $ext_rect[1])\n"; 
+                       }
+                    }else {
+                      my @pin_coords = &xformInstPinToCellPin($instLoc[0],$instLoc[1],$cellOrigin[0],$cellOrigin[1],$orient,$cellSize[0],$cellSize[1],@ext_rect);
+                      my $line = "$layer RECT  @pin_coords ;";
+                      $PLDB{$cellref}->dbMdbAddPinRect($pinName,$line); 
+                    }
+                    #$_ *= $MulFactor for @ext_rect;
+                    #$_ += 20 for @ext_rect;
+                    #my $color = $PTDB{$layer}->dbTechGetLayerColor;
+                    #$design_worldcanvas->createRectangle(@ext_rect, -outline=>$color);
+                 }#if side is right
+                 ################# for bottom #################
+                 #if($assign_routing_side eq "B" && $sorted_side_array[0] eq "B"){
+                 if($assign_routing_side eq "B"){
+                    my @ext_rect = ($coords[0], $instBbox[1]-$ext_value, $coords[2], $coords[1]);
+                    if($write_in_lef == 0){
+                       my $midx = ($ext_rect[0] + $ext_rect[2])/2;
+                       my $line = "$layer ( $midx $ext_rect[1] ) ( * $ext_rect[3] )";
+                       if(exists $NETS_ROUTING_ALREADY{$netName}){
+                         $NETS_ROUTING_ALREADY{$netName}->dbNetRoutingDBSetFixedRoute($line);
+                         #print WRITE "$netName $instance $pinName ($ext_rect[0], $ext_rect[1])\n";
+                       }
+                    }else {
+                      my @pin_coords = &xformInstPinToCellPin($instLoc[0],$instLoc[1],$cellOrigin[0],$cellOrigin[1],$orient,$cellSize[0],$cellSize[1],@ext_rect);
+                      my $line = "$layer RECT  @pin_coords ;";
+                      $PLDB{$cellref}->dbMdbAddPinRect($pinName,$line); 
+                    }
+                    #$_ *= $MulFactor for @ext_rect;
+                    #$_ += 20 for @ext_rect;
+                    #my $color = $PTDB{$layer}->dbTechGetLayerColor;
+                    #$design_worldcanvas->createRectangle(@ext_rect, -outline=>$color);
+                 }#if side is bottom 
+                 ################# for top #################
+                 #if($assign_routing_side eq "T" && $sorted_side_array[0] eq "T"){
+                 if($assign_routing_side eq "T"){
+                    my @ext_rect = ($coords[0], $coords[3], $coords[2], $instBbox[3]+$ext_value);
+                    if($write_in_lef == 0){
+                       my $midx = ($ext_rect[0] + $ext_rect[2])/2;
+                       my $line = "$layer ( $midx $ext_rect[1] ) ( * $ext_rect[3] )";
+                       if(exists $NETS_ROUTING_ALREADY{$netName}){
+                         $NETS_ROUTING_ALREADY{$netName}->dbNetRoutingDBSetFixedRoute($line);
+                         #print WRITE "$netName $instance $pinName ($ext_rect[0], $ext_rect[3])\n";
+                       }
+                    }else {
+                      my @pin_coords = &xformInstPinToCellPin($instLoc[0],$instLoc[1],$cellOrigin[0],$cellOrigin[1],$orient,$cellSize[0],$cellSize[1],@ext_rect);
+                      my $line = "$layer RECT  @pin_coords ;";
+                      $PLDB{$cellref}->dbMdbAddPinRect($pinName,$line); 
+                    }
+                    #$_ *= $MulFactor for @ext_rect;
+                    #$_ += 20 for @ext_rect;
+                    #my $color = $PTDB{$layer}->dbTechGetLayerColor;
+                    #$design_worldcanvas->createRectangle(@ext_rect, -outline=>$color);
+                 }#if side is top 
+                 #########################################
+                 last; #currently, we are assuming that the pin has one polygon
+               }# for rectangle
+             }#foreach pin
+         }#if exists in PLDB   
+       }#if exists in COMP_ALREADY
+     }#foreach my instance
+     #close(WRITE);
+  }#if correct no of arg
+}#sub escape_router
+
+###############################################################################################
+########################## Escape router for power pins #######################################
+###############################################################################################
+sub power_escape_router{
+  my $noOfArguments = @_;
+  
+  if($noOfArguments < 0 || $_[0] eq '-h') { 
+                             print "Usage : power_escape_router   -inst <instance name> \n";
+                             print "                              -pin <pin name> \n";
+                             print "                              -routing_layer <layer name> \n";
+                             print "                              -routing_side <L/R/T/B {s1,s2...}> \n";
+                             print "                              -extended (micron)> \n";
+                             print "                              --no_overlap \n";
+  }else{ # if correct no. of inputs
+     my ($instance, $pin_name, $routing_layer, $routing_side);
+     my $ext_value = 0.2; #### in micron
+     my $no_overlap = 0;
+     my @rlayers = ();
+     my @rsides = ();
+     my @exts = ();
+     for(my $i = 0; $i < $noOfArguments; $i++){
+         if($_[$i] eq "-inst"){$instance = $_[$i+1];}
+         if($_[$i] eq "-pin"){$pin_name = $_[$i+1];}
+         #if($_[$i] eq "-routing_layer"){$routing_layer = $_[$i+1];}
+         #if($_[$i] eq "-routing_side"){$routing_side = $_[$i+1];}
+         #if($_[$i] eq "-extended"){$ext_value = $_[$i+1];}
+         if($_[$i] eq "-routing_layer"){
+            my $rlayer_str = $_[$i+1];
+            $rlayer_str =~ s/\{\s*//;
+            $rlayer_str =~ s/\s*\}//;
+            @rlayers = split(/\,/,$rlayer_str);
+         }
+         if($_[$i] eq "-routing_side"){
+            my $rside_str = $_[$i+1];
+            $rside_str =~ s/\{\s*//;
+            $rside_str =~ s/\s*\}//;
+            @rsides = split(/\,/,$rside_str);
+         }
+         if($_[$i] eq "-extended"){
+            my $ext_str = $_[$i+1];
+            $ext_str =~ s/\{\s*//;
+            $ext_str =~ s/\s*\}//;
+            @exts = split(/\,/,$ext_str);
+         }
+         if($_[$i] eq "--no_overlap"){$no_overlap = 1;}
+     }#for
+     
+     ################# converting micron value in dbu ###############
+     my $dbu = $GLOBAL->dbfGlobalGetDBU;
+     my $micronFact = $GLOBAL->dbGlobalGetMicronFactor;
+     my $MulFactor = $micronFact/$dbu;
+     
+     ##################################### routing for all nets #################################
+     if(exists $COMP_ALREADY{$instance} ) {
+        my $cellref = $CADB{$instance}->dbCadbGetCellref;
+        my @instLoc = $CADB{$instance}->dbCadbGetLoc;
+        my $orient = $CADB{$instance}->dbCadbGetOrient;
+        if(exists $PLDB{$cellref} ) {
+           my @cellSize = $PLDB{$cellref}->dbMdbGetSize;
+           my @cellOrigin = $PLDB{$cellref}->dbMdbGetOrigin;
+           my $netName = $COMP_ALREADY{$instance}{$pin_name}; 
+           my $pinType = $PLDB{$cellref}->dbMdbGetPinType($pin_name);
+           if($pinType == 0){next;} #consider only power pins
+           my @rects =  $PLDB{$cellref}->dbMdbGetPinRect($pin_name);
+           foreach my $rect_line (@rects){
+             my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$rect_line))[0,2,3,4,5];
+             my ($minx, $miny, $maxx, $maxy) = &xformCellPinToInstPin($instLoc[0],$instLoc[1],$cellOrigin[0],$cellOrigin[1],$orient,$cellSize[0],$cellSize[1],$llx,$lly,$urx,$ury);
+             if(($cellref eq 'GNDALLP' || $cellref eq 'VDDALLP') && $minx < 848400){next;}
+             ################# for left #################
+             if(@rsides > 1){
+                $routing_side = shift @rsides;
+             }else{
+                $routing_side = $rsides[0];
+             }
+             if(@rlayers > 1){
+                $routing_layer = shift @rlayers;
+             }else{
+                $routing_layer = $rlayers[0];
+             }
+             if(@exts > 1){
+                $ext_value = shift @exts;
+             }else{
+                $ext_value = $exts[0];
+             }
+             $ext_value *= $dbu;
+             if($routing_side eq "L"){
+                if($no_overlap == 1){$maxx = $minx;}
+                my @ext_rect = ($minx-$ext_value, $miny, $maxx, $maxy);
+                my $metalSlotWidth =  $ext_rect[3] - $ext_rect[1];
+                my $midy = ($ext_rect[1] + $ext_rect[3])/2;
+                my $line = "$routing_layer $metalSlotWidth + SHAPE STRIPE ( $ext_rect[0] $midy ) ( $ext_rect[2] * )";
+                if(exists $NETS_ROUTING_ALREADY{$netName}){
+                  $NETS_ROUTING_ALREADY{$netName}->dbNetRoutingDBSetFixedRoute($line);
+                }
+             }#if side is left & layer dir is horizontal
+             ################# for right #################
+             if($routing_side eq "R"){
+                if($no_overlap == 1){$minx = $maxx;}
+                my @ext_rect = ($minx, $miny, $maxx+$ext_value, $maxy);
+                my $metalSlotWidth =  $ext_rect[3] - $ext_rect[1];
+                my $midy = ($ext_rect[1] + $ext_rect[3])/2;
+                my $line = "$routing_layer $metalSlotWidth + SHAPE STRIPE ( $ext_rect[0] $midy ) ( $ext_rect[2] * )";
+                if(exists $NETS_ROUTING_ALREADY{$netName}){
+                  $NETS_ROUTING_ALREADY{$netName}->dbNetRoutingDBSetFixedRoute($line);
+                }
+             }#if side is right & layer dir is horizontal
+             ################# for bottom #################
+             if($routing_side eq "B"){
+                if($no_overlap == 1){$miny = $maxy;}
+                my @ext_rect = ($minx, $miny-$ext_value, $maxx, $maxy);
+                my $metalSlotWidth =  $ext_rect[2] - $ext_rect[0];
+                my $midx = ($ext_rect[0] + $ext_rect[2])/2;
+                my $line = "$routing_layer $metalSlotWidth + SHAPE STRIPE ( $midx $ext_rect[1] ) ( * $ext_rect[3] )";
+                if(exists $NETS_ROUTING_ALREADY{$netName}){
+                  $NETS_ROUTING_ALREADY{$netName}->dbNetRoutingDBSetFixedRoute($line);
+                }
+             }#if side is bottom & layer dir is vertical
+             ################# for top #################
+             if($routing_side eq "T"){
+                if($no_overlap == 1){$maxy = $miny;}
+                my @ext_rect = ($minx, $miny, $maxx, $maxy+$ext_value);
+                my $metalSlotWidth =  $ext_rect[2] - $ext_rect[0];
+                my $midx = ($ext_rect[0] + $ext_rect[2])/2;
+                my $line = "$routing_layer $metalSlotWidth + SHAPE STRIPE ( $midx $ext_rect[1] ) ( * $ext_rect[3] )";
+                if(exists $NETS_ROUTING_ALREADY{$netName}){
+                  $NETS_ROUTING_ALREADY{$netName}->dbNetRoutingDBSetFixedRoute($line);
+                }
+             }#if side is top & layer dir is vertical
+           }#foreach rect of pin
+       }#if exists in PLDB   
+     }#if exists in COMP_ALREADY
+  }#if correct no of arg
+}#sub power_escape_router
+
+###############################################################################################
+#escape_router -block pixarray -routing_side B
+
+###############################################################################################
+###############################################################################################
+###############################################################################################
+sub xformInstPinToCellPin {
+my $instOriginX = shift @_;
+my $instOriginY = shift @_ ;
+my $cellOriginX = shift @_;
+my $cellOriginY = shift @_;
+my $cellOrient = shift @_;
+my $cellW = shift @_;
+my $cellH = shift @_;
+my @instPinRect = @_;
+my @cellPinRect = ();
+my $dbu = $GLOBAL->dbfGlobalGetDBU;
+   $cellW *= $dbu;
+   $cellH *= $dbu;
+
+#----------- orentation cheat-sheet -----------#
+# FE : MYR90 : flip on y-axis and rotate by 90deg
+#  N  : R0 : default
+#  FN : MX : flip along X-axis
+############ We are making here lower coords less than upper ###############
+   if ( $cellOrient eq 'N' ){
+   #default 
+   $cellPinRect[0] = $instPinRect[0] - $instOriginX;
+   $cellPinRect[1] = $instPinRect[1] - $instOriginY;
+   $cellPinRect[2] = $instPinRect[2] - $instOriginX;
+   $cellPinRect[3] = $instPinRect[3] - $instOriginY;
+                             }
+elsif ( $cellOrient eq 'FN'){
+   # flip along Y-axis
+   $cellPinRect[0] = $cellW - ($instPinRect[2] - $instOriginX);
+   $cellPinRect[1] = $instPinRect[1] - $instOriginY;
+   $cellPinRect[2] = $cellW - ($instPinRect[0] - $instOriginX);
+   $cellPinRect[3] = $instPinRect[3] - $instOriginY;
+                            }
+elsif ( $cellOrient eq 'W'){
+   # rotate by 90 deg 
+   $cellPinRect[0] = $instPinRect[1] - $instOriginY;
+   $cellPinRect[1] = $cellH - ($instPinRect[2] - $instOriginX);
+   $cellPinRect[2] = $instPinRect[3] - $instOriginY;
+   $cellPinRect[3] = $cellH - ($instPinRect[0] - $instOriginX);
+                            }
+elsif ( $cellOrient eq 'FW' ){
+   # rotate by 90 deg and flip along Y-axis 
+   $cellPinRect[0] = $instPinRect[1] - $instOriginY;
+   $cellPinRect[1] = $instPinRect[0] - $instOriginX;
+   $cellPinRect[2] = $instPinRect[3] - $instOriginY;
+   $cellPinRect[3] = $instPinRect[2] - $instOriginX;
+                             }
+elsif ( $cellOrient eq 'S'){
+   # rotate by 180 deg
+   $cellPinRect[0] = $cellW - ($instPinRect[2] - $instOriginX);
+   $cellPinRect[1] = $cellH - ($instPinRect[3] - $instOriginY);
+   $cellPinRect[2] = $cellW - ($instPinRect[0] - $instOriginX);
+   $cellPinRect[3] = $cellH - ($instPinRect[1] - $instOriginY);
+                            }
+elsif ( $cellOrient eq 'FS'){
+   # rotate by 180 deg and flip along Y-axis 
+   $cellPinRect[0] = $instPinRect[0] - $instOriginX;
+   $cellPinRect[1] = $cellH - ($instPinRect[3] - $instOriginY);
+   $cellPinRect[2] = $instPinRect[2] - $instOriginX;
+   $cellPinRect[3] = $cellH - ($instPinRect[1] - $instOriginY);
+                            }
+elsif ( $cellOrient eq 'E'){
+   # rotate by 270 deg
+   $cellPinRect[1] = $instPinRect[0] - $instOriginX;
+   $cellPinRect[2] = $cellW - ($instPinRect[1] - $instOriginY);
+   $cellPinRect[3] = $instPinRect[2] - $instOriginX;
+   $cellPinRect[0] = $cellW - ($instPinRect[3] - $instOriginY);
+                            }
+elsif ( $cellOrient eq 'FE'){
+   # rotate by 270 deg and flip along Y-axis
+   $cellPinRect[0] = $cellW - ($instPinRect[3] - $instOriginY) ;
+   $cellPinRect[1] = $cellH - ($instPinRect[2] - $instOriginX) ;
+   $cellPinRect[2] = $cellW - ($instPinRect[1] - $instOriginY) ;
+   $cellPinRect[3] = $cellH - ($instPinRect[0] - $instOriginX) ;
+                            }
+   $cellPinRect[0] = $cellPinRect[0]-$cellOriginX;
+   $cellPinRect[1] = $cellPinRect[1]-$cellOriginY;
+   $cellPinRect[2] = $cellPinRect[2]-$cellOriginX;
+   $cellPinRect[3] = $cellPinRect[3]-$cellOriginY;
+   $_ /= $dbu for @cellPinRect;
+
+return(@cellPinRect);
+}#sub xformInstPinToCellPin
+
+
+1;

@@ -1,0 +1,408 @@
+sub macro_arranger_usage {
+print qq^
+ NAME
+   macro_arranger
+
+ FUNCTION
+    arranges macro instances for a given cellref in a tile as per specified constraints
+
+ SYNOPSIS
+ macro_arranger [-macros <comma seperated list of macros>] [-minXspan <>] [-minYspan <>] [-xSpacing <>] [-ySpacing <>] <-debug>
+
+ INPUTS
+      options :
+       -macros <comma seperated list of macros> : macros to be tiled
+       -minXspan <>    : feed through requirement
+       -minYspan <>    : feed through requirement
+       -xSpacing <>    : inter-macro spacing requirement
+       -ySpacing <>    : inter-macro spacing requirement
+       -tileSize <mXn> : desired tile size
+       -debug : This is optional to run the program in debug mode
+
+ OUTPUTS
+      The placed database will have macro arranged in a tile
+
+^;
+}
+
+sub macro_arranger {
+  # initialize vars
+  my (@args) = @_;
+  ($macroList, $tileSizeIn) = ("","");
+  ($minXspan, $minYspan, $xSpacing, $ySpacing) = (0,0,0,0);
+  ($help, $debug, $verbose) = (0,0,0);
+  @MACROLIST = ();
+  @MACROSIZE = ();
+  @TILESIZE = ();
+  %MACRO = ();
+  my (@CovgArea, $CovgWidth, $CovgHeight) = ();
+  %ARRANGER = ();
+  %SLOTS = ();
+  @X_SPAN = ();
+  @Y_SPAN = ();
+
+  $help = 0;
+  &macro_arranger_readArgs(@args);
+  if ($help) {
+    &macro_arranger_usage();
+  } else {
+    #&macro_arranger_findMacros
+    &macro_arranger_init;
+    &macro_arranger_getTileSizes($#MACROLIST+1);
+    &macro_arranger_validateTileSize;
+    &macro_arranger_allocateTileSlots;
+    &macro_arranger_assignOrient;
+    &macro_arranger_showResult;
+  } #if...else
+
+  &macro_arranger_finish();
+} #sub macro_arranger
+
+########################################################################
+sub macro_arranger_init {
+  @CovgArea   = @{$DIE_ALREADY{dieArea}};
+  $CovgWidth  = $CovgArea[2] - $CovgArea[0];
+  $CovgHeight = $CovgArea[3] - $CovgArea[1];
+  $DBU = $GLOBAL->dbfGlobalGetDBU;
+
+  @MACROLIST = split(/,/,$macroList);
+  foreach my $macro (@MACROLIST) {
+    my @loc = $CADB{$macro}->dbCadbGetLoc;
+    $MACRO{$macro}{origX}   = $loc[0];
+    $MACRO{$macro}{origY}   = $loc[1];
+    my $cellref             = $CADB{$macro}->dbCadbGetCellref;
+    $MACRO{$macro}{cellref} = $cellref;
+    $MACRO{$macro}{class}   = $PLDB{$cellref}->dbMdbGetClass;
+    my $size = $MACROS_ATTRIBUTE_ALREADY{$cellref}{size};
+    ($MACROSIZE[0],$MACROSIZE[1]) = (split(/\s+/,$size))[0,1];
+    ($MACROSIZE[0],$MACROSIZE[1]) = ($MACROSIZE[0]*$DBU,$MACROSIZE[1]*$DBU);
+    my ($width,$height)=(split(/\s+/,$size))[0,1];
+    $MACRO{$macro}{width}   = $width;
+    $MACRO{$macro}{height}  = $height;
+    &macro_arranger_macroPins($macro,$cellref);
+  } #foreach
+} #sub macro_arranger_init
+
+########################################################################
+sub macro_arranger_allocateTileSlots {
+
+  my ($cfg, $rot)     = @TILESIZE;
+  my ($tileX, $tileY) = ($ARRANGER{$cfg}{tileX}, $ARRANGER{$cfg}{tileY});
+  ## find centre spot and sort tile slots by offset from center
+  my ($centerX, $centerY) = (($tileX-1)/2, ($tileY-1)/2);
+  for (my $j=0; $j<$tileY; $j++) {
+    for (my $i=0; $i<$tileX; $i++) {
+      my $idx = "${j}_${i}";
+      $ARRANGER{$cfg}{SLOT}{$idx}{xOffset} = $i - $centerX;
+      $ARRANGER{$cfg}{SLOT}{$idx}{yOffset} = $j - $centerY;
+      $ARRANGER{$cfg}{SLOT}{$idx}{totOffset} = abs($ARRANGER{$cfg}{SLOT}{$idx}{xOffset}) + abs($ARRANGER{$cfg}{SLOT}{$idx}{yOffset});
+      $SLOTS{$idx} = $ARRANGER{$cfg}{SLOT}{$idx}{totOffset};
+    }
+  }
+  my @sortedSlots = sort macro_arranger_sortSlotsByOffset(keys(%SLOTS));
+
+  ### sort macros by sigPins
+  my @sortedMacros = sort macro_arranger_sortMacroBySigPins (keys(%MACRO));
+
+  my $i = 0;
+  foreach my $slot (@sortedSlots) {
+    $ARRANGER{$cfg}{SLOT}{$slot}{macro} = $sortedMacros[$i];
+    $i++;
+  }
+} #sub macro_arranger_allocateTileSlots
+
+sub macro_arranger_sortSlotsByOffset {
+   $SLOTS{$a} <=> $SLOTS{$b};
+} #sub
+
+sub macro_arranger_sortMacroBySigPins {
+  ### just to test
+  $MACRO{'bank_0XYZbank/subbank_0XYZsram1/ram_1XYZram/u_mem'}{sigPins} = 2;
+  $MACRO{'bank_0XYZbank/subbank_3XYZsram0/ram_1XYZram/u_mem'}{sigPins} = 300;
+  $MACRO{'bank_0XYZbank/subbank_1XYZsram0/ram_1XYZram/u_mem'}{sigPins} = 30;
+  $MACRO{'bank_0XYZbank/subbank_0XYZsram0/ram_1XYZram/u_mem'}{sigPins} = 1;
+  $MACRO{'bank_0XYZbank/subbank_1XYZsram1/ram_1XYZram/u_mem'}{sigPins} = 34;
+  $MACRO{'bank_0XYZbank/subbank_2XYZsram1/ram_1XYZram/u_mem'}{sigPins} = 134;
+  $MACRO{'bank_0XYZbank/subbank_2XYZsram0/ram_1XYZram/u_mem'}{sigPins} = 130;
+  $MACRO{'bank_0XYZbank/subbank_3XYZsram1/ram_1XYZram/u_mem'}{sigPins} = 360;
+  ####
+   $MACRO{$a}{sigPins} <=> $MACRO{$b}{sigPins};
+} #sub
+########################################################################
+sub macro_arranger_assignOrient {
+  my ($cfg, $rot)     = @TILESIZE;
+  my ($tileX, $tileY) = ($ARRANGER{$cfg}{tileX}, $ARRANGER{$cfg}{tileY});
+  ## find centre spot and sort tile slots by offset from center
+  my ($centerX, $centerY) = (($tileX-1)/2, ($tileY-1)/2);
+  foreach $slot (keys %{$ARRANGER{$cfg}{SLOT}}) {
+    my $orient = "--";
+    my $macro   = $ARRANGER{$cfg}{SLOT}{$slot}{macro};
+    my $xOffset = $ARRANGER{$cfg}{SLOT}{$slot}{xOffset};
+    my $yOffset = $ARRANGER{$cfg}{SLOT}{$slot}{yOffset};
+    my $maxPinEdge = $MACRO{$macro}{maxPinEdge};
+    if ($maxPinEdge eq "N") {
+      if ($rot eq "R0") {
+	if ($yOffset < 0) { $orient = "S";} else { $orient = "N";}
+      } elsif ($rot eq "R90") {
+	if ($xOffset < 0) { $orient = "E";} else { $orient = "W";}
+      }
+    } elsif ($maxPinEdge eq "E") {
+      if ($rot eq "R0") {
+	if ($xOffset < 0) { $orient = "S";} else { $orient = "N";}
+      } elsif ($rot eq "R90") {
+	if ($yOffset < 0) { $orient = "W";} else { $orient = "E";}
+      }
+    } elsif ($maxPinEdge eq "W") {
+      if ($rot eq "R0") {
+	if ($xOffset < 0) { $orient = "N";} else { $orient = "S";}
+      } elsif ($rot eq "R90") {
+	if ($yOffset < 0) { $orient = "E";} else { $orient = "W";}
+      }
+    } elsif ($maxPinEdge eq "S") {
+      if ($rot eq "R0") {
+	if ($yOffset < 0) { $orient = "N";} else { $orient = "S";}
+      } elsif ($rot eq "R90") {
+	if ($xOffset < 0) { $orient = "W";} else { $orient = "E";}
+      }
+    } else {
+      printf ("INFO-ALGO_PL_NW_MA_AO : 001 : Error in finding maxPinEdge for macro:$macro\n");
+    } #if...elsif..else
+    $ARRANGER{$cfg}{SLOT}{$slot}{orient} = $orient;
+  } #foreach
+
+} #sub macro_arranger_assignOrient
+########################################################################
+sub macro_arranger_macroPins {
+  my ($macro,$cellref) = @_;
+  my $heigth = $MACRO{$macro}{height};
+  my $width  = $MACRO{$macro}{width};
+  my ($sigPins, $totPins) = (0,0);
+
+  #### find the number of pins per boundary
+  $MACRO{$macro}{EDGE}{'W'}{NumPin}  = 0;
+  $MACRO{$macro}{EDGE}{'N'}{NumPin}  = 0;
+  $MACRO{$macro}{EDGE}{'E'}{NumPin}  = 0;
+  $MACRO{$macro}{EDGE}{'S'}{NumPin}  = 0;
+  my @pins = keys %{$PLDB{$cellref}{PIN}};
+  foreach my $pin (@pins) {
+    $totPins++;
+    if ($PLDB{$cellref}{PIN}{$pin}{F} == 0) { ## check if this is a signal pin
+      $sigPins++;
+      my $side = 0;
+      my $pinRect = $PLDB{$cellref}{PIN}{$pin}{RECT}->[0];
+      my @pinRect = (split(/\s+/,$pinRect))[2,3,4,5];
+      if    ($pinRect[0] == 0)       { $side = "W";}
+      elsif ($pinRect[1] == 0)       { $side = "S";}
+      elsif ($pinRect[2] == $width)  { $side = "E";}
+      elsif ($pinRect[1] == $height) { $side = "N";}
+      else  {
+	printf ("INFO-ALGO_PL_NW_MA_INIT : 001 : Error in finding side for pin:$pin of macro $macro\n");
+      } ##if..else...
+      $MACRO{$macro}{PIN}{$pin}{SIDE} = $side;
+      $MACRO{$macro}{EDGE}{$side}{NumPin}++;
+
+      ### ToDO; ignore singal pins which are not connected to any nets
+      #my $net = $COMP_ALREADY{$inst}{$pin};
+      #$MACRO{$macro}{PINS}{$pin}{net} = $net;
+      #if ( exists $NETS_ALREADY{$net} ) {
+      #foreach $netInst ( keys %{$NETS_ALREADY{$net}} ) {
+    } #if..signal pin
+  } #foreach
+  $MACRO{$macro}{sigPins} = $sigPins;
+  $MACRO{$macro}{totPins} = $totPins;
+  my ($maxPinEdge, $maxPinEdgeNumpins) = (0, -1);
+  foreach $edge (keys %{$MACRO{$macro}{EDGE}}) {
+    if ($MACRO{$macro}{EDGE}{$edge}{NumPin} >= $maxPinEdgeNumpins) {
+      $maxPinEdgeNumpins = $MACRO{$macro}{EDGE}{$edge}{NumPin};
+      $maxPinEdge = $edge;
+    }
+  }
+  $MACRO{$macro}{maxPinEdge} = $maxPinEdge;
+
+  printf("INFO-ALGO_PL_NW_MA_PINS: 001: Macro:$macro totPins:$totPins sigPins:$sigPins W:$MACRO{$macro}{EDGE}{'W'}{NumPin} S:$MACRO{$macro}{EDGE}{'S'}{NumPin} E:$MACRO{$macro}{EDGE}{'E'}{NumPin} N:$MACRO{$macro}{EDGE}{'N'}{NumPin}\n") if $debug;
+} #sub macro_arranger_macroPins {
+
+########################################################################
+########################################################################
+sub macro_arranger_validateTileSize() {
+  foreach $cfg (sort keys %ARRANGER) {
+    my $xSpan = $ARRANGER{$cfg}{tileX} * ($MACROSIZE[0] + $xSpacing ) - $xSpacing;
+    my $ySpan = $ARRANGER{$cfg}{tileY} * ($MACROSIZE[1] + $ySpacing ) - $ySpacing;
+    $ARRANGER{$cfg}{R0}{xSpan} = $xSpan;
+    $ARRANGER{$cfg}{R0}{ySpan} = $ySpan;
+    printf ("INFO-ALGO_PL_NW_MA_VTS : 001 : For cfg:$ARRANGER{$cfg}{tileX} RO xSpan=$xSpan ySpan=$ySpan\n") if ($debug);
+    if ((($xSpan < $CovgWidth) && ($xSpan < $minXspan)) && (($ySpan < $CovgHeight) && ($ySpan < $minYspan))) {
+      $ARRANGER{$cfg}{R0}{valid} = 1;
+    } else {
+      $ARRANGER{$cfg}{R0}{valid} = 0;
+    }
+
+    my $xSpan = $ARRANGER{$cfg}{tileX} * ($MACROSIZE[1] + $xSpacing ) - $xSpacing;
+    my $ySpan = $ARRANGER{$cfg}{tileY} * ($MACROSIZE[0] + $ySpacing ) - $ySpacing;
+    $ARRANGER{$cfg}{R90}{xSpan} = $xSpan;
+    $ARRANGER{$cfg}{R90}{ySpan} = $ySpan;
+    printf ("INFO-ALGO_PL_NW_MA_VTS : 001 : For cfg:$ARRANGER{$cfg}{tileX} R9O xSpan=$xSpan ySpan=$ySpan\n") if ($debug);
+    if ((($xSpan < $CovgWidth) && ($xSpan < $minXspan)) && (($ySpan < $CovgHeight) && ($ySpan < $minYspan))) {
+      $ARRANGER{$cfg}{R90}{valid} = 1;
+    } else {
+      $ARRANGER{$cfg}{R90}{valid} = 0;
+    }
+  }
+
+  ### find the best cfg to use
+  my ($useCfg, $useRot) = (100,100);
+  my $found = 0;
+  if ($tileSizeIn eq "") {
+    foreach my $cfg (sort keys %ARRANGER) {
+      foreach my $rot ("R0", "R90") {
+	if (($ARRANGER{$cfg}{$rot}{valid} == 1) && ($found == 0)) {
+	  $useCfg = $cfg; $useRot = $rot; $found = 1;
+	} #if
+      } #foreach
+    } #foreach
+    @TILESIZE = ($useCfg, $useRot)
+  } else {
+    my @tileSizeIn = split(/x/,$tileSizeIn);
+    ## check if specified tile size is valid
+    foreach my $cfg (sort keys %ARRANGER) {
+      if (($ARRANGER{$cfg}{tileX} == $tileSizeIn[0]) && ($ARRANGER{$cfg}{tileX} == $tileSizeIn[0])) {
+	foreach my $rot ("R0", "R90") {
+	  if (($ARRANGER{$cfg}{$rot}{valid} == 1) && ($found == 0)) {
+	    $useCfg = $cfg; $useRot = $rot; $found = 1;
+	  } #if valid
+	} #foreach rot
+	printf ("INFO-ALGO_PL_NW_MA_VTS : 002 : User specified cfg tileX=$tileSizeIn[0] tileY=$tileSizeIn[1] violates other criteria\n") if (!$found);
+      } #if cfg matches
+    } #foreach cfg
+    if ($found) {
+      @TILESIZE = ($useCfg, $useRot)
+    } else {
+      printf ("INFO-ALGO_PL_NW_MA_VTS : 003 : User specified cfg tileX=$tileSizeIn[0] tileY=$tileSizeIn[1] is not valid\n") if (!$found);
+    }
+  } ##else .. user specified tilesize
+} # sub macro_arranger_validateTileSize
+
+########################################################################
+########################################################################
+sub macro_arranger_getTileSizes() {
+  #find possible tile sizes (mXn) for given macroList
+  my ($input) = @_;
+  my @factors;
+  my ($counter, $div);
+  push (@factors, $input);
+  # Start counter from two, up to half the value of the input. -PCP
+  for ($counter = 2; $counter <= int($input / 2); $counter++) {
+    $div = $input / $counter;
+    unless ($div =~ /\./) {
+      push (@factors, $div);
+      my $div2 = $input/$div;
+      printf ("INFO-ALGO_PL_NW_MA_GTS : 001 : Adding possible organization $div x $div2\n") if ($debug);
+    } #unless
+  } #for
+  push (@factors, 1);
+
+  #organize in the hash in order of most square to most rectinliear
+  #todo: need to check for array with odd number of enteries eg. 9
+  my $i =0 ;
+  my $idx = $#factors;
+  while ($i<=$#factors) {
+    $div1 = $factors[$i];
+    $ARRANGER{$idx}{tileX} = $div1;$ARRANGER{$idx}{tileY} = $input/$div1;
+    printf ("INFO-ALGO_PL_NW_MA_GTS : 001 : Adding $div1 at $idx\n") if ($debug);
+    $idx--;
+    if ($i != $#factors-$i) {
+      $div1 = $factors[$#factors-$i];
+      $ARRANGER{$idx}{tileX} = $div1;$ARRANGER{$idx}{tileY} = $input/$div1;
+      printf ("INFO-ALGO_PL_NW_MA_GTS : 001 : Adding $div1 at $idx\n") if ($debug);
+      $i++;$idx--;
+    } #if
+    $i++;
+  }
+} #sub macro_arranger_getTileSizes
+
+########################################################################
+sub macro_arranger_readArgs {
+  my (@args) =  @_;
+  my $args = join(' ',@args);
+  if (!defined($args)) {
+    $args = "";
+  }
+  my $parseResult = Getopt::Long::GetOptionsFromString($args , 
+						       # read args here
+						       "macros=s"   => \$macroList,
+						       "tileSize=s" => \$tileSizeIn,
+						       "minXspan=i" => \$minXspan,
+						       "minYspan=i" => \$minYspan,
+						       "xSpacing=i" => \$xSpacing,
+						       "ySpacing=i" => \$ySpacing,
+						       "help"       => \$help,
+						       "debug"      => \$debug,
+						       "verbose"    => \$verbose,
+						      );
+} #sub macro_arranger_readArgs
+
+########################################################################
+sub macro_arranger_showResult {
+  my ($cfg, $rot)     = @TILESIZE;
+  my ($tileX, $tileY) = ($ARRANGER{$cfg}{tileX}, $ARRANGER{$cfg}{tileY});
+  my (@edge, @sigPins, @orient);
+  printf ("INFO-ALGO_PL_NW_MA_SR: 001: Placed macros as cfg:$tileX x $tileY rotation:$rot\n");
+  foreach $slot (keys %{$ARRANGER{$cfg}{SLOT}}) {
+    my ($y,$x)     = split(/_/,$slot);
+    my $macro      = $ARRANGER{$cfg}{SLOT}{$slot}{macro};
+    my $xOffset    = $ARRANGER{$cfg}{SLOT}{$slot}{xOffset};
+    my $yOffset    = $ARRANGER{$cfg}{SLOT}{$slot}{yOffset};
+    my $maxPinEdge = $MACRO{$macro}{maxPinEdge};
+    my $sigPins    = $MACRO{$macro}{sigPins};
+    my $orient     = $ARRANGER{$cfg}{SLOT}{$slot}{orient};
+    $edge[$x][$y]    = $maxPinEdge;
+    $sigPins[$x][$y] = $sigPins;
+    $orient[$x][$y]  = $orient;
+    printf ("INFO-ALGO_PL_NW_MA_SR: 002: Slot:%s sigPins:%-4d maxPinEdge:%s orient:%s\n",$slot,$sigPins,$maxPinEdge,$orient) if ($debug);
+  } #foreach
+
+  my $str;
+  for (my $j=$tileY-1; $j>=0; $j--) {
+    $str = "-" x 72;
+    print "$str\n";
+
+    $str = "|";
+    for (my $i=0; $i<$tileX; $i++) {
+      $str .= sprintf("sigPins:%-5d    |",$sigPins[$i][$j]);
+    }
+    print "$str\n";
+
+    $str = "|";
+    for (my $i=0; $i<$tileX; $i++) {
+      $str .= sprintf("maxPinEdge:%s      |",$maxPinEdge[$i][$j]);
+    }
+    print "$str\n";
+
+    $str = "|";
+    for (my $i=0; $i<$tileX; $i++) {
+      $str .= sprintf("orient:%s         |",$orient[$i][$j]);
+    }
+    print "$str\n";
+
+  }
+  $str = "-" x 72;
+  print "$str\n";
+} #sub macro_arranger_showResult
+########################################################################
+sub macro_arranger_finish() {
+  #anything special to be done when this script exits
+} #sub finish
+
+########################################################################
+sub macro_arranger_findMacros {
+  foreach my $inst ( keys %COMP_ALREADY ) {
+    my $cellref =  $CADB{$inst}->dbCadbGetCellref;
+    my $inst_class = $PLDB{$cellref}->dbMdbGetClass;
+    if ($inst_class eq "BLOCK") {
+      printf ("INFO-ALGO_PL_NW_MA_FM : 001 : Found macro $inst of cell:$cellref\n");
+    } #if
+  } #foreach
+} #sub
+
+
+1;

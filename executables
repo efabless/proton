@@ -1,0 +1,226 @@
+#!/usr/local/bin/perl -w
+
+
+sub date {
+   open(DATE, "date |");
+   $theDate = <DATE>;
+   print "$theDate";
+   close(DATE); 
+}# sub date 
+
+sub exit_call {
+exit;
+}
+
+sub repeat_previous {
+
+}# sub repeat_previous
+
+sub print {
+my $noOfArguments = @_;
+print "$noOfArguments\n";
+if($noOfArguments == 1){ print "${$_[0]}\n";} elsif($noOfArguments == 2){ print "${$_[0]}{$_[1]}\n";}
+}
+
+#sub set {
+#${$_[0]} = $_[1];
+#}
+
+
+###########################################################################################
+#### perl pgm to get the area of a module                                              ####
+###########################################################################################
+
+sub get_area {
+
+my $noOfArguments = @_;
+local $list_of_references = $moduleHierarchyPointer{$_[0]};
+my $moduleStdCellArea = $MODULES[0]{$_[0]}{'area'};
+my $tmpArea = $moduleStdCellArea;
+
+if (exists $moduleHierarchyPointer{$_[0]} ) {
+
+foreach( (split (/\s+/, $list_of_references)) ){ if( exists $alreadyDone{$_}) { }
+                                 else {
+                                 if(exists $moduleHierarchyPointer{$_}){ $tmpArea = $tmpArea + get_area($_);
+                                 }
+                                 else { if(exists $MODULES[0]{$_}) { $tmpArea = $tmpArea + $MODULES[0]{$_}{area};}else { print "did not find $_\n";}
+                                 }}}# foreach
+} # if not the last hierarchy
+else {}
+
+#print "$_ $tmpArea\n";
+
+$top_module_area = $tmpArea;
+return ($tmpArea);
+}
+
+
+sub get_area_II {
+my $area = 0;
+foreach $instance ( keys %COMP_ALREADY ) {
+  print "$instance" if ($DEBUG > 3);
+  my $cellref = $CADB{$instance}->dbCadbGetCellref;
+     my @size = ();
+     if (exists $PLDB{$cellref} ) { 
+                                  @size = $PLDB{$cellref}->dbMdbGetSize; 
+                                  print " \: $size[0] x $size[1] " if ($DEBUG > 3);
+                                  }
+     else { @size = [0,0]; 
+     print "cell $cellref not found in physical library, assumed size to be 0\n" if ($DEBUG > 3); 
+          }
+     $area = $area + ( $size[0]*$size[1] );
+  print "\n" if ($DEBUG > 3);
+                                         }# foreach component
+return($area);
+}# sub get_area_II
+
+
+
+
+sub report_area {
+
+my $noOfArguments = @_;
+my $area2report = 0;
+# $area2report = get_area($_[0]);
+$area2report = get_area_II;
+print "$area2report in u^2\n";
+
+} # sub report_area
+
+
+sub source {
+
+my $EXECUTE_FILE = $_[0];
+
+my $p2cmd = \%cmds;
+my $p2cmdArgs = \%checkArguments;
+
+open (READ_EXE_FILE, "$EXECUTE_FILE");
+while(<READ_EXE_FILE>){
+
+chomp($_);
+$_ =~ s/^\s+//;
+
+if($_ =~ /^\s*#/){ # if the line is commented do nothing 
+                 }
+elsif ( $_ =~ /^\s*$/ ) { # if the line is empty
+                 }else {
+($cmd, @arguments) = split(/\s+/, $_);
+#------------------------------------Added by Mansi---------------------------#
+$GLOBAL->dbfGlobalSetCurrCommand($cmd);
+if($cmd eq "help"){
+$GLOBAL->dbfGlobalSetCurrCommand($arguments[0]);
+}#if cmd eq help
+#-----------------------------------------------------------------------------#
+#--------------------- conditioning the arguments : Rajeev -------------------#
+my $tempArgStr = join" ",@arguments;
+#print "hi $tempArgStr\n" ;
+$tempArgStr =~ s/\{\s*/\{/g;
+$tempArgStr =~ s/\s*\}/\}/g;
+my $modArgs = "";
+if ( $tempArgStr =~ /\{/ ) {
+while ( $tempArgStr =~ m/(.*?)\{\s*(.*?)\s*\}(.*?)/g) { 
+                                              my $preBrace  = $1;
+                                              my $withinBrace = $2; 
+                                              my $postBrace = $3;
+                                              $withinBrace =~ s/\s*\,\s*/\,/g ; 
+                                              $withinBrace =~ s/\s+/ /g ; 
+                                              $withinBrace =~ s/\s/\,/g ; 
+                                              $modArgs = $modArgs." ".$preBrace." \{".$withinBrace."\}";
+                                              print "$preBrace $withinBrace $postBrace\n"; 
+                                              #print "loop $modArgs\n";
+                                            }# while
+while ( $tempArgStr =~ m/\{\s*(.*)\s*\}(.*)/g) {
+                                              my $withinBrace = $1;
+                                              my $postBrace = $2;
+                                              $modArgs = $modArgs." ".$postBrace;
+                                              #print " last $modArgs\n";
+                                             }# while
+#print "$modArgs\n" ;
+                          } else { $modArgs = $tempArgStr; }
+@arguments = split(/\s+/,$modArgs);
+#--------------------- conditioning the arguments : Rajeev -------------------#
+$noOfargs = @arguments;
+if(exists $p2cmdArgs->{$cmd}){
+     if( $p2cmdArgs->{$cmd} <= $noOfargs) { 
+                                          print "#<CMD> $_\n";
+                                          open (LOG, ">>$cmdfileName");
+                                          print LOG "$_\n";
+                                          &{$p2cmd->{$cmd}}(@arguments); 
+                                          } else {
+                                          &{$p2cmd->{$cmd}}("HELP"); 
+                                          } 
+                              } else {
+  print "$cmd no such command\n"; }
+                       } # if the line is not commented
+
+}#while not EOF
+
+
+}#sub source
+#---------------------------------------------------------------#
+sub return_toolshell {
+#  goto EXEC_TOOL_PROMPT ;
+print "$PROMPT \> ";
+while(<STDIN>){
+if($echo_commands eq "true"){print "$_";}
+
+############ reseting ctrlc variable after first ctrlc ##########
+$got_ctrlc=-1;        
+
+if($_ eq "\n"){
+print "$PROMPT \> ";
+} else { chomp;
+$_ =~ s/^\s+//;
+($cmd, @arguments) = split(/\s+/, $_);
+#--------------------- conditioning the arguments : Rajeev -------------------#
+my $tempArgStr = join" ",@arguments;
+#print "hi $tempArgStr\n" ;
+$tempArgStr =~ s/\{\s*/\{/g;
+$tempArgStr =~ s/\s*\}/\}/g;
+my $modArgs = "";
+if ( $tempArgStr =~ /\{/ ) {
+while ( $tempArgStr =~ m/(.*?)\{\s*(.*?)\s*\}(.*?)/g) {
+                                              my $preBrace  = $1;
+                                              my $withinBrace = $2;
+                                              #my $postBrace = $3;
+                                              $withinBrace =~ s/\s*\,\s*/\,/g ;
+                                              $withinBrace =~ s/\s+/ /g ;
+                                              $withinBrace =~ s/\s/\,/g ;
+                                              $modArgs = $modArgs." ".$preBrace." \{".$withinBrace."\}";
+                                              #print "$preBrace $withinBrace $postBrace\n"; 
+                                              #print "$modArgs\n";
+                                            }# while
+while ( $tempArgStr =~ m/\{\s*(.*)\s*\}(.*)/g) {
+                                              my $withinBrace = $1;
+                                              my $postBrace = $2;
+                                              $modArgs = $modArgs." ".$postBrace;
+                                              #print " last $modArgs\n";
+                                             }# while
+#print "$modArgs\n" ;
+                          } else { $modArgs = $tempArgStr; }
+@arguments = split(/\s+/,$modArgs);
+#--------------------- conditioning the arguments : Rajeev -------------------#
+$noOfargs = @arguments;
+if(exists $p2cmdArgs->{$cmd}){
+     if( $p2cmdArgs->{$cmd} <= $noOfargs) { 
+                                          print "#<CMD> $cmd $modArgs\n";
+                                          open (LOG, ">>$cmdfileName");
+                                          print LOG "$cmd $modArgs\n";
+                                          &{$p2cmd->{$cmd}}(@arguments); 
+                                          } else {
+                                          &{$p2cmd->{$cmd}}("HELP"); 
+                                          } 
+                              } 
+else {
+#system($_);
+print "$PROMPT \> ";
+} # if a system command
+} #if only CR
+} # while
+}#sub return
+#---------------------------------------------------------------#
+
+
+1;

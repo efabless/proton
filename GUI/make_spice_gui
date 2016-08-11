@@ -1,0 +1,1028 @@
+##################################################################################################
+####################################### create spice GUI #########################################
+##################################################################################################
+sub spiceGUI{
+  my $with_auth_code = $_[0];
+  $top = MainWindow->new();
+  $top->title (" Spice Viewer ");
+  $top->geometry("750x700+0+0");
+
+  my $path2eq = $GLOBAL->dbfGlobalGetProtonHome;
+  my $folderImg = $top->Getimage('folder');
+  my ($display_labels_var, $move_inst_var) = (0, 0);
+  $display_nets_var = 0;
+  
+  $top->protocol('WM_DELETE_WINDOW',sub{
+                                        if($with_auth_code == 1){
+                                           my $end_time = time;
+                                           my $time_diff = $end_time - $start_time;
+                                           my $end_time_result = $server->call('end_time', $userName,$appName,int($run_count),$end_time,$time_diff);
+                                           print "App run time is: $time_diff\n";
+                                        }
+                                        exit(0);
+                                     });
+
+
+  my $topFrame = $top->Frame(-relief=>"ridge")->pack(-side=>'top', -fill=>'x');
+  my $bottomFrame = $top->Frame(-relief=>"raised", -borderwidth=>1)->pack(-side=>'bottom', -fill=>'x');
+  my $middleFrame = $top->Frame()->pack(-side=>'left', -fill=>'both', -expand=>1);
+
+  my $middleLeftFrame = $middleFrame->Frame()->pack(-side=>'left', -fill=>'y', -expand=>1, -anchor => 'ne');
+  my $middleRightFrame = $middleFrame->Frame()->pack(-side=>'left', -fill=>'both', -expand=>1);
+
+  my $spiceTree = &create_spice_browser_tree($middleLeftFrame);
+  $spiceViewCanvas = &create_spice_canvas($middleRightFrame);
+
+  my $adjTop = $top->Adjuster();
+  $adjTop->packAfter($topFrame, -side => 'top');
+
+  my $adjLeft = $top->Adjuster();
+  $adjLeft->packAfter($middleLeftFrame, -side => 'left');
+  
+  $topFrame->Label(-text => "SpiceFile:")->pack(-side =>'left', -anchor => 'e');
+  $topFrame->Entry(-textvariable =>\$spFile)->pack(-side =>'left', -fill=>'x', -expand=>1);
+  $topFrame->Button(-text=>'BrowseFile',-image=> $folderImg,-command =>sub {
+                                                                             $spFile = &popup_read_spice; 
+                                                                             &execute_commands_2_display_spice($spFile); 
+                                                                             &add_spice_tree_child($spiceTree); 
+                                                                             &editModule(-module, $TOP_MODULE);
+                                                                             &display_spice_hierarchy($spiceViewCanvas);
+                                                                            })->pack(-side => 'left');
+
+  #---------------------------------------------------------------------#
+  my $label_image = $topFrame->Photo(-file => "$path2eq/ETC/reportSlt.gif");               
+  my $labelButton = $topFrame->Checkbutton(-variable=>\$display_labels_var,-image=>$label_image,-indicatoron => 0,
+                                           -command=> sub{
+                                                           if($display_labels_var == 0){ 
+                                                              $spiceViewCanvas->delete("HIER_LABEL"); 
+                                                           }else {
+                                                              &display_spice_labels($spiceViewCanvas);
+                                                           } 
+                                                          })->pack(-side=>"right");
+  my $label_baloon = $topFrame->Balloon();
+     $label_baloon->attach($labelButton, -balloonmsg => 'labels display');
+
+  #---------------------------------------------------------------------#
+  my $net_image = $topFrame->Photo(-file => "$path2eq/ETC/addWire.gif");               
+  my $netButton = $topFrame->Checkbutton(-variable=>\$display_nets_var, -image=>$net_image,-indicatoron=>0,
+                                         -command=>sub{
+                                                        if($display_nets_var == 0){ 
+                                                           $spiceViewCanvas->delete("HIER_NET"); 
+                                                        }else {
+                                                           &display_spice_nets($spiceViewCanvas);
+                                                        } 
+                                                       })->pack(-side=>'right');
+  my $net_baloon = $topFrame->Balloon();
+     $net_baloon->attach($netButton, -balloonmsg => 'connections display');
+
+  #---------------------------------------------------------------------#
+  my $move_image = $topFrame->Photo(-file => "$path2eq/ETC/move.gif");               
+  my $moveButton = $topFrame->Checkbutton(-variable=>\$move_inst_var, -image=> $move_image,-indicatoron=>0,
+                                          -command=>sub{ 
+                                                        if($move_inst_var == 0){ 
+                                                           $spiceViewCanvas->CanvasBind('<m><1>' =>"");
+                                                           $spiceViewCanvas->CanvasBind('<m><B1-Motion>' =>"");
+                                                           $spiceViewCanvas->CanvasBind('<m><B1-ButtonRelease>' =>"");
+                                                        }else{  
+                                                           &move_spice_inst($spiceViewCanvas);
+                                                        } 
+                                          })->pack(-side=>'right');
+  my $move_baloon = $topFrame->Balloon();
+     $move_baloon->attach($moveButton, -balloonmsg => 'move');
+
+  #---------------------------------------------------------------------#
+  my $uphier_image = $topFrame->Photo(-file => "$path2eq/ETC/hierup.gif");               
+  my $uphierButton = $topFrame->Button(-image=> $uphier_image,-command=>sub{
+                                                                             &open_close_current_tree_child($spiceTree,"UH");
+                                                                             &upHier;
+                                                                             &display_spice_hierarchy($spiceViewCanvas);
+                                                                            })->pack(-side=>'right');
+  my $uphier_baloon = $topFrame->Balloon();
+     $uphier_baloon->attach($uphierButton, -balloonmsg => 'Up Hierarchy');
+  
+  #---------------------------------------------------------------------#
+  my $downhier_image = $topFrame->Photo(-file => "$path2eq/ETC/hierdown.gif");               
+  my $downhierButton = $topFrame->Button(-image=> $downhier_image,-command=>sub{
+                                                                                 &createDownHierPopUp($spiceViewCanvas, $spiceTree);
+                                                                                })->pack(-side=>'right');
+  my $downhier_baloon = $topFrame->Balloon();
+     $downhier_baloon->attach($downhierButton, -balloonmsg => 'Down Hierarchy');
+  
+  #---------------------------------------------------------------------#
+  my $refresh_image = $topFrame->Photo(-file => "$path2eq/ETC/redraw.gif");               
+  my $refreshButton = $topFrame->Button(-image=> $refresh_image,-command=>sub{
+                                                                               my $global_top_module = $GLOBAL->dbfGlobalGetTOP;
+                                                                               $spiceTree->close($global_top_module);
+                                                                               $spiceTree->selectionSet($global_top_module);
+                                                                               &editModule('-module', $global_top_module);
+                                                                               &display_spice_hierarchy($spiceViewCanvas);
+                                                                              })->pack(-side=>'right');
+  my $refresh_baloon = $topFrame->Balloon();
+     $refresh_baloon->attach($refreshButton, -balloonmsg => 'Refresh');
+
+  #---------------------------------------------------------------------#
+  $bottomFrame->Label(-textvariable =>\$CURSORX, -text => 'X', -anchor=>'w',-relief=>'sunken')->pack(-fill=>'x', -side=>'left');
+  $bottomFrame->Label(-textvariable =>\$CURSORY, -text => 'Y', -anchor=>'w',-relief=>'sunken')->pack(-fill=>'x', -side=>'left');
+  
+  MainLoop();
+
+}#sub spiceGUI
+
+##################################################################################################
+####################################### create spice canvas ######################################
+##################################################################################################
+sub create_spice_canvas {
+  my $frame = $_[0];
+
+  my $canvas = $frame->Scrolled('WorldCanvas', -scrollbars=>'se',-bg =>'black',-width=>540, -height=>540)->pack(qw/-side left -expand 1 -fill both/);
+  $canvas->Subwidget('xscrollbar')->configure(-takefocus => 0);
+  $canvas->Subwidget('yscrollbar')->configure(-takefocus => 0);
+  $canvas->configure(-confine => 1);
+  $canvas->CanvasBind('<Motion>', sub {&dbfGuiShowWorldCanvasCoords($canvas);});
+  $canvas->CanvasFocus;
+
+  return $canvas;
+}#sub create_spice_canvas
+
+sub dbfGuiShowSpiceCanvasCoords {
+  my $canvas = $_[0];
+
+  my @xy = $canvas->eventLocation();
+  my $mufx = $GLOBAL->dbGlobalGetMicronFactor;
+
+  $CURSORX = sprintf("%.2f", (($xy[0]-20)/$mufx));
+  $CURSORY = sprintf("%.2f", (($xy[1]-20)/$mufx));
+
+  #print "$x,$y\n";
+}#sub dbfGuiShowSpiceCanvasCoords
+
+##################################################################################################
+################################ create spice hierarchy browser ##################################
+##################################################################################################
+sub create_spice_browser_tree{
+  my $frame = $_[0];
+  my $spiceTree = $frame->Scrolled(
+       'Tree',
+       -background         => 'white',
+       -selectmode         => 'extended',
+       -selectbackground   => 'LightGoldenrodYellow',
+       -selectforeground   => 'RoyalBlue3',
+       -highlightthickness => 0,
+       -font               => 'verdana 8',
+       -relief             => 'flat',
+       -scrollbars         => 'osoe',
+       -borderwidth        => 0,
+       -browsecmd          => \&tree_browse_cmd,
+  )->pack(-side => 'left', -fill => 'y', -anchor => 'e', -expand=>1);
+
+  return $spiceTree;
+}#sub create_spice_browser_tree
+
+#################### Adding Tree children ######################
+sub add_spice_tree_child{
+  my $t0 = new Benchmark;
+  my $numOfArg = @_;
+
+  my $tree = $_[0];
+  my $global_top_module =  $GLOBAL->dbfGlobalGetTOP();
+  $GLOBAL->dbfGlobalSetTopHierPath($global_top_module);
+
+  $tree->add($global_top_module, -text => $global_top_module);
+  &call_add_spice_tree_child($tree, $global_top_module, $global_top_module);
+
+  $tree->autosetmode();
+  closeTree($tree, $global_top_module, 1);
+  $tree->close($global_top_module, 1);
+  $tree->selectionSet($global_top_module);
+
+  my $t1 = new Benchmark;
+  my $td = timediff($t1, $t0);
+  print "command add_spice_tree_child display took:",timestr($td),"\n" 
+}#sub add_spice_tree_child
+
+############### getting spice hierchical data  #################
+sub call_add_spice_tree_child{ 
+  my $tree = $_[0];
+  my $moduleName = $_[1];
+  my $fullHierPath = $_[2];
+
+  if(!defined($moduleName)){
+     return;
+  }
+
+  if(!exists $MODULE_ALREADY{$moduleName}){
+     return;
+  }
+
+  my @hinsts = $MODULE_ALREADY{$moduleName}->dbVNOMGetHierInst;
+  foreach my $inst (sort {$a cmp $b} @hinsts){
+     my $cellref = $MODULE_ALREADY{$moduleName}->dbVNOMGetHierInstCell($inst);
+     $tree->add($fullHierPath.".".$cellref."_slvr_".$inst, -text => $inst);    
+     &call_add_spice_tree_child($tree,$cellref, $fullHierPath.".".$cellref."_slvr_".$inst,);
+  }
+
+  my @linsts = $MODULE_ALREADY{$moduleName}->dbVNOMGetLeafInst;
+  foreach my $inst (sort {$a cmp $b} @linsts){
+     my $cellref = $MODULE_ALREADY{$moduleName}->dbVNOMGetLeafInstCell($inst);
+     $tree->add($fullHierPath.".".$cellref."_slvr_".$inst, -text => $inst);    
+  }
+}#sub call_add_spice_tree_child
+
+###################### closing tree children ####################
+sub closeTree {
+  my $tree = shift;
+  my ($entryPath, $hideChildren) = @_;
+  my @children = $tree->info(children => $entryPath);
+
+  return if ! @children;
+
+  for(@children){
+      closeTree ($tree, $_, 1);
+      $tree->selectionClear($_);
+      $tree->hide ('entry' => $_) if $hideChildren;
+  }
+
+  $tree->setmode ($entryPath, 'open') if length $entryPath;
+}#sub closeTree
+
+
+#################### Tree browse command ######################
+sub tree_browse_cmd{
+  my ($path, $state) = @_;
+  my $global_top_module =  $GLOBAL->dbfGlobalGetTOP();
+  if($state ne ""){
+     my ($parent, $leaf) = (split(/\./, $path))[-2,-1];
+     if($leaf eq $global_top_module){
+        $GLOBAL->dbfGlobalSetTopHierPath($path);
+        &editModule("-module", $global_top_module);
+        &display_spice_hierarchy($spiceViewCanvas)
+     }else{
+        my ($parent_module, $parent_inst) = split(/_slvr_/,$parent);
+        my ($cellref, $inst) = split(/_slvr_/,$leaf);
+        if($MODULE_ALREADY{$parent_module}->dbVNOMHasHierInst($inst)){
+           $GLOBAL->dbfGlobalSetTopHierPath($path);
+           &editModule("-module", $cellref);
+           &display_spice_hierarchy($spiceViewCanvas)
+        }
+     }#if not global top
+  }#if state is zero
+}#sub tree_browse_cmd
+
+#################### open/close tree child programatically ######################
+sub open_close_current_tree_child{
+  my $tree = $_[0];
+  my $mode = $_[1];
+  my $instName = $_[2];
+  my $cellName = $_[3];
+
+  my $current_top_hier_path = $GLOBAL->dbfGlobalGetTopHierPath;
+  $tree->selectionClear($current_top_hier_path);
+
+  if($mode eq "UH"){
+     $current_top_hier_path =~ s/\.[^\.]+$//;
+     $tree->close($current_top_hier_path);
+  }else{
+     $tree->open($current_top_hier_path);
+     $current_top_hier_path .= ".".$cellName."_slvr_".$instName;    
+  }
+
+  $tree->selectionSet($current_top_hier_path);
+  $GLOBAL->dbfGlobalSetTopHierPath($current_top_hier_path);
+
+}#sub open_close_current_tree_child
+
+##################################################################################################
+################################### pop-up to read spice file ####################################
+##################################################################################################
+sub popup_read_spice {
+  my @types = (["Config Files", '.sp'],
+               ["All Files", "*"]);
+  my $spfile = $top->getOpenFile(-filetypes =>\@types,
+                                  -title=>'Select SPICE File',
+                                  -defaultextension => '.sp'); 
+  return($spfile);          
+}#sub popup_read_spice
+
+##################################################################################################
+################################### pop-up for down hierarchy ####################################
+##################################################################################################
+sub createDownHierPopUp {
+  my $canvas = $_[0];
+  my $tree = $_[1];
+  my $instName = "";
+
+  my $parent = $TOP_MODULE;
+  my $floorplan = "";
+
+  my $popupWindow = MainWindow->new();
+     $popupWindow->title("Descend Hierarchy");
+  my $Frame1 = $popupWindow->Frame()->pack(-side => 'top',-expand=>1, -fill=>'x');
+  my $Frame2 = $popupWindow->Frame()->pack(-side => 'top',-expand=>1, -fill=>'x');
+  my $Frame3 = $popupWindow->Frame()->pack(-side => 'top',-expand=>1, -fill=>'x');
+  my $buttonFrame = $popupWindow->Frame()->pack(-side => 'bottom');
+  
+  $Frame1->Label(-text => "Parent    ")->pack(-side=>'left');
+  $Frame1->Entry(-textvariable => \$parent, -width =>12 )->pack(-side=>'right');
+  $Frame2->Label(-text => "Instance  ")->pack(-side=>'left');
+  my $instEntry = $Frame2->Entry(-textvariable => \$instName, -width =>12 )->pack(-side=>'right');
+  $Frame3->Label(-text => "Floorplan")->pack(-side=>'left');
+  $Frame3->Entry(-textvariable => \$floorplan, -width =>12 )->pack(-side=>'right');
+  $buttonFrame->Button(-text => 'Go', -padx=>0, -pady=>0, 
+                       -command=>sub {
+                                      my $cellref = $PSEUDO_VINST_ALREADY{$parent}{$instEntry->get()}->dbPimDBGetInstCellref;  
+                                      if(exists $PSEUDO_MODULE_ALREADY{$cellref}){
+                                         &open_close_current_tree_child($tree, "DH", $instEntry->get(), $cellref);
+                                         &editModule(-module, $cellref);
+                                         &display_spice_hierarchy($canvas);
+                                      }else{
+                                         print "WARN:It is not a Hierarchical Instance....\n";
+                                      }
+                                      $canvas->CanvasBind('<1>' =>"");
+                                      $popupWindow->destroy;
+                                      })->pack( -side=>"left");
+  $buttonFrame->Button(-text => 'Cancel', -padx=>0, -pady=>0, 
+                       -command=>sub {$canvas->delete("TEMP_HIGHLIGHT");$canvas->CanvasBind('<1>' =>"");
+                                      $popupWindow->destroy;
+                                      })->pack(-side=>"left");
+  
+  #------------------------ select the instance name by click LMB at instance ---------#
+  $canvas->CanvasBind('<1>', => sub{
+                 my @id      = $canvas->find(qw/withtag current/);
+                 my @tagList = $canvas->gettags($id[0]);
+                 my @coords  = $canvas->coords($id[0]);
+                 $canvas->delete("TEMP_HIGHLIGHT");
+                 if(exists $PSEUDO_VINST_ALREADY{$parent}{$tagList[1]}){
+                    $instEntry->configure(-textvariable =>$tagList[1]) if(Exists $instEntry);
+                    my $fill_color = $canvas->itemcget($tagList[1],-fill);
+                    my $stipple = $canvas->itemcget($tagList[1],-stipple);
+                    $canvas->createRectangle(@coords,-outline=>"white",-fill=>$fill_color,-stipple=>$stipple,-tags=>"TEMP_HIGHLIGHT");
+  
+                 }}); 
+  #-------------------------------------------------------------------------------------#
+}#sub createDownHierPopUp
+
+##################################################################################################
+###################### execute set of commands to display spice hierarchy  #######################
+##################################################################################################
+sub execute_commands_2_display_spice{
+  my $spiceFile = $_[0];
+
+  &read_spice_new(-sp, $spiceFile);
+  &add_spice_cells_in_PLDB();
+  &add_spice_input_output_in_VNOM();
+  &add_inst_pin_vs_net;
+  #&write_verilog("-output", "ad1.v", "--hier", "--overwrite");
+  #&spiceHierPlacer();
+ 
+}#sub execute_commands_2_display_spice
+
+##################################################################################################
+################################## creating spice gcell db #######################################
+##################################################################################################
+sub create_spice_gcell_db{
+  my $t0 = new Benchmark;
+  my $noOfArg = @_;
+  my $parent = $TOP_MODULE;
+  @GCellArray = ();
+  my ($gcellSizeX,$gcellSizeY,$ngcellX,$ngcellY) = (0,0,0,0);
+  my ($_ngcellX, $_ngcellY)       = (10,10);
+  if($_[0] eq "-h" || $_[0] eq "-help" || $_[0] eq "-HELP"){
+     print"Usage: create_spice_gcell_db -gx <gcell size across x>\n";
+     print"                             -gy <gcell size across y>\n";
+     print"                             -nx <number of gcells across x>\n";
+     print"                             -ny <number of gcells across y>\n";
+     return;
+  }
+  for(my $i=0; $i<$noOfArg; $i++){
+      if($_[$i] eq "-gx"){$gcellSizeX = $_[$i+1];}
+      if($_[$i] eq "-gy"){$gcellSizeY = $_[$i+1];}
+      if($_[$i] eq "-nx"){$ngcellX = $_[$i+1];}
+      if($_[$i] eq "-ny"){$ngcellY = $_[$i+1];}
+  }
+
+  my @size = $PSEUDO_MODULE_ALREADY{$parent}->dbaTstgenGetSize;   
+  $_ *= 2 for @size;#line added to increase chip size to display
+  my ($llx, $lly, $urx, $ury) = @size;
+
+  ############### added because the instances outside the chip have no gcell ################
+  #foreach my $instance (keys %{$PSEUDO_VINST_ALREADY{$parent}}){
+  #   if($instance eq "PIN"){next;}
+  #   my @loc = $PSEUDO_VINST_ALREADY{$parent}{$instance}->dbPimDBGetInstRelBbox;
+  #   if    ($loc[0] < $llx){$llx = $loc[0];} 
+  #   elsif ($loc[0] > $urx){$urx = $loc[0];} 
+  #   if    ($loc[1] < $lly){$lly = $loc[1];} 
+  #   elsif ($loc[1] > $ury){$ury = $loc[1];} 
+  #}#foreach instance
+  ###########################################################################################
+  
+  if ($gcellSizeX == 0) {
+    if ($ngcellX == 0) {
+      $ngcellX = $_ngcellX;
+      $ngcellY = $_ngcellY;
+    } 
+    $gcellSizeX = ($urx - $llx + 1 )/$ngcellX;
+    $gcellSizeY = ($ury - $lly + 1)/$ngcellY;
+  } elsif ($ngcellX == 0) {
+    $ngcellX = ceil( ($urx - $llx )/$gcellSizeX);
+    $ngcellY = ceil( ($ury - $lly )/$gcellSizeY);
+  }
+
+  my ($x, $y) = ($llx, $lly);
+  my ($numX, $numY) = (0,0);
+  my ($x1, $y1);
+  my ($pid);
+  while ($y < $ury) {
+      $y1 = $y + $gcellSizeY;
+      if ($y1 > $ury) {$y1 = $ury;}
+      while ($x < $urx) {
+        $x1 = $x + $gcellSizeX;
+        if ($x1 > $urx) {$x1 = $urx;}
+        $GCellArray[$numX][$numY] = new GCell;
+        $GCellArray[$numX][$numY]->dbgGcellSetBBox($x,$y, $x1,$y1);
+        $pid = min($numX+1, $numY+1, $ngcellX - $numX, $ngcellY - $numY);
+        $GCellArray[$numX][$numY]->dbgGcellSetPid($pid);
+        $x = $x1; $numX++;
+      } #while
+      $y = $y1; $numY++;
+      $x = $llx; $numX = 0;
+  }
+  foreach my $instance (keys %{$PSEUDO_VINST_ALREADY{$parent}}){
+     if($instance eq "PIN"){next;}
+     my @loc = $PSEUDO_VINST_ALREADY{$parent}{$instance}->dbPimDBGetInstRelBbox;
+     my $gcellX = int ($loc[0]/$gcellSizeX);
+     my $gcellY = int ($loc[1]/$gcellSizeY);
+     $GCellArray[$gcellX][$gcellY]->dbgGcellAddInst($instance) if($gcellX < $ngcellX && $gcellY < $ngcellY);
+  }#foreach instance
+  my $t1 = new Benchmark;
+  my $td = timediff($t1, $t0);
+  print "command create_spice_gcell_db display took:",timestr($td),"\n" 
+}#sub create_spice_gcell_db
+
+##################################################################################################
+################################## Spice Hierarchy Display #######################################
+##################################################################################################
+sub display_spice_hierarchy{
+  my $t0 = new Benchmark;
+  my $canvas = $_[0];
+  $canvas->delete('all');
+  $canvas->CanvasFocus;
+  $display_nets_var = 1;
+
+  ## placing & creating gcell db ##
+  &pseudoSpicePlacer; 
+  &create_spice_gcell_db; 
+  #################################
+
+  my $parent = $TOP_MODULE;
+  my $box = [0, 0, 540, 540];
+  my $displayFact = 1;
+
+  if(exists $PSEUDO_MODULE_ALREADY{$parent} ) {
+     print "$parent is the current top module\n";
+     my @size = $PSEUDO_MODULE_ALREADY{$parent}->dbaTstgenGetSize;   
+     $_ *= 2 for @size;#line added to increase chip size to display
+
+     my $xMulFact = 500/($size[2] - $size[0]);
+     my $yMulFact = 500/($size[3] - $size[1]);
+     if($xMulFact < $yMulFact){
+        $displayFact = $xMulFact;
+     }else {
+        $displayFact = $yMulFact;
+     } 
+     $GLOBAL->dbGlobalSetMicronFactor($displayFact);
+
+     ########################## Chip boundary display #############################
+     my $chip_llx = 20 + $size[0]*$displayFact;      
+     my $chip_lly = 20 + $size[1]*$displayFact;      
+     my $chip_urx = 20 + $size[2]*$displayFact;      
+     my $chip_ury = 20 + $size[3]*$displayFact;      
+
+     $canvas->createRectangle($chip_llx - 20, $chip_lly - 20, $chip_urx + 20, $chip_ury + 20, -outline=>"black"); 
+     my $top_rect = $canvas->createRectangle($chip_llx, $chip_lly, $chip_urx, $chip_ury,-width=>3,-outline=>"green"); 
+     $canvas->itemconfigure($top_rect, -tags =>'HIER_TOP' ); 
+     $canvas->addtag($parent , "withtag", $top_rect);
+    
+     ############################ gcell grid display ##############################
+     #for(my $i=0; $i<=$#GCellArray ; $i++) {
+     #  for(my $j=0; $j<=$#{$GCellArray[0]} ; $j++) {
+     #      my @bbox = $GCellArray[$i][$j]->dbgGcellGetBBox;
+     #      $_ *= $displayFact for @bbox;
+     #      $_ += 20 for @bbox;
+     #      my $grid_box = $canvas->createRectangle(@bbox, -outline=>"blue"); 
+     #      $canvas->itemconfigure($grid_box, -tags =>'HIER_GRID' ); 
+     #      $canvas->addtag("($i,$j)" , "withtag", $grid_box);
+     #      $canvas->createText($bbox[0],$bbox[1], -text=>"($i,$j)", -fill=>"yellow"); 
+     #  }
+     #}
+
+     ############################ Top pins display ################################
+     my @input_pins = $PSEUDO_MODULE_ALREADY{$parent}->dbaTstgenGetInput;
+     my @output_pins = $PSEUDO_MODULE_ALREADY{$parent}->dbaTstgenGetOutput;
+     my @bidi_pins = $PSEUDO_MODULE_ALREADY{$parent}->dbaTstgenGetBidi;
+     foreach my $pin((@input_pins,@output_pins, @bidi_pins)){
+        my @shapes = $PSEUDO_MODULE_ALREADY{$parent}->dbaTstgenGetPinRect($pin);
+        my ($layer, $pinllx, $pinlly,$pinurx,$pinury) = (split(/\s+/,$shapes[0])) [0,1,2,3,4];
+        $pinllx = 20 + $pinllx*2*$displayFact;
+        $pinlly = 20 + $pinlly*2*$displayFact;
+        $pinurx = 20 + $pinurx*2*$displayFact;
+        $pinury = 20 + $pinury*2*$displayFact;
+        my $hier_top_pin = $canvas->createRectangle($pinllx,$pinlly,$pinurx,$pinury,-outline=>'yellow');
+        $canvas->itemconfigure($hier_top_pin, -tags =>'HIER_TOP_PIN' );
+        $canvas->addtag($pin , "withtag", $hier_top_pin);
+     }
+
+     ############################ Instance display ################################
+     my $pix_size = $canvas->pixelSize();
+     for(my $i=0; $i<=$#GCellArray ; $i++) {
+        for(my $j=0; $j<=$#{$GCellArray[0]} ; $j++) {
+            my @instList = $GCellArray[$i][$j]->dbgGcellGetInst; 
+            my @filtered_inst_array = ();
+            foreach my $instance (@instList){
+               my @instBbox = $PSEUDO_VINST_ALREADY{$parent}{$instance}->dbPimDBGetInstRelBbox;
+               $_ *= $displayFact for @instBbox;
+               $_ += 20 for @instBbox;
+
+               my $is_display = &isSpiceEleDisplayTrue(@instBbox,$pix_size);
+               if($is_display == 1){
+                  my $cellref = $PSEUDO_VINST_ALREADY{$parent}{$instance}->dbPimDBGetInstCellref;
+                  my $color = "red";
+                  if(exists $PSEUDO_MODULE_ALREADY{$cellref}){
+                     $color = "orange"; 
+                  }elsif(exists $PLDB{$cellref}){
+                     if($PLDB{$cellref}->dbMdbGetClass eq "BLOCK"){
+                        $color = "OliveDrab1";
+                     }elsif($cellref =~ /capacitor/){
+                        $color = "BlueViolet";
+                     }elsif($cellref =~ /resistance/){
+                        $color = "HotPink";
+                     }else{
+                        $color = "purple";
+                     }
+                  }     
+                  my $hier_inst_poly = $canvas->createRectangle(@instBbox, -outline=>$color, -fill=>$color, -stipple=>"gray12");
+                  $canvas->itemconfigure($hier_inst_poly, -tags =>'HIER_INSTANCE' );
+                  $canvas->addtag($instance , "withtag", $hier_inst_poly);
+                  #$canvas->createText($instBbox[0],$instBbox[1], -fill=>"orange", -text=>$instance);
+                  &display_spice_inst_pins($canvas,$instance);
+               }else{ 
+                  push(@filtered_inst_array,$instance);
+               }
+            }#foreach Instance
+         
+            #my $image = $canvas->Photo(-file=>"/home/adityap/proj/proton/ETC/zoom_selected.gif");
+            #my $zoomed = $top->Photo;
+            #$zoomed->blank;
+            #$zoomed->copy($image, -zoom => 2);
+            #$canvas->createImage(40,50, -image=>$zoomed);
+            $GCellArray[$i][$j]->dbgGcellSetFilteredList(@filtered_inst_array);
+        }
+     }
+     &display_spice_nets($canvas);
+  }#if top module exists
+  $canvas->viewAll;
+  @box_org = $canvas->getView();
+  &mouseAndKeyBindToHighlightAndDisplayLabels($canvas);
+  &canvas_zoomIn_zoomOut($canvas,\@box_org);
+  my $t1 = new Benchmark;
+  my $td = timediff($t1, $t0);
+  print "command display_spice_hierarchy took:",timestr($td),"\n" 
+}#sub display_spice_hierarchy
+
+################################# filtered instance display #################################
+sub filterd_spice_instance_display{
+  my ($canvas, @view_area) = @_;
+  my $parent = $TOP_MODULE;
+  my $displayFact = $GLOBAL->dbGlobalGetMicronFactor;
+  my $pix_size = ($canvas->pixelSize())/1.2;
+  
+  for(my $i=0; $i<=$#GCellArray ; $i++) {
+      for(my $j=0; $j<=$#{$GCellArray[0]} ; $j++) {
+          my @bbox = $GCellArray[$i][$j]->dbgGcellGetBBox;
+          $_ *= $displayFact for @bbox;
+          $_ += 20 for @bbox;
+          #$canvas->createRectangle(@bbox, -outline=>"blue"); 
+          if    ($bbox[0] < $view_area[0] && $bbox[2] < $view_area[0]){ 
+          }elsif($bbox[0] > $view_area[2] && $bbox[2] > $view_area[2]){
+          }elsif($bbox[1] < $view_area[1] && $bbox[3] < $view_area[1]){
+          }elsif($bbox[1] > $view_area[3] && $bbox[3] > $view_area[3]){
+          }else {
+            my @instList = $GCellArray[$i][$j]->dbgGcellGetFilteredList;
+            my @filtered_inst_array = ();
+            my @inst_displayed = ();
+            foreach my $instance (@instList){
+               my @instBbox = $PSEUDO_VINST_ALREADY{$parent}{$instance}->dbPimDBGetInstRelBbox;
+               $_ *= $displayFact for @instBbox;
+               $_ += 20 for @instBbox;
+               if($instBbox[0] >= $view_area[0] && $instBbox[0] <= $view_area[2] && $instBbox[1] >= $view_area[1] && $instBbox[1] <= $view_area[3]){
+                  my $is_display = &isSpiceEleDisplayTrue(@instBbox,$pix_size);
+                  if($is_display == 1){
+                     my $cellref = $PSEUDO_VINST_ALREADY{$parent}{$instance}->dbPimDBGetInstCellref;
+                     my $color = "red";
+                     if(exists $PSEUDO_MODULE_ALREADY{$cellref}){
+                        $color = "orange"; 
+                     }elsif(exists $PLDB{$cellref}){
+                        if($PLDB{$cellref}->dbMdbGetClass eq "BLOCK"){
+                           $color = "OliveDrab1";
+                        }elsif($cellref =~ /capacitor/){
+                           $color = "BlueViolet";
+                        }elsif($cellref =~ /resistance/){
+                           $color = "HotPink";
+                        }else{
+                           $color = "purple";
+                        }
+                     }     
+                     my $hier_inst_poly = $canvas->createRectangle(@instBbox, -outline=>$color, -fill=>$color, -stipple=>"gray12");
+                     $canvas->itemconfigure($hier_inst_poly, -tags =>'HIER_INSTANCE' );
+                     $canvas->addtag($instance , "withtag", $hier_inst_poly);
+                     $canvas->addtag("FILTERED" , "withtag", $hier_inst_poly);
+                     #$canvas->createText($instBbox[0],$instBbox[1], -fill=>"orange", -text=>$instance);
+                     &display_spice_inst_pins($canvas,$instance,'FILTERED');
+                     push(@inst_displayed, $instance);
+                  }else{ 
+                     push(@filtered_inst_array,$instance);
+                  }#if instance is not drawn
+               }#if instance is inside the view area
+               else{push(@filtered_inst_array,$instance);}
+            }#foreach Instance
+            $GCellArray[$i][$j]->dbgGcellSetFilteredList(@filtered_inst_array);
+            my @prev_list =  $GCellArray[$i][$j]->dbgGcellGetDisplayedList;
+            push(@prev_list, @inst_displayed);
+            $GCellArray[$i][$j]->dbgGcellSetDisplayedList(@prev_list);
+          }#if view area overlaps with gcell
+      }
+  }
+  &display_spice_nets($canvas);
+}#sub filterd_spice_instance_display
+
+################################# deleting the large instance #################################
+sub delete_filtered_spice_instance{
+  my ($canvas, @view_area) = @_;
+  my $parent = $TOP_MODULE;
+  my $displayFact = $GLOBAL->dbGlobalGetMicronFactor;
+  my $pix_size = ($canvas->pixelSize())/1.2;
+  for(my $i=0; $i<=$#GCellArray ; $i++) {
+      for(my $j=0; $j<=$#{$GCellArray[0]} ; $j++) {
+          my @bbox = $GCellArray[$i][$j]->dbgGcellGetBBox;
+          $_ *= $MulFactor for @bbox;
+          $_ += 20 for @bbox;
+          if    ($bbox[0] < $view_area[0] && $bbox[2] < $view_area[0]){ 
+          }elsif($bbox[0] > $view_area[2] && $bbox[2] > $view_area[2]){
+          }elsif($bbox[1] < $view_area[1] && $bbox[3] < $view_area[1]){
+          }elsif($bbox[1] > $view_area[3] && $bbox[3] > $view_area[3]){
+          }else {
+            my @instList = $GCellArray[$i][$j]->dbgGcellGetDisplayedList;
+            my @filtered_inst_array = ();
+            my @inst_displayed = ();
+            foreach my $instance (@instList){
+               my @instBbox = $PSEUDO_VINST_ALREADY{$parent}{$instance}->dbPimDBGetInstRelBbox;
+               $_ *= $displayFact for @instBbox;
+               $_ += 20 for @instBbox;
+               if($instBbox[0] >= $view_area[0] && $instBbox[0] <= $view_area[2] && $instBbox[1] >= $view_area[1] && $instBbox[1] <= $view_area[3]){
+                  my $is_display = &isSpiceEleDisplayTrue(@instBbox,$pix_size);
+                  if($is_display == 1){
+                     push(@inst_displayed, $instance);
+                  }else{ 
+                     $canvas->delete($instance);
+                     push(@filtered_inst_array,$instance);
+                  }#if instance is not drawn
+               }#if instance is inside the view area
+               else{push(@inst_displayed,$instance);}
+            }#foreach Instance
+            my @prev_list = $GCellArray[$i][$j]->dbgGcellGetFilteredList;
+            push(@prev_list, @filtered_inst_array);
+            $GCellArray[$i][$j]->dbgGcellSetFilteredList(@prev_list);
+            $GCellArray[$i][$j]->dbgGcellSetDisplayedList(@inst_displayed);
+          }#if view area overlaps with gcell
+      }
+  }
+  &display_spice_nets($canvas);
+}#sub delete_filtered_spice_instance
+
+####################### deleting all the instance drawn after first display ##########################
+sub delete_all_spice_instance_on_zoomFit{
+  my $canvas = $_[0];
+  for(my $i=0; $i<=$#GCellArray ; $i++) {
+      for(my $j=0; $j<=$#{$GCellArray[0]} ; $j++) {
+          my @filteredInstList = $GCellArray[$i][$j]->dbgGcellGetFilteredList;
+          my @displayedInstList = $GCellArray[$i][$j]->dbgGcellGetDisplayedList;
+          push(@filteredInstList, @displayedInstList);
+          $GCellArray[$i][$j]->dbgGcellSetFilteredList(@filteredInstList);
+      }
+  }
+  $canvas->delete(FILTERED);
+}#sub delete_all_spice_instance_on_zoomFit
+
+######################### checking the visibility of instance ################################
+sub isSpiceEleDisplayTrue {
+ my $llx = $_[0];
+ my $lly = $_[1];
+ my $urx = $_[2];
+ my $ury = $_[3];
+ my $pix_size = $_[4];
+ my $width = abs($urx-$llx)/$pix_size;
+ my $height = abs($ury-$lly)/$pix_size;
+ if($width > 3 || $height > 3){
+    return 1;
+ }else{
+    return 0;
+ }
+}#sub isSpiceEleDisplayTrue
+
+##################################################################################################
+################################## cell structure display ########################################
+##################################################################################################
+sub display_spice_element_structure{
+  my $canvas = $_[0];
+  my $cell = $_[1];
+  my @poly_coords = @{$_[2]};
+  if(exists $PLDB{$cell}){
+     if($cellref =~ /capacitor/){
+        $canvas->createLine($poly_coords[0],($poly_coords[1]+$poly_coords[5])/2,($poly_coords[0]+$poly_coords[4])/2-2,($poly_coords[1]+$poly_coords[5])/2, -fill=>"green");
+     }elsif($cellref =~ /resistance/){
+     }elsif($cellref =~ /n/i){
+     }elsif($cellref =~ /p/i){
+     }
+  }
+}#sub display_spice_element_structure
+
+##################################################################################################
+##################################### spice nets display #########################################
+##################################################################################################
+sub display_spice_nets{
+  my $t0 = new Benchmark;
+  my $canvas = $_[0];
+  my $parent = $TOP_MODULE;
+  my $displayFact = $GLOBAL->dbGlobalGetMicronFactor;
+  $canvas->delete('HIER_NET');
+  if(exists $PSEUDO_MODULE_ALREADY{$parent} ) {
+     foreach my $net (keys %{$PSEUDO_VNET_ALREADY{$parent}}) {
+        my $isRealNet = 1;
+        if($net =~ /^\d+_tmpslvr_param_/){next;}
+        my @srcList = $PSEUDO_VNET_ALREADY{$parent}->{$net}->dbaTstgenGetPseudoNetSourceFanInList;  
+        my @sinkList = $PSEUDO_VNET_ALREADY{$parent}->{$net}->dbaTstgenGetPseudoNetSinkFanOutList;  
+
+        my @temp_check_param_net = (@srcList, @sinkList);
+        for(my $i=0; $i<=$#temp_check_param_net; $i=$i+2){
+            if($temp_check_param_net[$i+1] =~ /^\d+(_tmpslvr_param_|_tmpslvr_value)/){
+               $isRealNet = 0;
+               last;
+            }
+        }
+
+        if($isRealNet == 1 && @temp_check_param_net > 0){
+           my @connPoints = ();
+           for(my $i=0; $i<=$#temp_check_param_net; $i=$i+2){
+               if($temp_check_param_net[$i] eq ""){next;} #sometimes srcList is of two null elements
+               if($temp_check_param_net[$i] eq "PIN"){
+                  my @shapes = $PSEUDO_MODULE_ALREADY{$parent}->dbaTstgenGetPinRect($temp_check_param_net[$i+1]);
+                  my ($layer, $pinllx, $pinlly,$pinurx,$pinury) = (split(/\s+/,$shapes[0])) [0,1,2,3,4];
+                  my $midX = ($pinllx+$pinurx)/2;
+                  my $midY = ($pinlly+$pinury)/2;
+                  push(@connPoints, $midX*2, $midY*2);
+               }else{
+                  if(!$canvas->find("withtag", $temp_check_param_net[$i])){next;}
+                  my @bbox = $PSEUDO_VINST_ALREADY{$parent}{$temp_check_param_net[$i]}->dbPimDBGetInstRelBbox;
+                  my $cellref = $PSEUDO_VINST_ALREADY{$parent}{$temp_check_param_net[$i]}->dbPimDBGetInstCellref;
+                  if(exists $PSEUDO_MODULE_ALREADY{$cellref}){
+                     my @shapes = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetPinRect($temp_check_param_net[$i+1]);
+                     my ($layer, $pinllx, $pinlly,$pinurx,$pinury) = (split(/\s+/,$shapes[0])) [0,1,2,3,4];
+                     my $midX = $bbox[0] + ($pinllx+$pinurx)/2;
+                     my $midY = $bbox[1] + ($pinlly+$pinury)/2;
+                     push(@connPoints, $midX, $midY);
+                  }elsif(exists $PLDB{$cellref}){
+                     my @cellOrigin = $PLDB{$cellref}->dbMdbGetOrigin;
+                     my @rects = $PLDB{$cellref}->dbMdbGetPinRect($temp_check_param_net[$i+1]);
+                     my ($layer, $pinllx, $pinlly, $pinurx, $pinury)=(split(/\s+/,$rects[0]))[0,2,3,4,5];
+                     my $midX = $bbox[0] + $cellOrigin[0] + ($pinllx+$pinurx)/2;
+                     my $midY = $bbox[1] + $cellOrigin[1] + ($pinlly+$pinury)/2;
+                     push(@connPoints, $midX, $midY);
+                  }
+               }
+           }
+
+           $_ *= $displayFact for @connPoints;
+           $_ += 20 for @connPoints;
+
+           for(my $j=2; $j<=$#connPoints; $j=$j+2){
+               my $midX;
+               if($connPoints[$j] > $connPoints[0]){
+                  $midX = $connPoints[0] + rand($connPoints[$j]-$connPoints[0]);
+               }else{
+                  $midX = $connPoints[$j] + rand($connPoints[0]-$connPoints[$j]);
+               }
+               #my $hier_net = $canvas->createLine($connPoints[0],$connPoints[1],$connPoints[$j],$connPoints[$j+1], -fill=>"green", -arrow =>'last');
+               my $hier_net = $canvas->createLine($connPoints[0],$connPoints[1],$midX,$connPoints[1],$midX,$connPoints[$j+1],$connPoints[$j],$connPoints[$j+1], -fill=>"green", -arrow =>'last');
+               $canvas->itemconfigure($hier_net, -tags =>'HIER_NET' );
+               $canvas->addtag($net , "withtag", $hier_net);
+           }
+        }
+     }#foreach net
+  }#if top module exists
+  my $t1 = new Benchmark;
+  my $td = timediff($t1, $t0);
+  print "command display_spice_nets took:",timestr($td),"\n" 
+}#sub display_spice_nets
+
+##################################################################################################
+################################## spice inst pins display #######################################
+##################################################################################################
+sub display_spice_inst_pins{
+  my $t0 = new Benchmark;
+  my $canvas = $_[0];
+  my $instance = $_[1];
+  my $filtered_tag = $_[2];
+  my $parent = $TOP_MODULE;
+  my $displayFact = $GLOBAL->dbGlobalGetMicronFactor;
+  if(exists $PSEUDO_MODULE_ALREADY{$parent}){
+     my $cellref = $PSEUDO_VINST_ALREADY{$parent}{$instance}->dbPimDBGetInstCellref;
+     my @inst_bbox = $PSEUDO_VINST_ALREADY{$parent}{$instance}->dbPimDBGetInstRelBbox;
+     if(exists $PSEUDO_MODULE_ALREADY{$cellref}){
+        my @inst_input_pins = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetInput;
+        my @inst_output_pins = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetOutput;
+        my @inst_bidi_pins = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetBidi;
+        foreach my $pin((@inst_input_pins,@inst_output_pins, @inst_bidi_pins)){
+           my @shapes = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetPinRect($pin);
+           my ($layer, $pinllx, $pinlly,$pinurx,$pinury) = (split(/\s+/,$shapes[0])) [0,1,2,3,4];
+           $pinllx = 20 + ($inst_bbox[0]+$pinllx) * $displayFact;
+           $pinlly = 20 + ($inst_bbox[1]+$pinlly) * $displayFact;
+           $pinurx = 20 + ($inst_bbox[0]+$pinurx) * $displayFact;
+           $pinury = 20 + ($inst_bbox[1]+$pinury) * $displayFact;
+           my $pin_rect = $canvas->createRectangle($pinllx,$pinlly,$pinurx,$pinury,-outline=>'yellow');
+           $canvas->itemconfigure($pin_rect, -tags =>'HIER_INST_PIN' );
+           $canvas->addtag($pin , "withtag", $instance);
+           $canvas->addtag($pin , "withtag", $pin_rect);
+           $canvas->addtag($pin , "withtag", $filtered_tag) if($filtered_tag);
+        }#foreach pin
+     }elsif(exists $PLDB{$cellref}){
+        my @cellOrigin = $PLDB{$cellref}->dbMdbGetOrigin;
+        my @pins = $PLDB{$cellref}->dbMdbGetPins;
+        foreach $pin ( @pins ) {
+           my @rects = $PLDB{$cellref}->dbMdbGetPinRect($pin);
+           my ($layer, $pinllx, $pinlly, $pinurx, $pinury)=(split(/\s+/,$rects[0]))[0,2,3,4,5];
+           $pinllx = 20 + ($inst_bbox[0]+$cellOrigin[0]+$pinllx) * $displayFact;
+           $pinlly = 20 + ($inst_bbox[1]+$cellOrigin[1]+$pinlly) * $displayFact;
+           $pinurx = 20 + ($inst_bbox[0]+$cellOrigin[0]+$pinurx) * $displayFact;
+           $pinury = 20 + ($inst_bbox[1]+$cellOrigin[1]+$pinury) * $displayFact;
+           my $pin_rect = $canvas->createRectangle($pinllx,$pinlly,$pinurx,$pinury,-outline=>'yellow');
+           $canvas->itemconfigure($pin_rect, -tags =>'HIER_INST_PIN' );
+           $canvas->addtag($pin , "withtag", $instance);
+           $canvas->addtag($pin , "withtag", $pin_rect);
+           $canvas->addtag($pin , "withtag", $filtered_tag) if($filtered_tag);
+        }#foreach pin
+     }#if exists in PLDB
+  }#if top module exists
+  my $t1 = new Benchmark;
+  my $td = timediff($t1, $t0);
+  print "command display_spice_pins took:",timestr($td),"\n" 
+}#sub display_spice_inst_pins
+
+##################################################################################################
+##################################### spice labels display #######################################
+##################################################################################################
+sub display_spice_labels{
+  my $canvas = $_[0];
+  
+  my @bbox = $canvas->getView();
+  my @ids = $canvas->find("enclosed", @bbox);
+  foreach my $id(@ids){
+     my @tagList = $canvas->gettags($id);
+     #my @bbox = $canvas->bbox($id);
+     my @bbox = $canvas->coords($id);
+     $canvas->createText($bbox[0],$bbox[1], -fill=>"white", -tags=>"HIER_LABEL",-anchor=>"sw", -text=> $tagList[1]);
+  }#foreach existing id
+}#sub display_spice_labels
+
+##################################################################################################
+############ subroutine to move hierarical Instances in HierView via keyBind {m+ LMB} ############
+##################################################################################################
+sub resetSpiceCanvasBind {
+  my $canvas = $_[0];
+  print "resetting the canvas bindings\n";
+  $canvas->CanvasBind('<1>' =>"");
+  $canvas->CanvasBind('<B1-Motion>' =>"");
+  $canvas->CanvasBind('<B1-ButtonRelease>' =>"");
+  $canvas->CanvasBind('<2>' => "");
+  $canvas->CanvasBind('<Shift-Button-1>' => "");
+  $canvas->CanvasBind('<Control-Button-1>' => "");
+  $canvas->CanvasBind('<Motion>' => "");
+}#sub resetSpiceCanvasBind
+
+sub move_spice_inst {
+  my $canvas = $_[0];
+  my $displayFact = $GLOBAL->dbGlobalGetMicronFactor;
+  my $oldx   = 0;
+  my $oldy   = 0;
+  my $inst = "";
+  my $moving_start = 0;
+  $canvas->CanvasFocus;
+  $canvas->CanvasBind('<m><1>', => sub {
+                 #&resetSpiceCanvasBind($canvas);
+                 $moving_start = 0;
+                 $inst = "";
+                 my @xy = $canvas->eventLocation();
+                 my $x = $xy[0];
+                 my $y = $xy[1];
+                 my @id      = $canvas->find(qw/withtag current/);
+                 my @tagList = $canvas->gettags($id[0]);
+                 if($tagList[0] ne "HIER_INSTANCE"){return;
+                 }else{
+                    $canvas->configure(-cursor => 'diamond_cross');
+                    my @coords  = $canvas->coords($tagList[1]);
+                    $oldx = $x;
+                    $oldy = $y;
+                    $inst = $tagList[1];   
+                    $moving_start = 1;
+                    my $fill_color = $canvas->itemcget($tagList[1],-fill);
+                    my $stipple = $canvas->itemcget($tagList[1],-stipple);
+                    $canvas->createRectangle(@coords, -outline =>'white', -fill=>$fill_color, -stipple=>$stipple, -tags=>['TEMP']);
+                 }#if not TopModule 
+  });
+  $canvas->CanvasBind('<m><B1-Motion>' => sub {
+                 my @xy = $canvas->eventLocation();
+                 my $x = $xy[0];
+                 my $y = $xy[1];
+                 if($moving_start == 1){
+                    $canvas->move($inst => $x - $oldx, $y - $oldy);
+                    $canvas->move('TEMP' => $x - $oldx, $y - $oldy);
+                    $oldx = $x;
+                    $oldy = $y;
+                 }
+  });
+  $canvas->CanvasBind('<m><B1-ButtonRelease>' => sub {
+                 my @coords = $canvas->coords($inst);
+                 $_  -= 20 for @coords;
+                 $_  /= $displayFact for @coords;
+                 &movePseudoHierInst("-inst", $inst, "-coords", "{$coords[0] $coords[1] $coords[4] $coords[5]}");
+                 &commitModuleLocOnly("-module", $moduleName);
+                 $canvas->delete('TEMP');
+                 $canvas->configure(-cursor => 'top_left_arrow');
+                 $moving_start = 0;
+  });
+}#sub move_spice_inst
+
+##################################################################################################
+################ subroutine to highlight element & show text via keyBind {t+ LMB} ################
+##################################################################################################
+sub mouseAndKeyBindToHighlightAndDisplayLabels {
+  my $canvas = $_[0];
+  $canvas->CanvasBind("<t><1>"=>sub {
+                 my @xy = $canvas->eventLocation();
+                 my $x = $xy[0];
+                 my $y = $xy[1];
+                 my @id      = $canvas->find(qw/withtag current/);
+                 my @tagList = $canvas->gettags($id[0]);
+                 my @coords = $canvas->coords($id[0]);
+                 if($tagList[0] eq "HIER_TOP" || $tagList[0] eq "HIER_TOP_PIN" || $tagList[0] eq "HIER_INST_PIN"){
+                    $canvas->createRectangle(@coords, -outline=>"white", -width=>3,-tags=>"TEMP_HIGHLIGHT");
+                 }elsif($tagList[0] eq "HIER_INSTANCE"){
+                    my $fill_color = $canvas->itemcget($tagList[1],-fill);
+                    my $stipple = $canvas->itemcget($tagList[1],-stipple);
+                    $canvas->createRectangle(@coords,-outline=>"white",-fill=>$fill_color,-stipple=>$stipple,-tags=>"TEMP_HIGHLIGHT");
+                 }elsif($tagList[0] eq "HIER_NET"){
+                    my @sameTagIds = $canvas->find("withtag",$tagList[1]);
+                    foreach my $sameTagId (@sameTagIds){
+                       my @currTagList = $canvas->gettags($sameTagId);
+                       if($currTagList[0] eq 'HIER_NET'){
+                          my @net_coords = $canvas->coords($sameTagId);
+                          $canvas->createLine(@net_coords,-fill=>"white",-tags=>"TEMP_HIGHLIGHT");
+                       }
+                    }
+                 } 
+                 $canvas->createText($x,$y, -text=>$tagList[1] ,-anchor=>"sw",-fill=>"white",-font=>"Times 12",-tags=>"TEMP_HIGHLIGHT");
+                 $canvas->CanvasBind("<B1-ButtonRelease>"=> [sub{$canvas->delete(TEMP_HIGHLIGHT);}]);
+  });
+}#sub mouseAndKeyBindToHighlightAndDisplayLabels
+
+##################################################################################################
+##################################### zoom-in & zoom-out #########################################
+##################################################################################################
+sub canvas_zoomIn_zoomOut{
+  my $canvas = $_[0];
+  my @view_bbox = @{$_[1]};
+
+  $canvas->CanvasBind('<3>'               => sub {$canvas->configure(-bandColor => "");$canvas->configure(-bandColor => 'red');$canvas->rubberBand(0)});
+  $canvas->CanvasBind('<B3-Motion>'       => sub {$canvas->rubberBand(1)});
+  $canvas->CanvasBind('<ButtonRelease-3>' => sub {my @box = $canvas->rubberBand(2);$canvas->viewArea(@box, -border => 0);&filterd_spice_instance_display($canvas,@box);});
+  $canvas->CanvasBind('<2>'               => sub {$canvas->viewArea(@view_bbox, -border => 0); &delete_all_spice_instance_on_zoomFit($canvas);});               
+
+  $canvas->CanvasBind('<i>' => sub {$canvas->zoom(1.25);my @bbox = $canvas->getView(); &filterd_spice_instance_display($canvas,@bbox);});
+  $canvas->CanvasBind('<o>' => sub {$canvas->zoom(0.80);my @bbox = $canvas->getView(); &delete_filtered_spice_instance($canvas,@bbox);});
+  $canvas->CanvasBind('<f>' => sub {$canvas->viewArea(@view_bbox, -border => 0); &delete_all_spice_instance_on_zoomFit($canvas);});
+
+  $top->bind('WorldCanvas',    '<Up>' => "");
+  $top->bind('WorldCanvas',  '<Down>' => "");
+  $top->bind('WorldCanvas',  '<Left>' => "");
+  $top->bind('WorldCanvas', '<Right>' => "");
+
+  $canvas->CanvasBind('<KeyPress-Up>'   => sub {$canvas->panWorld(0,  200);});
+  $canvas->CanvasBind('<KeyPress-Down>' => sub {$canvas->panWorld(0, -200);});
+  $canvas->CanvasBind('<KeyPress-Left>' => sub {$canvas->panWorld(-200, 0);});
+  $canvas->CanvasBind('<KeyPress-Right>'=> sub {$canvas->panWorld( 200, 0);});
+}#sub canvas_zoomIn_zoomOut
+
+##################################################################################################
+##################################################################################################
+##################################################################################################
+
+
+1;

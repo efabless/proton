@@ -1,0 +1,153 @@
+sub RoutingLayerHashValueAscendingNum {
+   $RML_TEMP{$a} <=> $RML_TEMP{$b}
+}#sub RoutingLayerHashValueAscendingNum
+
+
+sub hier_route_display_old{
+
+#****f* / hier_route_display
+# NAME
+#   hier_route_display
+# FUNCTION
+#   display the router data if exists in Database 
+# Assumptions
+#   works if router data exists
+# SYNOPSIS
+#   hier_route_display 
+# INPUTS
+#   options:
+# OUTPUTS
+#    router data display
+# ****
+
+if($_[0] eq "-h" || $_[0] eq "-help" || $_[0] eq "-HELP"){
+   print "you shoud run the following commands before running hier_route_display\n";
+   print "1. write_hier_router_graph_new\n";
+   print "2. EQATOR_HOME/3RDBIN/eeRouter\n";
+   print "3. read_hier_router -file router_new.txt.output\n";
+   return;
+}
+
+my $canvas = $hier_canvas;
+my $dbu = $GLOBAL->dbfGlobalGetDBU;
+my $MICRONFACTOR = $GLOBAL->dbGlobalGetMicronFactor;
+#------------ making array of Routing layers in ascending order of their number---------# 
+foreach my $layer(keys %PTDB){
+     my $layerType = $PTDB{$layer}->dbTechGetLayerType; 
+     my $layerNum = $PTDB{$layer}->dbTechGetLayerNum; 
+     if($layerType eq "ROUTING"){
+        $RML_TEMP{$layer} = $layerNum;
+     }#if layer is routing
+}#foreach layer
+my @layers = sort RoutingLayerHashValueAscendingNum(keys (%RML_TEMP));
+#---------------------------------------------------------------------------------------#
+foreach my $net (keys %PSEUDO_VNET_ROUTING_ALREADY) {
+        my @netCoords = ();
+        my @data = $PSEUDO_VNET_ROUTING_ALREADY{$net}->dbNetRoutingDBGetRegularRoute;
+        foreach $segment ( @data ) {
+             my @routeBox = xformHierNetSegToRouteBox($segment,\@layers);
+             
+             push(@netCoords, [@routeBox]);
+             #my $llx = 20 + ($routeBox[0]/$dbu)*$MICRONFACTOR;
+             #my $lly = 20 + ($routeBox[1]/$dbu)*$MICRONFACTOR;
+             #my $urx = 20 + ($routeBox[2]/$dbu)*$MICRONFACTOR;
+             #my $ury = 20 + ($routeBox[3]/$dbu)*$MICRONFACTOR;
+             #my $layer = $routeBox[4];
+             #if(exists $PTDB{$layer} ) {
+             #   my $color = $PTDB{$layer}->dbTechGetLayerColor;
+             #   $canvas->createRectangle($llx,$lly,$urx,$ury, -outline=>$color, -tags=>"HNETTAG", -state =>"normal", -fill =>$color, -stipple => "gray12");
+             #}#if the metal layer exists in the technology
+        }#foreach segment of routing
+        $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net}->dbaTstgenSetPseudoExtNetCoords(@netCoords);
+        $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net}->dbaTstgenSetPseudoNetCoords("");
+ }# if routing data is present
+}#sub hier_route_display_old
+
+
+
+sub hier_route_display{
+
+#****f* / hier_route_display
+# NAME
+#   hier_route_display
+# FUNCTION
+#   display the router data if exists in Database 
+# Assumptions
+#   works if router data exists
+# SYNOPSIS
+#   hier_route_display 
+# INPUTS
+#   options:
+# OUTPUTS
+#    router data display
+# ****
+
+my $noOfArg = @_;
+if($_[0] eq "-h" || $_[0] eq "-help" || $_[0] eq "-HELP" || $noOfArg < 2){
+   print "Usage: hier_route_display -floorplan <floorplan name>\n";
+   print "you shoud run the following commands before running hier_route_display\n";
+   print "1. write_hier_router_graph_new\n";
+   print "2. EQATOR_HOME/3RDBIN/eeRouter\n";
+   print "3. read_hier_router -file router_new.txt.output\n";
+   return;
+}else {
+   for ( my $i = 0; $i < $noOfArg; $i++ ) {
+      if ($_[$i] eq "-floorplan") {$flplan = $_[$i+1];}
+   }
+}
+
+my $canvas = $hier_canvas;
+my $dbu = $GLOBAL->dbfGlobalGetDBU;
+my $MICRONFACTOR = $GLOBAL->dbGlobalGetMicronFactor;
+#------------ making array of Routing layers in ascending order of their number---------# 
+foreach my $layer(keys %PTDB){
+     my $layerType = $PTDB{$layer}->dbTechGetLayerType; 
+     my $layerNum = $PTDB{$layer}->dbTechGetLayerNum; 
+     if($layerType eq "ROUTING"){
+        $RML_TEMP{$layer} = $layerNum;
+     }#if layer is routing
+}#foreach layer
+my @layers = sort RoutingLayerHashValueAscendingNum(keys (%RML_TEMP));
+#---------------------------------------------------------------------------------------#
+if ( exists $PSEUDO_FLOORPLAN_ALREADY{$flplan} ) {
+my @nets = $PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanGetNets;
+foreach my $net (@nets) {
+        my @netCoords = ();
+        my @data = $PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanGetNetRoutingData($net);
+        foreach $segment ( @data ) {
+             my @routeBox = xformHierNetSegToRouteBox($segment,\@layers);
+             push(@netCoords, [@routeBox]);
+        }#foreach segment of routing
+        if(!exists $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net}){
+           $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net} = PseudoNetModelDB::new();
+         }
+        $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net}->dbaTstgenSetPseudoExtNetCoords(@netCoords);
+        $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net}->dbaTstgenSetPseudoNetCoords("");
+ }#foreach net 
+}#if floorplan exists
+}#sub hier_route_display
+#--------------------------------------------------------------------------------------------------#
+
+sub xformHierNetSegToRouteBox {
+my $netSeg = $_[0];
+my @RLayers = @{$_[1]};
+my $dbu = $GLOBAL->dbfGlobalGetDBU;
+   if($netSeg =~m/\((\d+)\,(\d+)\,(\d+)\)\-\((\d+)\,(\d+)\,(\d+)\)/){
+      if($3 == $6){
+         my $layer = $RLayers[$3-1]; 
+         if(exists $PTDB{$layer}){
+             my $defaultWidth = $PTDB{$layer}->dbTechGetLayerWidth;
+             my $W = $defaultWidth*$dbu;
+             my $llx = $1-($W/2);
+             my $lly = $2-($W/2);
+             my $urx = $4+($W/2);
+             my $ury = $5+($W/2);
+             return($llx,$lly,$urx,$ury,$layer);
+          }#if the routiung layer exists
+      }#if layer found
+   }
+}#sub xformHierNetSegToRouteBox
+
+#############################################################################################################
+
+1;

@@ -1,0 +1,991 @@
+sub gen_vertex_file
+{
+
+use Benchmark;
+my $t0 = new Benchmark;
+my $noOfArguments = @_;
+my $OUTPUT_FILE = "eqa_vertex_file.txt";
+my $DETAIL_VERTEX_FILE = "eqa_detail_vertex_file.txt";
+my %INST_COUNT = ();
+my $count = 0;
+
+if($_[0] eq "-h" )  {
+    print "Usage :  gen_vertex_file -output <output vertex file> -detail_vertex_file <detail_vertex_file>\n";
+  }
+else {
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-output"){$OUTPUT_FILE = $_[$i+1];}
+if($_[$i] eq "-detail_vertex_file"){$DETAIL_VERTEX_FILE = $_[$i+1];}
+}#end for
+if (-e $OUTPUT_FILE) {
+    print "WARN-UTS-GEN_VRTX_FILE : 001 : $OUTPUT_FILE exists, overwriting existing file\n";
+}
+if (-e $DETAIL_VERTEX_FILE) {
+    print "WARN-UTS-GEN_VRTX_FILE : 002 : $DETAIL_VERTEX_FILE exists, overwriting existing file\n";
+}
+
+&populate_net_connected_instances_name_and_number;
+
+open (WRITE, ">$OUTPUT_FILE");
+open (WRITE1, ">$DETAIL_VERTEX_FILE");
+
+foreach my $instance ( keys %COMP_ALREADY ) {
+	my $cellref = $CADB{$instance}->dbCadbGetCellref;
+	my @pins = $PLDB{$cellref}->dbMdbGetPins;
+	$count = 0; my $netinst_count = 0;
+	foreach my $pinName ( @pins ) {
+		my $net_Name = $COMP_ALREADY{$instance}{$pinName};
+		$netinst_count = 0;
+                if ( $net_Name =~ /1\'b/ ) { next ; } 
+		elsif ($net_Name ne "" ) {
+		my @net_inst_array = keys %{$NETS_ALREADY{$net_Name}};
+                my $net_inst_array_cnt = @net_inst_array; 
+                if($net_inst_array_cnt > 1) {
+		  $netinst_count = $net_inst_array_cnt ;
+                }elsif($net_inst_array_cnt == 1) {
+	          foreach my $inst ( @net_inst_array )  {
+		    my $cellref = $CADB{$inst}->dbCadbGetCellref;
+		    my @pins = $PLDB{$cellref}->dbMdbGetPins;
+		    foreach my $pinName ( @pins ) {
+		    	my $temp_net = $COMP_ALREADY{$inst}{$pinName};
+		    	if ($temp_net eq $net_Name) {
+		    	  $netinst_count ++;
+		    	}
+		    }
+                  }
+                }
+		}#end elsif	
+		if ( $netinst_count > 1 ) {
+			$count++; 
+               }
+	}#end foreach
+        print WRITE1 "$instance : $count\n";
+$INST_COUNT{$count} +=1;
+
+}#end foreach
+
+foreach $pinName ( keys %{$PORTS_ALREADY{$TOP_MODULE}} ) {
+	my @netName = $PORTS_ALREADY{$TOP_MODULE}{$pinName}->dbPortGetConn;
+        $count =0;my $netinst_count =0;my $netName = $netName[0];
+	if ( $netName) { 
+		my @net_inst_array = keys %{$NETS_ALREADY{$netName}};
+                my $net_inst_array_cnt = @net_inst_array; 
+                if($net_inst_array_cnt > 1) {
+		  $netinst_count = $net_inst_array_cnt ;
+                }elsif($net_inst_array_cnt == 1) {
+                  foreach my $temp_port ( keys %{$PORTS_ALREADY{$TOP_MODULE}} ) {
+                    my @port_nets = $PORTS_ALREADY{$TOP_MODULE}{$temp_port}->dbPortGetConn;
+                    if($netName eq $port_nets[0]){
+		      $netinst_count++;
+                    }
+                  }
+                }
+		if ( $netinst_count > 1 ) { 
+		   $count ++; 
+                }
+	}
+        print WRITE1 "$pinName : $count\n";
+	$INST_COUNT{$count} +=1;
+}
+
+print WRITE "#Degree    No of nodes \n";
+foreach (sort{ $a <=> $b } keys %INST_COUNT) {
+    print WRITE "$_\t$INST_COUNT{$_}\n";
+}
+
+close (WRITE);
+close (WRITE1);
+
+} #end else
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "subroutine gen_vertex_file took:",timestr($td),"\n";
+}#end sub gen_vertex_file
+
+sub gen_vertex_file_fast
+{
+
+use Benchmark;
+my $t0 = new Benchmark;
+my $noOfArguments = @_;
+my $OUTPUT_FILE = "eqa_vertex_file_fast.txt";
+my $DETAIL_VERTEX_FILE = "eqa_detail_vertex_file_fast.txt";
+my %INST_COUNT = ();
+my $count = 0;
+
+if($_[0] eq "-h" )  {
+    print "Usage :  gen_vertex_file_fast -output <output vertex file> -detail_vertex_file <detail_vertex_file>\n";
+  }
+else {
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-output"){$OUTPUT_FILE = $_[$i+1];}
+if($_[$i] eq "-detail_vertex_file"){$DETAIL_VERTEX_FILE = $_[$i+1];}
+}#end for
+if (-e $OUTPUT_FILE) {
+    print "WARN-UTS-GEN_VRTX_FILE_FAST : 001 : $OUTPUT_FILE exists, overwriting existing file\n";
+}
+if (-e $DETAIL_VERTEX_FILE) {
+    print "WARN-UTS-GEN_VRTX_FILE_FAST : 002 : $DETAIL_VERTEX_FILE exists, overwriting existing file\n";
+}
+
+&populate_net_connected_instances_name_and_number;
+
+open (WRITE, ">$OUTPUT_FILE");
+open (WRITE1, ">$DETAIL_VERTEX_FILE");
+
+foreach my $instance ( keys %COMP_ALREADY ) {
+	my $cellref = $CADB{$instance}->dbCadbGetCellref;
+	my @pins = $PLDB{$cellref}->dbMdbGetPins;
+	print "DBG-UTS-GEN_VRTX_FILE_FAST : 003 : $instance :$cellref: @pins \n" if ($debug);
+	$count = 0; my $netinst_count = 0;
+	foreach my $pinName ( @pins ) {
+		my $net_Name = $COMP_ALREADY{$instance}{$pinName};
+		$netinst_count = 0;
+                if ( $net_Name =~ /1\'b/ ) { next ; } 
+		elsif ($net_Name ne "" ) {
+		$netinst_count = $NET_INST_PIN_CONN_NO{$net_Name};
+		}#end elsif	
+		if ( $netinst_count > 1 ) {
+			$count++; 
+			print "DBG-UTS-GEN_VRTX_FILE_FAST : 004 : $instance Pin name: $pinName Net name: $net_Name Count: $count Netinst_count : $netinst_count\n" if ($debug);
+               }
+	}#end foreach
+	print "DBG-UTS-GEN_VRTX_FILE_FAST : 005 : Count for inst $instance is : $count\n" if ($debug); 
+        print WRITE1 "$instance : $count\n";
+$INST_COUNT{$count} +=1;
+
+}#end foreach
+
+foreach $pinName ( keys %{$PORTS_ALREADY{$TOP_MODULE}} ) {
+	my @netName = $PORTS_ALREADY{$TOP_MODULE}{$pinName}->dbPortGetConn;
+        $count =0;my $netinst_count =0;my $netName = $netName[0];
+	if ( $netName) { 
+		$netinst_count = $NET_INST_PIN_CONN_NO{$netName};
+		if ( $netinst_count > 1 ) { 
+		   $count ++; 
+                }
+	print "DBG-UTS-GEN_VRTX_FILE_FAST : 006 : Port name: $pinName Nets: @netName Count:$count \n" if ($debug);
+	print "DBG-UTS-GEN_VRTX_FILE_FAST : 007 : Count for pin $pinName is : $count\n" if ($debug); 
+	}
+        print WRITE1 "$pinName : $count\n";
+	$INST_COUNT{$count} +=1;
+}
+
+print WRITE "#Degree    No of nodes \n";
+foreach (sort{ $a <=> $b } keys %INST_COUNT) {
+    print WRITE "$_\t$INST_COUNT{$_}\n";
+}
+
+
+
+close (WRITE);
+close (WRITE1);
+
+} #end else
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "subroutine gen_vertex_file_fast took:",timestr($td),"\n";
+}#end sub gen_vertex_file_fast
+
+sub gen_initial_degree_for_all_nodes
+{
+  use Benchmark;
+  my $t0 = new Benchmark;
+  my $noOfArguments = @_;
+  my $OUTPUT_FILE = "initial_degree.txt";
+  my %INST_COUNT = ();
+  my $count = 0;
+  
+  if($_[0] eq "-h" )  {
+      print "Usage :  gen_initial_degree_for_all_nodes -output <output initial degree file> \n";
+      return ;
+  }
+  for(my $i = 0; $i < $noOfArguments; $i++){
+    if($_[$i] eq "-output"){$OUTPUT_FILE = $_[$i+1];}
+  }
+
+  if (-e $OUTPUT_FILE) {
+      print "WARN-UTS-GEN_INTAL_DEG_ALL_NODES : 001 : $OUTPUT_FILE exists, overwriting existing file\n";
+  }
+  my $very_high_fanout = $GLOBAL->dbfGlobalGetFanoutLimit;
+  %TEMP_NODE_DEGREE = ();
+  my $degree_current_node = 0 ;
+  foreach my $instance ( keys %COMP_ALREADY ) {
+    $degree_current_node = 0 ;
+    my $cellref = $CADB{$instance}->dbCadbGetCellref;
+    my @pins = $PLDB{$cellref}->dbMdbGetPins;
+    my $netinst_count = 0;
+    foreach my $pinName ( @pins ) {
+        my $net_Name = $COMP_ALREADY{$instance}{$pinName};
+        $netinst_count = 0;
+        if ( $net_Name =~ /1\'b/ ) {
+          next ; 
+        } elsif ($net_Name ne "" ) {
+          if (exists $TEMP_NET_CONN_NODE_NO{$net_Name}) {
+            if ($TEMP_NET_CONN_NODE_NO{$net_Name} > $very_high_fanout) {
+              next ;
+            }
+          }
+          foreach my $inst ( keys %{$NETS_ALREADY{$net_Name}}) {
+            if ($netinst_count >= 1) {
+              last ;
+            }
+            if( exists $COMP_ALREADY{$inst} ){
+              if($inst eq $instance){
+                next ;
+              }
+	      $netinst_count ++;
+              if ($netinst_count >= 1) {
+                last ;
+              }
+            } elsif (( exists $PORTS_ALREADY{$TOP_MODULE}{$inst} ) || ( $inst eq "PIN" )) {
+              $netinst_count++;	
+              if ( $netinst_count >= 1 ) { 
+                last ;
+              }
+            }
+          }
+        }#end elsif
+        if ( $netinst_count >= 1 ) { 
+          $degree_current_node++; 
+        }
+    }#end foreach
+    $TEMP_NODE_DEGREE{$instance} = $degree_current_node ;
+  }#end foreach
+  
+  foreach $pinName ( keys %{$PORTS_ALREADY{$TOP_MODULE}} ) {
+    $degree_current_node = 0 ;
+    my $netinst_count =0;
+    my @netName = $PORTS_ALREADY{$TOP_MODULE}{$pinName}->dbPortGetConn;
+    my $netName = $netName[0];
+    if ( $netName) {
+      if (exists $TEMP_NET_CONN_NODE_NO{$netName}) {
+        if ($TEMP_NET_CONN_NODE_NO{$netName} > $very_high_fanout) {
+          next ;
+        }
+      }
+      foreach my $inst ( keys %{$NETS_ALREADY{$netName}}) {
+        if ($netinst_count >= 1) {
+          last ;
+        }
+        if( exists $COMP_ALREADY{$inst} ){
+	   $netinst_count ++;
+          if ($netinst_count >= 1) {
+            last ;
+          }
+        } elsif ((exists $PORTS_ALREADY{$TOP_MODULE}{$inst} ) || ( $inst eq "PIN" )) {
+          if($inst eq $pinName){
+            next ;
+          }
+          $netinst_count ++;	
+          if ( $netinst_count >= 1 ) { 
+            last ;
+          }
+        }
+      }#end foreach
+      if ( $netinst_count >= 1 ) { 
+        $degree_current_node++; 
+      }
+    } #end if
+    $TEMP_NODE_DEGREE{$pinName} = $degree_current_node;
+  }#end foreach
+  open(WRITE,">$OUTPUT_FILE");
+  foreach my $temp_key ( keys %TEMP_NODE_DEGREE ) {
+    my $temp_degree = $TEMP_NODE_DEGREE{$temp_key} ;
+    my $temp_node_no = $TEMP{$temp_key} ;
+    print WRITE "Degree:$temp_degree Node:$temp_node_no Name:$temp_key\n" ;
+  }
+  close(WRITE);
+  my $t1 = new Benchmark;
+  my $td = timediff($t1, $t0);
+  print "subroutine gen_initial_degree_for_all_nodes took:",timestr($td),"\n";
+}#sub gen_initial_degree_for_all_nodes
+
+sub gen_final_degree_for_all_nodes
+{
+  use Benchmark;
+  my $t0 = new Benchmark;
+  my $noOfArguments = @_;
+  my $OUTPUT_FILE = "final_degree.txt";
+  my %INST_COUNT = ();
+  my $count = 0;
+  
+  print "INFO-UTS-GEN_FINAL_DEG_ALl_NODES : 001 : No of arguments: $noOfArguments\n";
+  if($_[0] eq "-h" )  {
+      print "Usage :  gen_final_degree_for_all_nodes -output <output initial degree file> \n";
+      return ;
+  }
+  for(my $i = 0; $i < $noOfArguments; $i++){
+    if($_[$i] eq "-output"){$OUTPUT_FILE = $_[$i+1];}
+  }
+
+  if (-e $OUTPUT_FILE) {
+      print "WARN-UTS-GEN_FINAL_DEG_ALl_NODES : 002 : $OUTPUT_FILE exists, overwriting existing file\n";
+  }
+  my $very_high_fanout = $GLOBAL->dbfGlobalGetFanoutLimit;
+  my $is_any_degree_changed = 1 ;
+  my $degree_current_node = 0 ;
+  while ($is_any_degree_changed ==1) {
+    $is_any_degree_changed = 0 ;
+    foreach my $instance ( keys %COMP_ALREADY ) {
+      if ($TEMP_NODE_DEGREE{$instance} == 0){
+        next ;
+      }
+      $degree_current_node = 0 ;
+      my $cellref = $CADB{$instance}->dbCadbGetCellref;
+      my @pins = $PLDB{$cellref}->dbMdbGetPins;
+      my $netinst_count = 0;
+      foreach my $pinName ( @pins ) {
+          my $net_Name = $COMP_ALREADY{$instance}{$pinName};
+	  $netinst_count = 0;
+          if ( $net_Name =~ /1\'b/ ) {
+            next ; 
+          } elsif ($net_Name ne "" ) {
+            if (exists $TEMP_NET_CONN_NODE_NO{$net_Name}) {
+              if ($TEMP_NET_CONN_NODE_NO{$net_Name} > $very_high_fanout) {
+                next ;
+              }
+            }
+            foreach my $inst ( keys %{$NETS_ALREADY{$net_Name}}) {
+              if ($netinst_count >= 1) {
+                last ;
+              }
+              if( exists $COMP_ALREADY{$inst} ){
+                if($inst eq $instance){
+                  next ;
+                }
+                if ($TEMP_NODE_DEGREE{$inst} >= 2){
+                  $netinst_count ++;
+                  if ($netinst_count >= 1) {
+                    last ;
+                  }
+                }
+              } elsif (( exists $PORTS_ALREADY{$TOP_MODULE}{$inst} ) || ( $inst eq "PIN" )) {
+                if ($TEMP_NODE_DEGREE{$inst} >= 1){
+                  $netinst_count ++;
+                  if ($netinst_count >= 1) {
+                    last ;
+                  }
+                }
+              }
+            }
+          }#end elsif
+          if ( $netinst_count >= 1 ) {
+            $degree_current_node++; 
+          }
+      }#end foreach
+      if ($TEMP_NODE_DEGREE{$instance} > $degree_current_node){
+        if ($TEMP_NODE_DEGREE{$instance} >= 2){
+          if(($degree_current_node ==1) || ($degree_current_node ==0) ) {
+            $is_any_degree_changed = 1 ;
+          }
+        }
+        $TEMP_NODE_DEGREE{$instance} = $degree_current_node;
+      }elsif($TEMP_NODE_DEGREE{$instance} < $degree_current_node){
+        print "\nWARN-UTS-GEN_FINAL_DEG_ALl_NODES : 003 : Degree of $instance increased after pruning, it should decrease" ;
+      }
+    }#end foreach
+    foreach $pinName ( keys %{$PORTS_ALREADY{$TOP_MODULE}} ) {
+      if ($TEMP_NODE_DEGREE{$pinName} == 0){
+        next ;
+      }
+      $degree_current_node = 0 ;
+      my $netinst_count =0;
+      my @netName = $PORTS_ALREADY{$TOP_MODULE}{$pinName}->dbPortGetConn;
+      my $netName = $netName[0];
+      if ( $netName) {
+        if (exists $TEMP_NET_CONN_NODE_NO{$netName}) {
+          if ($TEMP_NET_CONN_NODE_NO{$netName} > $very_high_fanout) {
+            next ;
+          }
+        }
+        foreach my $inst ( keys %{$NETS_ALREADY{$netName}}) {
+          if ($netinst_count >= 1) {
+            last ;
+          }
+          if( exists $COMP_ALREADY{$inst} ){
+             if ($TEMP_NODE_DEGREE{$inst} >= 2){
+               $netinst_count ++;
+               if ($netinst_count >= 1) {
+                 last ;
+               }
+             }
+          } elsif ((exists $PORTS_ALREADY{$TOP_MODULE}{$inst} ) || ( $inst eq "PIN" )) {
+            if($inst eq $pinName){
+              next ;
+            }
+            if ($TEMP_NODE_DEGREE{$inst} >= 1){
+              $netinst_count ++;
+              if ($netinst_count >= 1) {
+                last ;
+              }
+            }
+          }
+        }#end foreach
+        if ( $netinst_count >= 1 ) { 
+          $degree_current_node++; 
+        }
+      } #end if
+      if ($TEMP_NODE_DEGREE{$pinName} > $degree_current_node){
+        if ($TEMP_NODE_DEGREE{$pinName} >= 1){
+          if($degree_current_node ==0) {
+           $is_any_degree_changed = 1 ;
+          }
+        }
+        $TEMP_NODE_DEGREE{$pinName} = $degree_current_node;
+      }elsif($TEMP_NODE_DEGREE{$pinName} < $degree_current_node){
+        print "\nWARN-UTS-GEN_FINAL_DEG_ALl_NODES : 004 : Degree of $pinName increased after pruning, it should decrease" ;
+      }
+    }#end foreach
+  }#end while
+  open(WRITE,">$OUTPUT_FILE");
+  foreach my $temp_key ( keys %TEMP_NODE_DEGREE ) {
+    my $temp_degree = $TEMP_NODE_DEGREE{$temp_key} ;
+    my $temp_node_no = $TEMP{$temp_key} ;
+    print WRITE "Degree:$temp_degree Node:$temp_node_no Name:$temp_key\n" ;
+  }
+  close(WRITE);
+  my $t1 = new Benchmark;
+  my $td = timediff($t1, $t0);
+  print "subroutine gen_final_degree_for_all_nodes took:",timestr($td),"\n";
+}#sub gen_final_degree_for_all_nodes
+
+sub get_nodes_connected_to_net_thru_buffer
+{
+  my $netName = $_[0] ;
+  my $prevBuffer = $_[1] ;
+  if ( $netName =~ /1\'b/ ) { 
+    return 0 ; 
+  } 
+  if ( $netName eq  "") { 
+    return 0 ; 
+  } 
+  if(exists $TEMP_NET_ALREADY_TRAVERSED{$netName}){
+    return 0 ;
+  }
+  $TEMP_NET_ALREADY_TRAVERSED{$netName} = 1; 
+  my @driverInst = &getNetDriver($netName);
+  my @sinkInst = &getNetSink($netName);
+  my @instList = ();
+  my @instPinList = ();
+  if ( $driverInst[0] eq "UND"){
+    #do nothing
+  }elsif ( $driverInst[0] eq ""){
+    #do nothing
+  }else{
+    push(@instList,$driverInst[0]);
+    push(@instPinList,$driverInst[1]);
+  }#else driverInst
+  my $i = 0 ;
+  for($i = 0;$i<=$#sinkInst;$i=$i+2){
+    push(@instList,$sinkInst[$i]);
+    push(@instPinList,$sinkInst[$i+1]);
+  }#for
+  my $no_of_nodes_connected = 0 ;
+  foreach my $inst (@instList) {
+    if( exists $COMP_ALREADY{$inst} ){
+      if((defined $prevBuffer) && ($inst eq $prevBuffer)) {
+        next ;
+      }
+      if (&is_macro_pins_similar_to_buffer($inst) ==1) {
+        my $net_other_side = &get_net_other_side_buffer($netName,$inst);
+        $no_of_nodes_connected += &get_nodes_connected_to_net_thru_buffer($net_other_side,$inst);
+      }else{
+        $no_of_nodes_connected++;
+      }
+    }else{
+      $no_of_nodes_connected++;
+    }
+  }
+  return $no_of_nodes_connected ;
+}# sub get_nodes_connected_to_net_thru_buffer 
+
+sub set_no_of_connected_nodes
+{
+  my $netName = $_[0] ;
+  my $no_of_nodes_conn = $_[1] ;
+  my $prevBuffer = $_[2] ;
+  if ( $netName =~ /1\'b/ ) { 
+    return ; 
+  } 
+  if ( $netName eq  "") { 
+    return ; 
+  } 
+  if(exists $TEMP_NET_CONN_NODE_NO{$netName}){
+    return ;
+  }
+  $TEMP_NET_CONN_NODE_NO{$netName} = $no_of_nodes_conn;
+  my @driverInst = &getNetDriver($netName);
+  my @sinkInst = &getNetSink($netName);
+  my @instList = ();
+  my @instPinList = ();
+  if ( $driverInst[0] eq "UND"){
+    #do nothing
+  }elsif ( $driverInst[0] eq ""){
+    #do nothing
+  }else{
+    push(@instList,$driverInst[0]);
+    push(@instPinList,$driverInst[1]);
+  }#else driverInst
+  my $i = 0 ;
+  for($i = 0;$i<=$#sinkInst;$i=$i+2){
+    push(@instList,$sinkInst[$i]);
+    push(@instPinList,$sinkInst[$i+1]);
+  }#for
+  foreach my $inst (@instList) {
+    if( exists $COMP_ALREADY{$inst} ){
+      if((defined $prevBuffer) && ($inst eq $prevBuffer)) {
+        next ;
+      }
+      if (&is_macro_pins_similar_to_buffer($inst) ==1) {
+        my $net_other_side = &get_net_other_side_buffer($netName,$inst);
+        &set_no_of_connected_nodes($net_other_side,$no_of_nodes_conn,$inst);
+      }
+    }
+  }
+}# sub set_no_of_connected_nodes
+
+sub set_number_nodes_connected_to_all_net
+{
+  use Benchmark;
+  my $t0 = new Benchmark;
+  my $fanout_key_count = keys %TEMP_NET_CONN_NODE_NO;
+  if ($fanout_key_count  >= 1 ) {
+    return ;
+  }
+  %TEMP_NET_CONN_NODE_NO = ();
+  %TEMP_NET_ALREADY_TRAVERSED = ();
+  foreach my $net (keys %{NETS_ALREADY}){
+    if ( $net =~ /1\'b/ ) { 
+      next ;
+    }
+    if ( $net eq  "") { 
+     next ; 
+    } 
+    if(!exists $TEMP_NET_CONN_NODE_NO{$net}) {
+      %TEMP_NET_ALREADY_TRAVERSED = ();
+      my $no_nodes_connected = &get_nodes_connected_to_net_thru_buffer($net);
+      &set_no_of_connected_nodes($net,$no_nodes_connected);
+    }
+  }
+  open(WRITE,">net_degree.txt");
+  foreach my $temp_key ( keys %TEMP_NET_CONN_NODE_NO ) {
+    my $temp_degree = $TEMP_NET_CONN_NODE_NO{$temp_key} ;
+    print WRITE "Degree:$temp_degree Net:$temp_key\n" ;
+  }
+  close(WRITE);
+  my $t1 = new Benchmark;
+  my $td = timediff($t1, $t0);
+  print "subroutine set_number_nodes_connected_to_all_net took:",timestr($td),"\n";
+}# sub set_number_nodes_connected_to_all_net
+
+sub is_macro_pins_similar_to_buffer
+{
+  my $inst_to_check = $_[0] ;
+  my $cellref = $CADB{$inst_to_check}->dbCadbGetCellref;
+  my @pins = $PLDB{$cellref}->dbMdbGetPins;
+  my $no_of_input = 0 ;
+  my $no_of_output = 0 ;
+  my $no_of_inout = 0 ;
+  my $no_of_power = 0 ;
+  my $no_of_ground = 0 ;
+  my $no_of_clock = 0 ;
+  foreach my $pinName ( @pins ) {
+    if ($PLDB{$cellref}->dbMdbGetPinIsSignal($pinName)){
+      if($PLDB{$cellref}->dbMdbGetPinDir($pinName) ==0) {
+        $no_of_input++;
+      } elsif($PLDB{$cellref}->dbMdbGetPinDir($pinName) ==1) {
+        $no_of_output++;
+      } elsif($PLDB{$cellref}->dbMdbGetPinDir($pinName) ==2) {
+        $no_of_inout++;
+      }
+    } elsif ($PLDB{$cellref}->dbMdbGetPinIsPower($pinName)){
+      $no_of_power++;
+    } elsif ($PLDB{$cellref}->dbMdbGetPinIsGround($pinName)){
+      $no_of_ground++;
+    } elsif ($PLDB{$cellref}->dbMdbGetPinIsClock($pinName)){
+      $no_of_clock++;
+    }
+  }
+  if((($no_of_input ==1) &&($no_of_output ==1)) || ($no_of_inout ==2)) {
+    return 1 ;
+  }else{
+    return 0 ;
+  }
+}# sub is_macro_pins_similar_to_buffer
+
+sub get_net_other_side_buffer
+{
+  my $netConn = $_[0] ;
+  my $buffInst = $_[1] ;
+  my $cellref = $CADB{$buffInst}->dbCadbGetCellref;
+  my @pins = $PLDB{$cellref}->dbMdbGetPins;
+  my $net_one_side = "" ;
+  my $net_another_side = "" ;
+  foreach my $pinName ( @pins ) {
+    if ($PLDB{$cellref}->dbMdbGetPinIsSignal($pinName)){
+      if($PLDB{$cellref}->dbMdbGetPinDir($pinName) ==0) {
+        $net_one_side = $COMP_ALREADY{$buffInst}{$pinName};
+      } elsif($PLDB{$cellref}->dbMdbGetPinDir($pinName) ==1) {
+        $net_another_side = $COMP_ALREADY{$buffInst}{$pinName};
+      } elsif($PLDB{$cellref}->dbMdbGetPinDir($pinName) ==2) {
+        if($net_one_side eq "") {
+          $net_one_side = $COMP_ALREADY{$buffInst}{$pinName};
+        }else{
+          $net_another_side = $COMP_ALREADY{$buffInst}{$pinName};
+        }
+      }
+    }
+  }
+  if($netConn eq $net_one_side) {
+    return $net_another_side ;
+  }elsif($netConn eq $net_another_side) {
+    return $net_one_side ;
+  }else{
+    return "" ;
+  }
+}# sub get_net_other_side_buffer
+
+sub gen_vertex_file_plan
+{
+
+use Benchmark;
+my $t0 = new Benchmark;
+my $noOfArguments = @_;
+my $OUTPUT_FILE = "eqa_vertex_file_plan.txt";
+my $DETAIL_VERTEX_FILE = "eqa_detail_vertex_file_plan.txt";
+my %INST_COUNT = ();
+my %INST_CONN_INST = ();
+my $count = 0;
+
+if($_[0] eq "-h" )  {
+    print "Usage :  gen_vertex_file_plan -output <output vertex file> -detail_vertex_file <detail_vertex_file>\n";
+  }
+else {
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-output"){$OUTPUT_FILE = $_[$i+1];}
+if($_[$i] eq "-detail_vertex_file"){$DETAIL_VERTEX_FILE = $_[$i+1];}
+}#end for
+if (-e $OUTPUT_FILE) {
+    print "WARN-UTS-GEN_VRTX_FIlE_PLAN : 001 : $OUTPUT_FILE exists, overwriting existing file\n";
+}
+if (-e $DETAIL_VERTEX_FILE) {
+    print "WARN-UTS-GEN_VRTX_FILE_PLAN : 002 : $DETAIL_VERTEX_FILE exists, overwriting existing file\n";
+}
+
+&populate_net_connected_instances_name_and_number;
+
+open (WRITE, ">$OUTPUT_FILE");
+open (WRITE1, ">$DETAIL_VERTEX_FILE");
+
+foreach my $instance ( keys %COMP_ALREADY ) {
+        %INST_CONN_INST = ();
+	my $cellref = $CADB{$instance}->dbCadbGetCellref;
+	my @pins = $PLDB{$cellref}->dbMdbGetPins;
+	$count = 0; my $netinst_count = 0;
+	foreach my $pinName ( @pins ) {
+		my $net_Name = $COMP_ALREADY{$instance}{$pinName};
+		$netinst_count = 0;
+                if ( $net_Name =~ /1\'b/ ) { next ; } 
+		elsif ($net_Name ne "" ) {
+		my @net_inst_array = keys %{$NETS_ALREADY{$net_Name}};
+                my $net_inst_array_cnt = @net_inst_array; 
+		$netinst_count = $net_inst_array_cnt ;
+                if($net_inst_array_cnt == 2) {
+	          foreach my $inst ( @net_inst_array )  {
+                    if($inst ne $instance){
+                      if(exists $INST_CONN_INST{$inst}){
+		        $netinst_count = 0;
+                        next ;
+                      }else {
+                        $INST_CONN_INST{$inst} = 1;
+                        next ;
+                      }
+                    }
+                  }
+                }
+		}#end elsif	
+		if ( $netinst_count > 1 ) {
+			$count++; 
+               }
+	}#end foreach
+        print WRITE1 "$instance : $count\n";
+$INST_COUNT{$count} +=1;
+
+}#end foreach
+
+foreach $pinName ( keys %{$PORTS_ALREADY{$TOP_MODULE}} ) {
+	my @netName = $PORTS_ALREADY{$TOP_MODULE}{$pinName}->dbPortGetConn;
+        $count =0;my $netinst_count =0;my $netName = $netName[0];
+	if ( $netName) { 
+		my @net_inst_array = keys %{$NETS_ALREADY{$netName}};
+                my $net_inst_array_cnt = @net_inst_array; 
+		$netinst_count = $net_inst_array_cnt ;
+		if ( $netinst_count > 1 ) { 
+		   $count ++; 
+                }
+	}
+        print WRITE1 "$pinName : $count\n";
+	$INST_COUNT{$count} +=1;
+}
+
+print WRITE "#Degree    No of nodes \n";
+foreach (sort{ $a <=> $b } keys %INST_COUNT) {
+    print WRITE "$_\t$INST_COUNT{$_}\n";
+}
+
+close (WRITE);
+close (WRITE1);
+
+} #end else
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "subroutine gen_vertex_file_plan took:",timestr($td),"\n";
+}#end sub gen_vertex_file_plan
+
+sub gen_vertex_file_plan_fast
+{
+use Benchmark;
+my $t0 = new Benchmark;
+my $noOfArguments = @_;
+my $OUTPUT_FILE = "eqa_vertex_file_plan_fast.txt";
+my $DETAIL_VERTEX_FILE = "eqa_detail_vertex_file_plan_fast.txt";
+my %INST_COUNT = ();
+my %INST_CONN_NAME = ();
+my $count = 0;
+
+if($_[0] eq "-h" )  {
+    print "Usage :  gen_vertex_file_plan_fast -output <output vertex file> -detail_vertex_file <detail_vertex_file>\n";
+  }
+else {
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-output"){$OUTPUT_FILE = $_[$i+1];}
+if($_[$i] eq "-detail_vertex_file"){$DETAIL_VERTEX_FILE = $_[$i+1];}
+}#end for
+if (-e $OUTPUT_FILE) {
+    print "WARN-UTS-GEN_VRTX_FILE_PLAN_FAST : 001 : $OUTPUT_FILE exists, overwriting existing file\n";
+}
+if (-e $DETAIL_VERTEX_FILE) {
+    print "WARN-UTS-GEN_VRTX_FILE_PLAN_FAST : 002 : $DETAIL_VERTEX_FILE exists, overwriting existing file\n";
+}
+
+&populate_net_connected_instances_name_and_number_plan;
+
+open (WRITE, ">$OUTPUT_FILE");
+open (WRITE1, ">$DETAIL_VERTEX_FILE");
+
+foreach my $instance ( keys %COMP_ALREADY ) {
+        %INST_CONN_NAME = ();
+	my $cellref = $CADB{$instance}->dbCadbGetCellref;
+	my @pins = $PLDB{$cellref}->dbMdbGetPins;
+	print "DBG-UTS-GEN_VRTX_FILE_PLAN_FAST : 003 : $instance :$cellref: @pins \n" if ($debug);
+	$count = 0; my $netinst_count = 0;
+	foreach my $pinName ( @pins ) {
+		my $net_Name = $COMP_ALREADY{$instance}{$pinName};
+		$netinst_count = 0;
+                if ( $net_Name =~ /1\'b/ ) { next ; } 
+		elsif ($net_Name ne "" ) {
+		$netinst_count = $NET_INST_PIN_CONN_NO_UNIQ{$net_Name};
+		if($netinst_count ==2) {
+                my @temp_net_keys =  keys %{$NET_INST_PIN_CONN{$net_Name}} ;
+		foreach my $inst ( @temp_net_keys)  {
+                  if($inst ne $instance) {
+                    if(exists $INST_CONN_NAME{$inst}){
+		      $netinst_count = 0;
+                    }else{
+                      $INST_CONN_NAME{$inst} = 1;
+                    }
+                  }
+		}
+                }
+		}#end elsif	
+		if ( $netinst_count > 1 ) {
+			$count++; 
+			print "DBG-UTS-GEN_VRTX_FILE_PLAN_FAST : 004 : $instance Pin name: $pinName Net name: $net_Name Count: $count Netinst_count : $netinst_count\n" if ($debug);
+               }
+	}#end foreach
+	print "DBG-UTS-GEN_VRTX_FILE_PLAN_FAST : 005 : Count for inst $instance is : $count\n" if ($debug); 
+        print WRITE1 "$instance : $count\n";
+$INST_COUNT{$count} +=1;
+
+}#end foreach
+
+foreach $pinName ( keys %{$PORTS_ALREADY{$TOP_MODULE}} ) {
+	my @netName = $PORTS_ALREADY{$TOP_MODULE}{$pinName}->dbPortGetConn;
+        $count =0;my $netinst_count =0;my $netName = $netName[0];
+	if ( $netName) { 
+		$netinst_count = $NET_INST_PIN_CONN_NO_UNIQ{$netName};
+	if ( $netinst_count > 1 ) { 
+	   $count ++; 
+        }
+	print "DBG-UTS-GEN_VRTX_FILE_PLAN_FAST : 006 : Port name: $pinName Nets: @netName Count:$count \n" if ($debug);
+	print "DBG-UTS-GEN_VRTX_FILe_PLAN_FAST : 007 : Count for pin $pinName is : $count\n" if ($debug); 
+	}
+        print WRITE1 "$pinName : $count\n";
+	$INST_COUNT{$count} +=1;
+}
+
+print WRITE "#Degree    No of nodes \n";
+foreach (sort{ $a <=> $b } keys %INST_COUNT) {
+    print WRITE "$_\t$INST_COUNT{$_}\n";
+}
+
+
+
+close (WRITE);
+close (WRITE1);
+
+} #end else
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "subroutine gen_vertex_file_plan_fast took:",timestr($td),"\n";
+}#end sub gen_vertex_file_plan_fast
+
+sub gen_design_connection_analysis_report
+{
+use Benchmark;
+my $t0 = new Benchmark;
+my $noOfArguments = @_;
+my $DETAIL_CONNECTIVITY_REPORT_FILE = "eqa_detail_connectivity_report_file.txt";
+my %INST_COUNT = ();
+my %INST_PIN_CONN = ();
+my $count = 0;
+my $init_count = 0;
+if($_[0] eq "-h" )  {
+  print "Usage :  gen_design_connection_analysis_report -detail_connectivity_report_file <detail_connectivity_report_file>\n";
+} 
+for(my $i = 0; $i < $noOfArguments; $i++){
+  if($_[$i] eq "-detail_connectivity_report_file"){$DETAIL_CONNECTIVITY_REPORT_FILE = $_[$i+1];}
+}
+if (-e $DETAIL_CONNECTIVITY_REPORT_FILE) {
+  print "WARN-UTS-GEN_DES_CONN_ANLYS_RPT : 001 : $DETAIL_VERTEX_FILE exists, overwriting existing file\n";
+}
+&populate_net_connected_instances_name_and_number_plan;
+open (WRITE1, ">$DETAIL_CONNECTIVITY_REPORT_FILE");
+foreach my $instance ( keys %COMP_ALREADY ) {
+  my $cellref = $CADB{$instance}->dbCadbGetCellref;
+  my @pins = $PLDB{$cellref}->dbMdbGetPins;
+  $count = 0; 
+  $init_count = 0; 
+  my $netinst_count = 0;
+  my $no_of_connection = 0;
+  my $temp_net_keys_cnt = 0;
+  my $no_of_ports = 0;
+  foreach my $pinName ( @pins ) {
+    if ($PLDB{$cellref}->dbMdbGetPinIsPower($pinName)){
+      next ;
+    } 
+    if ($PLDB{$cellref}->dbMdbGetPinIsGround($pinName)){
+      next ;
+    }
+    $no_of_ports++;
+    my $net_Name = $COMP_ALREADY{$instance}{$pinName};
+    $netinst_count = 0;
+    $no_of_connection = 0 ;
+    if ( $net_Name =~ /1\'b/ ) { 
+      print WRITE1 "\n    TIED"
+    }elsif ($net_Name ne "" ) {
+      %INST_PIN_CONN = ();
+      $temp_net_keys_cnt = $NET_INST_PIN_CONN_NO_UNIQ{$net_Name}; 
+      $no_of_connection = $NET_INST_PIN_CONN_NO{$net_Name}; 
+      if($no_of_connection ==1) {
+          print WRITE1 "\n    HANGING"
+      }elsif($no_of_connection ==2) {
+          print WRITE1 "\n    TWO-PIN"
+      }elsif($no_of_connection >2) {
+          print WRITE1 "\n    MULTI-PIN"
+      }
+      print WRITE1 "    $no_of_connection" ;
+      $netinst_count = $temp_net_keys_cnt ;
+      if($no_of_connection > $temp_net_keys_cnt) {
+        my $no_of_temp = $NET_INST_PIN_CONN{$net_Name}{$instance} ;
+        if($no_of_temp >1) {
+          print WRITE1 " slf:$no_of_temp" ;
+        }
+        foreach my $conn_inst (keys %{$NET_INST_PIN_CONN{$net_Name}}){
+          if($conn_inst ne $instance){
+            $no_of_temp = $NET_INST_PIN_CONN{$net_Name}{$conn_inst} ;
+            if($no_of_temp >1) {
+              print WRITE1 " $no_of_temp";
+            }
+          }
+        }
+      }
+    }else{
+      print WRITE1 "\n    EMPTY" ;
+    }
+    if ( $netinst_count > 1 ) { 
+      $count++; 
+    }
+    if ( $no_of_connection > 1 ) { 
+      $init_count++; 
+    }
+  }
+  print WRITE1 "\nFnlDgr:$count IntDgr:$init_count Prt:$no_of_ports Nm:$instance";
+  print WRITE1 "\n";
+  $INST_COUNT{$count} +=1;
+}#end foreach
+
+close (WRITE1);
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "subroutine gen_design_connection_analysis_report took:",timestr($td),"\n";
+}#end sub gen_design_connection_analysis_report
+
+sub populate_net_connected_instances_name_and_number
+{
+%NET_INST_PIN_CONN = ();
+%NET_INST_PIN_CONN_NO = ();
+%NET_INST_PIN_CONN_NO_UNIQ = ();
+my $no_of_connection = 0 ;
+foreach my $port ( keys %{$PORTS_ALREADY{$TOP_MODULE}} ) {
+  my @port_nets = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetConn;
+  $NET_INST_PIN_CONN{$port_nets[0]}{$port} +=1;
+  $NET_INST_PIN_CONN_NO{$port_nets[0]} += 1; 
+}
+foreach my $inst ( keys %COMP_ALREADY ) {
+  my $cellref = $CADB{$inst}->dbCadbGetCellref;
+  my @pins = $PLDB{$cellref}->dbMdbGetPins;
+  foreach my $pinName ( @pins ) {
+    my $net_Name_tmp = $COMP_ALREADY{$inst}{$pinName};
+    $NET_INST_PIN_CONN{$net_Name_tmp}{$inst} +=1;
+    $NET_INST_PIN_CONN_NO{$net_Name_tmp} += 1; 
+  }
+}
+
+}#end sub populate_net_connected_instances_name_and_number
+
+sub populate_net_connected_instances_name_and_number_plan
+{
+%NET_INST_PIN_CONN = ();
+%NET_INST_PIN_CONN_NO = ();
+%NET_INST_PIN_CONN_NO_UNIQ = ();
+my $no_of_connection = 0 ;
+foreach my $port ( keys %{$PORTS_ALREADY{$TOP_MODULE}} ) {
+  my @port_nets = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetConn;
+  $NET_INST_PIN_CONN{$port_nets[0]}{$port} +=1;
+  $NET_INST_PIN_CONN_NO{$port_nets[0]} += 1; 
+}
+foreach my $inst ( keys %COMP_ALREADY ) {
+  my $cellref = $CADB{$inst}->dbCadbGetCellref;
+  my @pins = $PLDB{$cellref}->dbMdbGetPins;
+  foreach my $pinName ( @pins ) {
+    my $net_Name_tmp = $COMP_ALREADY{$inst}{$pinName};
+    $NET_INST_PIN_CONN{$net_Name_tmp}{$inst} +=1;
+    $NET_INST_PIN_CONN_NO{$net_Name_tmp} += 1; 
+  }
+}
+foreach my $temp_net (keys %{NETS_ALREADY}){
+  if ( $temp_net =~ /1\'b/ ) { 
+    next ;
+  }
+  if ( $temp_net eq  "") { 
+   next ; 
+  } 
+  my @temp_net_keys =  keys %{$NET_INST_PIN_CONN{$temp_net}} ;
+  my $temp_net_keys_cnt = @temp_net_keys; 
+  $NET_INST_PIN_CONN_NO_UNIQ{$temp_net} = $temp_net_keys_cnt; 
+}
+
+}#end sub populate_net_connected_instances_name_and_number_plan
+1;

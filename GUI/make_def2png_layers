@@ -1,0 +1,507 @@
+#####################################################################################
+###################### subroutine to create png for each layer ######################
+#####################################################################################
+sub create_def2png_layers{
+  use Benchmark;
+  my $t0 = new Benchmark;
+  my $noOfArg = @_;
+  my @bbox = ();
+  my @errBBox = ();
+  my ($outFile, $format, $layerName) = ("flat_view", "png", "");
+  
+  if($_[0] eq "-h" || $_[0] eq "-help" || $_[0] eq "-HELP"){
+     print"Usage: create_def2png_layers -output <output filename>\n";
+     print"                             -width <image width>\n";
+     print"                             -height <image height>\n";
+     print"                             -margin <margin from chip boundary in micron>\n";
+     print"                             -bbox <{x1,y1,x2,y2} in dbu>\n";
+     print"                             -layer <layer name>\n";
+     print"                             --die <boundary display>\n";
+     print"                             --inst <instance display>\n";
+     print"                             --inst_pin <instance pin display>\n";
+     print"                             --inst_pin_text <instance pin text display>\n";
+     print"                             --row <rows display>\n";
+     print"                             --port <ports display>\n";
+     print"                             --net <nets display>\n";
+     print"                             --spnet <special nets display>\n";
+     print"                             -format <file format (png/jpeg/gif/gd/gd2>\n";
+     print" default value <output:flat_view.png>\n";
+     print" default value <width:540>\n";
+     print" default value <height:540>\n";
+     print" default value <format:png>\n";
+     return @errBBox;
+  }else{
+     my $dbu = $GLOBAL->dbfGlobalGetDBU;
+     my ($image_width, $image_height) = (500,500);
+     my ($boundary_display,$inst_display,$inst_pn_display,$inst_pin_text_display,$row_display,$port_display,$net_display,$spnet_display) = (0,0,0,0,0,0,0,0);
+     my ($marginX, $marginY) = (0, 0);
+     for(my $xx=0; $xx<$noOfArg; $xx++){
+         if($_[$xx] eq "-output"){$outFile = $_[$xx+1];}
+         if($_[$xx] eq "-width"){$image_width = $_[$xx+1];}
+         if($_[$xx] eq "-height"){$image_height = $_[$xx+1];}
+         if($_[$xx] eq "-format"){$format = $_[$xx+1];}
+         if($_[$xx] eq "-layer"){$layerName = $_[$xx+1];}
+         if($_[$xx] eq "-bbox"){
+            my $bbox_str = $_[$xx+1];
+            $bbox_str =~ s/\{//;         
+            $bbox_str =~ s/\}//;        
+            @bbox = split(/\,/,$bbox_str);
+         }
+         if($_[$xx] eq "--die"){$boundary_display = 1;}
+         if($_[$xx] eq "--inst"){$inst_display = 1;}
+         if($_[$xx] eq "--inst_pin"){$inst_pin_display = 1;}
+         if($_[$xx] eq "--inst_pin_text"){$inst_pin_text_display = 1;}
+         if($_[$xx] eq "--row"){$row_display = 1;}
+         if($_[$xx] eq "--port"){$port_display = 1;}
+         if($_[$xx] eq "--net"){$net_display = 1;}
+         if($_[$xx] eq "--spnet"){$spnet_display = 1;}
+     }
+     #print "arg @_\n";
+     $outFile = $outFile.".".$format; 
+     # Create a new image
+     my $im = new GD::Image($image_width,$image_height,[0,0,0]);
+     my $po = new Graphics::ColorNames('X');
+     # Allocate some colors
+     &InitColors($im);
+     # Make the background transparent and interlaced
+     $im->transparent($white);
+     $im->interlaced('true');
+     
+     &create_gcell_db;
+     if($#GCellArray < 0){
+     print"WARN: first you should run command \"create_gcell\"\n";
+     print"use -h/-help/-HELP option to get help for \"create_gcell\"\n";
+     return @errBBox;
+     }
+     
+     my ($bllx,$blly,$burx,$bury);
+     my ($guiWidth, $guiHeight);
+     my $MICRONFACTOR = 1;
+     my $dieIsCentre = 0;
+     
+     if(exists $DIE_ALREADY{dieArea} ) {
+        my $guiDiellx = $DIE_ALREADY{dieArea}[0];
+        my $guiDielly = $DIE_ALREADY{dieArea}[1];
+        my $guiDieurx = $DIE_ALREADY{dieArea}[2];
+        my $guiDieury = $DIE_ALREADY{dieArea}[3];
+  
+        my $guiMuDiellx = $guiDiellx/$dbu;
+        my $guiMuDielly = $guiDielly/$dbu;
+        my $guiMuDieurx = $guiDieurx/$dbu;
+        my $guiMuDieury = $guiDieury/$dbu;
+        
+        if($guiDiellx == 0 && $guiDielly == 0 ){
+           $dieIsCentre = 0; 
+        }elsif($guiDiellx+$guiDieurx == 0 && $guiDieury+$guiDielly == 0){
+           $dieIsCentre = 1;
+        }else {
+           $dieIsCentre = 2;
+        }
+        
+        ################## if -bbox option is used ##############
+        #-------- we should scale the design with bbox ---------#
+        if((@bbox < 4) || ($bbox[0] == 0 && $bbox[1] == 0 && $bbox[2] == 0 && $bbox[3] == 0)){
+           @bbox = ($guiDiellx,$guiDielly,$guiDieurx,$guiDieury);
+        }
+        $guiWidth = abs(($bbox[2] - $bbox[0])/$dbu) ; 
+        $guiHeight = abs(($bbox[3] - $bbox[1])/$dbu); 
+        #print "bbox:@bbox\n";
+        #print "dieWidth:$guiWidth dieHeight:$guiHeight\n";
+  
+        my $shiftX = $bbox[0];
+        my $shiftY = $bbox[1];
+        #print "shiftX:$shiftX shiftY:$shiftY\n";
+
+        my $dieHMultFact  = $image_height/$guiHeight;
+        my $dieWMultFact  = $image_width/$guiWidth;
+        #-------------------------------------------------------#
+        if($dieHMultFact < $dieWMultFact){
+           $MICRONFACTOR = $dieHMultFact;
+        }else{
+           $MICRONFACTOR =  $dieWMultFact; 
+        }
+        my $MulFactor = $MICRONFACTOR/$dbu;
+        #print "mulFact:$MulFactor\n";
+
+        ############### Calculating X margin & Y margin to display image in centre ##############
+        $marginX = ( $image_width - $guiWidth*$MICRONFACTOR )/2;
+        $marginY = ( $image_height - $guiHeight*$MICRONFACTOR )/2;
+        #print "marginX:$marginX marginY:$marginY\n";
+  
+        #####   display the die area boundary  ###
+        if($dieIsCentre == 0 || $dieIsCentre == 2 ) {
+           $blly = ($image_height - $marginY) - ($guiMuDielly - $shiftY/$dbu)*$MICRONFACTOR;
+           $bury = ($image_height - $marginY) - ($guiMuDieury - $shiftY/$dbu)*$MICRONFACTOR;
+           $bllx = ($guiMuDiellx - $shiftX/$dbu)*$MICRONFACTOR + $marginX;
+           $burx = ($guiMuDieurx - $shiftX/$dbu)*$MICRONFACTOR + $marginX;
+        }else {
+           $blly = ($image_height/2) - ($guiMuDielly - $shiftY/$dbu)*$MICRONFACTOR;
+           $bury = ($image_height/2) - ($guiMuDieury - $shiftY/$dbu)*$MICRONFACTOR;
+           $bllx = ($guiMuDiellx - $shiftX/$dbu)*$MICRONFACTOR + ($image_width/2);
+           $burx = ($guiMuDieurx - $shiftX/$dbu)*$MICRONFACTOR + ($image_width/2);
+        }
+        if($boundary_display == 1 && ((($bllx >= 0 && $bllx <= $image_width) || ($burx >= 0 && $burx <= $image_width)) || (($blly >= 0 && $blly <= $image_height) || ($bury >= 0 && $bury <= $image_height)))){
+           $im->rectangle($bllx,$blly,$burx,$bury, $green);
+        }
+
+        ######   display the ROWS   #####
+        if($row_display == 1){
+           if (exists $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}){
+               my @rows = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetRows;
+               foreach my $tag ( @rows ) {
+                       my ($x,$y) = (split(/\s+/, $tag))[2,3];
+                       my $Row_llx = ($x-$shiftX)*$MulFactor;    
+                       my $Row_lly = ($y-$shiftY)*$MulFactor;    
+                       if($dieIsCentre == 1) {
+                          $Row_llx = $Row_llx + ($image_width/2);
+                          $Row_lly = ($image_height/2) - $Row_lly;
+                       }else {
+                          $Row_llx = $Row_llx + $marginX;
+                          $Row_lly = ($image_height - $marginY) - $Row_lly;
+                       }
+                       if($Row_lly >= 0 && $bury <= $image_height){
+                          #$im->line($Row_llx,$Row_lly,$burx,$Row_lly,$darkgray) if($blly != 20 );
+                          $im->line($Row_llx,$Row_lly,$burx,$Row_lly,$darkgray);
+                       }
+               }# foreach
+           }
+        }#if row display is ON
+        #####   display the ports of the top module  ###
+        if($port_display == 1){
+           my $moduleName = $TOP_MODULE;
+           foreach my $port ( keys %{$PORTS_ALREADY{$moduleName}} ) {
+                   my $status = $PORTS_ALREADY{$moduleName}{$port}->dbPortGetStatus;
+                   if($status == 2 || $status == 3 ) {
+                      my @loc = $PORTS_ALREADY{$moduleName}{$port}->dbPortGetLoc;
+                      my ($X,$Y,$orient) = &dbPlaceFindClosestBoundary($loc[0],$loc[1]);
+                      $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortSetSide($orient);
+                      my $dir = $PORTS_ALREADY{$moduleName}{$port}->dbPortGetDir;
+                      my $orient = $PORTS_ALREADY{$moduleName}{$port}->dbPortGetSide;
+                      my $x = ($loc[0]-$shiftX)*$MulFactor;
+                      my $y = ($loc[1]-$shiftY)*$MulFactor;
+                      if($dieIsCentre == 1) {
+                         $x = $x + ($image_width/2);
+                         $y = ($image_height/2) - $y;
+                      }else {
+                         $x = $x + $marginX;
+                         $y = ($image_height - $marginY) - $y;
+                      }
+                      if(($x >= 0 || $x <= $image_width) && ($y >= 0 || $y <= $image_height)){
+                         my @poly = &create_pin_shape($x,$y,$orient,$dir);
+                         my $polygon = new GD::Polygon;
+                         $polygon->addPt($poly[0], $poly[1]);
+                         $polygon->addPt($poly[2], $poly[3]);
+                         $polygon->addPt($poly[4], $poly[5]);
+                         $im->polygon($polygon, $yellow);
+                      }
+                   }#if status is placed or fixed
+           }# foreach
+        }#if port display is ON
+        ########  dispay the Instances  #######
+        if($inst_display == 1 || $inst_pin_display){
+           for(my $i=0; $i<=$#GCellArray ; $i++) {
+              for (my $j=0; $j<=$#{@GCellArray[0]} ; $j++) {
+                   my @instList = $GCellArray[$i][$j]->dbgGcellGetInst; 
+                   my @filtered_inst_array = ();
+                   foreach my $InstanceName (@instList){
+                        my @Inst_bbox = $CADB{$InstanceName}->dbCadbGetbBox;
+                        my $cellref =  $CADB{$InstanceName}->dbCadbGetCellref;
+                        my $status =  $CADB{$InstanceName}->dbCadbGetStatus;
+                        my $InstColor = "red";      
+                        if($PLDB{$cellref}->dbMdbGetClass eq "BLOCK") {
+                           $InstColor = "yellow";
+                        }
+                        if($status eq "PLACED" || $status eq "FIXED" ) {
+                           my $llx = ($Inst_bbox[0]-$shiftX)*$MulFactor;
+                           my $lly = ($Inst_bbox[1]-$shiftY)*$MulFactor;
+                           my $urx = ($Inst_bbox[2]-$shiftX)*$MulFactor;
+                           my $ury = ($Inst_bbox[3]-$shiftY)*$MulFactor;
+                           if($dieIsCentre == 1) {
+                              $lly = ($image_height/2) - $lly;
+                              $ury = ($image_height/2) - $ury;
+                              $llx = $llx + ($image_width/2);
+                              $urx = $urx + ($image_width/2);
+                           }else {
+                              $lly = ($image_height - $marginY) - $lly;
+                              $ury = ($image_height - $marginY) - $ury;
+                              $llx = $llx + $marginX;
+                              $urx = $urx + $marginX;
+                           }
+                           if((($llx >= 0 && $llx <= $image_width) || ($urx >= 0 && $urx <= $image_width)) || (($lly >= 0 && $lly <= $image_height) || ($ury >= 0 && $ury <= $image_height))){
+                              #my $instW = abs($urx-$llx);
+                              #my $instH = abs($ury-$lly);
+                              #my $path2proton = $GLOBAL->dbfGlobalGetProtonHome;
+                              #my $tile = newFromPng GD::Image("$path2proton/ETC/dotted_bitmap.png");
+                              #$im->setTile($tile);   
+                              #$im->filledRectangle($llx,$ury,$urx,$lly, gdTiled) if($instW > 3 || $instH > 3);
+                              #$im->filledRectangle($llx,$ury,$urx,$lly, $red) if($instW > 3 || $instH > 3);
+                              #$im->rectangle($llx,$ury,$urx,$lly, $red);
+                              if($inst_display == 1){
+                                 #$im->filledRectangle($llx,$ury,$urx,$lly, $red);
+                                 #$im->rectangle($llx,$ury,$urx,$lly, $black);
+                                 $im->rectangle($llx,$ury,$urx,$lly, $red);
+                              }elsif($inst_pin_display == 1){
+                                 my @location = $CADB{$InstanceName}->dbCadbGetLoc;
+                                 my $orient =   $CADB{$InstanceName}->dbCadbGetOrient;
+                                 my @cellSize = $PLDB{$cellref}->dbMdbGetSize;
+                                 my @cellOrigin = $PLDB{$cellref}->dbMdbGetOrigin;
+                                 my @pins = $PLDB{$cellref}->dbMdbGetPins;
+                                 foreach my $pinName ( @pins ) {
+                                      my @RECTS = $PLDB{$cellref}->dbMdbGetPinRect($pinName);
+                                      my @POLY = $PLDB{$cellref}->dbMdbGetPinPolygon($pinName);
+                                      foreach my $rectLine ( @RECTS ) {
+                                         my ($layer, $rllx1, $rlly1, $rurx1, $rury1)=(split(/\s+/,$rectLine))[0,2,3,4,5];
+                                         if($layer eq $layerName || $layerName eq 'all'){
+                                            my $color = $PTDB{$layer}->dbTechGetLayerColor;
+                                            my @pinRect = &xformCellPinToInstPin($location[0],$location[1],$cellOrigin[0], $cellOrigin[1],$orient,$cellSize[0],$cellSize[1],$rllx1,$rlly1,$rurx1,$rury1);
+                                            #if($inst_pin_text_display == 1){
+                                            #   my $midx = ($pinRect[0] + $pinRect[2])/2;
+                                            #   my $midy = ($pinRect[1] + $pinRect[3])/2;
+                                            #   my $tx = 20 + $midx*$MulFactor;
+                                            #   my $ty = 20 + $midy*$MulFactor;
+                                            #   $design_worldcanvas->createText($tx,$ty, -text=>$pinName, -tags=>"PINTEXT", -state =>"normal", -fill =>"yellow");
+                                            #   last;
+                                            #}
+                                            my $llx = ($pinRect[0]-$shiftX)*$MulFactor;
+                                            my $lly = ($pinRect[1]-$shiftY)*$MulFactor;
+                                            my $urx = ($pinRect[2]-$shiftX)*$MulFactor;
+                                            my $ury = ($pinRect[3]-$shiftY)*$MulFactor;
+                                            if($dieIsCentre == 1) {
+                                               $lly = ($image_height/2) - $lly;
+                                               $ury = ($image_height/2) - $ury;
+                                               $llx = $llx + ($image_width/2);
+                                               $urx = $urx + ($image_width/2);
+                                            }else {
+                                               $lly = ($image_height - $marginY) - $lly;
+                                               $ury = ($image_height - $marginY) - $ury;
+                                               $llx = $llx + $marginX;
+                                               $urx = $urx + $marginX;
+                                            }
+                                            my $im_color = $im->colorAllocate($po->rgb($color));
+                                            $im->rectangle($llx,$lly,$urx,$ury, $im_color);
+                                         }
+                                      }# for each rectangle
+                                      foreach my $polyLine ( @POLY ) {
+                                         my @polygon = ();
+                                         my @rect_or_polygon = (split(/\s+/,$polyLine));
+                                         my $layer = shift @rect_or_polygon;
+                                         if($layer eq $layerName || $layerName eq 'all'){
+                                            shift @rect_or_polygon;
+                                            my $color = $PTDB{$layer}->dbTechGetLayerColor;
+                                            my @poly = &xformCellPinPolyToInstPin($location[0],$location[1],$cellOrigin[0], $cellOrigin[1],$orient,$cellSize[0],$cellSize[1],@rect_or_polygon);
+                                            #if($inst_pin_text_display == 1){
+                                            #   my $tx = 20 + $poly[0]*$MulFactor;
+                                            #   my $ty = 20 + $poly[1]*$MulFactor;
+                                            #   $design_worldcanvas->createText($tx,$ty, -text=>$pinName, -tags=>"PINTEXT", -state =>"normal", -fill =>"yellow");
+                                            #   last;
+                                            #}
+                                            my $polygon = new GD::Polygon;
+                                            for (my $xx=0; $xx<=$#poly; $xx = $xx+2){
+                                                 my $llx = ($poly[$xx]-$shiftX)*$MulFactor;
+                                                 my $lly = ($poly[$xx+1]-$shiftY)*$MulFactor;
+                                                 if($dieIsCentre == 1) {
+                                                    $lly = ($image_height/2) - $lly;
+                                                    $ury = ($image_height/2) - $ury;
+                                                 }else {
+                                                    $lly = ($image_height - $marginY) - $lly;
+                                                    $ury = ($image_height - $marginY) - $ury;
+                                                 }
+                                                 $polygon->addPt($llx, $lly);
+                                            }
+                                            my $im_color = $im->colorAllocate($po->rgb($color));
+                                            $im->polygon($polygon, $im_color);
+                                         }
+                                      }#for each polygon
+                                 }#for each pins
+                              }
+                           }
+                           ################################# creating image of pin rects ##################################
+                           if($inst_pin_display == 1){
+                              if((($llx >= 0 && $llx <= $image_width) || ($urx >= 0 && $urx <= $image_width)) || (($lly >= 0 && $lly <= $image_height) || ($ury >= 0 && $ury <= $image_height))){
+                              }
+                           }#if inst pin display ON
+                           ################################ creating image of pin rects end ################################
+                        }# if component status is fixed or placed
+                   }#foreach Instance
+              }#for j
+           }#for i
+        }#if instance display ON
+        #print "image width $image_width height $image_height | shift $shiftX $shiftY\n";
+        #my $x1 = $marginX + ($bbox[0] - $shiftX )*$MulFactor;  
+        #my $y1 = ($image_height - $marginY) - ($bbox[1] - $shiftY )*$MulFactor;  
+        #my $x2 = $marginX + ($bbox[2] - $shiftX )*$MulFactor;  
+        #my $y2 = ($image_height - $marginY) - ($bbox[3] - $shiftY )*$MulFactor;  
+        #$im->string(gdSmallFont, $x1, $y1, "$bbox[0] | $bbox[1]", $white);
+        #$im->string(gdSmallFont, $x2, $y2, "$bbox[2] | $bbox[3]", $white);
+        #print "input bbox @bbox | $x1 $y1 $x2 $y2\n";
+        ################################### creating image of nets #####################################
+        if($net_display == 1){
+           foreach my $net ( keys %NETS_ALREADY ) {
+               if(exists $NETS_ROUTING_ALREADY{$net}) {
+                  my @data = $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBGetRegularRoute;
+                  foreach my $segment ( @data ) {
+                       my @seg = split(/\s+/,$segment);
+                       if($seg[0] eq $layerName || $layerName eq 'all'){
+                          my @routeBox = xformNetSegToRouteBox($segment);
+                          my $llx = ($routeBox[0]-$shiftX)*$MulFactor;
+                          my $lly = ($routeBox[1]-$shiftY)*$MulFactor;
+                          my $urx = ($routeBox[2]-$shiftX)*$MulFactor;
+                          my $ury = ($routeBox[3]-$shiftY)*$MulFactor;
+                          if($dieIsCentre == 1) {
+                             $lly = ($image_height/2) - $lly;
+                             $ury = ($image_height/2) - $ury;
+                             $llx = $llx + ($image_width/2);
+                             $urx = $urx + ($image_width/2);
+                          }else {
+                             $lly = ($image_height - $marginY) - $lly;
+                             $ury = ($image_height - $marginY) - $ury;
+                             $llx = $llx + $marginX;
+                             $urx = $urx + $marginX;
+                          }
+                          if((($llx >= 0 && $llx <= $image_width) || ($urx >= 0 && $urx <= $image_width)) || (($lly >= 0 && $lly <= $image_height) || ($ury >= 0 && $ury <= $image_height))){
+                             if(exists $PTDB{$seg[0]} ) {
+                                my $color = $PTDB{$seg[0]}->dbTechGetLayerColor;
+                                my $im_color = $im->colorAllocate($po->rgb($color));
+                                $im->rectangle($llx,$lly,$urx,$ury, $im_color);
+                                #$im->filledRectangle($llx,$lly,$urx,$ury,$im_color);
+                             }#if the metal layer exists in the technology
+                          }#if the metal layer exists in the technology
+                       }
+                  }#foreach segment of routing
+               }# if routing data is present
+           }#for all nets in the database
+        }#if net display is ON
+        ################################ creating image of special nets ##################################
+        if($spnet_display == 1){
+           foreach my $net ( keys %NETS_ALREADY ) {
+               my $netType = $NADB{$net}->dbNadbGetNetType;
+               if (($netType == 1) || ($netType == 2)) {
+                   if (exists $NETS_ROUTING_ALREADY{$net}) { 
+                       my @data = ();
+                       push(@data, $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBGetSpecialRoute);
+                       push(@data, $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBGetFixedRoute);
+                       foreach my $segment ( @data ) {
+                         my @seg = split(/\s+/,$segment);
+                         if($seg[0] eq $layerName || $layerName eq 'all'){
+                            my @routeBox = xformNetSegToSpecialRouteBox($segment);
+                            my $llx = ($routeBox[0]-$shiftX)*$MulFactor;
+                            my $lly = ($routeBox[1]-$shiftY)*$MulFactor;
+                            my $urx = ($routeBox[2]-$shiftX)*$MulFactor;
+                            my $ury = ($routeBox[3]-$shiftY)*$MulFactor;
+                            if($dieIsCentre == 1) {
+                               $lly = ($image_height/2) - $lly;
+                               $ury = ($image_height/2) - $ury;
+                               $llx = $llx + ($image_width/2);
+                               $urx = $urx + ($image_width/2);
+                            }else {
+                               $lly = ($image_height - $marginY) - $lly;
+                               $ury = ($image_height - $marginY) - $ury;
+                               $llx = $llx + $marginX;
+                               $urx = $urx + $marginX;
+                            }
+                            if((($llx >= 0 && $llx <= $image_width) || ($urx >= 0 && $urx <= $image_width)) || (($lly >= 0 && $lly <= $image_height) || ($ury >= 0 && $ury <= $image_height))){
+                               if (exists $PTDB{$seg[0]} ) {
+                                  my $color = $PTDB{$seg[0]}->dbTechGetLayerColor;
+                                  my $im_color = $im->colorAllocate($po->rgb($color));
+                                  $im->rectangle($llx,$lly,$urx,$ury,$im_color);
+                                  #$im->filledRectangle($llx,$lly,$urx,$ury,$im_color);
+                               }
+                            }
+                         }
+                       }
+                   }#if exists
+               }#if type is 1 or 2
+           }#foreach special net
+        }#if special net display is ON
+        #------------------------------------------------------------------------------------#
+        ##################### context bbox #########################
+        $bbox[0] = $bbox[0] - $marginX/$MulFactor;
+        $bbox[1] = $bbox[1] - $marginY/$MulFactor;
+        $bbox[2] = $bbox[0] + $image_width/$MulFactor;
+        $bbox[3] = $bbox[1] + $image_height/$MulFactor;
+        ############################################################
+     }#if dieArea exists
+     # Open a file for writing 
+     open(PICTURE, ">$outFile") or $! and print"permission denied to write $outFile\n" and return @errBBox;
+     
+     # Make sure we are writing to a binary stream
+     binmode PICTURE;
+     
+     # Convert the image to PNG and print it to the file PICTURE
+     print PICTURE $im->png if($format eq "png");
+     print PICTURE $im->jpeg if($format eq "jpeg");
+     print PICTURE $im->gif() if($format eq "gif");
+     print PICTURE $im->gd if($format eq "gd");
+     print PICTURE $im->gd2 if($format eq "gd2");
+     close PICTURE;
+  }
+  
+  #$GLOBAL->dbGlobalSetFlatImageBBox(@bbox);
+  
+  $t1 = new Benchmark;
+  my $td = timediff($t1, $t0);
+  print "flat image ($outFile) creation took:",timestr($td),"\n";
+  return(@bbox);
+}#sub create_def2png_layers
+
+#####################################################################################
+####################### subroutine to create png for all layer ######################
+#####################################################################################
+sub create_def2png_all {
+  use Benchmark;
+  my $t0 = new Benchmark;
+  my $noOfArg = @_;
+  if($_[0] eq "-h" || $_[0] eq "-help" || $_[0] eq "-HELP"){
+     print"Usage: create_def2png_all  -output <output filename>\n";
+     print"                           -width <image width>\n";
+     print"                           -height <image height>\n";
+     print"                           -margin <margin from chip boundary in micron>\n";
+     print"                           -bbox <{x1,y1,x2,y2} in dbu>\n";
+     print"                           --die <boundary display>\n";
+     print"                           --inst <instance display>\n";
+     print"                           --inst_pin <instance pin display>\n";
+     print"                           --inst_pin_text <instance pin text display>\n";
+     print"                           --row <rows display>\n";
+     print"                           --port <ports display>\n";
+     print"                           --net <nets display>\n";
+     print"                           --spnet <special nets display>\n";
+     print"                           -format <file format (png/jpeg/gif/gd/gd2>\n";
+     print" default value <output:flat_view.png>\n";
+     print" default value <width:540>\n";
+     print" default value <height:540>\n";
+     print" default value <format:png>\n";
+  }else{
+     my @topArg = ();
+     my @layerArg = ();
+     my $output = 'flat_view';
+     for(my $xx=0; $xx<$noOfArg; $xx++){
+         if($_[$xx] eq "-width" || $_[$xx] eq "-height" || $_[$xx] eq "-format" || $_[$xx] eq "-bbox"){
+            push(@topArg, $_[$xx], $_[$xx+1]);
+            push(@layerArg, $_[$xx], $_[$xx+1]);
+         }
+         if($_[$xx] eq "--die" || $_[$xx] eq "--row" || $_[$xx] eq "--port" || $_[$xx] eq "--inst"){
+            push(@topArg, $_[$xx]);
+         }
+         if($_[$xx] eq "-output"){
+            $output = $_[$xx+1];
+         }
+
+         if($_[$xx] eq "--inst_pin"){push(@layerArg, $_[$xx]);}
+         if($_[$xx] eq "--inst_pin_text"){push(@layerArg, $_[$xx]);}
+         if($_[$xx] eq "--net"){push(@layerArg, $_[$xx]);}
+         if($_[$xx] eq "--spnet"){push(@layerArg, $_[$xx]);}
+     }
+     create_def2png_layers(@topArg, '-output', $output.'_top');
+     foreach my $layerName ( keys %PTDB){
+        my $type = $PTDB{$layerName}->dbTechGetLayerType;
+        if($type eq "ROUTING" || $type eq "CUT") {
+           create_def2png_layers(@layerArg, '-layer', $layerName, '-output', $output.'_'.$layerName);
+        }
+     }
+  }
+  $t1 = new Benchmark;
+  my $td = timediff($t1, $t0);
+  print "create_def2png_all took:",timestr($td),"\n";
+}#sub create_def2png_all
+
+1;

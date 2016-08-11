@@ -1,0 +1,502 @@
+#!/bin/perl -w
+sub prePlaceData {
+my $noOfArguments = @_;
+
+if( $_[0] eq '-h') { print "Usage : prePlaceData \n";
+                     print "        --noTrace\n";
+                     print "        --noLevel\n";
+                         }
+else { # if correct no. of inputs
+
+my $TRACE = 1;
+my $SETLEVEL = 1;
+
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "--noTrace"){$TRACE = 0; }
+if($_[$i] eq "--noLevel"){$SETLEVEL = 0; }
+                                         } # for
+
+&dbPlaceCollectStatPlaceDB;
+if ($TRACE == 1) { &dbPlaceCreatePlaceDB; }
+if ($SETLEVEL == 1) { &dbPlaceCreateFloparray; }
+#$PLACE{$TOP_MODULE}->dbgPlaceGetTpath;
+#$PLACE{$TOP_MODULE}->dbgPlaceGetColumn;
+#$PLACE{$TOP_MODULE}->dbgPlaceGetRow;
+#$PLACE{$TOP_MODULE}->dbgPlacePrintReg2RegMap;
+#$PLACE{$TOP_MODULE}->dbgPlacePrintIn2RegMap;
+#$PLACE{$TOP_MODULE}->dbgPlacePrintReg2OutMap;
+#$PLACE{$TOP_MODULE}->dbgPlaceGetFanIns(5);
+#$PLACE{$TOP_MODULE}->dbgPlaceGetFanOuts(1);
+#my $address = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByNameCol("ff1");
+#my @t = $PLACE{$TOP_MODULE}->dbPlaceGetFanOuts($address);
+#my $name = $PLACE{$TOP_MODULE}->dbPlaceGetNameByNumberRow($t[0]);
+#print "$address : $t[0] : $name\n";
+#my $address = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByNameRow("ff1");
+#my @s = $PLACE{$TOP_MODULE}->dbPlaceGetFanIns($address);
+#my $name = $PLACE{$TOP_MODULE}->dbPlaceGetNameByNumberCol($s[0]);
+#print "$address : $s[0] : $name\n";
+#&dbPlaceCalcOptLen;
+      }# if correct no. of inputs
+}# sub prePlaceData
+
+
+sub dbPlaceCalcOptLen {
+print "INFO-ALGO_PREPL : 001 : make_place_db : calculating optLen\n";
+my $maxRow = $PLACE{$TOP_MODULE}->dbPlaceGetMaxRow;
+my $maxCol = $PLACE{$TOP_MODULE}->dbPlaceGetMaxCol;
+my $Tval = 0;
+   for ( my $yy = 1; $yy <= $maxRow; $yy++) {
+            for ( my $xx = 1; $xx <= $maxCol; $xx++ ) {
+                  $Tval = $Tval + $PLACE{$TOP_MODULE}->dbPlaceGetTpathVal($yy,$xx);
+                                                      }# for col
+                                            }# for row
+#print "Total val : $Tval\n";
+###########################################################################
+##### temp code for area of a standard cell ############################### 
+my $areaOfStdCell = 12;
+my $designUtil = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetUtilization;
+#print "$areaOfStdCell, $designUtil\n";
+######################### end temp code ###################################
+
+my @flops = $PLACE{$TOP_MODULE}->dbPlaceGetFlopList;
+foreach my $Inst ( @flops ) {
+    #       print "$Inst\n";
+           my $InstNum = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByName($Inst);
+           my @fanIns = $PLACE{$TOP_MODULE}->dbPlaceGetFanIns($InstNum);
+           my @fanOuts = $PLACE{$TOP_MODULE}->dbPlaceGetFanOuts($InstNum);
+           my $val = 0;
+           foreach my $xx ( @fanIns ) {
+                   $val = $val + $PLACE{$TOP_MODULE}->dbPlaceGetTpathVal($InstNum,$xx); 
+                                      }# forach fanIns
+           foreach my $yy ( @fanOuts ) {
+                   $val = $val + $PLACE{$TOP_MODULE}->dbPlaceGetTpathVal($yy,$InstNum); 
+                                      }# forach fanOuts
+    #       print "$val\n";
+    ###################### temp #######################
+    my $normalisedCellCount = $val/$Tval;
+    my $normalisedArea = $normalisedCellCount*$areaOfStdCell;
+    my $flopArea =  $normalisedArea*$val;
+    my $optLen = sprintf("%.2f", sqrt($flopArea/$designUtil));
+    #print "optLen :  $optLen\n";
+    $PLACE{$TOP_MODULE}->dbPlaceSetOptLen($InstNum,$optLen); 
+    $PLACE{$TOP_MODULE}->dbgPlaceGetOptLen($InstNum); 
+    
+    ###################### end temp ###################
+    
+                            }# forach flops
+          
+}#sub dbPlaceCalcOptLen
+
+sub dbPlaceCollectStatPlaceDB {
+# search for all flops and ports and have a number map.
+# and all other of kind of statics
+
+my %Row_Hash = ();
+my %Col_Hash = ();
+
+my $colCount = 0;
+my $rowCount = 0;
+my $SeqCompCount = 0;
+my $CombCompCount = 0;
+my $BlockCompCount = 0;
+my $PadCompCount = 0;
+my $InputPortCount = 0;
+my $OutputPortCount = 0;
+my $InoutPortCount = 0;
+my $NetCount = 0;
+my $Net0PinCount = 0;
+my $Net1PinCount = 0;
+my $Net2PinCount = 0;
+my $Net3PinCount = 0;
+my $Net4PinCount = 0;
+my $Net5orMorePinCount = 0;
+
+foreach my $instanceName ( keys %COMP_ALREADY ) {
+        my $cellref = $CADB{$instanceName}->dbCadbGetCellref;
+        my $cellType = $PLDB{$cellref}->dbMdbGetType;
+        my $cellFuction = $PLDB{$cellref}->dbMdbGetFunction;
+        if ( $cellType == 0 )    { $CombCompCount++; }
+        elsif ( $cellType == 1 ) { $SeqCompCount++; 
+                                   $colCount++; $rowCount++; 
+                                   $Col_Hash{$instanceName}=$colCount; 
+                                   $Row_Hash{$instanceName}=$rowCount; 
+                                 }
+        elsif ( $cellType == 2 ) { $BlockCompCount++; }
+        elsif ( $cellType == 3 ) { $PadCompCount++; }
+        else { print "WARN-ALGO_PREPL  : 001 : instance $instanceName has unknown cell type $cellType\n"; }
+        
+                                                }
+foreach my $portName ( keys %{$PORTS_ALREADY{$TOP_MODULE}} ) {
+#        print "$portName\n";
+        my $portDirection = $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortGetDir;
+        if ($portDirection eq "input" ) { $InputPortCount++;
+                                   $colCount++; 
+                                   $Col_Hash{$portName}=$colCount; 
+                                        }
+        elsif ($portDirection eq "output" ) { $OutputPortCount++;
+                                   $rowCount++; 
+                                   $Row_Hash{$portName}=$rowCount; 
+                                            }
+        elsif ($portDirection eq "inout" ) { $InoutPortCount++;
+# fixed by Rajeev on 01/01/2009 Mantis 0000236 #
+                                   $colCount++; 
+                                   $Col_Hash{$portName}=$colCount; 
+                                           }
+        else { print "WARN-ALGO_PREPL : 002 : port $portName has unknown direction type $portDirection\n"; }
+                                                            }
+foreach my $netName ( keys %NETS_ALREADY ) {
+        my $noOfPinsOnNet = 0;
+        foreach (keys %{$NETS_ALREADY{$netName}} ) { $noOfPinsOnNet++; }
+        if ( $noOfPinsOnNet == 0 )    { $Net0PinCount++;}
+        elsif ( $noOfPinsOnNet == 1 ) { $Net1PinCount++;}
+        elsif ( $noOfPinsOnNet == 2 ) { $Net2PinCount++;}
+        elsif ( $noOfPinsOnNet == 3 ) { $Net3PinCount++;}
+        elsif ( $noOfPinsOnNet == 4 ) { $Net4PinCount++;}
+        else { $Net5orMorePinCount++; }
+                                           }
+print "INFO-ALGO_PREPL : 003 : Design Statistics\n";
+print "INFO-ALGO_PREPL : 004 : Seq : $SeqCompCount , Combinational : $CombCompCount , Block : $BlockCompCount , Pad : $PadCompCount\n";
+print "INFO-ALGO_PREPL : 005 : In  : $InputPortCount , Out : $OutputPortCount , Bidi : $InoutPortCount\n";
+print "INFO-ALGO-PREPL : 006 : 0-pin : $Net0PinCount , 1-pin : $Net1PinCount , 2-pin : $Net2PinCount , 3-pin : $Net3PinCount , 4-pin : $Net4PinCount , >= 5-pin : $Net5orMorePinCount\n";
+
+my $PlaceDBNumOfRows = $SeqCompCount + $OutputPortCount;
+my $PlaceDBNumOfColumns = $SeqCompCount + $InputPortCount + $InoutPortCount;
+# by Rajeev on 01/01/2009
+$InputPortCount = $InputPortCount + $InoutPortCount;
+
+################################################################################################################
+## populate the placement database  PlaceDB
+################################################################################################################
+
+$PLACE{$TOP_MODULE} = PlaceDB::new();
+$PLACE{$TOP_MODULE}->dbPlaceInit($PlaceDBNumOfRows,$PlaceDBNumOfColumns,$SeqCompCount,$InputPortCount,$OutputPortCount,$InoutPortCount);
+
+################################ Set the Row index #####################
+foreach my $name ( keys %Row_Hash ) { 
+my $val = $Row_Hash{$name};
+# print "$name $val\n";
+$PLACE{$TOP_MODULE}->dbPlaceSetRow($val,$name);
+if ( exists $COMP_ALREADY{$name} ) {
+$PLACE{$TOP_MODULE}->dbPlaceSetIsInstFlop($name);
+                                   }
+elsif ( exists $PORT_ALREADY{$TOP_MODULE}{$name} ) {
+$PLACE{$TOP_MODULE}->dbPlaceSetIsInstPort($name);
+                                                   }
+                                    }
+################################ Set the Column index #####################
+foreach my $name ( keys %Col_Hash ) { 
+my $val = $Col_Hash{$name};
+#print "$name $val\n";
+$PLACE{$TOP_MODULE}->dbPlaceSetColumn($val,$name);
+if ( exists $COMP_ALREADY{$name} ) {
+$PLACE{$TOP_MODULE}->dbPlaceSetIsInstFlop($name);
+                                   }
+elsif ( exists $PORT_ALREADY{$TOP_MODULE}{$name} ) {
+$PLACE{$TOP_MODULE}->dbPlaceSetIsInstPort($name);
+                                                   }
+                                    }
+
+################################ set the flop and port location ######################
+foreach my $instanceName ( keys %Col_Hash ) {
+my $isFlop = 0;
+$isFlop = $PLACE{$TOP_MODULE}->dbPlaceGetIsInstFlop($instanceName);
+if ( $isFlop == 1 ) {
+my @loc = $CADB{$instanceName}->dbCadbGetLoc;
+$PLACE{$TOP_MODULE}->dbPlaceSetFlopLoc($instanceName,$loc[0], $loc[1]);
+#print "setting the location of $instanceName into placement database $loc[0], $loc[1]\n";
+                    }#
+else {
+     my $status = $PORTS_ALREADY{$TOP_MODULE}{$instanceName}->dbPortGetStatus;
+     if ($status > 1) {
+my @loc = $PORTS_ALREADY{$TOP_MODULE}{$instanceName}->dbPortGetLoc;
+print "ALGO_PREPL : 007 : setting the location of $instanceName into placement database $loc[0],$loc[1]\n";
+$PLACE{$TOP_MODULE}->dbPlaceSetPortLoc($instanceName,$loc[0], $loc[1]);
+                      }
+     } 
+                                    }# foreach Col_Hash
+#---------------------------------------------------------------------------#
+foreach my $instanceName ( keys %Row_Hash ) {
+my $isFlop = 0;
+$isFlop = $PLACE{$TOP_MODULE}->dbPlaceGetIsInstFlop($instanceName);
+if ( $isFlop == 1 ) { } else {
+     my $status = $PORTS_ALREADY{$TOP_MODULE}{$instanceName}->dbPortGetStatus;
+     if ($status > 1) {
+my @loc = $PORTS_ALREADY{$TOP_MODULE}{$instanceName}->dbPortGetLoc;
+$PLACE{$TOP_MODULE}->dbPlaceSetPortLoc($instanceName,$loc[0], $loc[1]);
+                      }
+     } 
+                                    }# foreach Row_Hash
+
+%Row_Hash = ();
+%Col_Hash = ();
+
+}#dbPlaceCollectStatPlaceDB
+
+
+#####################################################################
+## I am using the Breadth first technique to populate the Place DB  #
+## using the forward trace                                          #
+#####################################################################
+
+sub dbPlaceCreatePlaceDB {
+print "INFO-PREPL : 001 : forward BFS Reg2Reg and Reg2Out\n";
+&dbPlaceTraceBFS_r2r_r2o;
+print "INFO-PREPL : 002 : forward BFS In2Reg and In2Out\n";
+&dbPlaceTraceBFS_i2r_i2o;
+
+}#sub dbPlaceCreatePlaceDB
+
+
+####### back tracing old code #####
+
+sub dbPlaceTraceBackOut2RegTPaths {
+    foreach $pinName ( keys %{$PORTS_ALREADY{$TOP_MODULE}} ) {
+            my $dir = $PORTS_ALREADY{$TOP_MODULE}{$pinName}->dbPortGetDir;
+#            print "$pinName $dir\n";
+            if ( $dir eq "output" ) {
+            my @connList = $PORTS_ALREADY{$TOP_MODULE}{$pinName}->dbPortGetConn;
+            my $len = @connList;
+            if ($len == 1 ) { $netName = $connList[0]; }
+            else { print "ERR-ALGO_PREPL : 001 : pin has more than one net connected\n"; }
+            my $driverInst = &dbPlaceTraceGetNetDriver($netName); 
+#                      print "\tdriver is $driverInst\n";
+                                 if ( exists $COMP_ALREADY{$driverInst} ) {
+                     my $driverCellref = $CADB{$driverInst}->dbCadbGetCellref;
+                     if ( $PLDB{$driverCellref}->dbMdbGetFunction eq "flop" &&  $PLDB{$driverCellref}->dbMdbGetType == 1 ) {
+#                    print "driver is a fanin cone flop\n";
+#############################################################################################################
+my $row_num = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByNameRow($pinName);
+my $col_num = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByNameCol($driverInst);
+my $val = 1;
+$PLACE{$TOP_MODULE}->dbPlaceSetTpathVal($row_num,$col_num,$val);
+#print WRITE "$row_num $col_num $val\n";
+#############################################################################################################
+                                                                             }# if the driver is a flop
+                     else {
+#                          print "backward tracing\n";
+                           &dbPlaceReg2RegTraceTPaths($driverInst,1,$pinName);
+                          }# if the drivel cell is not a flop
+                                                              }
+                     elsif ( exists $PORTS_ALREADY{$TOP_MODULE}{$driverInst} ) {
+#                     print "driver is a fanin cone port\n";
+                                                                               }
+                                    }# if pin is a output port
+            
+                                                              }#foreach
+
+}#sub dbPlaceTraceBackOut2RegTPaths
+
+
+sub dbPlaceTraceBackReg2RegTPaths {
+
+foreach $instance ( keys %COMP_ALREADY ) {
+        my $cellref = $CADB{$instance}->dbCadbGetCellref;
+if ( $PLDB{$cellref}->dbMdbGetFunction eq "flop" && $PLDB{$cellref}->dbMdbGetType == 1 ) { # concerned only about flops now
+     print "INFO-ALGO_PREPL : 001 : $instance\n";
+     my @pins = $PLDB{$cellref}->dbMdbGetPins;
+        foreach $pinName ( @pins ) {
+                $pinType = $PLDB{$cellref}->dbMdbGetPinType($pinName);
+                if ( $PLDB{$cellref}->dbMdbGetPinType($pinName) == 4 ) {
+                     my $driverInst = &dbPlaceTraceGetNetDriver($COMP_ALREADY{$instance}{$pinName}); 
+#                     print "\tdriver is $driverInst for $pinName\n";
+                     if ( exists $COMP_ALREADY{$driverInst} ) {
+                     my $driverCellref = $CADB{$driverInst}->dbCadbGetCellref;
+                     if ( $PLDB{$driverCellref}->dbMdbGetFunction eq "flop" &&  $PLDB{$driverCellref}->dbMdbGetType == 1 ) {
+#                    print "driver is a fanin cone flop $driverInst\n";
+#############################################################################################################
+my $row_num = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByNameRow($instance);
+my $col_num = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByNameCol($driverInst);
+my $val = 1;
+$PLACE{$TOP_MODULE}->dbPlaceSetTpathVal($row_num,$col_num,$val);
+#print WRITE "$row_num $col_num $val\n";
+#############################################################################################################
+                     
+                                                                             }# if the driver is a flop
+                     else {
+#                          print "backward tracing\n";
+                           &dbPlaceReg2RegTraceTPaths($driverInst,1,$instance);
+#                                print "Final comeback\n";
+                          }# if the drivel cell is not a flop
+                                                              }
+                     elsif ( exists $PORTS_ALREADY{$TOP_MODULE}{$driverInst} ) {
+#                     print "driver is a fanin cone port $driverInst\n";
+                                                                               }
+                                                                       }# if the pin is the primary register input
+                                   }# foreach pin of a register
+                                                  }
+                                         }# foreach instance in the component list
+
+
+}#sub dbPlaceTraceReg2RegTPaths
+
+
+
+sub dbPlaceReg2RegTraceTPaths {
+local $instance = $_[0];
+local $level = $_[1];
+local $traceStartInst = $_[2];
+local @TEMP_DRIVER = ();
+#print "Finding level $level drivers of $traceStartInst\n";
+local $cellref = $CADB{$instance}->dbCadbGetCellref;
+      my @pins = $PLDB{$cellref}->dbMdbGetPins;
+        foreach $pinName ( @pins ) {
+                $pinType = $PLDB{$cellref}->dbMdbGetPinType($pinName);
+
+                if ( $PLDB{$cellref}->dbMdbGetPinType($pinName) == 0 && $PLDB{$cellref}->dbMdbGetPinDir($pinName) == 0 ) {
+                     my $driverInst = &dbPlaceTraceGetNetDriver($COMP_ALREADY{$instance}{$pinName});
+#                     print "\tdriver is $driverInst of $pinName\n";
+                     if ( exists $COMP_ALREADY{$driverInst} ) {
+                     my $driverCellref = $CADB{$driverInst}->dbCadbGetCellref;
+                     if ( $PLDB{$driverCellref}->dbMdbGetFunction eq "flop" &&  $PLDB{$driverCellref}->dbMdbGetType == 1 ) {
+#                      print "\tdriver is a fanin cone flop $driverInst  $driverCellref\n";
+#################################################################################################################
+my $row_num = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByNameRow($traceStartInst);
+my $col_num = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByNameCol($driverInst);
+my $val = $level;
+#$PLACE{$TOP_MODULE}->dbPlaceSetTpathVal($row_num,$col_num,$val);
+#print WRITE "$row_num $col_num $val\n";
+#############################################################################################################
+                                                                             }# if the driver is a flop
+                     else {
+                     print "\tINFO-ALG0_PREPL : 001 : driver is a fanin cone combi $driverInst\n";
+                     push(@TEMP_DRIVER,$driverInst);
+                          }# if the drivel cell is not a flop
+                                                              }
+                     elsif ( exists $PORTS_ALREADY{$TOP_MODULE}{$driverInst} ) {
+#                     print "\tdriver is a fanin cone port $driverInst\n";
+#################################################################################################################
+my $row_num = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByNameRow($traceStartInst);
+my $col_num = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByNameCol($driverInst);
+my $val = $level;
+#$PLACE{$TOP_MODULE}->dbPlaceSetTpathVal($row_num,$col_num,$val);
+#print WRITE "$row_num $col_num $val\n";
+#############################################################################################################
+                                                                               }
+                                                                       }# if the pin is the input of cominational cell
+                                   }# foreach pin of a cell
+$level++;
+my $len = @TEMP_DRIVER;
+   print "INFO-ALGO_PREPL : 002 : $len\n";
+   foreach my $tag ( @TEMP_DRIVER ) { print "INFO-ALGO_PREPL : 003 : $tag\n"; }
+
+while ( defined ( $driver = shift @TEMP_DRIVER)) {
+#        $driver = pop(@TEMP_DRIVER);
+        print "\tINFO-ALGO_PREPL : 004 : $driver\n";
+        &dbPlaceReg2RegTraceTPaths($driver,$level,$traceStartInst);
+        print "INFO-ALGO_PREPL : 005 : come back $level \n";
+                                 }#
+
+
+}#dbPlaceReg2RegTraceTPaths
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+sub dbPlaceTraceGetNetDriver {
+my $netName = $_[0];
+my $driverInst ="UND";
+   if ( exists $NETS_ALREADY{$netName} ) {
+        foreach my $instance ( keys %{$NETS_ALREADY{$netName}} ) {
+#                print "$instance\n";
+                if ( exists $COMP_ALREADY{$instance} ) {
+                my $pinName = $NETS_ALREADY{$netName}{$instance};
+#                print "$instance $pinName\n";
+                my $cellref = $CADB{$instance}->dbCadbGetCellref;
+                my $pinType = $PLDB{$cellref}->dbMdbGetPinType($pinName);
+                my $pinDir  = $PLDB{$cellref}->dbMdbGetPinDir($pinName);
+                my $cellType = $PLDB{$cellref}->dbMdbGetType;
+#                print " $pinType $pinDir $cellType\n";
+                if ( $pinType == 9 && $cellType == 1 ) { $driverInst = $instance; }
+                elsif ( $pinType == 0 && $cellType == 0 && $pinDir == 1 ) {$driverInst = $instance; }
+                else { }
+                                                       }# if the instance connected is a component
+                elsif ( exists $PORTS_ALREADY{$TOP_MODULE}{$instance} ) {
+                my $dir = $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortGetDir;
+                if ( $dir eq "input" ) { $driverInst = $instance; } else {}
+                                                                       }#if the instance is a port from verilog
+                elsif ( $instance eq "PIN" ) {
+                my $portName = $NETS_ALREADY{$netName}{$instance};
+                $driverInst = $portName;
+#                print "$portName\n";
+                                             }# if connects to a port
+                else { print "WARN-ALGO_PREPL : 001 : connecting instance is unknown type\n"; }
+                                                              }# for each instance connected to net
+                                         }# if net exits in the databse 
+else { print "ERR-ALGO_PREPL : 002 : net $netName does not exist in the database\n"; }
+return($driverInst);
+}# sub dbPlaceTraceGetNetDriver
+
+sub dbPlaceTraceGetNetSinks {
+my $netName = $_[0];
+my $clockMode = $_[1];
+print "DBG-ALGO_PREPL : 001 : \-\>$netName\n" if ($DEBUG == 329);
+my @sinkList = ();
+#----- if the netname is empty ------#
+if($netName =~ /^\s*$/) {last;}
+   if ( exists $NETS_ALREADY{$netName} ) {
+        foreach my $instance ( keys %{$NETS_ALREADY{$netName}} ) {
+#                print "$instance\n" if ($DEBUG == 329);
+                if ( exists $COMP_ALREADY{$instance} ) {
+                my $pinName = $NETS_ALREADY{$netName}{$instance};
+#                print "$instance $pinName\n" if ($DEBUG == 329);
+                my $cellref = $CADB{$instance}->dbCadbGetCellref;
+                my $pinType = $PLDB{$cellref}->dbMdbGetPinType($pinName);
+                my $pinDir  = $PLDB{$cellref}->dbMdbGetPinDir($pinName);
+                my $cellType = $PLDB{$cellref}->dbMdbGetType;
+                print "DBG-ALGO_PREPL : 002 : ----> $cellref=$cellType   $pinName:$pinType:$pinDir\n" if ($DEBUG == 329);
+                if ( $pinDir != 0 ) {
+                  next; # skip anything other than input pins
+                } 
+                if ( $cellType == 1 ) {
+                  if ( $pinType != 3 || $clockMode ) {
+                    $sinkInst = $instance;
+#                   print "sink is $sinkInst\n";
+                    push(@sinkList,$sinkInst);
+                  }
+                }
+                elsif ( $cellType == 0 && $pinType == 0 ) {
+                  $sinkInst = $instance; 
+#                 print "sink is $sinkInst\n";
+                  push(@sinkList,$sinkInst);
+                }
+                                                       }# if the instance connected is a component
+                elsif ( exists $PORTS_ALREADY{$TOP_MODULE}{$instance} ) {
+                my $dir = $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortGetDir;
+                if ( $dir eq "input" ) { $driverInst = $instance; } 
+                elsif ( $dir eq "output" ) { $sinkInst = $instance; 
+#                                           print "sink is port:  $sinkInst\n";
+                                            push(@sinkList,$sinkInst);
+                                            }
+                                                                        }#if the instance is a port from verilog
+                elsif ( $instance eq "PIN" ) {
+                my $portName = $NETS_ALREADY{$netName}{$instance};
+                $driverInst = $portName;
+#               print "$portName\n";
+                $sinkInst = $driverInst; 
+#               print "sink is port:  $sinkInst\n";
+                push(@sinkList,$sinkInst);
+
+                                             }# if connects to a port
+                else { print "WARN-ALGO_PREPL : 003 : connecting instance is unknown type\n"; }
+                                                              }# for each instance connected to net
+                                         }# if net exits in the databse
+else { print "ERR-ALGO_PREPL : 004 : net $netName does not exist in the database\n"; }
+print "DBG-ALGO_PREPL : 005 : sinklist of $netName @sinkList\n" if ($DEBUG == 329);
+return(@sinkList);
+}#sub dbPlaceTraceGetNetSinks
+
+1;

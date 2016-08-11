@@ -1,0 +1,175 @@
+sub initKB {
+
+#****f* /initKB
+# NAME
+#     initKB
+# FUNCTION
+#         It initailize the database and create table.
+# SYNOPSIS
+
+# INPUTS
+#      options :
+
+# OUTPUTS
+
+#****
+#print "INFO : initaillizing the database \n";
+
+#      $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","qaadmin","qaadmin" ) || die "Cannot connect: $DBI::errstr";
+#      $sth = $dbh->prepare("SHOW TABLES LIKE 'designStat'");
+#      $sth->execute();
+#      my $name = $sth->fetch();
+#      if ($name->[0]) {
+#      print "$name->[0] table exists\n";
+#      $GLOBAL->dbfGlobalSetInitializeDB(1);
+#      return;
+#      }
+#      else {
+      print "ERR-KNLBSE-INITKB : 001 : table does not exists\n";
+      print "INFO-KNLBSE-INITKB : 002 : Creating table\n";
+      print "INFO-KNLBSE-INITKB : 003 : initaillizing the database \n";
+
+      #$dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","qaadmin","qaadmin" ) || die "Cannot connect: $DBI::errstr";
+      $dbh = DBI->connect( "dbi:mysql:qadb:divakar","qaadmin","qaadmin" ) || die "Cannot connect: $DBI::errstr";
+      my $sql = qq{CREATE TABLE designStat (
+      TestName VARCHAR(255),
+      TestPath VARCHAR(255),
+      design VARCHAR(255),
+      ID VARCHAR(255),
+      TID INT,
+      RID INT,
+      ScriptName VARCHAR(255),
+      LastExecDate VARCHAR(255),
+      node VARCHAR(255),
+      nodeLock INT,
+      estRunTime VARCHAR(255),
+      estMemUsage VARCHAR(255),
+      actRunTime VARCHAR(255),
+      actMemUsage VARCHAR(255),
+      Status INT,
+      DepStr VARCHAR(255),
+      compCnt INT,
+      netCnt INT,
+      inCnt INT,
+      outCnt INT, 
+      seqCnt INT,
+      combiCnt INT,
+      toolName VARCHAR(255),
+      cvsPath VARCHAR(255),
+      TestCategory VARCHAR(255),
+      toolVer VARCHAR(255),
+      toolBuildDate VARCHAR(255),
+      execDate VARCHAR(255),
+      CLK FLOAT,
+      WNS FLOAT,
+      TNS FLOAT,
+      TP INT,
+      TVP INT,
+      DRC FLOAT,
+      tech FLOAT,
+      numlayers INT,
+      PVT INT,
+      Vth INT,
+      VoltD INT,
+      RouteLen FLOAT,
+      Unroutes INT,
+      Vias INT,
+      clockD INT )};
+      my $return = $dbh->do($sql);
+
+$GLOBAL->dbfGlobalSetInitializeDB(1);
+#      }
+}#sub initKB
+#&initKB;
+
+sub register_testcase {
+my $DBvalue = $GLOBAL->dbfGlobalGetInitializeDB;
+if ( $DBvalue == 0 ) {
+  print "WARN-KNLBSE-RGSTR_TSTCSE : 001 : first call IntKB to create database table\n";
+  return;
+}
+my $noOfArguments = @_;
+my $testName = "";
+my $path = "";
+my $script = "";
+my $category = "";
+my $toolName = "";
+my $cvsPath = "";
+if( $noOfArguments < 2 || $_[0] eq '-h') { print "Usage : register_testcase -name <name of the testcase> \n";
+                           print "                  -path   <path where the testcase resides> \n";
+                           print "                  -script   <script to run testcase > \n";
+                           print "                  -category   <category testcase belongs to> \n";
+                           print "                  [-freq]   <how oftern to run, in terms of hours> \n";
+                           print "                  [-mac]   <machine on which the testcase must be run> \n";
+                           print "                  [-macLock]   <is the testcase marked to be machine locked, if --macLock is used, -mac option must be provided> \n";
+                         }
+else { # if correct no. of inputs
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-name"){$testName = $_[$i+1];}
+if($_[$i] eq "-path"){$path = $_[$i+1];}
+if($_[$i] eq "-script"){$script = $_[$i+1];}
+if($_[$i] eq "-category"){$category = $_[$i+1];}
+if($_[$i] eq "-toolName"){$toolName = $_[$i+1];}
+if($_[$i] eq "-cvsPath"){$cvsPath = $_[$i+1];}
+if($_[$i] eq "-mac"){$macName = $_[$i+1];}
+if($_[$i] eq "-macLock"){$maclock = $_[$i+1];}
+                                         } # for
+
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","qaadmin","qaadmin" ) || die "Cannot connect: $DBI::errstr";
+
+my $sth = $dbh->prepare( "SELECT COUNT(*) FROM designStat  WHERE TestName=? ");
+$sth->execute($testName);
+   my $resCount = $sth->fetch;
+   if ($resCount->[0] == 0 ) {
+      my $newTestID = &dbSQLgetNewID();
+      print "INFO-KNLBSE-RGSTR_TSTCSE : 002 : adding new data for $testName with TID:$newTestID\n";
+      $dbh->do( "INSERT INTO designStat (TestName)  VALUES ( '$testName') " );
+      $dbh->do( "UPDATE designStat SET TestPath = '$path' WHERE TestName='$testName'" );
+      $dbh->do( "UPDATE designStat SET ScriptName = '$script' WHERE TestName='$testName'" );
+      $dbh->do( "UPDATE designStat SET TestCategory = '$category' WHERE TestName='$testName'" );
+      $dbh->do( "UPDATE designStat SET toolName = '$toolName' WHERE TestName='$testName'" );
+      $dbh->do( "UPDATE designStat SET cvsPath = '$cvsPath' WHERE TestName='$testName'" );
+      $dbh->do( "UPDATE designStat SET Status = '0' WHERE TestName='$testName'" );
+      $dbh->do( "UPDATE designStat SET TID = '$newTestID' WHERE TestName='$testName'" );
+      $dbh->do( "UPDATE designStat SET RID = '0' WHERE TestName='$testName'" );
+      my $id = $newTestID.".".0;
+      print "$id\n";
+      $dbh->do( "UPDATE designStat SET ID = '$newTestID' WHERE TestName='$testName'" );
+      $dbh->do( "UPDATE designStat SET node = '$macName' WHERE TestName='$testName'" );
+      $dbh->do( "UPDATE designStat SET nodeLock = '$maclock' WHERE TestName='$testName' AND node = '$macName'" );
+      
+                              }
+   else { 
+        print "WARN-KNLBSE-RGSTR_TSTCSE : 003 : The testcase $testName is already registered, You can update the testcase with new results\n";
+        }
+#$dbh->finish;
+#&dbfRefreshKBView($hlist);
+
+      }# if correct number of arguments
+}#sub register_testcase
+
+sub dbSQLgetNewID {
+my $DBvalue = $GLOBAL->dbfGlobalGetInitializeDB;
+if ( $DBvalue == 0 ) {
+  print "WARN-KNLBSE : 001 : first call IntKB to create database table\n";
+  return;
+}
+my $resCount = 0;
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","qaadmin","qaadmin" ) || die "Cannot connect: $DBI::errstr";
+my $sth = $dbh->prepare( "SELECT COUNT(*) FROM designStat");
+$sth->execute;
+$resCount = $sth->fetch;
+   #print "resCount : $resCount\n";
+   if ( $resCount->[0] == 0 ) { print "INFO-KNLBSE : 002 : This is the 1st testcase\n"; return(1); }
+   else {
+my $sth = $dbh->prepare("SELECT MAX(TID) FROM designStat" );
+#my $sth = $dbh->prepare( "SELECT MAX(TID) FROM designStat  WHERE TestName=?");
+$sth->execute();
+my $maxIDref = $sth->fetch;
+$maxID = $maxIDref->[0] + 1;
+print "INFO-KNLBSE : 003 : This is the $maxID testcase\n";
+return($maxID);
+       }
+}#sub dbSQLgetNewID
+
+1;

@@ -1,0 +1,178 @@
+###################################################################################################################
+########################################### Design Hierarchy Browser ##############################################
+###################################################################################################################
+#---------------------------------- @ARR, $path and %FRAME_HASH are global ---------------------------------------#
+sub macStyle_design_hierarchy_display {
+use Tk::Pane;  
+my $subWin = MainWindow->new();
+   $subWin->title ("Design Hierarchy Display");
+my $addFrame= $subWin->Frame()->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+my $MainFrame= $subWin->Frame()->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'both');
+my $buttonFrame= $subWin->Frame()->pack(-side => 'bottom');
+
+my $pathLabel = $addFrame->Label(-text=>"Path:")->pack(-side=>'left');
+my $pathEntry = $addFrame->Entry(-textvariable => \$path )->pack(-expand=>1, -fill=>'x',-side=>'left');
+my $top_pane = $MainFrame->Scrolled(qw/Pane -width 400 -height 400 -scrollbars se -sticky nsew/);
+   $top_pane->Subwidget("xscrollbar")->configure(-width=>15,-borderwidth=>1);
+   $top_pane->Subwidget("yscrollbar")->configure(-width=>15,-borderwidth=>1);
+   $top_pane->pack(qw/-side left -anchor w -fill both -expand 1/);
+my $exitButton = $buttonFrame->Button(-text=>"Exit", -command=>sub{$subWin->destroy;})->pack(-side=>"left");;
+
+my $topModule = $TOP_MODULE;
+   if(exists $MODULE_ALREADY{$topModule}){
+      my $topArea = sprintf("%.2f",$MODULE_ALREADY{$topModule}->dbVNOMGetArea);
+      my $cf = $top_pane->Frame(-relief=>"groove", -borderwidth=>4,-background=>"light gray");
+         $cf->pack(qw/-fill both -expand 1 -side left -anchor w /);
+         $topButton = $cf->Button(-text=>$topModule,-relief=>"flat", -foreground=>"orange", -background=>"light gray",
+                                  -command=>sub{&delete_frame($topModule,$topModule,0);
+                                                &display_HinstLinstList($topModule,$topModule,$top_pane);
+                                                $topButton->configure(-background=>"white");
+                                                $path = $topModule;
+                                   })->pack(-side=>'top',-fill=>'x');
+        $top_baloon = $cf->Balloon();
+        $top_baloon->attach($topButton, -balloonmsg =>"CellRef: $topModule\nArea: $topArea");
+
+   }#if TOP_MODULE exists
+
+my $path2eq = $GLOBAL->dbfGlobalGetProtonHome;
+my $search_image = $subWin->Photo(-file=> "$path2eq/ETC/b5_magnify2.gif");
+   $addFrame->Button(-image=>$search_image,-padx=>0,-pady=>0,-width=>22, -height=>20,
+                     -command=>sub{my @inst = split(/\//,$path);
+                                   @CELLREF = ();
+                                   for(my $i=0; $i<=$#inst; $i++){
+                                       if($i==0){
+                                          $topButton->eventGenerate('<Enter>');
+                                          $topButton->eventGenerate('<ButtonPress-1>');
+                                          $topButton->eventGenerate('<ButtonRelease-1>'); 
+                                          push(@CELLREF, $inst[0]); 
+                                       }else{
+                                          my $parent = $CELLREF[$i-1];
+                                          my $cellref = $MODULE_ALREADY{$parent}->dbVNOMGetHierInstCell($inst[$i]);  
+                                          &highlight_selectedHinst($parent,$cellref,$inst[$i]);
+                                          &display_HinstLinstList($cellref,$inst[$i],$top_pane);
+                                          push(@CELLREF, $cellref); 
+                                          push(@ARR,$inst[$i]." ".$cellref);
+                                       }
+                                   }
+                                   $path = join "/", @inst;
+                        })->pack(-side=>"right");
+}#sub macStyle_design_hierarchy_display
+
+#------------------------------------ displaying the list of Hinst and Linst --------------------------------------#
+sub display_HinstLinstList {
+my $moduleName = $_[0];
+my $Inst = $_[1];
+my $topFrame = $_[2];
+my $frame;
+if(exists $MODULE_ALREADY{$moduleName}){
+   my @hierInsts = $MODULE_ALREADY{$moduleName}->dbVNOMGetHierInst;
+   my @leafInsts = $MODULE_ALREADY{$moduleName}->dbVNOMGetLeafInst;
+   my $count = 0;
+   my $stdCellArea = 0;
+   if(($#hierInsts + $#leafInsts) > -2){
+       $frame = $topFrame->Frame(-relief=>"groove", -borderwidth=>4,-background=>"light gray");
+       $frame->pack(qw/-fill both -expand 1 -side left -anchor w /);
+       $FRAME_HASH{$moduleName.$Inst} = $frame;
+   }else{return;}
+   foreach my $inst (sort @hierInsts){
+           my $cellref = $MODULE_ALREADY{$moduleName}->dbVNOMGetHierInstCell($inst);
+           if(exists $MODULE_ALREADY{$cellref}){
+              my $hinstArea = sprintf("%.2f",$MODULE_ALREADY{$cellref}->dbVNOMGetArea);
+              ${"button".$inst.$cellref} = $frame->Button(-text=>$inst,-relief=>"flat", -foreground=>"orange2",-background=>"light gray", 
+                                          -command=>sub{&delete_frame($moduleName,$Inst,1); 
+                                                        &display_HinstLinstList($cellref,$inst,$topFrame);
+                                                        &highlight_selectedHinst($moduleName,$cellref,$inst);
+                                                        &get_selected_path($moduleName);
+                                                        push(@ARR,$inst." ".$cellref);
+                                                        my @pathVar = ();
+                                                        for(my $i = 0; $i <=$#ARR; $i++){
+                                                            my ($INST, $MOD) = (split(/\s+/,$ARR[$i]));
+                                                            push(@pathVar,$INST);
+                                                        }
+                                                        $path = $TOP_MODULE."\/".join "\/", @pathVar; 
+                                          })->pack(-side=>'top',-fill=>'x');
+              $hinst_baloon = $frame->Balloon();
+              $hinst_baloon->attach(${"button".$inst.$cellref}, -balloonmsg =>"CellRef: $cellref\nArea: $hinstArea");
+           }#if cellref exists 
+   }#foreach hinst
+   foreach my $linst (sort @leafInsts){
+           my $cellref = $MODULE_ALREADY{$moduleName}->dbVNOMGetLeafInstCell($linst);
+           my @size = $PLDB{$cellref}->dbMdbGetSize;
+           my $linstArea = sprintf("%.2f",$size[0]*$size[1]);
+           if(exists $PLDB{$cellref}){
+              my $class = $PLDB{$cellref}->dbMdbGetClass;
+              if($class eq "BLOCK"){
+                 my $button = $frame->Button(-text=>$linst,-relief=>"flat",-foreground=>"lime green",-background=>"light gray")->pack(-side=>'top');
+                 $linst_baloon = $frame->Balloon();
+                 $linst_baloon->attach($button, -balloonmsg =>"CellRef: $cellref\nArea: $linstArea");
+              }else{$count++; $stdCellArea = $stdCellArea+ $linstArea;}
+           }#if cellref exists in PLDB 
+   }#foreach linst
+   $stdcellbutton = $frame->Button(-text=>"StdCells[$count]",-relief=>"flat",-foreground=>"lime green",-background=>"light gray")->pack(-side=>'top',-fill=>'x') if($count > 0);
+   $stdCell_baloon = $frame->Balloon() if($count > 0);
+   $stdCellArea = sprintf("%.2f",$stdCellArea);
+   $stdCell_baloon->attach($stdcellbutton, -balloonmsg =>"Area: $stdCellArea") if($count > 0);
+}#if parent module exists
+}#sub display_HinstLinstList
+
+#-------------------------------------------- deleting the frames ------------------------------------------------#
+sub delete_frame {
+my $moduleName = $_[0];
+my $Inst = $_[1];
+my $t = $_[2];
+if(exists $MODULE_ALREADY{$moduleName}){
+   if($t == 0){
+      if(Exists $FRAME_HASH{$moduleName.$Inst}){
+         my $frame = $FRAME_HASH{$moduleName.$Inst};
+         $frame->destroy;
+      }
+   }#if t=0 (for topModule) 
+   my @hierInsts = $MODULE_ALREADY{$moduleName}->dbVNOMGetHierInst;
+   foreach my $inst (@hierInsts){
+           my $cellref = $MODULE_ALREADY{$moduleName}->dbVNOMGetHierInstCell($inst);
+           if(Exists $FRAME_HASH{$cellref.$inst}){
+              my $frame1 = $FRAME_HASH{$cellref.$inst};
+              $frame1->destroy;
+           } 
+           &delete_frame($cellref,$inst);
+   }#foreach hinst
+}#if module exists
+}#sub delete_frame
+
+sub get_selected_path{
+my $parent = $_[0];
+if(exists $MODULE_ALREADY{$parent}){
+   my @hierInsts = $MODULE_ALREADY{$parent}->dbVNOMGetHierInst;
+   foreach my $inst (@hierInsts){
+           my $cellref = $MODULE_ALREADY{$parent}->dbVNOMGetHierInstCell($inst);
+           if($#ARR <= -1){return;}
+           for(my $i = 0; $i <=$#ARR; $i++){
+               my ($arr_inst, $arr_cell) = (split(/\s+/,$ARR[$i]))[0,1];
+               if(($inst eq $arr_inst) && ($cellref eq $arr_cell) ){
+                   delete $ARR[$i];
+               }
+           }
+           &get_selected_path($cellref);
+   }
+}#if exists parent module
+}#sub get_selected_path
+
+sub highlight_selectedHinst{
+my $parent = $_[0];
+my $SelMod = $_[1];
+my $SelInst = $_[2];
+if(exists $MODULE_ALREADY{$parent}){
+   my @hierInsts = $MODULE_ALREADY{$parent}->dbVNOMGetHierInst;
+   foreach my $inst (@hierInsts){
+           my $cellref = $MODULE_ALREADY{$parent}->dbVNOMGetHierInstCell($inst);
+           if($inst eq $SelInst && $cellref eq $SelMod){
+              ${"button".$inst.$cellref}->configure(-background=>"white");
+           }else{${"button".$inst.$cellref}->configure(-background=>"light gray");}
+   }
+}
+}#sub highlight_selectedHinst
+###################################################################################################################
+###########################################  ##############################################
+###################################################################################################################
+
+1;

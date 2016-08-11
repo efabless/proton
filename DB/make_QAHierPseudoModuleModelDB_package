@@ -1,0 +1,994 @@
+package PseudoModuleModelDB;
+
+# TOP : is the module top module or not 0 : not top module
+#                                        1 : is top module
+# PM : Parent Module Name
+# TC : Timing Complexity
+# RC : Routing Complexity
+# PC : Placement complexity
+# PwrC : Power complexity
+# CLASS : the class is in conjunction with MODULE_ALREADY and hence DLDB
+#         0 -> soft : default
+#         11 -> blackbox
+#         8 -> parametric RTL element
+# FP : Floorplan associated when editing this module
+# PShp : Pin shapes, ($layer @bbox), bit blasted
+# PGde : Pin guides
+
+
+sub new {
+my $dd = {
+          TOP => 0,
+          PM => "UND",
+          MN => "UND",
+          CL => "UND",
+          RST => "UND",
+          Master => "UND",
+#         Size => [],
+          nOut => 0,
+          nIn  => 0,
+          nBidi => 0,
+          SeqComp => 0,
+          CombComp => 0,
+          HardComp => 0,
+          HierComp => 0,
+          TotalComp => 0,
+          TC => 0,
+          RC => 0,
+          PC => 0,
+          PwrC => 0,
+          nCluster => 0,
+          ClkIn => [],
+          VD => "UND",
+          TYPE => "GUIDE",
+          CLASS => 0,
+          ins => InsDB::createEmpty(),
+          outs => OutsDB::createEmpty(),
+          bidis => BidiDB::createEmpty(),
+          FP => "",
+#         PShp => MacroPinDB::createEmpty(),
+#         PGde => PinGuideDB::createEmpty(),
+          LDirty => 0,
+          PDirty => 0,
+          Rblkg => [],
+          };
+bless $dd, 'PseudoModuleModelDB';
+return $dd;
+}# sub new
+
+sub dbaTstgenSetClass {
+my($self,$class) = @_;
+$self->{CLASS} = $class;
+}#sub dbaTstgenSetClass
+
+sub dbaTstgenGetClass {
+my($self) = @_;
+my $class = $self->{CLASS};
+return($class);
+}#sub dbaTstgenGetClass
+
+#-----------------------------------------#
+sub dbaTstgenSetType {
+my($self,$type) = @_;
+$self->{TYPE} = $type;
+}#sub dbaTstgenSetType
+
+sub dbaTstgenGetType {
+my($self) = @_;
+my $type = $self->{TYPE};
+return($type);
+}#sub dbaTstgenGetType
+#-----------------------------------------#
+sub dbaTstgenSetVoltageDomain {
+my($self,$voltd) = @_;
+$self->{VD} = $voltd;
+}#sub dbaTstgenSetVoltageDomain
+
+sub dbaTstgenGetVoltageDomain {
+my($self) = @_;
+my $voltd = $self->{VD};
+return($voltd);
+}#sub dbaTstgenGetVoltageDomain
+
+#-----------------------------------------#
+
+sub dbaTstgenSetSize {
+my($self,$llx,$lly,$urx,$ury) = @_;
+my $flplan = $self->{FP};
+#<!-- though tempted, do not automatically create floorplan yet,
+#     let the caller assure consistency -->
+if ( defined $flplan && $flplan ne "" &&
+     exists $main::PSEUDO_FLOORPLAN_ALREADY{$flplan} ) {
+  my $dbu = $main::PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanGetDBUnit;
+  $llx *= $dbu; $lly *= $dbu; $urx *= $dbu; $ury *= $dbu;
+  $main::PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanSetSize($llx, $lly, $urx, $ury);
+}
+else {
+#<!-- this should not happen, temporary here until flow is smooth -->
+  my $name = $self->{MN};
+  print "DB-ERR : floorplan $flplan of module $name does not exist\n";
+}
+}#sub dbaTstgenSetSize
+
+sub dbaTstgenGetSize {
+my($self) = @_;
+my @size = ();
+my $flplan = $self->{FP};
+if ( defined $flplan && $flplan ne "" &&
+     exists $main::PSEUDO_FLOORPLAN_ALREADY{$flplan} ) {
+  @size = $main::PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanGetSize;
+  my $dbu = $main::PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanGetDBUnit;
+  for (my $i = 0; $i < @size; $i++) {
+    $size[$i] /= $dbu;
+  }
+}
+return(@size);
+}#sub dbaTstgenGetSize
+
+sub dbgTstgenGetSize {
+my($self) = @_;
+my @size = $self->dbaTstgenGetSize;
+print join ",", @size;
+}#sub dbgTstgenGetSize
+
+
+#-----------------------------------------#
+sub dbaTstgenSetParentModule {
+my($self,$parentName) = @_;
+$self->{PM} = $parentName;
+}#sub dbaTstgenSetParentModule
+
+sub dbaTstgenGetParentModule {
+my($self) = @_;
+my $parentName = $self->{PM};
+return($parentName);
+}#sub dbaTstgenGetParentModule
+
+#-----------------------------------------#
+sub dbaTstgenSetIsModuleTop {
+my ($self, $val) = @_;
+unless ( defined $val ) {
+  $val = 1;
+}
+$self->{TOP} = $val;
+}#sub dbaTstgenSetIsModuleTop
+
+sub dbaTstgenGetIsModuleTop {
+my($self) = @_;
+my $val = $self->{TOP};
+return($val);
+}#sub dbaTstgenGetIsModuleTop
+
+#------------------------------------------#
+
+sub dbaTstgenSetSeqComps {
+my($self,$num) = @_;
+$self->{SeqComp} = $num;
+}#sub dbaTstgenSetSeqComps
+
+sub dbaTstgenGetSeqComps {
+my($self,$num) = @_;
+ $num = $self->{SeqComp};
+return($num)
+}#sub dbaTstgenGetSeqComps
+
+#------------------------------------------#
+
+sub dbaTstgenSetCombComps {
+my($self,$num) = @_;
+$self->{CombComp} = $num;
+}#sub dbaTstgenSetCombComps
+
+sub dbaTstgenGetCombComps {
+my($self) = @_;
+my $num = $self->{CombComp};
+return($num)
+}#sub dbaTstgenGetCombComps
+
+#------------------------------------------#
+
+sub dbaTstgenSetTotalComps {
+my($self,$num) = @_;
+$self->{TotalComp} = $num;
+}#sub dbaTstgenSetTotalComps
+
+sub dbaTstgenGetTotalComps {
+my($self) = @_;
+my $num = $self->{TotalComp};
+return($num)
+}#sub dbaTstgenGetTotalComps
+
+
+#------------------------------------------#
+sub dbaTstgenSetTimingComplexity {
+my($self,$num) = @_;
+$self->{TC} = $num;
+}#sub dbaTstgenSetTimingComplexity
+
+sub dbaTstgenGetTimingComplexity {
+my($self) = @_;
+my $num = $self->{TC};
+return($num)
+}#sub dbaTstgenGetTimingComplexity
+
+#------------------------------------------#
+sub dbaTstgenSetRoutingComplexity {
+my($self,$num) = @_;
+$self->{RC} = $num;
+}#sub dbaTstgenSetRoutingComplexity
+
+sub dbaTstgenGetRoutingComplexity {
+my($self) = @_;
+my $num = $self->{RC};
+return($num)
+}#sub dbaTstgenGetRoutingComplexity
+
+#------------------------------------------#
+sub dbaTstgenSetPlacementComplexity {
+my($self,$num) = @_;
+$self->{PC} = $num;
+}#sub dbaTstgenSetPlacementComplexity
+
+sub dbaTstgenGetPlacementComplexity {
+my($self) = @_;
+my $num = $self->{PC};
+return($num)
+}#sub dbaTstgenGetPlacementComplexity
+
+#------------------------------------------#
+sub dbaTstgenSetPowerComplexity {
+my($self,$num) = @_;
+$self->{PwrC} = $num;
+}#sub dbaTstgenSetPowerComplexity
+
+sub dbaTstgenGetPowerComplexity {
+my($self) = @_;
+my $num = $self->{PwrC};
+return($num)
+}#sub dbaTstgenGetPowerComplexity
+
+#------------------------------------------#
+
+
+sub dbaTstgenSetInCount {
+my($self,$num) = @_;
+$self->{nIn} = $num;
+}#sub dbaTstgenSetInCount
+
+sub dbaTstgenGetInCount {
+my($self) = @_;
+my $num = $self->{nIn};
+return($num)
+}#sub dbaTstgenGetInCount
+
+#------------------------------------------#
+
+sub dbaTstgenSetOutCount {
+my($self,$num) = @_;
+$self->{nOut} = $num;
+}#sub dbaTstgenSetOutCount
+
+sub dbaTstgenGetOutCount {
+my($self) = @_;
+my $num = $self->{nOut};
+return($num)
+}#sub dbaTstgenGetOutCount
+
+#------------------------------------------#
+sub dbaTstgenSetClusterCount {
+my($self,$num) = @_;
+$self->{nCluster} = $num;
+}#sub dbaTstgenSetClusterCount
+
+sub dbaTstgenGetClusterCount {
+my($self) = @_;
+my $num = $self->{nCluster};
+return($num)
+}#sub dbaTstgenGetClusterCount
+
+########### Added By Aditya ###########################
+#-----------------------------------------#
+sub dbaTstgenSetModuleName {
+my($self,$moduleName) = @_;
+$self->{MN} = $moduleName;
+}#sub dbaTstgenSetModuleName
+
+sub dbaTstgenGetModuleName {
+my($self) = @_;
+my $moduleName = $self->{MN};
+return($moduleName);
+}#sub dbaTstgenGetModuleName
+
+#-----------------------------------------#
+sub dbaTstgenSetClkSignal {
+my($self,$clkSignal) = @_;
+$self->{CL} = $clkSignal;
+}#sub dbaTstgenSetClkSignal
+
+sub dbaTstgenGetClkSignal {
+my($self) = @_;
+my $clkSignal = $self->{CL};
+return($clkSignal);
+}#sub dbaTstgenGetClkSignal
+#-----------------------------------------#
+sub dbaTstgenSetRstSignal {
+my($self,$rstSignal) = @_;
+$self->{RST} = $rstSignal;
+}#sub dbaTstgenSetRstSignal
+
+sub dbaTstgenGetRstSignal {
+my($self) = @_;
+my $rstSignal = $self->{RST};
+return($rstSignal);
+}#sub dbaTstgenGetRstSignal
+#-----------------------------------------#
+
+######################################################
+
+
+#-----------------------------------------#
+sub dbaTstgenAddInput {
+my ($self, $in ) = @_;
+if ( $in !~ m/\[.*\:.*\]/ ) {
+  $self->{ins}{$in} = InsDB::new();
+  return;
+}
+
+my $bits = $in;
+$bits =~ s/^.*\[/\[/;
+$in =~ s/\[.*\]//;
+
+unless ( exists $self->{ins}{$in} ) {
+  $self->{ins}{$in} = InsDB::new();
+  $self->{ins}{$in}->{T} = 1;
+  $self->{ins}{$in}->{W} = $bits;
+}
+elsif ( $self->{ins}{$in}->{T} == 1 ) {
+  my ($from, $to) = main::utilGetBitsRange($bits);
+  my ($lo, $hi) = $to > $from ? ($from, $to) : ($to, $from);
+  my $hasBits = $self->{ins}{$in}->{W};
+  ($from, $to) = main::utilGetBitsRange($hasBits);
+  my ($curLo, $curHi) = $to > $from ? ($from, $to) : ($to, $from);
+  $lo = $lo < $curLo ? $lo : $curLo;
+  $hi = $hi > $curHi ? $hi : $curHi;
+  $bits = "\[$lo:$hi\]";
+  $self->{ins}{$in}->{W} = $bits;
+}
+}#sub dbaTstgenAddInput
+
+sub dbaTstgenGetInput {
+my ($self) = @_;
+my @in = ();
+   foreach my $in ( keys %{$self->{ins}} ) { push(@in,$in); }
+return(@in);
+}#sub dbaTstgenGetInput
+
+sub dbaTstgenHasInput {
+my ($self, $in ) = @_;
+my $bits;
+if ( $in =~ m/\[.*\:.*\]/ ) {
+  ($bits = $in) =~ s/^.*\[/\[/;
+  $in =~ s/\[.*\]//;
+}
+unless ( exists $self->{ins}{$in} ) {
+  return 0;
+}
+unless ( defined $bits ) {
+  return 1;
+}
+
+my ($from, $to) = main::utilGetBitsRange($bits);
+my ($lo, $hi) = $to > $from ? ($from, $to) : ($to, $from);
+$bits = $self->{ins}{$in}->{W};
+($from, $to) = main::utilGetBitsRange($bits);
+my ($curLo, $curHi) = $to > $from ? ($from, $to) : ($to, $from);
+
+return ($curLo <= $lo && $hi <= $curHi);
+}#sub dbaTstgenHasInput
+
+#-----------------------------------------#
+sub dbaTstgenSetInputType {
+my ($self, $pin, $type ) = @_;
+if ( exists $self->{ins}{$pin} ) {
+  $self->{ins}{$pin}->{T} = $type;
+}
+}#sub dbaTstgenSetInputType
+
+sub dbaTstgenGetInputType {
+my ($self,$pin) = @_;
+my $type;
+if ( exists $self->{ins}{$pin} ) {
+  $type = $self->{ins}{$pin}->{T};
+}
+return($type);
+}#sub dbaTstgenGetInputType
+
+#-----------------------------------------#
+sub dbaTstgenSetInputBits {
+my ($self, $pin, $bits ) = @_;
+if ( exists $self->{ins}{$pin} ) {
+  $self->{ins}{$pin}->{W} = $bits;
+}
+}#sub dbaTstgenSetInputBits
+
+sub dbaTstgenGetInputBits {
+my ($self,$pin) = @_;
+my $bits;
+if ( exists $self->{ins}{$pin} ) {
+  $bits = $self->{ins}{$pin}->{W};
+}
+return($bits);
+}#sub dbaTstgenGetInputBits
+
+#-----------------------------------------#
+sub dbaTstgenAddOutput {
+my ($self, $out ) = @_;
+if ( $out !~ m/\[.*\:.*\]/ ) {
+  $self->{outs}{$out} = OutsDB::new();
+  return;
+}
+
+my $bits = $out;
+$bits =~ s/^.*\[/\[/;
+$out =~ s/\[.*\]//;
+
+unless ( exists $self->{outs}{$out} ) {
+  $self->{outs}{$out} = OutsDB::new();
+  $self->{outs}{$out}->{T} = 1;
+  $self->{outs}{$out}->{W} = $bits;
+}
+elsif ( $self->{outs}{$out}->{T} == 1 ) {
+  my ($from, $to) = main::utilGetBitsRange($bits);
+  my ($lo, $hi) = $to > $from ? ($from, $to) : ($to, $from);
+  my $hasBits = $self->{outs}{$out}->{W};
+  ($from, $to) = main::utilGetBitsRange($hasBits);
+  my ($curLo, $curHi) = $to > $from ? ($from, $to) : ($to, $from);
+  $lo = $lo < $curLo ? $lo : $curLo;
+  $hi = $hi > $curHi ? $hi : $curHi;
+  $bits = "\[$lo:$hi\]";
+  $self->{outs}{$out}->{W} = $bits;
+}
+}#sub dbaTstgenAddOutput
+
+sub dbaTstgenGetOutput {
+my ($self) = @_;
+my @out = ();
+   foreach my $out ( keys %{$self->{outs}} ) { push(@out,$out); }
+return(@out);
+}#sub dbaTstgenGetOutput
+
+sub dbaTstgenHasOutput {
+my ($self, $out ) = @_;
+my $bits;
+if ( $out =~ m/\[.*\:.*\]/ ) {
+  ($bits = $out) =~ s/^.*\[/\[/;
+  $out =~ s/\[.*\]//;
+}
+unless ( exists $self->{outs}{$out} ) {
+  return 0;
+}
+unless ( defined $bits ) {
+  return 1;
+}
+my ($from, $to) = main::utilGetBitsRange($bits);
+my ($lo, $hi) = $to > $from ? ($from, $to) : ($to, $from);
+$bits = $self->{outs}{$out}->{W};
+($from, $to) = main::utilGetBitsRange($bits);
+my ($curLo, $curHi) = $to > $from ? ($from, $to) : ($to, $from);
+
+return ($curLo <= $lo && $hi <= $curHi);
+}#sub dbaTstgenHasOutput
+
+#-----------------------------------------#
+sub dbaTstgenSetOutputType {
+my ($self, $pin, $type ) = @_;
+if ( exists $self->{outs}{$pin} ) {
+  $self->{outs}{$pin}->{T} = $type;
+}
+}#sub dbaTstgenSetOutputType
+
+sub dbaTstgenGetOutputType {
+my ($self,$pin) = @_;
+my $type;
+if ( exists $self->{outs}{$pin} ) {
+  $type = $self->{outs}{$pin}->{T};
+}
+return($type);
+}#sub dbaTstgenGetOutputType
+
+#-----------------------------------------#
+sub dbaTstgenSetOutputBits {
+my ($self, $pin, $bits ) = @_;
+if ( exists $self->{outs}{$pin} ) {
+  $self->{outs}{$pin}->{W} = $bits;
+}
+}#sub dbaTstgenSetOutputBits
+
+sub dbaTstgenGetOutputBits {
+my ($self,$pin) = @_;
+my $bits;
+if ( exists $self->{outs}{$pin} ) {
+  $bits = $self->{outs}{$pin}->{W};
+}
+return($bits);
+}#sub dbaTstgenGetOutputBits
+
+#-----------------------------------------#
+sub dbaTstgenAddBidi {
+my ($self, $bidi ) = @_;
+if ( $bidi !~ m/\[.*\:.*\]/ ) {
+  $self->{bidis}{$bidi} = BidiDB::new();
+  return;
+}
+
+my $bits = $bidi;
+$bits =~ s/^.*\[/\[/;
+$bidi =~ s/\[.*\]//;
+
+unless ( exists $self->{bidis}{$bidi} ) {
+  $self->{bidis}{$bidi} = BidiDB::new();
+  $self->{bidis}{$bidi}->{T} = 1;
+  $self->{bidis}{$bidi}->{W} = $bits;
+}
+elsif ( $self->{bidis}{$bidi}->{T} == 1 ) {
+  my ($from, $to) = main::utilGetBitsRange($bits);
+  my ($lo, $hi) = $to > $from ? ($from, $to) : ($to, $from);
+  my $hasBits = $self->{bidis}{$bidi}->{W};
+  ($from, $to) = main::utilGetBitsRange($hasBits);
+  my ($curLo, $curHi) = $to > $from ? ($from, $to) : ($to, $from);
+  $lo = $lo < $curLo ? $lo : $curLo;
+  $hi = $hi > $curHi ? $hi : $curHi;
+  $bits = "\[$lo:$hi\]";
+  $self->{bidis}{$bidi}->{W} = $bits;
+}
+}#sub dbaTstgenAddBidi
+
+sub dbaTstgenGetBidi {
+my ($self) = @_;
+my @bidi = ();
+   foreach my $bidi ( keys %{$self->{bidis}} ) { push(@bidi,$bidi); }
+return(@bidi);
+}#sub dbaTstgenGetBidi
+
+sub dbaTstgenHasBidi {
+my ($self, $bidi) = @_;
+my $bits;
+if ( $bidi =~ m/\[.*\:.*\]/ ) {
+  ($bits = $bidi) =~ s/^.*\[/\[/;
+  $bidi =~ s/\[.*\]//;
+}
+unless ( exists $self->{bidis}{$bidi} ) {
+  return 0;
+}
+unless ( defined $bits ) {
+  return 1;
+}
+my ($from, $to) = main::utilGetBitsRange($bits);
+my ($lo, $hi) = $to > $from ? ($from, $to) : ($to, $from);
+$bits = $self->{bidis}{$bidi}->{W};
+($from, $to) = main::utilGetBitsRange($bits);
+my ($curLo, $curHi) = $to > $from ? ($from, $to) : ($to, $from);
+
+return ($curLo <= $lo && $hi <= $curHi);
+}#sub dbaTstgenHasBidi
+
+#-----------------------------------------#
+sub dbaTstgenSetBidiType {
+my ($self, $pin, $type ) = @_;
+if ( exists $self->{bidis}{$pin} ) {
+  $self->{bidis}{$pin}->{T} = $type;
+}
+}#sub dbaTstgenSetBidiType
+
+sub dbaTstgenGetBidiType {
+my ($self,$pin) = @_;
+my $type;
+if ( exists $self->{bidis}{$pin} ) {
+  $type =$self->{bidis}{$pin}->{T};
+}
+return($type);
+}#sub dbaTstgenGetBidiType
+
+#-----------------------------------------#
+sub dbaTstgenSetBidiBits {
+my ($self, $pin, $bits ) = @_;
+if ( exists $self->{bidis}{$pin} ) {
+  $self->{bidis}{$pin}->{W} = $bits;
+}
+}#sub dbaTstgenSetBidiBits
+
+sub dbaTstgenGetBidiBits {
+my ($self,$pin) = @_;
+my $bits;
+if ( exists $self->{bidis}{$pin} ) {
+  $bits =$self->{bidis}{$pin}->{W};
+}
+return($bits);
+}#sub dbaTstgenGetBidiBits
+
+#-----------------------------------------#
+
+sub dbaTstgenGetDirty {
+my($self) = @_;
+my $bit = ($self->{LDirty} || $self->{PDirty}) ? 1 : 0;
+return($bit)
+}#sub dbaTstgenGetDirty
+
+sub dbaTstgenSetLogicalDirty {
+my($self,$bit) = @_;
+unless ( defined $bit ) {
+  $bit = 1;
+}
+$self->{LDirty} = $bit;
+}#sub dbaTstgenSetLogicalDirty
+
+sub dbaTstgenGetLogicalDirty {
+my($self) = @_;
+my $bit = $self->{LDirty};
+return($bit)
+}#sub dbaTstgenGetLogicalDirty
+
+sub dbaTstgenSetPhysicalDirty {
+my($self,$bit) = @_;
+unless ( defined $bit ) {
+  $bit = 1;
+}
+$self->{PDirty} = $bit;
+}#sub dbaTstgenSetPhysicalDirty
+
+sub dbaTstgenGetPhysicalDirty {
+my($self) = @_;
+my $bit = $self->{PDirty};
+return($bit)
+}#sub dbaTstgenGetPhysicalDirty
+
+#-----------------------------------------#
+
+sub dbaTstgenSetFloorplan {
+my ($self, $flplan) = @_;
+$self->{FP} = $flplan;
+if ( defined $flplan && $flplan ne "" &&
+     ! exists $main::PSEUDO_FLOORPLAN_ALREADY{$flplan} ) {
+  $main::PSEUDO_FLOORPLAN_ALREADY{$flplan} = Floorplan::new();
+  $main::PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanSetID($flplan);
+  $main::PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanSetCellref($self->{MN});
+}
+}#sub dbaTstgenSetFloorplan
+
+sub dbaTstgenGetFloorplan {
+my ($self) = @_;
+my $flplan = $self->{FP};
+return ($flplan);
+}#sub dbaTstgenGetFloorplan
+
+sub dbaTstgenLoadFloorplan {
+my ($self, $srcFP, $bndry) = @_;
+my $flplan = $self->{FP};
+if ( defined $flplan && $flplan ne "" &&
+     exists $main::PSEUDO_FLOORPLAN_ALREADY{$flplan} ) {
+  if ( defined $bndry && $bndry ) {
+    $main::PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanCopyBoundary($srcFP);
+  }
+  else {
+    $main::PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanCopy($srcFP);
+  }
+}
+}#sub dbaTstgenLoadFloorplan
+
+sub dbaTstgenListFloorplan {
+my ($self) = @_;
+my @flplans = ();
+foreach my $fp ( keys %{main::PSEUDO_FLOORPLAN_ALREADY} ) {
+  if ( $main::PSEUDO_FLOORPLAN_ALREADY{$fp}->dbFlplanGetCellref ne $self->{MN} ) {
+    next;
+  }
+  push(@flplans, $fp);
+}
+return (@flplans);
+}#sub dbaTstgenListFloorplan
+
+#-----------------------------------------#
+
+sub dbaTstgenAddPin {
+my ($self, $pinName) = @_;
+my $flplan = $self->{FP};
+if ( defined $flplan && $flplan ne "" &&
+     exists $main::PSEUDO_FLOORPLAN_ALREADY{$flplan} ) {
+  $main::PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanAddPin($pinName);
+}
+else {
+#<!-- this should not happen, temporary here until flow is smooth -->
+  my $name = $self->{MN};
+  print "DB-ERR : floorplan $flplan of module $name does not exist\n";
+}
+}#sub dbaTstgenAddPin
+
+sub dbaTstgenGetPins {
+my ($self) = @_;
+my @pins = ();
+my $flplan = $self->{FP};
+if ( defined $flplan && $flplan ne "" &&
+     exists $main::PSEUDO_FLOORPLAN_ALREADY{$flplan} ) {
+  @pins = $main::PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanGetPinList;
+}
+return @pins;
+}#sub dbaTstgenGetPins
+
+sub dbaTstgenHasPin {
+my ($self, $pinName) = @_;
+my $flplan = $self->{FP};
+if ( defined $flplan && $flplan ne "" &&
+     exists $main::PSEUDO_FLOORPLAN_ALREADY{$flplan} &&
+     $main::PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanHasPin($pinName) ) {
+  return 1;
+}
+return 0;
+}#sub dbaTstgenHasPin
+
+sub dbaTstgenWipePins {
+my ($self) = @_;
+my $flplan = $self->{FP};
+if ( defined $flplan && $flplan ne "" &&
+     exists $main::PSEUDO_FLOORPLAN_ALREADY{$flplan} ) {
+  $main::PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanWipePins;
+}
+}# sub dbaTstgenWipePins
+
+sub dbaTstgenAddPinRect {
+my ($self, $pinName, $shape) = @_;
+my $flplan = $self->{FP};
+if ( defined $flplan && $flplan ne "" &&
+     exists $main::PSEUDO_FLOORPLAN_ALREADY{$flplan} ) {
+  my @vals = split(/\s+/, $shape);
+  if ( @vals >= 4 ) {
+    my $last = @vals - 1;
+    my $first = $last - 3;
+    my $dbu = $main::PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanGetDBUnit;
+    for (my $i = $first; $i <= $last; $i++) {
+      $vals[$i] *= $dbu;
+    }
+    $shape = join(" ", @vals);
+  }
+  $main::PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanAddPinRect($pinName, $shape);
+}
+}#sub dbaTstgenAddPinRect
+
+sub dbaTstgenGetPinRect {
+my ($self, $pinName) = @_;
+my @shapes = ();
+my $flplan = $self->{FP};
+if ( defined $flplan && $flplan ne "" &&
+     exists $main::PSEUDO_FLOORPLAN_ALREADY{$flplan} ) {
+  my @rects = $main::PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanGetPinRect($pinName);
+  my $dbu = $main::PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanGetDBUnit;
+  for (my $k = 0; $k < @rects; $k++) {
+    my $shape = $rects[$k];
+    my @vals = split(/\s+/, $shape);
+    if ( @vals >= 4 ) {
+      my $last = @vals - 1;
+      my $first = $last - 3;
+      for (my $i = $first; $i <= $last; $i++) {
+        $vals[$i] /= $dbu;
+      }
+      $shape = join(" ", @vals);
+    }
+    push(@shapes, $shape);
+  }
+}
+return (@shapes);
+}#sub dbaTstgenGetPinRect
+
+sub dbaTstgenWipePinRect {
+my ($self, $pinName) = @_;
+my $flplan = $self->{FP};
+if ( defined $flplan && $flplan ne "" &&
+     exists $main::PSEUDO_FLOORPLAN_ALREADY{$flplan} ) {
+  $main::PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanWipePinRect($pinName);
+}
+}#sub dbaTstgenWipePinRect
+
+sub dbaTstgenSetPinStatus {
+my ($self, $pinName, $status) = @_;
+my $flplan = $self->{FP};
+if ( defined $flplan && $flplan ne "" &&
+     exists $main::PSEUDO_FLOORPLAN_ALREADY{$flplan} ) {
+  $main::PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanSetPinStatus($pinName, $status);
+}
+}#sub dbaTstgenSetPinStatus
+
+sub dbaTstgenGetPinStatus {
+my ($self, $pinName) = @_;
+my $dflag = 0;
+my $flplan = $self->{FP};
+if ( defined $flplan && $flplan ne "" &&
+     exists $main::PSEUDO_FLOORPLAN_ALREADY{$flplan} ) {
+  $dflag = $main::PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanGetPinStatus($pinName);
+}
+return ($dflag);
+}#sub dbaTstgenGetPinStatus
+
+#-----------------------------------------#
+
+sub dbaTstgenAddPinGuide {
+my ($self, $guide) = @_;
+my $flplan = $self->{FP};
+if ( defined $flplan && $flplan ne "" &&
+     exists $main::PSEUDO_FLOORPLAN_ALREADY{$flplan} ) {
+  $main::PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanAddPinGuide($guide);
+}
+else {
+#<!-- this should not happen, temporary here until flow is smooth -->
+  my $name = $self->{MN};
+  print "DB-ERR : floorplan $flplan of module $name does not exist\n";
+}
+}#sub dbaTstgenAddPinGuide
+
+sub dbaTstgenGetPinGuideList {
+my ($self) = @_;
+my @guides = ();
+my $flplan = $self->{FP};
+if ( defined $flplan && $flplan ne "" &&
+     exists $main::PSEUDO_FLOORPLAN_ALREADY{$flplan} ) {
+  @guides = $main::PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanGetPinGuideList;
+}
+return @guides;
+}#sub dbaTstgenGetPinGuideList
+
+sub dbaTstgenHasPinGuide {
+my ($self, $guide) = @_;
+my $flplan = $self->{FP};
+if ( defined $flplan && $flplan ne "" &&
+     exists $main::PSEUDO_FLOORPLAN_ALREADY{$flplan} &&
+     $main::PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanHasPinGuide($guide) ) {
+  return 1;
+}
+return 0;
+}#sub dbaTstgenHasPinGuide
+
+sub dbaTstgenWipePinGuides {
+my ($self) = @_;
+my $flplan = $self->{FP};
+if ( defined $flplan && $flplan ne "" &&
+     exists $main::PSEUDO_FLOORPLAN_ALREADY{$flplan} ) {
+  $main::PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanWipePinGuides;
+}
+}# sub dbaTstgenWipePinGuides
+
+sub dbaTstgenSetPinGuideType {
+my ($self, $guide, $type) = @_;
+my $flplan = $self->{FP};
+if ( defined $flplan && $flplan ne "" &&
+     exists $main::PSEUDO_FLOORPLAN_ALREADY{$flplan} ) {
+  $main::PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanSetPinGuideType($guide, $type);
+}
+}#sub dbaTstgenSetPinGuideType
+
+sub dbaTstgenGetPinGuideType {
+my ($self, $guide) = @_;
+my $tflag = 1;
+my $flplan = $self->{FP};
+if ( defined $flplan && $flplan ne "" &&
+     exists $main::PSEUDO_FLOORPLAN_ALREADY{$flplan} ) {
+  $tflag = $main::PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanGetPinGuideType($guide);
+}
+return $tflag;
+}#sub dbaTstgenGetPinGuideType
+
+sub dbaTstgenPinGuideIsKeepOut {
+my ($self, $guide) = @_;
+my $flplan = $self->{FP};
+if ( defined $flplan && $flplan ne "" &&
+     exists $main::PSEUDO_FLOORPLAN_ALREADY{$flplan} &&
+     $main::PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanPinGuideIsKeepOut($guide) ) {
+  return 1;
+}
+return 0;
+}#sub dbaTstgenPinGuideIsKeepOut
+
+sub dbaTstgenSetPinGuideLayer {
+my ($self, $guide, $layer) = @_;
+my $flplan = $self->{FP};
+if ( defined $flplan && $flplan ne "" &&
+     exists $main::PSEUDO_FLOORPLAN_ALREADY{$flplan} ) {
+  $main::PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanSetPinGuideLayer($guide, $layer);
+}
+}#sub dbaTstgenSetPinGuideLayer
+
+sub dbaTstgenGetPinGuideLayer {
+my ($self, $guide) = @_;
+my $layer = "";
+my $flplan = $self->{FP};
+if ( defined $flplan && $flplan ne "" &&
+     exists $main::PSEUDO_FLOORPLAN_ALREADY{$flplan} ) {
+  $layer = $main::PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanGetPinGuideLayer($guide);
+}
+return $layer;
+}#sub dbaTstgenGetPinGuideLayer
+
+sub dbaTstgenSetPinGuideBbox {
+my ($self, $guide, $llx, $lly, $urx, $ury) = @_;
+my $flplan = $self->{FP};
+if ( defined $flplan && $flplan ne "" &&
+     exists $main::PSEUDO_FLOORPLAN_ALREADY{$flplan} ) {
+  my $dbu = $main::PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanGetDBUnit;
+  $llx *= $dbu; $lly *= $dbu; $urx *= $dbu; $ury *= $dbu;
+  $main::PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanSetPinGuideBbox($guide,
+                                                    $llx, $lly, $urx, $ury);
+}
+}#sub dbaTstgenSetPinGuideBbox
+
+sub dbaTstgenGetPinGuideBbox {
+my ($self, $guide) = @_;
+my @bbox = ();
+my $flplan = $self->{FP};
+if ( defined $flplan && $flplan ne "" &&
+     exists $main::PSEUDO_FLOORPLAN_ALREADY{$flplan} ) {
+  @bbox = $main::PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanGetPinGuideBbox($guide);
+  my $dbu = $main::PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanGetDBUnit;
+  for (my $i = 0; $i < @bbox; $i++) {
+    $bbox[$i] /= $dbu;
+  }
+}
+return @bbox;
+}#sub dbaTstgenGetPinGuideBbox
+
+sub dbaTstgenPinGuideAddPin {
+my ($self, $guide, $pin) = @_;
+my $flplan = $self->{FP};
+if ( defined $flplan && $flplan ne "" &&
+     exists $main::PSEUDO_FLOORPLAN_ALREADY{$flplan} &&
+     $main::PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanHasPinGuide($guide) ) {
+  $main::PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanPinGuideAddPin($guide, $pin);
+}
+}#sub dbaTstgenPinGuideAddPin
+
+sub dbaTstgenPinGuideRemovePin {
+my ($self, $guide, $pin) = @_;
+my $flplan = $self->{FP};
+if ( defined $flplan && $flplan ne "" &&
+     exists $main::PSEUDO_FLOORPLAN_ALREADY{$flplan} &&
+     $main::PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanHasPinGuide($guide) ) {
+  $main::PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanPinGuideRemovePin($guide, $pin);
+}
+}#sub dbaTstgenPinGuideRemovePin
+
+sub dbaTstgenPinGuideHasPin {
+my ($self, $guide, $pin) = @_;
+my $flplan = $self->{FP};
+if ( defined $flplan && $flplan ne "" &&
+     exists $main::PSEUDO_FLOORPLAN_ALREADY{$flplan} &&
+     $main::PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanHasPinGuide($guide) &&
+     $main::PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanPinGuideHasPin($guide, $pin) ) {
+  return 1;
+}
+return 0;
+}#sub dbaTstgenPinGuideHasPin
+
+sub dbaTstgenPinGuideGetPinList {
+my ($self, $guide) = @_;
+my @pins = ();
+my $flplan = $self->{FP};
+if ( defined $flplan && $flplan ne "" &&
+     exists $main::PSEUDO_FLOORPLAN_ALREADY{$flplan} &&
+     $main::PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanHasPinGuide($guide) ) {
+  @pins = $main::PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanPinGuideGetPinList($guide);
+}
+return @pins;
+}#sub dbaTstgenPinGuideGetPinList
+
+#-----------------------------------------#
+sub dbaTstgenSetrblkg {
+my($self,@rData) = @_;
+push(@{$self->{Rblkg}}, @rData);
+}#sub dbaTstgenSetrblkg
+
+sub dbaTstgenGetrblkg {
+my($self) = @_;
+my @rData = @{$self->{Rblkg}};
+return(@rData);
+}#sub dbaTstgenGetrblkg
+
+#-----------------------------------------#
+
+
+1;

@@ -1,0 +1,253 @@
+#!/bin/perl
+
+package Place;
+
+## explanation of the packages
+## InConeFlops is an array of fanIn connected flops
+## OutConeFlops is an array of fanOut connected flops
+## InConePorts is an array of fanIn connected ports
+## OutConePorts is an array of fanOut connected ports
+## I additionally sort and uniquify the connecting flops and ports
+## L is the array contating x,y location of the flop or port
+## F is the flag separating flop from ports  0 = port 1 = flop default is 1.
+## S is side in case the object is port.
+## InConeCombiNum is the count of components in fanin cone .
+## OutConeCombiNum is the count of components in fancout cone.
+## OL : optimal length
+
+sub new {
+my $connectedInst = {
+                    InConeFlops => [],
+                    InConePorts => [],
+                    OutConeFlops => [],
+                    OutConePorts => [],
+                    L => [],
+                    F => 1,
+                    S => "UND",
+                    InConeCombiNum => 0,
+                    OutConeCombiNum => 0,
+                    OL => 0,
+                    };
+bless $connectedInst, 'Place';
+return $connectedInst;
+}#sub new
+###############################################################
+# Add Flops to FanIn cone array
+sub dbPlaceAddFanInConeFlops {
+my ($self,$instName) = @_;
+   push(@{$self->{InConeFlops}}, $instName);
+}#sub dbPlaceAddFanInConeFlops
+
+# Add Flops to FanOut cone array
+sub dbPlaceAddFanOutConeFlops {
+my ($self,$instName) = @_;
+   push(@{$self->{OutConeFlops}}, $instName);
+}#sub dbPlaceAddFanOutConeFlops
+
+# Add Ports to FanIn cone array
+sub dbPlaceAddFanInConePorts {
+my ($self,$instName) = @_;
+   push(@{$self->{InConePorts}}, $instName);
+}#sub dbPlaceAddFanInConePorts
+
+# Add Ports FanOut cone array
+sub dbPlaceAddFanOutConePorts {
+my ($self,$instName) = @_;
+   push(@{$self->{OutConePorts}}, $instName);
+}#sub dbPlaceAddFanOutConePorts
+
+################################################################
+
+############################################################
+sub dbgPlaceGetConnFlops {
+my ($self) = @_;
+my @connInList  = @{$self->{InConeFlops}};
+my @connOutList  = @{$self->{OutConeFlops}};
+print join ", ", @connInList;
+print join ", ", @connOutList;
+print "\n";
+}#sub dbgPlaceGetConnFlops
+
+sub dbgPlaceGetConnPorts {
+my ($self) = @_;
+my @connInList  = @{$self->{InConePorts}};
+my @connOutList  = @{$self->{OutConePorts}};
+print join ", ", @connInList;
+print join ", ", @connOutList;
+print "\n";
+}#sub dbgPlaceGetConnPorts
+
+sub dbPlaceGetConnFlops {
+my ($self) = @_;
+my @connInList  = @{$self->{InConeFlops}};
+my @connOutList  = @{$self->{OutConeFlops}};
+return(@connInList,@connOutList);
+}#sub dbPlaceGetConnFlops
+
+sub dbPlaceGetConnPorts {
+my ($self) = @_;
+my @connInList  = @{$self->{InConePorts}};
+my @connOutList  = @{$self->{OutConePorts}};
+return(@connInList,@connOutList);
+}#sub dbPlaceGetConnPorts
+############################################################
+######## temporary command ######
+
+sub dbPlaceGetEndPort {
+my ($self) = @_;
+&dbPlaceGetConnPorts($self);
+                      }
+
+sub dbPlaceGetEndFlop {
+my ($self) = @_;
+&dbPlaceGetConnFlops($self);
+                      }
+
+
+
+
+
+
+
+sub dbgPlaceAddLoc {
+my ($self,$x,$y) = @_;
+      push(@{$self->{L}},$x);
+      push(@{$self->{L}},$y);
+}#sub dbgPlaceAddLoc
+######## temporary command ######
+
+sub dbPlaceSetLoc {
+my ($self,$x,$y) = @_;
+      ${$self->{L}}[0]=$x;
+      ${$self->{L}}[1]=$y;
+
+}#sub dbPlaceSetLoc
+
+
+sub dbPlaceGetLoc {
+my $self = shift;
+   my @locList = @{$self->{L}};
+   return(@locList);
+}#sub dbPlaceGetLoc
+
+sub dbgPlaceGetLoc {
+my $self = shift;
+   my @locList = @{$self->{L}};
+   print join ", ", @locList;
+   print "\n";
+}#sub dbgPlaceGetLoc
+
+sub dbPlaceUpdateLoc {
+my ($self,$x,$y) = @_;
+      ${$self->{L}}[0]=$x;
+      ${$self->{L}}[1]=$y;
+}#sub dbPlaceUpdateLoc
+
+sub dbPlaceSortConn {
+my ($self,$x,$y) = @_;
+     my @a = @{$self->{InConeFlops}};
+     @saw{@a} = (); 
+     @{$self->{InConeFlops}} = keys %saw;
+     undef %saw;
+     @a = @{$self->{InConePorts}};
+     @saw{@a} = (); 
+     @{$self->{InConePorts}} = keys %saw;
+     undef %saw;
+     @a = @{$self->{OutConeFlops}};
+     @saw{@a} = (); 
+     @{$self->{OutConeFlops}} = keys %saw;
+     undef %saw;
+     @a = @{$self->{OutConePorts}};
+     @saw{@a} = (); 
+     @{$self->{OutConePorts}} = keys %saw;
+     undef %saw;
+}#sub dbPlaceSortConn
+
+sub dbPlaceSetIsFlop {
+my ($self) = @_;
+    $self->{F} = 1;
+}# sub dbPlaceSetIsFlop
+
+sub dbPlaceGetIsFlop {
+my ($self) = @_;
+   my $flag =  $self->{F};
+return($flag);
+}# sub dbPlaceGetIsFlop
+
+sub dbPlaceSetIsPort {
+my ($self) = @_;
+    $self->{F} = 0;
+}# sub dbPlaceSetIsPort
+
+sub dbPlaceGetIsPort {
+my ($self) = @_;
+   my $flag =  $self->{F};
+return(!$flag);
+}# sub dbPlaceGetIsPort
+
+sub dbPlaceSetPortSide {
+my ($self,$side) = @_;
+       my $flag =  $self->{F};
+    if ( $flag == 0 ) {
+            if ( $side eq "N" ) { $self->{S} = "N"; }
+         elsif (  $side eq "S" ) { $self->{S} = "S"; }
+         elsif (  $side eq "E" ) { $self->{S} = "E"; }
+         elsif (  $side eq "W" ) { $self->{S} = "W"; }
+         elsif (  $side eq "C" ) { $self->{S} = "C"; }
+         else { print "WARN : cannot set $side on $self. please ref to place package explanation... \n"; }
+                      }# if the object is port
+    else { print "WARN : cannot set side on a core area instance\n"; } 
+
+}# sub dbPlaceSetPortSide
+
+sub dbPlaceGetPortSide {
+  my ($self) = @_;
+  my $flag =  $self->{S};
+  return($flag);
+}# sub dbPlaceGetIsPort
+
+sub dbPlaceSetFanOutCount {
+  my ($self,$count) = @_;
+  $self->{OutConeCombiNum} = $count;
+}#sub dbPlaceSetFanOutCount
+
+sub dbPlaceSetFanInCount {
+  my ($self,$count) = @_;
+  $self->{InConeCombiNum} = $count;
+}#sub dbPlaceSetFanInCount
+
+sub dbPlaceGetFanCount {
+  my ($self) = @_;
+  my $InCount = $self->{InConeCombiNum};
+  my $OutCount = $self->{OutConeCombiNum};
+  my $count = $InCount + $OutCount;
+return($count);
+}#sub dbPlaceGetFanCount
+
+sub dbgPlaceGetFanCount {
+  my ($self) = @_;
+  my $InCount = $self->{InConeCombiNum};
+  my $OutCount = $self->{OutConeCombiNum};
+  my $count = $InCount + $OutCount;
+  print "fanin comp count is $count\n";
+}#sub dbgPlaceGetFanCount
+
+sub dbPlaceSetOptLen {
+  my ($self,$len) = @_;
+  $self->{OL} = $len;
+}#sub dbPlaceSetOptLen
+
+sub dbPlaceGetOptLen {
+  my ($self) = @_;
+  my $len = $self->{OL};
+return($len);
+}#sub dbPlaceGetOptLen
+
+sub dbgPlaceGetOptLen {
+  my ($self) = @_;
+  my $len = $self->{OL};
+print "Optimal Length of this flop is : $len\n";
+}#sub dbgPlaceGetOptLen
+
+
+1;

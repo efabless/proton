@@ -1,0 +1,301 @@
+sub extract_def_bumps {
+
+my $noOfArguments = @_;
+
+if( $_[0] eq '-h' || $_[0] eq '-help' ) { print "Usage : extract_def_bumps -instance <instname> \n";
+                           print "                      by default all instances are taken in the design\n";
+                           print "                  -minSize {W,H} \n";
+                           print "                  -maxSize {W,H} \n";
+                           print "                  -minAR {float} \n";
+                           print "                  -maxAR {float} \n";
+                           print "                  -layer {<layerName>} : by default 'LB'\n";
+                           print "                  -pininfo <dbu/microns> : by default dbu\n";
+                           print "                  -epsilon <min unique bump dist in pin unit>\n";
+                           print "                  -output <output file name>\n";
+                           print "                  --overwrite [to overwrite existing output file]\n";
+                         }
+else { # if correct no. of inputs
+
+my $LAYER = 'LB';
+my $macroName = "";
+my $minH = 1;
+my $minW = 1;
+my $maxH = 1000;
+my $maxW = 1000;
+my $flag = 0;
+my $pininfo = 'dbu';
+my @instances;
+my $instPinX = 0;
+my $instPinY = 0;
+my $minAR = 0.9 ;
+my $maxAR = 1.1 ;
+my $epsilon = 10;
+my $filename = "bump_centres";
+my $overwrite = 0;
+
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-layer"){$LAYER = $_[$i+1];}
+if($_[$i] eq "-instance"){$instName = $_[$i+1];}
+if($_[$i] eq "-pininfo"){$pininfo = $_[$i+1];}
+if($_[$i] eq "-minAR"){$minAR = $_[$i+1];}
+if($_[$i] eq "-maxAR"){$maxAR = $_[$i+1];}
+if($_[$i] eq "-minSize"){ my $box = $_[$i+1]; $box =~ s/\{(.*)\}/\1/; ($minW,$minH)= (split(/\,/, $box))[0,1]; }
+if($_[$i] eq "-maxSize"){ my $box = $_[$i+1]; $box =~ s/\{(.*)\}/\1/; ($maxW,$maxH)= (split(/\,/, $box))[0,1]; }
+if($_[$i] eq "-epsilon"){$epsilon = $_[$i+1];}
+if($_[$i] eq "-output"){$filename = $_[$i+1];}
+if($_[$i] eq "--overwrite"){$overwrite = 1;}
+                                         } # for
+
+if ($instName eq "") {
+	@instances = keys %COMP_ALREADY;
+} else {
+	push (@instances,$instName);
+}
+
+if ((-e $filename) && ($overwrite == 0)){
+print "\nWARN-DES-EXTRT_DEF_BUMPS : 001 : file $filename exists please give --overwrite option to overwrite the existing file\n";
+return;
+}else{
+
+open (WRITE, ">$filename");
+print "\nINFO-DES-EXTRT_DEF_BUMPS : 002 : writing bumps in $filename\n";
+foreach $instName ( @instances ) {
+print "DBG-DES-EXTRT_DEF_BUMPS : 003 : processing $instName\n" if ($DEBUG == 328);
+my @instLoc = $CADB{$instName}->dbCadbGetLoc;
+my $instOrient = $CADB{$instName}->dbCadbGetOrient;
+my $instCellref = $CADB{$instName}->dbCadbGetCellref;
+   if ( exists $PLDB{$instCellref} ) { } else { print "WARN-DES-EXTRT_DEF_BUMPS : 004 : skipping $instName \n"; next; }
+my @cellOrigin = $PLDB{$instCellref}->dbMdbGetOrigin;
+my @cellSize = $PLDB{$instCellref}->dbMdbGetSize;
+my $dbu = $GLOBAL->dbfGlobalGetDBU;
+
+if (exists $PLDB{$instCellref} ) {
+my %bump_loc = ();
+my %bump_net = ();
+my @bumpPins = &extract_lef_bumps('-cell', $instCellref, '-layer' , $LAYER);
+   foreach my $bumpPin ( @bumpPins ) {
+           my ($pinName,$X,$Y,$llx,$lly,$urx,$ury) = (split(/\s+/, $bumpPin))[0,1,2,3,4,5,6];
+	   my $xSize = abs($urx - $llx) ;
+           my $ySize = abs($ury - $lly) ;
+           my $aspectRatio = $ySize / $xSize ;
+           if ( $aspectRatio > $maxAR || $aspectRatio < $minAR ) { next ; }
+	   if ( ($minW < $xSize && $xSize < $maxW) && ($minH < $ySize && $ySize < $maxH)) { }
+	   else { next; }
+	   my $ceilX = ceil($X);
+           my $ceilY = ceil($Y);
+	   my $bump_key = "$ceilX"."_"."$ceilY";
+#	   print "$X $Y $ceilX $ceilY\n";
+	   if (exists $bump_loc{$bump_key}) { }
+	   else {   
+#	   	print WRITE "$pinName $bump_loc{$bump_key}\n";
+#----------- fix by Rajeev on 08/09/09 ----------------#
+# offset the clocation of cell bump with instance location #
+#------------------------------------------------------#
+#	   	print WRITE "\t$pinName $X $Y\n";
+           print  "DBG-DES-EXTRT_DEF_BUMPS : 005 : $instName : @instLoc : $instOrient : $instCellref :@cellOrigin : $pinName : $X : $Y : Width $xSize: Height $ySize cellPinBox $llx $lly $urx $ury \n" if ($DEBUG == 328) ;
+                my @PinRect = &xformCellPinToInstPin($instLoc[0],$instLoc[1],$cellOrigin[0], $cellOrigin[1],$instOrient,$cellSize[0],$cellSize[1],$llx,$lly,$urx,$ury);
+                print "DBG-DES-EXTRT_DEF_BUMPS : 006 : @PinRect\n" if ($DEBUG == 328);
+                my $instPinX = ($PinRect[0] + $PinRect[2])/2;
+                my $instPinY = ($PinRect[1] + $PinRect[3])/2;
+#	   	print WRITE "\t$pinName $X $Y\n";
+	   if ($pininfo eq 'microns') {
+                $instPinX = $instPinX / $dbu;
+                $instPinY = $instPinY / $dbu;
+		}
+	   my $net = $COMP_ALREADY{$instName}{$pinName} ;
+   	   # print WRITE "$net $instPinX $instPinY\n";
+           print  "INFO-DES-EXTRT_DEF_BUMPS : 007 : $instName : @instLoc : $instOrient : $instCellref :@cellOrigin : $pinName : $X : $Y : Width $xSize: Height $ySize cellPinBox $llx $lly $urx $ury  instPinLoc : $instPinX $instPinY \n" ;
+	   my $centre_loc = "$instPinX $instPinY";
+	   $bump_loc{$bump_key} = $centre_loc ; 
+	   $bump_net{$bump_key} = $net ; 
+	   }
+   }# foreach $bumpPin
+
+#<-- Quick and dirty: inefficient O(n^2) and incorrect in case of
+#                     many bumps overlap with each other.     -->
+   my @uniqueBumps = ();
+   foreach my $bump_key ( keys %bump_loc ) {
+      my ($x, $y) = (split(/\s+/, $bump_loc{$bump_key}))[0,1];
+      # check if it is too close to any unique bump
+      my $isUnique = 1;
+      foreach my $uniq_bump ( @uniqueBumps ) {
+         my ($xu, $yu) = (split(/\s+/, $bump_loc{$uniq_bump}))[0,1];
+         if ( abs($x - $xu) < $epsilon && abs($y - $yu) < $epsilon ) {
+            $isUnique = 0;
+            last;
+         }
+      }
+      if ( $isUnique ) {
+         push(@uniqueBumps, $bump_key);
+      }
+   }# foreach $bump_key
+   
+   foreach my $bump_key ( @uniqueBumps ) {
+	my $net = $bump_net{$bump_key};
+   	print WRITE "$net $bump_loc{$bump_key}\n";
+   }# foreach $bump_key
+                                 }
+
+
+#my @rects = $PLDB{$instName}->dbMdbGetPinRect($bumpPin);
+}# foreach instance in the design
+close(WRITE);
+}#if file does not exsists or overwrite option is given
+
+
+print "DBG-DES-EXTRT_DEF_BUMPS : 008 : Line to test\n" if ($DEBUG == 328);
+}# end else
+}# sub extract_def_bumps
+
+
+
+sub fc_assign_aio_pg_to_bumps {
+
+# Algorithm
+# ---------
+# find all the BLOCK cells in the design, that have USE power USE ground pins
+# if the pin is in the center of the cell, generally it can be a bump.
+
+# Then cell should be subjected to extract_def_bumps
+# if the pin is at the periphery then may be user wants to add a bump at the top level.
+
+# trace any existing routing on the net to see if it connects to a instance by abutment. If it is connected by aboutment or route, it is generally not a rect to connect to bump . cluster the abutting cells. These clusters can potentially share bumps
+# we can have SHARE bump 
+
+#
+
+
+
+}#sub fc_assign_aio_pg_to_bumps
+
+################################################################################################################
+############################## Subroutine to create and store bumps ############################################
+################################################################################################################
+
+sub create_bumps {
+my $noOfArguments = @_;
+my @coordinates_of_bbox = ();
+my $inst_file = "";
+my $instList = "";
+my $left_to_bump_centre = 0;
+my $right_to_bump_centre = 0;
+my $bottom_to_bump_centre = 0;
+my $top_to_bump_centre = 0;
+my $dis_between_bumps = 0;
+my $x_offset = 0;
+my $y_offset = 0;
+
+
+if( $noOfArguments <  2 || $_[0] eq '-h' || $_[0] eq '-help' || $_[0] eq '-HELP') { 
+  print "Usage : create_bumps --inst_file <file containing list of inst> \n";
+  print "                     --inst <inst1,inst2,inst3...> \n";
+  print "                     -left_distance <x distance> \n";
+  print "                     -right_distance <x distance> \n";
+  print "                     -bottom_distance <x distance> \n";
+  print "                     -top_distance <x distance> \n";
+  print "                     -xoffset <x distance> \n";
+  print "                     -yoffset <y distance> \n";
+  print "                     -pitch <distance between bump centre> \n";
+  #print "                     -height <chip height> \n";
+  #print "                     -width <chip width> \n";
+} else { # if correct no. of inputs
+  for(my $i = 0; $i < $noOfArguments; $i++) {
+      if($_[$i] eq "--inst_file")     {$inst_file = $_[$i+1]; }
+      if($_[$i] eq "--inst")          {$instList = $_[$i+1]; }
+      if($_[$i] eq "-left_distance")  {$left_to_bump_centre = $_[$i+1]; }
+      if($_[$i] eq "-right_distance") {$right_to_bump_centre = $_[$i+1]; }
+      if($_[$i] eq "-bottom_distance"){$bottom_to_bump_centre = $_[$i+1]; }
+      if($_[$i] eq "-top_distance")   {$top_to_bump_centre = $_[$i+1]; }
+      if($_[$i] eq "-xoffset")        {$x_offset = $_[$i+1]; }
+      if($_[$i] eq "-yoffset")        {$y_offset = $_[$i+1]; }
+      if($_[$i] eq "-pitch")          {$dis_between_bumps = $_[$i+1]; }
+  }
+  if ($x_offset < $left_to_bump_centre || $x_offset == 0){$x_offset = $left_to_bump_centre;}
+  if ($y_offset < $bottom_to_bump_centre || $y_offset == 0) {$y_offset = $bottom_to_bump_centre;}
+  
+  my @size = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetSize ;
+  my $width = $size[2]-$size[0];
+  my $height = $size[3]-$size[1];
+
+  my $x_bumps = int(($width -($x_offset+$right_to_bump_centre))/$dis_between_bumps) + 1;
+  my $y_bumps = int(($height -($y_offset+$top_to_bump_centre))/$dis_between_bumps) + 1;
+  if($inst_file ne ""){ 
+     @coordinates_of_bbox = read_input_bbox_file($inst_file);
+  }elsif($instList ne "" ){
+     @coordinates_of_bbox = get_list_inst_coords($instList);
+  } 
+  for (my $i = 0; $i < $y_bumps; $i++) {
+    for (my $j = 0; $j < $x_bumps; $j++) {
+      my $bump_name = "bump"."_".$i."_".$j;
+      my $x_loc = $x_offset + $dis_between_bumps*$j;
+      my $y_loc = $y_offset + $dis_between_bumps*$i;
+      my $return_value = check_if_inside_bbox($x_loc, $y_loc, \@coordinates_of_bbox);
+      if ($return_value != 1) {
+          $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanAddBumps($bump_name);
+          $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanSetBumpLoc($bump_name,$x_loc,$y_loc);
+        #print"$bump_name $x_loc $y_loc\n"; 
+      } else {}
+    }#for columns
+   }#for rows
+ }#else
+}#sub create_bumps 
+
+sub read_input_bbox_file {
+  my @temp_coordinates_of_bbox = (); 
+  my $file = $_[0];
+  my $dbu = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetDBUnit;
+  open (READ, $file);
+  while (<READ>) {
+    chomp;
+    $_ =~ s/^\s+//;
+    if ($_ =~/^$/ ) { next; }
+    if( $_ =~ /^\s*#/) { next; }
+    my ($inst) = (split(/\s+/,$_))[0];
+    if(exists  $CADB{$inst}){
+      my @bbox = $CADB{$inst}->dbCadbGetbBox;
+      my $ext = 75*$dbu; 
+      my @coords = ($bbox[0]-$ext, $bbox[1]-$ext, $bbox[2]+$ext, $bbox[3]+$ext);
+      push (@temp_coordinates_of_bbox , [@coords]);
+    }
+  }
+  return @temp_coordinates_of_bbox;
+  close READ;
+}#sub read_input_bbox_file
+
+sub get_list_inst_coords {
+  my @temp_coordinates_of_bbox = (); 
+  my $instList = $_[0];
+  my @instances = split(/\,/,$instList);
+  my $dbu = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetDBUnit;
+  foreach my $inst(@instances){
+    if(exists  $CADB{$inst}){
+      my @bbox = $CADB{$inst}->dbCadbGetbBox;
+      my $ext = 75*$dbu; 
+      my @coords = ($bbox[0]-$ext, $bbox[1]-$ext, $bbox[2]+$ext, $bbox[3]+$ext);
+      push (@temp_coordinates_of_bbox , [@coords]);
+    }
+  }
+  return @temp_coordinates_of_bbox;
+  close READ;
+}#sub get_list_inst_coords
+
+sub check_if_inside_bbox {
+
+  my $x_loc = $_[0];
+  my $y_loc = $_[1];
+  my $coordinates_of_bbox1 = $_[2];
+  my $overlap_found = 0;
+foreach my $t (@$coordinates_of_bbox1){
+    if($overlap_found == 1){last;}
+    else{
+      if (($x_loc > @$t[0] && $x_loc < @$t[2]) && ($y_loc > @$t[1] && $y_loc < @$t[3])) {
+        $overlap_found = 1;
+      }
+    } 
+  }#for
+return($overlap_found);
+}#sub check_if_inside_bbox
+
+###############################################################################################################
+
+1;

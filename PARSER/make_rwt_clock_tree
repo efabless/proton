@@ -1,0 +1,308 @@
+
+sub trace {
+
+my $noOfArguments = @_;
+if($noOfArguments < 1 || $_[0] eq '-h'){ print "Usage : trace -net <net name>\n";
+                        print "              -forward / -backward\n";
+                      }
+else{
+############# initialize variables #########################
+my $TRACE_FORWARD = "false";
+my $TRACE_BACKWARD = "false";
+my $netname = "";
+
+############# since correct no of arguments ################
+############# registering the inputs        ################
+for(my $x = 0; $x < $noOfArguments ; $x++){
+if($_[$x] eq "-net"){$netName = $_[$x+1];}
+if($_[$x] eq "-forward"){$TRACE_FORWARD = "true";}
+if($_[$x] eq "-backward"){$TRACE_BACKWARD = "true";}
+                                          }#for all the arguments
+############ code begin for forward traceing ####################
+if($TRACE_FORWARD eq "true"){
+open (WRITE_TRACE,">clock_net_trace.rpt");
+trace_forward($netName);
+close(WRITE_TRACE);
+                            }# if want to do forward trace
+############ code end   for forward traceing ####################
+
+########### code begin for backward traceing ####################
+if($TRACE_BACKWARD eq "true"){
+trace_backward($netName);
+                             }# if want to do backward trace
+########### code end   for backward traceing ####################
+    }#if correct Arguments
+} # sub trace
+
+
+
+
+############ FORWARD TRACE 
+
+sub trace_forward {
+print "INFO-PAR : 001 : using the forward trace\n";
+local $netName = $_[0];
+
+local $noOfLeafCounter = 0;
+local $noOfSourceCounter = 0;
+local $noOfCombiCounter = 0;
+
+local $listOfSource = "";
+local @sinkList = ();
+
+foreach $instanceName ( keys %{$NETS_ALREADY{$netName}}){
+         #print  "$instanceName\n";
+         if( $instanceName eq "PIN"){ #If the net driver is a port
+                         $noOfSourceCounter++;
+                         $listOfSource = "$listOfSource $instanceName";
+
+                         } else { # If the net driver is not a port
+             $cellref = $COMP_ATTRIBUTE_ALREADY{$instanceName}{cellref};
+         if( $MACROS_ATTRIBUTE_ALREADY{$cellref}{func} eq "reg"){
+          my $sinkName = "$instanceName\/$NETS_ALREADY{$netName}{$instanceName}";
+          push(@sinkList, $sinkName);
+                             $noOfLeafCounter++;
+                                             }        # if the component attached is a register
+         else {
+             print "INFO-PAR : 002 : $cellref\n";
+         # if not a register input find the next net name
+         # find the cellref, then from MACROS find the output PIN
+         # my $cellref = $COMPONENTS[0]{$_}{cellref};
+         my $outputPinName = "";
+         foreach $pinName ( keys %{$MACROS[0]{$cellref}} ){
+             if( $pinName eq "area"){ }else {
+             if($MACROS[0]{$cellref}{$pinName}{direction} eq "output"){
+               $outputPinName = $pinName;
+                                                  }# if is an output pin
+                           }# if not an area statement
+                                      }#foreach all pins in the MACRO
+         local $NewNetName = $COMPONENTS[0]{$instanceName}{$outputPinName};
+         if( $NewNetName eq $netName){ 
+           #if net connected to output pin of an instance
+           #is the same net being traced the INSTANCE/PIN is the driver
+           #of the net
+           $listOfSource = "$listOfSource $instanceName\/$outputPinName $cellref" ; 
+           $noOfSourceCounter++;
+                                     } else {
+         trace_forward($NewNetName);
+         $noOfCombiCounter++;   # increasing the no of components to be traced through
+                                              }
+         #print "$instanceName\/$NETS_ALREADY{$netName}{$instanceName}\n";
+                                             }        # if the component attached is not a register
+                                             }        # if the component attached is not a PORT
+                                        }# foreach
+         print WRITE_TRACE "report for $netName\n";
+         print WRITE_TRACE "\tSinks           : $noOfLeafCounter\n";
+              my $lengthOfSinkList = @sinkList;
+              for(my $x = 0 ; $x< $lengthOfSinkList ; $x++){
+              print WRITE_TRACE "\t\t\t$sinkList[$x]\n";
+                                     }#for length of Sink List
+
+         print WRITE_TRACE "\tSource          : $noOfSourceCounter $listOfSource \n";
+         print WRITE_TRACE "\tTracable cells  : $noOfCombiCounter\n";
+         print WRITE_TRACE "\n\n";
+  
+
+}#sub trace_forward
+
+
+sub trace_backward {
+print "INFO-PAR : 001 : using the backward trace\n";
+}#sub trace_backward
+
+
+
+sub build_clock_tree {
+
+
+
+}#sub build_clock_tree
+
+
+
+sub db_set_register_cell_cts {
+
+my $register_fileName = $_[0];
+my %TEMP_MACROS = ();
+my $cellref_temp = "";
+
+open ( READ, "$register_fileName");
+while(<READ>){
+chomp();
+
+$TEMP_MACROS{$_} = "REGISTER";
+
+
+
+             }#while
+
+foreach $instance ( keys %COMP_ATTRIBUTE_ALREADY ) {
+   $cellref_temp = $COMP_ALREADY{$instance}{cellref};
+
+        if( exists $TEMP_MACROS{$cellref_temp} ){
+                   $COMP_ATTRIBUTE_ALREADY{$instance}{type} = $TEMP_MACROS{$cellref_temp};
+                                                                    }
+                                                   }# foreach instance in design
+
+
+
+undef %TEMP_MACROS;
+}#sub db_set_register_cell_cts
+
+
+sub db_set_tracable_cell_cts {
+
+my $tracable_fileName = $_[0];
+my %TEMP_MACROS = ();
+my $cellref_temp = "";
+
+open ( READ, "$tracable_fileName");
+while(<READ>){
+chomp();
+
+$TEMP_MACROS{$_} = "BUFFER";
+
+
+
+             }#while
+
+foreach $instance ( keys %COMP_ATTRIBUTE_ALREADY ) {
+   $cellref_temp = $COMP_ALREADY{$instance}{cellref};
+
+        if( exists $TEMP_MACROS{$cellref_temp} ){
+                   $COMP_ATTRIBUTE_ALREADY{$instance}{type} = $TEMP_MACROS{$cellref_temp};
+                                                                    }
+                                                   }# foreach instance in design
+
+
+undef %TEMP_MACROS;
+
+}#sub db_set_tracable_cell_cts
+
+
+
+
+
+
+sub generate_ctgen_struct_file {
+
+my $netName = "";
+my $noOfArguments = @_;
+my $OUTPUT_FILE = "";
+
+if ( $noOfArguments < 4 || $_[0] eq '-h') {
+print "usage : generate_ctgen_struct_file -net < clock root net name >\n";
+print "                                   -struct_file <output file name >\n";
+
+                          }# if incorrect # of arguments
+else {
+
+for(my $x = 0; $x < $noOfArguments ; $x++){
+if($_[$x] eq "-net"){$netName = $_[$x+1];}
+if($_[$x] eq "-struct_file"){$OUTPUT_FILE = $_[$x+1];}
+                                          }#for all the arguments
+
+
+open ( WRITE_STRUCT, ">$OUTPUT_FILE");
+print WRITE_STRUCT "define_structure\n";
+&trace_for_ctgen($netName);
+close(WRITE_STRUCT);
+
+
+    }#if correct # of arguments
+
+}#sub generate_ctgen_struct_file
+
+
+sub trace_for_ctgen {
+print "INFO-PAR : 001 : using the forward trace\n";
+local $netName = $_[0];
+
+local $noOfLeafCounter = 0;
+local $noOfSourceCounter = 0;
+local $noOfCombiCounter = 0;
+
+local $listOfSource = "";
+local @sinkList = ();
+local @traceNetList = ();
+local @traceCellPinList = ();
+
+foreach( keys %{$NETS_ALREADY{$netName}}){
+         #print  "$_\n";
+         if( $_ eq "PIN"){ #If the net driver is a port
+                         $noOfSourceCounter++;
+                         $listOfSource = "$listOfSource $_";
+
+                         } else { # If the net driver is not a port
+         if( $COMP_ATTRIBUTE_ALREADY{$_}{type} eq "REGISTER"){
+          my $sinkName = "$_\/$NETS_ALREADY{$netName}{$_}";
+          push(@sinkList, $sinkName);
+                             $noOfLeafCounter++;
+                                             }        # if the component attached is a register
+         else {
+         push(@traceCellPinList, "'$COMP_ALREADY{$_}{cellref}' '$NETS_ALREADY{$netName}{$_}'");
+
+         # if not a register input find the next net name
+         # find the cellref, then from MACROS find the output PIN
+         my $cellref = $COMPONENTS[0]{$_}{cellref};
+         my $outputPinName = "";
+         foreach( keys %{$MACROS[0]{$cellref}} ){
+             if( $_ eq "area"){ }else {
+             if($MACROS[0]{$cellref}{$_}{direction} eq "output"){
+               $outputPinName = $_;
+                                                  }# if is an output pin
+                           }# if not an area statement
+                                      }#foreach all pins in the MACRO
+         local $NewNetName = $COMPONENTS[0]{$_}{$outputPinName};
+         if( $NewNetName eq $netName){ 
+           pop(@traceCellPinList);
+           #if net connected to output pin of an instance
+           #is the same net being traced the INSTANCE/PIN is the driver
+           #of the net
+           $listOfSource = "$listOfSource '$COMPONENTS[0]{$_}{cellref}' '$outputPinName'" ; 
+           $noOfSourceCounter++;
+                                     } else {
+           push(@traceNetList, $NewNetName); 
+           $noOfCombiCounter++;   # increasing the no of components to be traced through
+                                              }
+      
+                                             }        # if the component attached is not a register
+                                             }        # if the component attached is not a PORT
+                                        }# for
+########################################
+         print  "INFO-PAR : 002 : report for $netName\n";
+         print  "INFO-PAR : 003 :\tSinks           : $noOfLeafCounter\n";
+              my $lengthOfSinkList = @sinkList;
+              for(my $x = 0 ; $x< $lengthOfSinkList ; $x++){
+              print  "\t\t\t$sinkList[$x]\n";
+                                     }#for length of Sink List
+
+         print  "INFO-PAR : 004 :\tSource          : $noOfSourceCounter $listOfSource \n";
+         print WRITE_STRUCT "from_pin $listOfSource\n";
+
+
+
+
+         print  "INFO-PAR : 005 :\tTracable cells  : $noOfCombiCounter\n";
+              my $lengthOfTraceList = @traceNetList;
+              for(my $x = 0; $x < $lengthOfTraceList ; $x++){
+              print "INFO-PAR : 006 :\t\t\t$traceNetList[$x]\n";
+         print WRITE_STRUCT "\tto_pin $traceCellPinList[$x]\n";
+                                     }#for the length of trace list
+         print WRITE_STRUCT "\tto_sink $noOfLeafCounter\n";
+         print  "\n\n";
+
+
+########################################
+              if ( $lengthOfTraceList < 1 ) { return; }
+              else {
+         while ( defined  ($netName = shift @traceNetList )) {
+                 &trace_for_ctgen($netName);
+                                                  }# foreach next net in trace list
+                   }# if there are traceable cells in the path
+  
+
+}#sub trace_for_ctgen
+
+
+1;

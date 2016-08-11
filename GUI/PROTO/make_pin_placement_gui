@@ -1,0 +1,696 @@
+########################################  subroutine to provide binding #########################################
+sub addBind_for_pinPlace{
+    $design_canvas->CanvasBind('<p><3>' => sub {
+                    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+                    my @id      = $design_canvas->find(qw/withtag current/);
+                    my @tagList = $design_canvas->gettags($id[0]);
+                    my $modName = "";
+                    if($tagList[0] eq "TOP_MODULE" || $tagList[0] eq "TST_MODULE"){
+                       if(exists $PSEUDO_MODULE_ALREADY{$tagList[1]}){
+                          $modName = $tagList[1];
+                       }elsif(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}){  
+                          $modName = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstCellref;
+                       }
+                       &create_pinPlace_popup($tagList[1]) if($PSEUDO_MODULE_ALREADY{$modName}) ;
+                    }
+                  });   
+}#sub addBind_for_pinPlace
+
+sub addBind_for_pinPlaceInHierView{
+my $canvas = $_[0];
+    $canvas->CanvasBind('<p><3>' => sub {
+                    my @xy = $canvas->eventLocation();
+                    my $x = $xy[0];
+                    my $y = $xy[1];
+                    my @id      = $canvas->find(qw/withtag current/);
+                    my @tagList = $canvas->gettags($id[0]);
+                    my $modName = "";
+                    if($tagList[0] eq "HIER_TOP" || $tagList[0] eq "HIER_MOD"){
+                       if(exists $PSEUDO_MODULE_ALREADY{$tagList[1]}){
+                          $modName = $tagList[1];
+                       }elsif(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}){  
+                          $modName = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstCellref;
+                       }
+                       &create_pinPlace_popup($tagList[1]) if($PSEUDO_MODULE_ALREADY{$modName}) ;
+                    }
+                  });   
+}#sub addBind_for_pinPlaceInHierView
+
+###################################### Subroutine to calculate no. of Pins for current Module #############################
+sub create_pinList {
+my $module = $_[0];
+my $mode = $_[1];
+my $showAll = $_[2];
+my $pattern = $_[3];
+
+my @pins = ();
+my @temp = ();
+my @total_pins = ();
+my @leftPins = ();
+my %TEMP_BASE = ();
+if($mode eq "SplitMode"){$mode = "BusMode";}
+elsif($mode eq "BusMode"){$mode = "SplitMode";}
+
+if($module eq $TOP_MODULE){
+   if(exists $PORTS_ALREADY{$module}){
+      @pins = keys %{$PORTS_ALREADY{$module}};
+   }elsif(exists $PSEUDO_MODULE_ALREADY{$module}){
+       if($mode eq "SplitMode"){  
+          my @inputPins = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetInput;
+          my @outputPins = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetOutput; 
+          my @bidiPins = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetBidi; 
+          push (@pins,@inputPins,@outputPins,@bidiPins); 
+       }elsif($mode eq "BusMode"){
+          my @inPins = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetInput;
+          foreach my $pin(@inPins){
+            my $type = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetInputType($pin);
+            if($type == 1){
+               my $bits = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetInputBits($pin);
+               push(@pins, $pin.$bits);
+            }else{push(@pins, $pin);}#if type 1(bus)
+          }#foreach inpin
+          my @outPins = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetOutput;
+          foreach my $pin(@outPins){
+            my $type = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetOutputType($pin);
+            if($type == 1){
+               my $bits = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetOutputBits($pin);
+               push(@pins, $pin.$bits);
+            }else{push(@pins, $pin);}#if type 1(bus)
+          }#foreach outpin
+          my @bidiPins = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetBidi;
+          foreach my $pin(@bidiPins){
+            my $type = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetBidiType($pin);
+            if($type == 1){
+               my $bits = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetBidiBits($pin);
+               push(@pins, $pin.$bits);
+            }else{push(@pins, $pin);}#if type 1(bus)
+          }#foreach bidipin
+       }
+   }
+}elsif(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$module}){  
+   my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$module}->dbPimDBGetInstCellref;
+   if(exists $PLDB{$cellref}){
+      if($mode eq "SplitMode"){
+         @pins = $PLDB{$cellref}->dbMdbGetPins; 
+      }elsif($mode eq "BusMode"){
+         my @pinArray = $PLDB{$cellref}->dbMdbGetPins; 
+         foreach(sort@pinArray){
+           my $width = $PLDB{$cellref}->dbMdbGetPinBusWidth($_);
+           if($width == 1){
+              my $baseName = $PLDB{$cellref}->dbMdbGetPinBusBaseName($_);
+              if($#temp >= -1){ 
+                 if($temp[-1] ne $baseName){
+                    my $bits = $PLDB{$cellref}->dbMdbGetPinBusBits($baseName);
+                    push(@pins, $baseName.$bits);
+                    push(@temp, $baseName);
+                 }
+              }else{
+                 my $bits = $PLDB{$cellref}->dbMdbGetPinBusBits($baseName);
+                 push(@pins, $baseName.$bits);
+                 push(@temp, $baseName);
+              }
+           }else{push(@pins,$_);}
+         }#foreach pin 
+      }#if bus mode
+   }elsif(exists $PSEUDO_MODULE_ALREADY{$cellref}){
+       if($mode eq "SplitMode"){  
+          my @inputPins = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetInput;
+          my @outputPins = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetOutput; 
+          my @bidiPins = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetBidi; 
+          push (@pins,@inputPins,@outputPins,@bidiPins); 
+       }elsif($mode eq "BusMode"){
+          my @inPins = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetInput;
+          foreach my $pin(@inPins){
+            my $type = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetInputType($pin);
+            if($type == 1){
+               my $bits = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetInputBits($pin);
+               push(@pins, $pin.$bits);
+            }else{push(@pins, $pin);}#if type 1(bus)
+          }#foreach inpin
+          my @outPins = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetOutput;
+          foreach my $pin(@outPins){
+            my $type = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetOutputType($pin);
+            if($type == 1){
+               my $bits = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetOutputBits($pin);
+               push(@pins, $pin.$bits);
+            }else{push(@pins, $pin);}#if type 1(bus)
+          }#foreach output
+          my @bidiPins = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetBidi;
+          foreach my $pin(@bidiPins){
+            my $type = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetBidiType($pin);
+            if($type == 1){
+               my $bits = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetBidiBits($pin);
+               push(@pins, $pin.$bits);
+            }else{push(@pins, $pin);}
+          }#foreach bidipin
+       }#if bus mode
+   }#if exists in pesudo
+}#if module
+
+if($showAll == 0){
+   my @AddedBusBits = ();
+   foreach(keys %TEMP_PIN_HASH){
+     if(exists $TEMP_PIN_HASH{$_}){   
+        my @guide_pin = @{$TEMP_PIN_HASH{$_}};
+        push(@total_pins,@guide_pin);
+     }
+   }  
+###### chnging the selected assigned pin according to bus/split mode ######  
+   my @temp_total_pins = ();
+   foreach(@total_pins){
+     if($mode eq "BusMode"){
+        if($_ =~ m/.*\[\d+\]/){
+           my $base = $_;
+           my $bit = $_;
+           $base =~ s/\[.*\]//;
+           $bit =~ s/^.*\[/\[/;
+           $bit =~ split(/\[/,$bit);
+           $bit =~ s/\[//;
+           $bit =~ s/\]//;
+           
+           if(exists $TEMP_BASE{$base}){
+              $val = $TEMP_BASE{$base};
+              my @bits = @$val;
+              push(@bits, $bit);
+              $TEMP_BASE{$base} = \@bits;
+           }else{
+              my @bits = ($bit); 
+              $TEMP_BASE{$base} = \@bits
+           }
+        }else{push(@temp_total_pins,$_);}
+     }else{
+        if($_ =~ m/.*\[\d+:\d+\]/){
+           my @splitbus = &utilSplitBusBits($_);
+           push(@temp_total_pins,@splitbus);
+        }else{push(@temp_total_pins,$_);} 
+     }
+   }
+   foreach my $bus (keys %TEMP_BASE){
+       my @total_group_bits = ();
+       my @group_bits = ();
+       my $bit = $TEMP_BASE{$bus};
+       my @bits = sort{$a<=>$b}@$bit;
+       for(my $i=0; $i<=$#bits; $i++){
+           if(($bits[$i+1] - $bits[$i]) == 1){
+               push(@group_bits,$bits[$i]);
+           }else{
+               push(@group_bits,$bits[$i]);
+               push(@total_group_bits,[@group_bits]);
+               @group_bits = ();
+            } 
+       }
+       foreach (@total_group_bits){
+          my @groupBits = sort{$a<=>$b}@$_;
+             push(@temp_total_pins, $bus."[$groupBits[0]:$groupBits[-1]]");    
+       }
+   }
+   @total_pins = sort @temp_total_pins;
+############ changing list of pins according bus/split mode ##############
+   if($#total_pins > -1){
+      for(my $i=0; $i<=$#pins; $i++){
+          my @bits = ();
+             my $listPinBase = $pins[$i];
+                $listPinBase =~ s/\[.*\]//;
+             my $listPinbit = $pins[$i];
+                $listPinbit =~ s/.*\[//;
+                $listPinbit =~ s/\]//;
+             my ($lowBit,$hiBit) = (split(/\:/,$listPinbit))[0,1];
+         for(my $j=0; $j<=$#total_pins; $j++){
+                my $selectedPinBase = $total_pins[$j];
+                   $selectedPinBase =~ s/\[.*\]//;
+                my $selectedPinbit = $total_pins[$j];
+                   $selectedPinbit =~ s/.*\[//;
+                   $selectedPinbit =~ s/\]//;
+                my ($SelLowBit,$SelHiBit) = (split(/\:/,$selectedPinbit))[0,1];
+             if($mode eq "BusMode" ){
+                if(($pins[$i] =~ m/.*\[\d+:\d+\]/) && ($total_pins[$j] =~ m/.*\[\d+:\d+\]/)){
+                  if($pins[$i] eq $total_pins[$j]){
+                    delete($pins[$i]);
+                  }else{
+                    my $selectedPinBase1 = $total_pins[$j+1];
+                       $selectedPinBase1 =~ s/\[.*\]//;
+                    if($listPinBase eq $selectedPinBase){
+                       for(my $k=$SelLowBit; $k<=$SelHiBit; $k++){
+                           push(@bits,$k);
+                       }
+                       if($selectedPinBase eq $selectedPinBase1){next ;}
+                       my @bitNotSelected = ();  
+                       for(my $k=$lowBit; $k<=$hiBit; $k++){
+                           my $notSel = 0;
+                   ALOOP:  foreach(@bits){
+                             if($_ == $k){
+                                $notSel = 1;
+                                last ALOOP;
+                             }else{
+                                $notSel = 0;
+                             }
+                           }  
+                           push(@bitNotSelected, $k) if($notSel == 0);
+                       }
+                       @bitNotSelected = sort{$a<=>$b}@bitNotSelected;
+                       my @arrBits = ();
+                       my @arrTotalBits = (); 
+                       for(my $k=0; $k<=$#bitNotSelected; $k++){
+                          if(($bitNotSelected[$k+1] - $bitNotSelected[$k]) == 1){
+                              push(@arrBits,$bitNotSelected[$k]);
+                          }else{
+                              push(@arrBits,$bitNotSelected[$k]);
+                              push(@arrTotalBits,[@arrBits]);
+                              @arrBits = ();
+                          } 
+                       }
+                       delete($pins[$i]);
+                       foreach (@arrTotalBits){
+                           my @groupBits = sort{$a<=>$b}@$_;
+                           push(@AddedBusBits, $listPinBase."[$groupBits[0]:$groupBits[-1]]");    
+                       }
+                    }
+                  }
+               }else{
+                  if($listPinBase eq $total_pins[$j]){delete($pins[$i]);}
+               }
+            }else{
+               if($pins[$i] eq $total_pins[$j]){delete($pins[$i]);
+               }elsif($pins[$i] eq $selectedPinBase){delete($pins[$i]);}
+            }
+         }
+      }
+   }
+   push(@leftPins, @AddedBusBits) if($#AddedBusBits > -1);
+   push(@leftPins,@pins);
+   @pins= ();
+   foreach(@leftPins){
+         if(($_ =~ m/.*$pattern.*/i) && ($_ ne "" )){push(@pins,$_);}
+   }
+}#if showAll 
+@pins = sort @pins;
+return(@pins);
+}#sub create_pinList
+
+#############################################################################################
+sub select_indivisual_bus{
+my $Instance = $_[0];
+my $showAll = $_[1];
+my $pattern = $_[2];
+my @pins = ();
+
+  if ($PinOrBusSelButton->cget('-text') eq 'SplitMode') {
+      @pins = &create_pinList($Instance,"BusMode",$showAll,$pattern,);
+      $PinOrBusSelButton->configure(-text => 'BusMode',-relief=>'groove',-padx=>0, -pady=>0 );
+  }elsif($PinOrBusSelButton->cget('-text') eq 'BusMode') {     
+      @pins = &create_pinList($Instance,"SplitMode",$showAll,$pattern);
+      $PinOrBusSelButton->configure(-text => 'SplitMode',-relief=>'groove',-padx=>0, -pady=>0 );
+  } 
+return(@pins);
+}#sub select_indivisual_bus
+
+###############################################################################################
+sub create_pinPlace_popup{
+my $Instance = $_[0];
+my @SELPINS = ();
+my @RoutingLayers = ();
+%TEMP_PIN_HASH = ();
+%GUIDE_STATUS = ();
+%GUIDE_LAYER = ();
+%GUIDE_BBOX = ();
+my @pins = &create_pinList($Instance, "SplitMode",1,"");
+my $pinName = "";
+my $assignedPins = "";
+my $searchStr = "";
+my $noOfPinGuide = 4;
+my $guide_status = 0;
+my $guide_status1 = 0;
+my $assigned_layer = 0;
+#my $guideCapacity = 100;
+my $perFilled = 0;
+my $showAll = 0;
+my $selectAll = 0;
+my $module = "";
+
+if(exists $PSEUDO_MODULE_ALREADY{$Instance}){
+   $module = $Instance;
+}elsif(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$Instance}){  
+   $module = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$Instance}->dbPimDBGetInstCellref;
+}
+
+my $popupWindow = MainWindow->new();
+$popupWindow->title("");
+my $list;
+my $topFrame = $popupWindow->Frame(-relief=>"raised", -borderwidth=>2)->pack(-side => 'top',-expand=>1, -fill=>'x');
+my $midFrame = $popupWindow->Frame(-relief=>"raised", -borderwidth=>2)->pack(-side => 'top',-expand=>1, -fill=>'both');
+my $bottFrame = $popupWindow->Frame()->pack(-side => 'top',-expand=>1, -fill=>'x');
+my $buttonFrame = $popupWindow->Frame()->pack(-side => 'bottom');
+ 
+my $leftFrame = $midFrame->Frame()->pack(-side => 'left',-expand=>1, -fill=>'y');
+my $rightFrame = $midFrame->Frame()->pack(-side => 'left',-expand=>1, -fill=>'both');
+
+my $label = $topFrame->Label(-text =>"Pins")->pack(-side =>'left');
+my $entry = $topFrame->Entry(-textvariable =>\$pinName)->pack(-side =>'left',-expand=>1,-fill=>'x');
+   $entry->bind('<KeyRelease>',sub {@SELPINS = ();
+                                    @SELPINS = split(/\,/,$pinName);
+                                     });
+
+my $path2eq = $GLOBAL->dbfGlobalGetProtonHome;
+my $search_image = $popupWindow->Photo(-file=> "$path2eq/ETC/b5_magnify2.gif");
+my $searchButton = $topFrame->Button(-image=>$search_image, -padx=>0,-pady=>0,-borderwidth=>0,-width=>22,-height=>20,-command=>sub{my @pins = &get_pinList($searchStr, $PinOrBusSelButton, $Instance,$showAll);
+                  $list->configure(-listvariable =>\@pins);
+               })->pack(-side =>'right');
+
+my $search_balloon = $popupWindow->Balloon();
+   $search_balloon->attach($searchButton, -balloonmsg => 'Search Pin');
+my $search_entry = $topFrame->Entry(-textvariable =>\$searchStr, -width=>8)->pack(-side =>'right');
+   $search_entry->bind('<KeyRelease>',sub {my @pins = &get_pinList($searchStr, $PinOrBusSelButton, $Instance,$showAll);
+                                           $list->configure(-listvariable =>\@pins);
+                                           });
+
+my $StatusLabel = $bottFrame->Label(-text =>"Assigned Pins:")->pack(-side =>'left');
+my $entry = $bottFrame->Entry(-textvariable =>\$assignedPins)->pack(-side =>'left',-expand=>1,-fill=>'x');
+
+my $leftFrame1 = $leftFrame->Frame()->pack(-side => 'top');
+my $leftFrame2 = $leftFrame->Frame()->pack(-side => 'top');
+my $leftFrame3 = $leftFrame->Frame()->pack(-side => 'top', -expand=>1, -fill=>'y');
+$PinOrBusSelButton = $leftFrame1->Button(-borderwidth=>2,-relief=>'groove', -padx=>0, -pady=>0,-text=>'SplitMode',
+                                         -command=>sub{my @pins = &select_indivisual_bus($Instance,$showAll,$searchStr);
+                                                       $list->configure(-listvariable =>\@pins);
+                                                       })->pack(-side=>'left');
+my $showAllButton = $leftFrame2->Checkbutton(-text=>"ShowAll", -onvalue=>'1',-offvalue=>0,-variable=>\$showAll, -font=>"Times 10 italic",-command=>sub{
+                   if($showAll ==1){ my $disMod = $PinOrBusSelButton->cget('-text');
+                      my @pins = &create_pinList($Instance, $disMod,$showAll,$searchStr);
+                      $list->configure(-listvariable =>\@pins);
+                   }else{ my $disMod = $PinOrBusSelButton->cget('-text');
+                      my @pins = &create_pinList($Instance, $disMod,$showAll,$searchStr);
+                      $list->configure(-listvariable =>\@pins);
+                   }
+                 })->pack(-side=>'left');
+
+my $selectAllButton = $leftFrame2->Checkbutton(-text=>"SelectAll", -onvalue=>'1',-offvalue=>0,-variable=>\$selectAll, -font=>"Times 10 italic",-command=>sub{
+                         if($selectAll == 1){
+                            my @pins = $list->cget('-listvariable');
+                            $pinName = join(",",@pins);
+                         }else{
+                            $pinName = "";
+                         }
+                       })->pack(-side=>'left');
+ 
+
+   $list = $leftFrame3->Scrolled('Listbox',-listvariable =>\@pins,-scrollbars=>'osoe',-width=>0, -font=>"Times 8")->pack(-side=>'top',-expand=>1, -fill=>'both',-anchor=>'w');
+   $list->Subwidget("yscrollbar")->configure(-width=>10);
+   $list->bind( '<Button-1>', sub {  
+                                   my $selection =  $_[0]->get( $_[0]->curselection);
+                                   my $entryFound = 0;
+                                   foreach (@SELPINS){if ($_ eq $selection){$entryFound = 1;}}
+                                   if($entryFound == 1){print "you have allready selected pin $selection\n";}
+                                   else { 
+                                      push(@SELPINS,$selection);
+                                      $pinName = "";
+                                      $pinName = join(",",@SELPINS);
+                                   }#else
+    });
+my $midFirst = $midFrame->Frame()->pack(-side => 'top');
+my $midSecond = $midFrame->Frame()->pack(-side => 'top',-expand=>1, -fill=>'x');
+my $midThird = $midFrame->Frame()->pack(-side => 'top',-expand=>1, -fill=>'x');
+my $midFourth = $midFrame->Frame()->pack(-side => 'top',-expand=>1, -fill=>'x');
+my $midFifth = $midFrame->Frame()->pack(-side => 'top',-expand=>1, -fill=>'both');
+
+#--------------------------------------------------------------------------------------------------------------#
+
+my $unblockedButton = $midSecond->Checkbutton(-text=>"Unblocked", -onvalue=>'unblocked',-offvalue=>0,-variable=>\$guide_status1, -font=>"Times 10 italic")->pack(-side=>'right');
+my $blockedButton = $midSecond->Checkbutton(-text=>"Blocked", -onvalue=>'blocked',-offvalue=>0,-variable=>\$guide_status, -font=>"Times 10 italic")->pack(-side=>'right');
+
+my $guideEntry = $midThird->Scale(qw/-orient h -from 0 -to 100 -showvalue 1 -width 5 -sliderlength 10 -troughcolor green -variable/ => \$perFilled)->pack(-side =>'right');
+my $guideLabel = $midThird->Label(-text =>"%filled", -font=>"Times 10 italic")->pack(-side =>'right');
+
+my @Layers = sort hashValueAscendingNum (keys(%RML));
+foreach(@Layers){
+  my $type = $PTDB{$_}->dbTechGetLayerType;
+  if($type eq "ROUTING"){
+     push(@RoutingLayers, $_);
+  }
+}  
+my $metal_layer= "";
+my $layer_dropdown = $midFourth->BrowseEntry(-variable => \$metal_layer,-font=>"Times 10 italic",-width=>10,-listwidth=>30)->pack(-side=>'right');
+foreach (@RoutingLayers){
+                 $layer_dropdown->insert('end',$_);
+                 }#foreach
+
+my $layerButton = $midFourth->Checkbutton(-text=>"Assign Layer", -onvalue=>'layer',-offvalue=>0,-variable=>\$assigned_layer, -font=>"Times 10 italic")->pack(-side=>'right');
+#--------------------------------------------------------------------------------------------------------------#
+my $active_canvas = $GLOBAL->dbGlobalGetActiveCanvas;
+my @coords = ();
+if($active_canvas eq "design_canvas"){
+   @coords  = $design_canvas->coords($Instance);
+}elsif($active_canvas eq "hier_view"){
+   my @poly_coords  = $hier_canvas->coords($Instance);#it returns rect coordinates as polygon coordinates
+   @coords = ($poly_coords[0], $poly_coords[1], $poly_coords[4], $poly_coords[5]);
+   
+}
+my $width = $coords[2] - $coords[0];
+my $height = $coords[3] - $coords[1];
+my $xfact = 300/$width;
+my $yfact = 300/$height;
+if($xfact < $yfact){$fact = $xfact;}
+else{$fact = $yfact;}
+my $canW = $width*$fact;
+my $canH = $height*$fact;
+
+my $canvas = $midFifth->Canvas(-width=>$canW+40,-height=>$canH+40, -bg=>'white',-scrollregion =>[0,0,$canW+40,$canH+40])->pack();
+&create_pinGuides($Instance,$canvas,$canW,$canH,$noOfPinGuide);
+
+my $guideLabel = $midFirst->Label(-text =>"No of Guides", -font=>"Times 10 italic",-foreground=>"blue")->pack(-side =>'left');
+my $guideEntry = $midFirst->Entry(-textvariable =>\$noOfPinGuide,-width=>5)->pack(-side =>'left');
+my $guideButton = $midFirst->Button(-text=>"Set", -padx=>0,-pady=>0, -command=>sub{&create_pinGuides($Instance,$canvas,$canW,$canH,$noOfPinGuide);})->pack(-side =>'left');
+
+$canvas->CanvasBind('<1>' => sub {
+                    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+                    my @id      = $canvas->find(qw/withtag current/);
+                    my @tagList = $canvas->gettags($id[0]);
+                    if($tagList[0] ne "RECT1" && $tagList[0] ne "RECT2"){
+                       my $status = $GUIDE_STATUS{$tagList[0]};
+                       if($status ne "blocked"){
+                          my @coords = $canvas->coords($tagList[0]);
+                          if($tagList[0] eq "UL" || $tagList[0] eq "UR" || $tagList[0] eq "LL" || $tagList[0] eq "LR"){
+                             $canvas->createOval(@coords, -fill=>"white",-outline=>"black",-stipple=>"gray12",-tags=>"TEMP_ON"); 
+                          }else{
+                          $canvas->createRectangle(@coords, -fill=>"white",-outline=>"black",-stipple=>"gray12",-tags=>"TEMP_ON");
+                          } 
+                          if($assigned_layer eq "layer"){
+                             $guide_status = 0; 
+                             $guide_status1 = 0;
+                             $GUIDE_LAYER{$tagList[0]} = $metal_layer; 
+                          }else{ 
+                             &make_pinGuide_storage($Instance,$tagList[0],$guide_status,$canvas,$pinName);
+                             @SELPINS = ();$pinName = "";
+                             my $disMod = $PinOrBusSelButton->cget('-text');
+                             my @pins = &create_pinList($Instance, $disMod,$showAll,$searchStr);  
+                             $list->configure(-listvariable =>\@pins);
+                          }
+                       }elsif($guide_status1 eq "unblocked"){
+                             $guide_status = 0;
+                             $assigned_layer = 0;  
+                             $GUIDE_STATUS{$tagList[0]} = "unblocked";
+                             $canvas->itemconfigure($tagList[0], -fill=>"red",-outline=>"black",-stipple=>"gray12");
+                       }
+                    }
+                  });   
+$canvas->CanvasBind('<ButtonRelease-1>' => sub {
+                                                $canvas->delete("TEMP_ON");
+                                                });
+$canvas->CanvasBind('<3>' => sub {
+                    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+                    my @id      = $canvas->find(qw/withtag current/);
+                    my @tagList = $canvas->gettags($id[0]);
+                    if($tagList[0] ne "RECT1" && $tagList[0] ne "RECT2"){
+                       my $status = $GUIDE_STATUS{$tagList[0]};
+                       if($status ne "blocked"){
+                          my @coords = $canvas->coords($tagList[0]);
+                          if($tagList[0] eq "UL" || $tagList[0] eq "UR" || $tagList[0] eq "LL" || $tagList[0] eq "LR"){
+                             $canvas->createOval(@coords, -fill=>"white",-outline=>"black",-stipple=>"gray12",-tags=>"TEMP_ON"); 
+                          }else{
+                             $canvas->createRectangle(@coords, -fill=>"white",-outline=>"black",-stipple=>"gray12",-tags=>"TEMP_ON");
+                          } 
+                          if(exists $TEMP_PIN_HASH{$tagList[0]}){
+                             my $pin = $TEMP_PIN_HASH{$tagList[0]};
+                             my $noOfPins = @$pin;
+                             $assignedPins = join ",",@$pin;     
+                             #$perFilled = $noOfPins*100/$guideCapacity; 
+                             $perFilled = $noOfPins; 
+                          }else{$assignedPins = "";$perFilled = 0;} 
+                       }#if unblocked
+                    }
+                  });   
+$canvas->CanvasBind('<ButtonRelease-3>' => sub {
+                                                $canvas->delete("TEMP_ON");
+                                                });
+my $generateTcl = $buttonFrame->Button(-text=>"Generate Tcl", -padx=>0,-pady=>0,-relief=>"raised", -borderwidth=>2, -command=>sub{&create_pinPlaceDB($module);$popupWindow->destroy;})->pack(-side=>'left');
+my $cancelButton = $buttonFrame->Button(-text=>"Cancel", -padx=>0,-pady=>0,-relief=>"raised", -borderwidth=>2, -command=>sub{$popupWindow->destroy;})->pack(-side=>'left');
+}#sub create_pinPlace_popup
+
+sub get_pinList{
+my $pattern= $_[0];
+my $button = $_[1];
+my $inst = $_[2];
+my $showAll = $_[3];
+my $type  = "";
+my @matchPins = ();
+
+my $buttonType = $button->cget('-text');
+
+my @pins = &create_pinList($inst, $buttonType,$showAll,$pattern);
+if($pattern eq ""){
+   @matchPins = @pins;
+}else{
+   foreach(@pins){
+     if($_ =~ m/.*$pattern.*/i){
+        push(@matchPins, $_);
+     }
+   }
+}
+return(@matchPins);
+}#sub get_pinList
+
+sub create_pinGuides {
+my $module = $_[0];
+my $canvas = $_[1];
+my $canW = $_[2];
+my $canH = $_[3];
+my $noOfPinGuide = $_[4];
+
+my $MICRONFACTOR = $GLOBAL->dbGlobalGetMicronFactor;
+my $active_canvas = $GLOBAL->dbGlobalGetActiveCanvas;
+my @modCoords = ();
+   @modCoords = $design_canvas->coords($module) if($active_canvas eq "design_canvas");
+   @modCoords = $hier_canvas->coords($module) if($active_canvas eq "hier_view");
+my $modWidth = ($modCoords[2]-$modCoords[0])/$MICRONFACTOR;
+my $modHeight = ($modCoords[3]-$modCoords[1])/$MICRONFACTOR;
+my $guideWidth = ($modWidth-10)/$noOfPinGuide;
+my $guideHeight = ($modHeight-10)/$noOfPinGuide;
+
+$canvas->delete('all');
+my $butW = ($canW-20)/$noOfPinGuide;
+my $butH = ($canH-20)/$noOfPinGuide;
+
+$canvas->createRectangle(0,0,$canW+40,$canH+40, -fill=>"light gray",-outline=>"light gray",-tags=>"RECT1");
+$canvas->createRectangle(20,20,$canW+20,$canH+20, -fill=>"green",-outline=>"green", -stipple=>"gray25",-tags=>"RECT2");
+  for(my $i=0; $i<$noOfPinGuide; $i++){
+      my $Left_llx = 10;                   my $left_llx = sprintf('%.2f',-5);
+      my $Left_lly = 30 + $butH*$i;        my $left_lly = sprintf('%.2f',$modHeight-5-$guideHeight*($i+1)); 
+      my $Left_urx = 30;                   my $left_urx = sprintf('%.2f',5);
+      my $Left_ury = $Left_lly+$butH;      my $left_ury = sprintf('%.2f',$modHeight-5-$guideHeight*$i);
+
+      my $Right_llx = 10 + $canW;          my $right_llx = sprintf('%.2f',$modWidth-5);
+      my $Right_lly = 30 + $butH*$i;       my $right_lly = sprintf('%.2f',$modHeight-5 -$guideHeight*($i+1)); 
+      my $Right_urx = 30 + $canW;          my $right_urx = sprintf('%.2f',$modWidth+5);
+      my $Right_ury = $Left_lly+$butH;     my $right_ury = sprintf('%.2f',$modHeight-5-$guideHeight*$i); 
+
+      my $Top_llx = 30 + $butW*$i;         my $top_llx = sprintf('%.2f',5+$guideWidth*$i);
+      my $Top_lly = 10;                    my $top_lly = sprintf('%.2f',$modHeight-5);
+      my $Top_urx = $Top_llx + $butW;      my $top_urx = sprintf('%.2f',5+$guideWidth*($i+1));
+      my $Top_ury = 30;                    my $top_ury = sprintf('%.2f',$modHeight+5);
+
+      my $Bott_llx = 30 + $butW*$i;        my $bott_llx = sprintf('%.2f',5+$guideWidth*$i);
+      my $Bott_lly = 10 + $canH;           my $bott_lly = sprintf('%.2f',-5);
+      my $Bott_urx = $Top_llx + $butW;     my $bott_urx = sprintf('%.2f',5+$guideWidth*($i+1));
+      my $Bott_ury = 30 + $canH;           my $bott_ury = sprintf('%.2f',5);
+
+
+$canvas->createRectangle($Left_llx,$Left_lly,$Left_urx,$Left_ury, -fill=>"red",-outline=>"black",-stipple=>"gray12", -tags=>"L".$i);
+@{$GUIDE_BBOX{"L".$i}} = ($left_llx,$left_lly,$left_urx,$left_ury);
+
+$canvas->createRectangle($Right_llx,$Right_lly,$Right_urx,$Right_ury, -fill=>"red",-outline=>"black",-stipple=>"gray12",-tags=>"R".$i);
+@{$GUIDE_BBOX{"R".$i}} = ($right_llx,$right_lly,$right_urx,$right_ury);
+
+$canvas->createRectangle($Top_llx,$Top_lly,$Top_urx,$Top_ury, -fill=>"red",-outline=>"black",-stipple=>"gray12",-tags=>"T".$i);
+@{$GUIDE_BBOX{"T".$i}} = ($top_llx,$top_lly,$top_urx,$top_ury);
+
+$canvas->createRectangle($Bott_llx,$Bott_lly,$Bott_urx,$Bott_ury, -fill=>"red",-outline=>"black",-stipple=>"gray12",-tags=>"B".$i);
+@{$GUIDE_BBOX{"B".$i}} = ($bott_llx,$bott_lly,$bott_urx,$bott_ury);
+
+$GUIDE_STATUS{"L".$i} = "unblocked";
+$GUIDE_STATUS{"R".$i} = "unblocked";
+$GUIDE_STATUS{"T".$i} = "unblocked";
+$GUIDE_STATUS{"B".$i} = "unblocked";
+  }
+$canvas->createOval(10,10,30,30, -fill=>"red",-outline=>"black",-stipple=>"gray12",-tags=>"UL");
+$canvas->createOval(10+$canW,10,30+$canW,30, -fill=>"red",-outline=>"black",-stipple=>"gray12",-tags=>"UR");
+$canvas->createOval(10,10+$canH,30,30+$canH, -fill=>"red",-outline=>"black",-stipple=>"gray12", -tags=>"LL");
+$canvas->createOval(10+$canW,10+$canH,30+$canW,30+$canH, -fill=>"red",-outline=>"black",-stipple=>"gray12", -tags=>"LR");
+
+$GUIDE_STATUS{"UL"} = "unblocked";
+$GUIDE_STATUS{"UR"} = "unblocked";
+$GUIDE_STATUS{"LL"} = "unblocked";
+$GUIDE_STATUS{"LR"} = "unblocked";
+
+@{$GUIDE_BBOX{"UL"}} = (-5,$modHeight-5,5,$modHeight+5);
+@{$GUIDE_BBOX{"UR"}} = ($modWidth-5,$modHeight-5,$modWidth+5,$modHeight+5);
+@{$GUIDE_BBOX{"LL"}} = (-5,-5,5,5);
+@{$GUIDE_BBOX{"LR"}} = ($modWidth-5,-5,$modWidth+5,5);
+}#sub create_pinGuides
+
+sub make_pinGuide_storage{
+my $module = $_[0];
+my $guide = $_[1];
+my $guide_status = $_[2];
+my $canvas = $_[3];
+my $pinStr = $_[4];
+   if($guide_status eq "blocked"){
+      $GUIDE_STATUS{$guide} = "blocked";
+      $canvas->itemconfigure($guide, -fill=>"blue",-outline=>"black",-stipple=>"gray12");
+   }else{
+      my @pins = ();
+      if(exists $TEMP_PIN_HASH{$guide}){
+         my $existingPins = $TEMP_PIN_HASH{$guide};
+         push(@pins,@$existingPins);
+      }
+      my @addpins = split(/\,/, $pinStr);
+      push(@pins,@addpins);
+      @{$TEMP_PIN_HASH{$guide}} = @pins;
+   }
+}#sub make_pinGuide_storage
+
+sub create_pinPlaceDB{
+my $module = $_[0];
+foreach my $guide(keys %GUIDE_BBOX){
+   my $bbox = $GUIDE_BBOX{$guide};
+   my ($llx,$lly,$urx,$ury) = @$bbox;
+   my $status = $GUIDE_STATUS{$guide};
+   my $layer = $GUIDE_LAYER{$guide};
+   my $pin = $TEMP_PIN_HASH{$guide};
+   my @pins = @$pin;
+   my $type = "";
+
+   if($status eq "blocked"){$type = "keepout";
+   }elsif($#pins > -1){$type = "soft";
+   }else{}
+   &createPinGuide("-guide",$guide,"-module",$module,"-type",$type, "-layer",$layer, "-bbox", "{$llx,$lly,$urx,$ury}"); 
+   if($type eq ""){
+      print "#<CMD> create_pin_guide -guide $guide -module $module -bbox {$llx,$lly,$urx,$ury} -layer $layer \n";
+   }else{
+      print "#<CMD> create_pin_guide -guide $guide -module $module -bbox {$llx,$lly,$urx,$ury} -type $type -layer $layer\n";
+   }
+   if($#pins > -1){
+      &guidePin("-guide",$guide,"-module",$module,"-pin","{@pins}");
+      print "#<CMD> guide_pin -guide $guide -module $module -pin {@pins}\n";
+   }
+} 
+}#sub create_pinPlaceDB
+
+sub get_guide {
+foreach my $module(keys %PSEUDO_MODULE_ALREADY){
+  print " module is $module\n";
+        my @guide = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetPinGuideList ;
+        foreach(@guide){
+          print "\tguide is $_\n";     
+           my @bbox = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetPinGuideBbox($_);
+         print "\t\tbbox @bbox\n";    
+           my $type = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetPinGuideType($_);
+          print "\t\ttype $type\n";
+           my $layer = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetPinGuideLayer($_);
+          print "\t\tlayer $layer\n";
+           my @pins = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenPinGuideGetPinList($_);
+          print "\t\tpins @pins\n";
+        }#foreach guide
+ }#foreach module
+}#sub get_guide
+
+
+1;

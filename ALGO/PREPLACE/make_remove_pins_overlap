@@ -1,0 +1,211 @@
+@temp_array=();
+sub remove_pins_overlap {
+
+%TEMP_PIN_DB = ();
+my $noOfArguments = @_;
+my $debug = 0;
+$DBU = $GLOBAL->dbfGlobalGetDBU;
+print "No of arguments: $noOfArguments\n";
+if($_[0] eq "-h" )  { 
+ 	print "Usage :  remove_pins_overlap\n"; 
+        print "                       <-debug>\n";
+	
+  }
+else {
+print "\nINFO-ALGO_PREPL-RM_PN_OVLP : 001 : Running pins overlap removal\n" ;
+&dbPlaceCreatePinBySide;
+@temp_array = ('S','E','N','W');
+
+foreach $side( @temp_array ) {
+	print "DBG-ALGO_PREPL-RM_PN_OVLP : 002 : Side : $side \n" if ($debug);
+	foreach $layer (keys %{$TEMP_PIN_DB{$side}{PL}}) {
+        my $layerSpacing = $PTDB{$layer}->dbTechGetLayerSpacing;
+        $layerSpacing *= $DBU;
+        $layerSpacing *= 10;
+	print "DBG-ALGO_PREPL-RM_PN_OVLP : 003 : Layer: $layer \n" if ($debug);
+	my @pinList = $TEMP_PIN_DB{$side}->dbPlaceGetPinsInSide($layer);
+	
+	foreach $pin(@pinList) {
+		my @loc = $PORTS_ALREADY{$TOP_MODULE}{$pin}->dbPortGetLoc;
+		if ( $side eq 'N' || $side eq 'S' ) { 
+			$temp_hash{$pin} = $loc[0];
+		} elsif ( $side eq 'E' || $side eq 'W' ) {
+			$temp_hash{$pin} = $loc[1];
+		}
+	}
+	##Sorting based on value(X-cordinate)##
+	@Sorted_pinList = sort {
+        	$temp_hash{$a} <=> $temp_hash{$b}
+        } keys %temp_hash;
+	@{$temp1{$side}{pinList}{$layer}} = @Sorted_pinList;
+	%temp_hash = ();
+
+        ########################################################
+	my $sidelength = $TEMP_PIN_DB{$side}->dbPlaceGetSideSL;
+	my $sidePinlength = totalPinLengthInSide($side, @{$temp1{$side}{pinList}{$layer}} )  ;
+
+	$delta = $sidelength - $sidePinlength ;
+
+if ($delta >= 0 ) {
+	$delta_used = 0 ; 
+	$delta_used_new = 0 ; 
+	$W_used = 0;
+	foreach $pin(@{$temp1{$side}{pinList}{$layer}}) {
+		my @loc = $PORTS_ALREADY{$TOP_MODULE}{$pin}->dbPortGetLoc;
+		my @size=$PORTS_ALREADY{$TOP_MODULE}{$pin}->dbPortGetSize;
+		my @pinAbsLoc;
+		
+		if ( $side eq 'N' || $side eq 'S' ) { 
+		$minWidth = $size[0] * $DBU;
+		##In case of overlap
+		if ($loc[0] < $W_used) {
+			$new_X = $W_used;
+			my($new_X_aligned,$new_Y_aligned)=&dbPlacePortsAlignToTrack($new_X,$loc[1],$side,$layer,$size[0]);   
+			print "DBG-ALGO_PREPL-RM_PN_OVLP : 004 : Pin:$pin Loc : @loc , New loc:  $new_X_aligned $new_Y_aligned\n" if ($debug);
+			$PORTS_ALREADY{$TOP_MODULE}{$pin}->dbPortSetLoc($new_X_aligned,$new_Y_aligned);
+     			$PLACE{$TOP_MODULE}->dbPlaceSetPortLoc($pin,$new_X_aligned,$new_Y_aligned);
+			if ($side eq 'N') {
+				 @pinAbsLoc = ($new_X_aligned/$DBU,$new_Y_aligned/$DBU,($new_X_aligned+$minWidth)/$DBU,($new_Y_aligned-$minWidth)/$DBU);
+			} else {
+				 @pinAbsLoc = ($new_X_aligned/$DBU,$new_Y_aligned/$DBU,($new_X_aligned+$minWidth)/$DBU,($new_Y_aligned+$minWidth)/$DBU);
+			}
+			my $rect = join" ",@pinAbsLoc;
+                        my $rectL = $layer." RECT ".$rect;
+			#$PLDB{$TOP_MODULE}->dbMdbModifyPinRect($pin,$rectL);
+			$delta_used = $delta_used +$new_X_aligned - $W_used;
+			$W_used = $new_X_aligned + 1.5* $minWidth + $layerSpacing;
+		}
+		##No overlap
+		else {
+			$delta_used_new = $delta_used + $loc[0]  - $W_used ;
+			if ( $delta_used_new <= $delta ) {
+				## keep cell position same;
+				$new_X = $loc[0];
+				my($new_X_aligned,$new_Y_aligned)=&dbPlacePortsAlignToTrack($new_X,$loc[1],$side,$layer,$size[0]);   
+				print "DBG-ALGO_PREPL-RM_PN_OVLP : 005 : Pin:$pin Loc : @loc , New loc:  $new_X_aligned $new_Y_aligned\n" if ($debug);
+				$PORTS_ALREADY{$TOP_MODULE}{$pin}->dbPortSetLoc($new_X_aligned,$new_Y_aligned);
+     				$PLACE{$TOP_MODULE}->dbPlaceSetPortLoc($pin,$new_X_aligned,$new_Y_aligned);
+			if ($side eq 'N') {
+				 @pinAbsLoc = ($new_X_aligned/$DBU,$new_Y_aligned/$DBU,($new_X_aligned+$minWidth)/$DBU,($new_Y_aligned-$minWidth)/$DBU);
+			} else {
+				 @pinAbsLoc = ($new_X_aligned/$DBU,$new_Y_aligned/$DBU,($new_X_aligned+$minWidth)/$DBU,($new_Y_aligned+$minWidth)/$DBU);
+			}
+				my $rect = join" ",@pinAbsLoc;
+                        	my $rectL = $layer." RECT ".$rect;
+				#$PLDB{$TOP_MODULE}->dbMdbModifyPinRect($pin,$rectL);
+				$delta_used = $delta_used +$new_X_aligned - $W_used;
+			        $W_used = $new_X_aligned + 1.5* $minWidth + $layerSpacing;
+			}
+			else {
+				$new_X = $W_used + $delta - $delta_used;	
+				my($new_X_aligned,$new_Y_aligned)=&dbPlacePortsAlignToTrack($new_X,$loc[1],$side,$layer,$size[0]);   
+				print "DBG-ALGO_PREPL-RM_PN_OVLP : 006 : Pin:$pin Loc : @loc , New loc:  $new_X_aligned $new_Y_aligned\n" if ($debug);
+				$PORTS_ALREADY{$TOP_MODULE}{$pin}->dbPortSetLoc($new_X_aligned,$new_Y_aligned);
+     				$PLACE{$TOP_MODULE}->dbPlaceSetPortLoc($pin,$new_X_aligned,$new_Y_aligned);
+			if ($side eq 'N') {
+				@pinAbsLoc = ($new_X_aligned/$DBU,$new_Y_aligned/$DBU,($new_X_aligned+$minWidth)/$DBU,($new_Y_aligned-$minWidth)/$DBU);
+			} else {
+				@pinAbsLoc = ($new_X_aligned/$DBU,$new_Y_aligned/$DBU,($new_X_aligned+$minWidth)/$DBU,($new_Y_aligned+$minWidth)/$DBU);
+			}
+				my $rect = join" ",@pinAbsLoc;
+                        	my $rectL = $layer." RECT ".$rect;
+				#$PLDB{$TOP_MODULE}->dbMdbModifyPinRect($pin,$rectL);
+				$delta_used = $delta_used +$new_X_aligned - $W_used;
+			        $W_used = $new_X_aligned + 1.5* $minWidth + $layerSpacing;
+				#print "W_used : $W_used delta_used: $delta_used and delta: $delta\n" if ($debug);
+			}
+		}
+
+		}elsif ( $side eq 'E' || $side eq 'W' ) {
+		$minWidth = $size[1]*$DBU;
+		##In case of overlap
+		if ($loc[1] < $W_used) {
+			$new_Y = $W_used;
+			my($new_X_aligned,$new_Y_aligned)=&dbPlacePortsAlignToTrack($loc[0],$new_Y,$side,$layer,$size[1]);  
+			print "DBG-ALGO_PREPL-RM_PN_OVLP : 007 : Pin:$pin Loc : @loc , New loc:  $new_X_aligned $new_Y_aligned\n" if ($debug);
+			$PORTS_ALREADY{$TOP_MODULE}{$pin}->dbPortSetLoc($new_X_aligned,$new_Y_aligned);
+     			$PLACE{$TOP_MODULE}->dbPlaceSetPortLoc($pin,$new_X_aligned,$new_Y_aligned);
+			if ($side eq 'E') {
+				@pinAbsLoc = ($new_X_aligned/$DBU,$new_Y_aligned/$DBU,($new_X_aligned-$minWidth)/$DBU,($new_Y_aligned+$minWidth)/$DBU);
+			} else {
+				@pinAbsLoc = ($new_X_aligned/$DBU,$new_Y_aligned/$DBU,($new_X_aligned+$minWidth)/$DBU,($new_Y_aligned+$minWidth)/$DBU);
+			}
+			my $rect = join" ",@pinAbsLoc;
+                        my $rectL = $layer." RECT ".$rect;
+			#$PLDB{$TOP_MODULE}->dbMdbModifyPinRect($pin,$rectL);
+
+			$delta_used = $delta_used +$new_Y_aligned - $W_used;
+			$W_used = $new_Y_aligned + 1.5* $minWidth + $layerSpacing;
+		}
+		##No overlap
+		else {
+			$delta_used_new = $delta_used + $loc[1]  - $W_used ;
+			if ( $delta_used_new <= $delta ) {
+				## keep cell position same;
+				$new_Y = $loc[1];
+			my($new_X_aligned,$new_Y_aligned)=&dbPlacePortsAlignToTrack($loc[0],$new_Y,$side,$layer,$size[1]);   
+			print "DBG-ALGO_PREPL-RM_PN_OVLP : 008 : Pin:$pin Loc : @loc , New loc:  $new_X_aligned $new_Y_aligned\n" if ($debug);
+			$PORTS_ALREADY{$TOP_MODULE}{$pin}->dbPortSetLoc($new_X_aligned,$new_Y_aligned);
+     			$PLACE{$TOP_MODULE}->dbPlaceSetPortLoc($pin,$new_X_aligned,$new_Y_aligned);
+			if ($side eq 'E') {
+				@pinAbsLoc = ($new_X_aligned/$DBU,$new_Y_aligned/$DBU,($new_X_aligned-$minWidth)/$DBU,($new_Y_aligned+$minWidth)/$DBU);
+			} else {
+				@pinAbsLoc = ($new_X_aligned/$DBU,$new_Y_aligned/$DBU,($new_X_aligned+$minWidth)/$DBU,($new_Y_aligned+$minWidth)/$DBU);
+			}
+			my $rect = join" ",@pinAbsLoc;
+                        my $rectL = $layer." RECT ".$rect;
+			#$PLDB{$TOP_MODULE}->dbMdbModifyPinRect($pin,$rectL);
+			$delta_used = $delta_used +$new_Y_aligned - $W_used;
+			$W_used = $new_Y_aligned + 1.5* $minWidth + $layerSpacing;
+			}
+			else {
+				$new_Y = $W_used + $delta - $delta_used;	
+			my($new_X_aligned,$new_Y_aligned)=&dbPlacePortsAlignToTrack($loc[0],$new_Y,$side,$layer,$size[1]);   
+			print "DBG-ALGO_PREPL-RM_PN_OVLP : 009 : Pin:$pin Loc : @loc , New loc:  $new_X_aligned $new_Y_aligned\n" if ($debug);
+			$PORTS_ALREADY{$TOP_MODULE}{$pin}->dbPortSetLoc($new_X_aligned,$new_Y_aligned);
+     			$PLACE{$TOP_MODULE}->dbPlaceSetPortLoc($pin,$new_X_aligned,$new_Y_aligned);
+			if ($side eq 'E') {
+				@pinAbsLoc = ($new_X_aligned/$DBU,$new_Y_aligned/$DBU,($new_X_aligned-$minWidth)/$DBU,($new_Y_aligned+$minWidth)/$DBU);
+			} else {
+				@pinAbsLoc = ($new_X_aligned/$DBU,$new_Y_aligned/$DBU,($new_X_aligned+$minWidth)/$DBU,($new_Y_aligned+$minWidth)/$DBU);
+			}
+			my $rect = join" ",@pinAbsLoc;
+                        my $rectL = $layer." RECT ".$rect;
+			#$PLDB{$TOP_MODULE}->dbMdbModifyPinRect($pin,$rectL);
+			$delta_used = $delta_used +$new_Y_aligned - $W_used;
+			$W_used = $new_Y_aligned + 1.5* $minWidth + $layerSpacing;
+			}
+		}
+		}#end elsif
+	}#end foreach
+}#end if
+
+
+
+	} #end foreach
+}#end foreach 	
+
+%temp1 = ();
+@temp_array = ();
+
+print "\nINFO-ALGO_PREPL-RM_PN_OVLP : 010 : End overlap removal\n" ;
+
+} # end else
+}#sub remove_pins_overlap
+
+sub totalPinLengthInSide { 
+	my ($side,@pinList) = @_;
+	my $width = 0;
+	foreach $pin(@pinList) {
+		my @size=$PORTS_ALREADY{$TOP_MODULE}{$pin}->dbPortGetSize;
+		$width = $width + ($size[0]*$DBU) ; 
+}
+return($width);
+} #sub 	totalPinLengthInSide
+
+
+
+
+
+
+1;

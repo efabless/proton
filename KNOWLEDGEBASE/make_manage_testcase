@@ -1,0 +1,792 @@
+
+#--------------------------------------------------------------------#
+sub dbKBGetTestNameByTID {
+my $DBvalue = $GLOBAL->dbfGlobalGetInitializeDB;
+if ( $DBvalue == 0 ) {
+  print "WARN-KNLBSE : 001 : first call IntKB to create database table\n";
+  return;
+}
+my $testID = $_[0];
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE",qaadmin,qaadmin ) || die "Cannot connect: $DBI::errstr";
+$sth = $dbh->prepare("SELECT TestName FROM designStat WHERE TID = $testID");
+$sth->execute();
+my $name = $sth->fetch();
+return($name->[0]);
+}#sub dbKBGetTestNameByTID
+
+
+sub dbKBGetTestPathByTID {
+my $DBvalue = $GLOBAL->dbfGlobalGetInitializeDB;
+if ( $DBvalue == 0 ) {
+  print "WARN-KNLBSE : 001 : first call IntKB to create database table\n";
+  return;
+}
+my $testID = $_[0];
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE",qaadmin,qaadmin ) || die "Cannot connect: $DBI::errstr";
+$sth = $dbh->prepare("SELECT TestPath FROM designStat WHERE TID = $testID");
+$sth->execute();
+my $path = $sth->fetch();
+return($path->[0]);
+}#sub dbKBGetTestPathByTID
+#--------------------------------------------------------------------#
+
+sub dbKBdoesRIDExist {
+my $DBvalue = $GLOBAL->dbfGlobalGetInitializeDB;
+if ( $DBvalue == 0 ) {
+  print "WARN-KNLBSE : 001 : first call IntKB to create database table\n";
+  return;
+}
+my $testId = $_[0];
+my $runId = $_[1];
+print "MSG-KNLBSE : 002 : checking existance of test $testId and run $runId \n";
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE",qaadmin,qaadmin ) || die "Cannot connect: $DBI::errstr";
+$sth = $dbh->prepare("SELECT COUNT(*) FROM designStat WHERE TID=$testId AND RID=$runId " );
+$sth->execute();
+my $len = $sth->fetch() ;
+print "INFO-KNLBSE : 003 : $len->[0]\n";
+if(! $len->[0]) { return(0); } else { return(1); }
+}#sub dbKBdoesRIDExist
+
+sub dbKBdoesTIDExist {
+my $DBvalue = $GLOBAL->dbfGlobalGetInitializeDB;
+if ( $DBvalue == 0 ) {
+  print "WARN-KNLBSE : 001 : first call IntKB to create database table\n";
+  return;
+}
+my $testId = $_[0];
+print "INFO-KNLBSE : 002 : checking existance of $testId\n";
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE",qaadmin,qaadmin ) || die "Cannot connect: $DBI::errstr";
+$sth = $dbh->prepare("SELECT COUNT(*) FROM designStat WHERE TID = $testId");
+$sth->execute();
+my $len = $sth->fetch() ;
+print "INFO-KNLBSE : 003 : $len->[0]\n";
+if(! $len->[0]) { return(0); } else { return(1); }
+}#sub dbKBdoesTIDExist
+
+sub dbKBUpdateDataField {
+my $DBvalue = $GLOBAL->dbfGlobalGetInitializeDB;
+if ( $DBvalue == 0 ) {
+  print "WARN-KNLBSE : 001 : first call IntKB to create database table\n";
+  return;
+}
+my $testId = $_[0];
+my $runId = $_[1];
+my $field = $_[2];
+my $value = $_[3];
+
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE",qaadmin,qaadmin ) || die "Cannot connect: $DBI::errstr";
+$sth = $dbh->prepare("SHOW COLUMNS FROM designStat LIKE '$field'");
+$sth->execute();
+@rows = $sth->fetchrow_array() ;
+my $len = @rows;
+if(! $len) {
+print "WARN-KNLBSE : 002 : Field $field doesnot exist in the knowledgebase, please check the field you are updating....\n";
+return 0 ;
+            } else {
+print "INFO-KNLBSE : 003 : updating $field with $value for testcase $testId\n";
+$dbh->do( "UPDATE designStat SET $field=$value WHERE RID=$runId AND TID=$testId" );
+                   }
+}#sub dbKBUpdateDataField
+
+sub dbKBsetDefaultOrder {
+#print "connecting to $KB_DATABASE\n";
+my $DBvalue = $GLOBAL->dbfGlobalGetInitializeDB;
+if ( $DBvalue == 0 ) {
+  print "INFO-KNLBSE : 001 : first call IntKB to create database table\n";
+  return;
+}
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE",qaadmin,qaadmin ) || print "Cannot connect: $DBI::errstr\n";
+$sth = $dbh->prepare("SHOW COLUMNS FROM designStat ");
+$sth->execute();
+#@rows = $sth->fetchrow_array() ;
+my @defaultOrder = ();
+while (($colName,$t) = $sth->fetchrow_array) { push(@defaultOrder,$colName); }
+$GLOBAL->dbGlobalSetKbfo(@defaultOrder);
+
+}#sub dbKBsetDefaultOrder
+
+
+sub set_kb_field_order {
+&dbKBsetDefaultOrder;
+#my $fieldString = $_[0];
+#my @fields = split(/\s+/, $fieldString );
+my @fields = @_;
+my @prevOrder = $GLOBAL->dbGlobalGetKbfo();
+my %tempHash = ();
+   foreach my $pf ( @prevOrder ) {
+   $tempHash{$pf} = 1;
+#     print "$pf \= 1\n";
+                                 }#foreach
+my @currOrder = ();
+foreach my $f (@fields){
+        if(exists $tempHash{$f}){
+        push(@currOrder,$f);
+                                }
+        else {
+        print "WARN-KNLBSE-SET_KB_FLD_OR : 001 : the field $f does not exist in the database\n";
+             }
+                        }
+$GLOBAL->dbGlobalSetKbfo(@currOrder);
+}# sub set_kb_field_order
+
+
+sub csv2sql {
+
+my $delimit = "\,*";
+my $noOfArguments = @_;
+if( $noOfArguments < 2 || $_[0] eq '-h') { print "Usage : csv2sql -f <csv file> \n";
+                           print "                [-delimit <delimiter characta:r>] \n";
+                           print "                [-testID <delimiter characta:r>] \n";
+                           print "                [--updatefields <delimiter characta:r>] \n";
+                           print "                 note : by defaul delimiter is a \"\,\"\n";
+                         }
+else { # if correct no. of inputs
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-f"){$CSV_FILE = $_[$i+1];}
+if($_[$i] eq "-delimit"){$delimit = $_[$i+1];}
+                                         }#for
+
+print "INFO-KNLBSE-CSV_2_SQL : 001 : reading $CSV_FILE with delimiter as $delimit\n";
+my $ref = ReadData($CSV_FILE, $delimit);
+my $maxrow = $ref->[1]{maxrow};
+my $maxcol = $ref->[1]{maxcol};
+
+# adding column headers
+for (my $i=1 ; $i<=$maxcol ;$i++) {
+my @colB = @{$ref->[1]{cell}[$i]};
+print "\nINFO-KNLBSE-CSV_2_SQL : 002 : printing column array";
+print join " " ,  @colB;
+print "\n";
+my $col_name =  @colB[1] ;
+if(check_header_exist($col_name) == 0) {
+   addCustomFields($col_name, "VARCHAR(255)") ;
+                                       }
+                             }    
+# add data into the mysql database 
+for ( my $y = 2; $y <= $maxrow ; $y++ ) {
+    for ( my $x = 2; $x <= $maxcol ; $x ++ ) {
+        my $val = $ref->[1]{cell}[$x][$y] ;
+        my $field = $ref->[1]{cell}[$x][1];
+        my $ID = $ref->[1]{cell}[1][$y] ;
+        print "$ID,$field,$val\n";
+        my ($baseID, $runID ) = (split(/\./, $ID))[0,1];
+# if $ID exists then update the data ... else check if the base ID exists, if the base ID exists add the new testcase
+        my $testFound = &dbKBdoesRIDExist($baseID,$runID);
+        if ( $testFound == 0 ) {
+           print "WARN-KNLBSE-CSV_2_SQL : 003 : the testcase $ID does not exist! .. a new testcase needs to be added\n";
+           my $testBaseFound = &dbKBdoesTIDExist($baseID);
+              if ( $testBaseFound == 1 ) { 
+                                      my $testName = &dbKBGetTestNameByTID($baseID);
+                                      my $testPath = &dbKBGetTestPathByTID($baseID);
+                print "WARN-KNLBSE-CSV_2_SQL : 004 : The base testcase exists! .. adding new testcase data for :$baseID:$runID:$testName:$testPath\n"; 
+                                      &dbKBAddNewData($baseID,$runID,$testName,$testPath); 
+                                      &dbKBUpdateDataField($baseID,$runID,$field,$val);
+                                      } else { print "ERR-KNLBSE-CSV_2_SQL : 005 : Even the base $baseID testcase does not exist\n"; }
+                               }
+        elsif ( $testFound == 1 ) {
+         print "INFO-KNLBSE-CSV_2_SQL : 006 : $runID found!\n";
+         &dbKBUpdateDataField($baseID,$runID,$field,$val);
+                                  }
+                                             }# loop through the columns
+                                        }# loop through the rows
+        }# if correct arguments
+}# sub csv2sql
+
+sub dbKBAddNewData {
+my $DBvalue = $GLOBAL->dbfGlobalGetInitializeDB;
+if ( $DBvalue == 0 ) {
+  print "WARN-KNLBSE : 001 : first call IntKB to create database table\n";
+  return;
+}
+my $testID = $_[0];
+my $runID = $_[1];
+my $testName = $_[2];
+my $path = $_[3];
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE",qaadmin,qaadmin ) || die "Cannot connect: $DBI::errstr";
+      my $newID = $testID.".".$runID;
+      print "INFO-KNLBSE : 002 : adding new data for $testName with ID:$newID for test:$testID new run:$runID\n";
+      $dbh->do( "INSERT INTO designStat (ID)  VALUES ( '$newID') " );
+      $dbh->do( "UPDATE designStat SET TID = '$testID' WHERE ID='$newID'" );
+      $dbh->do( "UPDATE designStat SET RID = '$runID' WHERE ID='$newID'" );
+      $dbh->do( "UPDATE designStat SET TestPath = '$path' WHERE ID='$newID'" );
+      $dbh->do( "UPDATE designStat SET Status = '0' WHERE ID='$newID'" );
+      $dbh->do( "UPDATE designStat SET TestName = '$testName' WHERE ID='$newID'" );
+}#sub dbKBAddNewData
+
+sub addCustomFields {
+my $column_name = $_[0];
+my $column_def = $_[1];
+print "$column_name $column_def\n";
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","qaadmin","qaadmin" ) || die "Cannot connect: $DBI::errstr";
+my $sth = $dbh->prepare( "ALTER TABLE designStat ADD $column_name $column_def");
+$sth->execute();
+
+}#sub addCustomFields
+
+sub reset_status_all1 {
+print "INFO-KNLBSE : 001 : resetting the status of all testcases ...\n";
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","qaadmin","qaadmin" ) || die "Cannot connect: $DBI::errstr";
+
+my $sth = $dbh->prepare( "SELECT TestPath, TestName  FROM designStat");
+$sth->execute();
+#$rows = $sth->dump_results();
+while (($tp,$t) = $sth->fetchrow_array) { push(@tests,$t); }
+while ( defined ($test = shift @tests )) {
+                    print "INFO-KNLBSE : 002 : resetting the status for $test\n";
+                    $sth = $dbh->prepare( "UPDATE designStat SET Status = '0' WHERE TestName='$test' AND RID = 0" );
+                    $sth->execute;
+#                    sleep(2);
+                                         }# while
+
+print "INFO-KNLBSE : 003 : done\n";
+$sth->finish;
+&dbfRefreshKBView($hlist);
+
+}#sub reset_status_all1
+
+
+
+
+sub reset_status_all {
+print "INFO-KNLBSE : 001 : resetting the status of all testcases ...\n";
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","qaadmin","qaadmin" ) || die "Cannot connect: $DBI::errstr";
+
+my $sth = $dbh->prepare( "SELECT TestName  FROM designStat");
+$sth->execute();
+while ( $test = $sth->fetchrow_array()){
+#print"$test\n";
+my $sth = $dbh->prepare( "SELECT Status FROM designStat WHERE TestName = '$test' AND RID = 1");
+$sth->execute();
+while ( $ref = $sth->fetchrow_array()){
+#print"$ref\n";
+
+if($ref >= 3 && $ref <= 8) {
+print "INFO-KNLBSE : 002 : resetting the status for $test\n";
+$dbh->do( "UPDATE designStat SET Status = 0 WHERE TestName='$test' AND RID = 1" );
+
+                            }#if
+              
+
+else {print "ERR-KNLBSE : 003 : not resetting the status for $test\n";
+       }#else
+
+                                        }#while
+                                     }#while
+
+&dbfRefreshKBView($hlist);
+
+}#sub reset_status_all
+
+#---------------------------------------------------------------------------#
+sub set_testcase_status1 {
+
+my @array_test = ();
+my $testcase;
+my $status;
+my $n;
+my $noOfArguments = @_;
+if( $noOfArguments < 2 || $_[0] eq '-h' ) { 
+                           print "Usage : set_testcase_status -test <test1,test2,...> \n";
+                           print "                         OR -all                    \n";
+                           print "                         OR -none                   \n";
+                           print "                            -status <0 or 1>        \n";
+                                                 }#if no. of arg not eq
+else {#correct no of arguments
+for(my $i = 0; $i < $noOfArguments; $i++){
+
+if($_[$i] eq "-test"){
+   $testcase = $_[$i+1];
+   @array_test = split(/\,/,$testcase);
+$n = @array_test;
+                     }
+
+elsif($_[$i] eq "-status"){$status = $_[$i+1];}
+
+elsif($_[$i] eq "-all"){
+print "INFO-KNLBSE : 001 : resetting the status of all testcases ...\n";
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","qaadmin","qaadmin" ) || die "Cannot connect: $DBI::errstr";
+#my $sth = $dbh->prepare( "SELECT TestPath, TestName  FROM designStat");
+#$sth->execute();
+#while (($tp,$t) = $sth->fetchrow_array) { push(@array_test,$t); }
+$dbh->do( "UPDATE designStat SET Status ='$status' WHERE RID = 0" );
+                       }
+elsif($_[$i] eq "-none"){
+print "ERR-KNLBSE : 002 : not resetting the status of testcases ...\n";
+return;
+                        }
+                                         }#for
+
+print "INFO-KNLBSE : 003 : status is $status \n";
+print "INFO-KNLBSE : 004 : test is @array_test \n";
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","qaadmin","qaadmin" ) || die "Cannot connect: $DBI::errstr";
+for (my $i=0 ; $i<$n ; $i++){
+print "INFO-KNLBSE : 005 : resetting the status for $array_test[$i]\n";
+$dbh->do( "UPDATE designStat SET Status ='$status' WHERE TestName='$array_test[$i]' AND RID = 0" );
+                                        }# for 
+
+print "INFO-KNLBSE : 006 : done\n";
+&dbfRefreshKBView($hlist);
+
+                             }#else correct no of arguments
+}#set_testcase_status1
+
+#--------------------------------------------------------------------------------------------------------#
+#--------------------------------------------------------------------------------------------------------#
+sub set_testcase_status {
+
+my @array_test = ();
+my @test1 = ();
+my @ref = ();
+my $testcase;
+my $force;
+my $status;
+my $ref;
+my $none;
+my $n;
+my $noOfArguments = @_;
+if( $noOfArguments < 1 || $_[0] eq '-h' ) { 
+                           print "Usage : set_testcase_status -test <test1,test2,...> \n";
+                           print "                         OR -all                    \n";
+                           print "                         OR -none                   \n";
+                           print "                            -status <0 or 1>        \n";
+                           print "                            [--force] <should be 1when Status is 1,2,9 or 10>\n";
+                                                 }#if no. of arg not eq
+else {#correct no of arguments
+for(my $i = 0; $i < $noOfArguments; $i++){
+
+if($_[$i] eq "-test"){
+   $testcase = $_[$i+1];
+   @array_test = split(/\,/,$testcase);
+$n = @array_test;}
+
+if($_[$i] eq "-all"){$all = 1;}
+
+if($_[$i] eq "-none"){$none = 1;}
+if($_[$i] eq "-status"){
+$status = $_[$i+1];}
+
+if($_[$i] eq "--force"){$force = 1;}
+
+                                       }#for
+
+#if($_[$i] eq "-all"){
+if($all == 1){
+print "INFO-KNLBSE-SET_TSTCS_ST : 001 : resetting the status of all testcases ...\n";
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","qaadmin","qaadmin" ) || die "Cannot connect: $DBI::errstr";
+my $sth = $dbh->prepare( "SELECT TestName FROM designStat WHERE RID = 1");
+$sth->execute();
+while ( @test1 = $sth->fetchrow_array()){
+#print"$test1[0]\n";
+#print " sh1 $test1[$i]\n";
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","qaadmin","qaadmin" ) || die "Cannot connect: $DBI::errstr";
+my $sth = $dbh->prepare( "SELECT Status FROM designStat WHERE TestName = '$test1[0]' AND RID = 1");
+$sth->execute();
+while ( @ref = $sth->fetchrow_array()){
+#print"$ref[0]\n";
+
+if($ref[0] >= 3 && $ref[0] <= 8) {
+print "INFO-KNLBSE-SET_TSTCS_ST : 002 : resetting the status for $test1[0]\n";
+$dbh->do( "UPDATE designStat SET Status ='$status' WHERE TestName='$test1[0]' AND RID = 1" );
+                            }#if
+
+elsif ($force == 1 && ($ref[0]==1 || $ref[0]==2 || $ref[0]==9 || $ref[0]==10)) {
+$dbh->do( "UPDATE designStat SET Status ='$status' WHERE TestName='$test1[0]' AND RID = 1" );
+                                                                }#elsif
+
+else {
+       print "ERR-KNLBSE-SET_TSTCS_ST : 003 : cannot reset status for $test1[0]\n";
+        }#else                     
+                                                     }#while select Status     
+                                                   }#while select testname
+                                                }#if -all option is given
+
+
+
+if($none == 1){
+print "ERR-KNLBSE-SET_TSTCS_ST : 004 : not resetting the status of testcases ...\n";
+return;
+                        }
+                                        #}#for
+
+print "INFO-KNLBSE-SET_TSTCS_ST : 005 : status is $status \n";
+print "INFO-KNLBSE-SET_TSTCS_ST : 006 : test is @array_test \n";
+
+for (my $i=0 ; $i<$n ; $i++){
+print "INFO-KNLBSE-SET_TSTCS_ST : 007 : $array_test[$i]\n";
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","qaadmin","qaadmin" ) || die "Cannot connect: $DBI::errstr";
+my $sth = $dbh->prepare( "SELECT Status FROM designStat WHERE TestName = '$array_test[$i]' AND RID = 1");
+$sth->execute();
+while ( @ref = $sth->fetchrow_array()){
+print"INFO-KNLBSE-SET_TSTCS_ST : 008 : $ref[0]\n";
+
+if($ref[0] >= 3 && $ref[0] <= 8) {
+print "INFO-KNLBSE-SET_TSTCS_ST : 009 : resetting the status for $array_test[$i]\n";
+$dbh->do( "UPDATE designStat SET Status ='$status' WHERE TestName='$array_test[$i]' AND RID = 1" );
+                            }#if
+
+elsif ($force == 1 && ($ref[0]==1 || $ref[0]==2 || $ref[0]==9 || $ref[0]==10)) {
+$dbh->do( "UPDATE designStat SET Status ='$status' WHERE TestName='$array_test[$i]' AND RID = 1" );
+                                                               }#elsif
+
+else {
+       print "ERR-KNLBSE-SET_TSTCS_ST : 010 : cannot reset status for $array_test[$i]\n";
+        }#elsif                     
+                                                     }#while    
+                                                   }# for
+                                                
+
+ 
+
+print "INFO-KNLBSE-SET_TSTCS_ST : 011 : done\n";
+&dbfRefreshKBView($hlist);
+
+                             }#else correct no of arguments
+}#set_testcase_status
+
+sub set_status {
+
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","qaadmin","qaadmin" ) || die "Cannot connect: $DBI::errstr";
+$dbh->do("UPDATE designStat SET Status = 9 WHERE TestName = 'test1' AND RID = 1");
+$dbh->do("UPDATE designStat SET Status = 4 WHERE TestName = 'test2' AND RID = 1");
+
+}#sub set_status
+#&set_status;
+#--------------------------------------------------------------------------------------------------------#
+#--------------------------------------------------------------------------------------------------------#
+
+
+
+sub check_header_exist {
+my $column_name = $_[0];
+
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE",qaadmin,qaadmin ) || die "Cannot connect: $DBI::errstr";
+#$sth = $dbh->prepare("SELECT '$column_name' FROM designStat");
+$sth = $dbh->prepare("SHOW COLUMNS FROM designStat LIKE '$column_name'");
+$sth->execute();
+@rows = $sth->fetchrow_array() ;
+my $len = @rows;
+if(! $len) {
+print "ERR-KNLBSE : 001 : column not found $column_name\n";
+return 0 ;
+            } else {
+print "INFO-KNLBSE : 002 : column found $column_name\n";
+return 1 ;
+                   }
+}#sub check_header_exist 
+
+######################################################################
+
+sub create_new_field {
+my $newFieldName;
+my $functionName;
+my $noOfArguments = @_;
+if ( $noOfArguments < 2 || $_[0] eq "-h"){ print "usage create_new_field  -newfield <fieldName> \n";
+                          print "                        --function <fuction>\n";
+                        }#if 
+
+else {
+for ( my $i=0; $i< $noOfArguments ;$i++) {
+if ($_[$i] eq "-newfield"){$newFieldName = $_[$i+1];}    
+if ($_[$i] eq "--function"){$functionName = $_[$i+1];}
+                                          }#for correct no of arguments
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","qaadmin","qaadmin" ) || die "Cannot connect: $DBI::errstr";
+
+$dbh->do("ALTER TABLE designStat ADD $newFieldName varchar(255) ");
+if ($noOfArguments == 4) {
+$dbh->do("UPDATE designStat SET $newFieldName = '$functionName'");
+}
+     }#else
+} #create_new_field ;
+
+#######################################################################
+
+sub add_data {
+  my @tests = ();
+  my @ut = ();
+  my $TID;
+  my $RID;
+  my $TestPath;
+  my $ID;
+  my $testName;
+  my $MaxRid;
+
+  my $NoOfArguments = @_;
+  if ($NoOfArguments < 2) { 
+    print "usage: add_data  -fileName <file name>\n";
+    #print "                 -TestName <test name>\n";
+  }
+  else {
+    #for (my $i = 0; $i< $NoOfArguments; $i++) {
+      if ($_[$i] eq "-fileName") {
+        $filename = $_[$i+1]; 
+      }        
+    #}
+##--------------------------------------------------------------------------##
+        open( READ,"$filename" );
+        my $argname;
+        my $argvalue;
+        while (<READ>) {
+          chomp();
+          if($_ =~ /^$/ || $_ =~ /^#/) {
+          next;
+          }
+          if ($_ =~ /^TestName/) {
+            ($argname, $argvalue ) = ( split ( /\s+/, $_ ) )[0, 1]; 
+            $testName = $argvalue; 
+          }
+        }  
+        close(READ); 
+        if ($testName eq "") {
+          print "ERR-KNLBSE-ADD_DATA : 001 : Data can't be added as TestName not given\n"; 
+        return;
+        }
+my $testvar = 0;
+my @name_test = ();
+    my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE",qaadmin,qaadmin ) || die "Cannot connect: $DBI::errstr";
+    my $sth = $dbh->prepare( "SELECT TestName FROM designStat WHERE RID = 0");
+    $sth->execute();
+        while ( @name_test = $sth->fetchrow_array() ) {
+          if ($name_test[0] eq $testName) {
+            $testvar = 1;
+            print "MSG-KNLBSE-ADD_DATA : 002 : Test exists data is geing added\n";    
+              }
+        }
+        if ($testvar == 0) {
+          print "ERR-KNLBSE-ADD_DATA : 003 : TestName $testName does not exists\n";        
+          print "WARN-KNLBSE-ADD_DATA : 004 : Please register testcase using command register_testcase\n";
+          return;
+        }
+##--------------------------------------------------------------------------##
+
+    my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE",qaadmin,qaadmin ) || die "Cannot connect: $DBI::errstr";
+    my $sth = $dbh->prepare( "SELECT TID, RID, TestPath FROM designStat WHERE TestName = '$testName'");
+    $sth->execute();
+    while ( ( $Tid,$Rid,$testPath ) = $sth->fetchrow_array ) {
+      push(@tests,$Rid); 
+      $TID = $Tid;
+      $TestPath = $testPath; 
+    }
+
+    @tests = sort{$a<=>$b}@tests;
+    $MaxRid = $tests[-1];
+    my @fields = $GLOBAL->dbGlobalGetKbfo;
+    my $n = @fields;
+
+    if ( $MaxRid == 0 ) {
+      foreach $header(@fields) {
+        my $sth = $dbh->prepare( "SELECT $header FROM designStat WHERE TestName = '$testName'" );
+        $sth->execute();
+        while ( $t = $sth->fetchrow_array() ) {
+          push(@ut, $t);
+        }
+      }  
+      my $lenght = @ut;
+      if ( $lenght <= 3 ) { 
+        my $sth = $dbh->prepare( "SELECT ID FROM designStat WHERE TestName = '$testName'");
+        $sth->execute();
+        while ( @id = $sth->fetchrow_array() ) {
+          $ID =$id[0];
+        }
+      }
+      else {
+        $RID = $MaxRid+1;
+        $ID = $TID.".".$RID;
+        $dbh->do( "INSERT INTO designStat (ID)  VALUES ( '$ID') " );
+        $dbh->do( "UPDATE designStat SET TID = '$TID' WHERE ID='$ID'" );
+        $dbh->do( "UPDATE designStat SET RID = '$RID' WHERE ID='$ID'" );
+        $dbh->do( "UPDATE designStat SET TestPath = '$TestPath' WHERE ID='$ID'" );
+        $dbh->do( "UPDATE designStat SET TestName = '$testName' WHERE ID='$ID'" );
+      }
+    }
+    else {
+      $RID = $MaxRid+1;
+      $ID = $TID.".".$RID;
+      $dbh->do( "INSERT INTO designStat (ID)  VALUES ( '$ID') " );
+      $dbh->do( "UPDATE designStat SET TID = '$TID' WHERE ID='$ID'" );
+      $dbh->do( "UPDATE designStat SET RID = '$RID' WHERE ID='$ID'" );
+      $dbh->do( "UPDATE designStat SET TestPath = '$TestPath' WHERE ID='$ID'" );
+      $dbh->do( "UPDATE designStat SET TestName = '$testName' WHERE ID='$ID'" );
+    }
+my $total_lines = 0 ; 
+    open( READ,"$filename" );
+      my $HeaderName ; 
+      my $ColNo ;
+      my $ColName ; 
+      my $ColValue ;
+      my $date; 
+      my $time; 
+    while (<READ>) {
+$total_lines++;
+      chomp();
+      if($_ =~ /^$/ || $_ =~ /^#/) {
+        next;
+      }
+      if ($_ =~ /^TestName/) {
+        next;
+      }
+      elsif ($_ =~ /^toolVer/) {
+      ( $ColName, $ColValue ) = ( split ( /\s+/, $_ ) )[0, 1]; 
+      my $HeaderName = $ColName;
+
+if(check_header_exist($HeaderName) == 0) {
+   addCustomFields($HeaderName, "VARCHAR(255)") ;
+                                       }
+      $dbh->do( "UPDATE designStat SET $HeaderName = '$ColValue' WHERE ID='$ID' AND TestName = '$testName' " );
+      }
+      elsif ($_ =~ /^toolBuildDate/) {
+      ( $ColName, $day, $month, $date, $time ) = ( split ( /\s+/, $_ ) )[0, 1, 2, 3, 4]; 
+      my $HeaderName = $ColName;
+      my $ColValue = $month." ".$date." ".$time;
+if(check_header_exist($HeaderName) == 0) {
+   addCustomFields($HeaderName, "VARCHAR(255)") ;
+                                       }
+      print " $HeaderName : $ColValue\n";
+      $dbh->do( "UPDATE designStat SET $HeaderName = '$ColValue' WHERE ID='$ID' AND TestName = '$testName' " );
+      }
+##------------------------------------------------------------------------------------## 
+      elsif ($_ =~ /^execDate/) {
+      ( $ColName, $date, $time ) = ( split ( /\s+/, $_ ) )[0, 1, 2]; 
+      my $HeaderName = $ColName;
+      my $ColValue = $date." ".$time;
+if(check_header_exist($HeaderName) == 0) {
+   addCustomFields($HeaderName, "VARCHAR(255)") ;
+                                       }
+      print " $HeaderName : $ColValue\n";
+      $dbh->do( "UPDATE designStat SET $HeaderName = '$ColValue' WHERE ID='$ID' AND TestName = '$testName' " );
+      }
+
+      elsif ($_ =~ /^endDate/) {
+      ( $ColName, $date, $time ) = ( split ( /\s+/, $_ ) )[0, 1, 2]; 
+      my $HeaderName = $ColName;
+      my $ColValue = $date." ".$time;
+if(check_header_exist($HeaderName) == 0) {
+   addCustomFields($HeaderName, "VARCHAR(255)") ;
+                                       }
+      $dbh->do( "UPDATE designStat SET $HeaderName = '$ColValue' WHERE ID='$ID' AND TestName = '$testName' " );
+      $dbh->do("UPDATE designStat SET actRunTime = TIMEDIFF(endDate, execDate) WHERE ID='$ID' AND TestName = '$testName'"); 
+      }
+##------------------------------------------------------------------------------------## 
+      elsif ($_ =~ /^hostName/) {
+      ( $ColName, $ColValue ) = ( split ( /\s+/, $_ ) )[0, 1]; 
+      my $HeaderName = $ColName;
+
+if(check_header_exist($HeaderName) == 0) {
+   addCustomFields($HeaderName, "VARCHAR(255)") ;
+                                       }
+      $dbh->do( "UPDATE designStat SET $HeaderName = '$ColValue' WHERE ID='$ID' AND TestName = '$testName' " );
+      }
+      elsif ($_ =~ /^userID/) {
+      ( $ColName, $ColValue ) = ( split ( /\s+/, $_ ) )[0, 1]; 
+      my $HeaderName = $ColName;
+      #print " $HeaderName : $ColValue\n";
+
+if(check_header_exist($HeaderName) == 0) {
+   addCustomFields($HeaderName, "VARCHAR(255)") ;
+                                       }
+      $dbh->do( "UPDATE designStat SET $HeaderName = '$ColValue' WHERE ID='$ID' AND TestName = '$testName' " );
+      }
+      else {
+        ( $ColNo, $ColName, $ColValue ) = ( split ( /\s+/, $_ ) )[0, 1, 2]; 
+        if($ColValue eq ""){$HeaderName = $ColNo; $ColValue = $ColName; 
+       }else{  
+        $HeaderName = $ColNo.$ColName;
+        $ColValue = $ColValue;} 
+if(check_header_exist($HeaderName) == 0) {
+   addCustomFields($HeaderName, "VARCHAR(255)") ;
+                                       }
+        $dbh->do( "UPDATE designStat SET $HeaderName = '$ColValue' WHERE ID='$ID' AND TestName = '$testName' " );
+      }
+    }
+my $sth = $dbh->prepare( "SELECT toolName FROM designStat WHERE ID = 1.0");
+$sth->execute();
+my ($tn) = $sth->fetchrow_array();
+ if (($total_lines == 6) && ($tn eq "realTime")){
+        $dbh->do( "UPDATE designStat SET Status = '99' WHERE ID='$ID' AND TestName = '$testName' " );
+ }
+my $sth = $dbh->prepare( "SELECT ScriptName,TestCategory,toolName,cvsPath FROM designStat WHERE TestName = '$testName' AND RID = 0");
+$sth->execute();
+my ($s_name,$tc,$tn,$cp) = $sth->fetchrow_array();
+$dbh->do( "UPDATE designStat SET ScriptName = '$s_name' WHERE ID='$ID' AND TestName = '$testName' " );
+$dbh->do( "UPDATE designStat SET TestCategory = '$tc' WHERE ID='$ID' AND TestName = '$testName' " );
+$dbh->do( "UPDATE designStat SET toolName = '$tn' WHERE ID='$ID' AND TestName = '$testName' " );
+$dbh->do( "UPDATE designStat SET cvsPath = '$cp' WHERE ID='$ID' AND TestName = '$testName' " );
+     
+  }  
+}#sub add_data
+
+
+############################################### Writing Makefile for Testcases ##########################################
+
+sub write_makefile {
+my $build = "";
+my $testName = "";
+my $testPath = "";
+my $testScript = "";
+my $testBuild = "";
+my ($tp,$sn,$cp,$tn);
+
+my $noOfArg = @_;
+if($noOfArg < 2 || $_[0] eq "-h"){print"Usage write_makefile -test <testName>\n";
+                 print"                     -path <testPath>\n";   
+                 print"                     -script <scriptFile>\n";   
+                 print"                     -tool <tool Name>\n";   
+                 print"                     -cvs <cvs Path>\n";   
+                 print"                     -build <build>\n";  
+}else{ 
+   for(my $i = 0; $i< $noOfArg; $i++){
+       if($_[$i] eq "-test"){$testName = $_[$i+1];}
+       if($_[$i] eq "-path"){$testPath = $_[$i+1];}
+       if($_[$i] eq "-script"){$testScript = $_[$i+1];}
+       if($_[$i] eq "-cvs"){$cvsPath = $_[$i+1];}
+       if($_[$i] eq "-tool"){$toolName = $_[$i+1];}
+       if($_[$i] eq "-build"){$testBuild = $_[$i+1];}
+   }
+if ($KB_DATABASE eq "UND" ) { }
+else {
+  $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE",qaadmin,qaadmin ) || die "Cannot connect: $DBI::errstr";
+  $sth = $dbh->prepare( "SELECT TestPath,ScriptName,cvsPath,toolName FROM designStat WHERE TestName = '$testName' AND RID = 0");
+  $sth->execute();
+  ($tp,$sn,$cp,$tn) = $sth->fetchrow_array();
+}
+    if($testPath eq ""){$testPath = $tp;}
+  else {$testPath = $testPath;}
+    if($testScript eq ""){$testScript = $sn;}
+  else {$testScript = $testScript;}
+    if($cvsPath eq ""){$cvsPath = $cp;}
+  else{$cvsPath = $cvsPath;}
+    if($toolName eq ""){$toolName = $tn;}
+  else{$toolName = $toolName;}
+  
+if($toolName eq "realTime"){
+   if($testBuild eq ""){$testBuild = "/home/rajeevs/builds/install/bin/realTime";}
+   elsif($testBuild eq "latestBuild"){$testBuild = "/home/rajeevs/builds/install/bin/realTime";}
+   else{$testBuild ="/home/rajeevs/builds/realtime_build/".$testBuild."/install/bin/realTime";}
+}else{  
+   my $env_proton_home = $GLOBAL->dbfGlobalGetProtonHome; 
+   if($testBuild eq ""){$testBuild = $env_proton_home ."/proton";}
+   elsif($testBuild eq "latestBuild"){$testBuild = $env_proton_home ."/proton";}
+   else{$testBuild = $testBuild;}
+}
+  open(WRITE_MAKEFILE,">Makefile_proton");
+  print WRITE_MAKEFILE "all:\n";
+  print WRITE_MAKEFILE "\t-cvs -d $cvsPath update -d .\n";
+if($toolName eq "realTime"){
+  print WRITE_MAKEFILE "\trm -rf realTime.log.* realTime.cmd.* oasys.[0-9]* realtime_run.log eqator.log* eqator.res\n";
+  print WRITE_MAKEFILE "\t-LM_LICENSE_FILE=1700\@kashgar.oasys-ds.com RLM_LICENSE=28000\@kashgar.oasys-ds.com $testBuild $testScript >& realtime_run.log\n";
+  print WRITE_MAKEFILE "\t\${EQATOR_HOME}/proton -f /home/rajeevs/SQL/add_data.tcl --nolog\n";
+}else{
+  print WRITE_MAKEFILE "\trm -rf placed.def eqator.log*\n";
+  print WRITE_MAKEFILE "\t$testBuild -f $testScript\n";
+  print WRITE_MAKEFILE "\t./script_file\n";
+  print WRITE_MAKEFILE "\t$testBuild -f /vol2/testcase/placement_analysis/add_data.tcl\n";
+}
+  close(WRITE_MAKEFILE);
+  system("mv Makefile_proton $testPath");
+  system("cd $testPath ; make -f Makefile_proton &"); 
+
+ } 
+}#sub write_makefile
+##########################################################################################################################
+#set HASH($key) "val"
+1
+

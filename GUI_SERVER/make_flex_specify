@@ -1,0 +1,437 @@
+###############################################################################################################
+####################################### flex command to load Block xls ########################################
+###############################################################################################################
+sub flxLoadBlockXls {
+  my $fileName = $_[0];
+  if ( $DEBUG == 328 ) {
+    return (caller(0))[3] . " $fileName";
+  }
+
+  loadBlockXls($fileName);
+  return "<root><infomsg>Block XLS file has been loaded</infomsg></root>";
+}#sub flxLoadBlockXls
+
+###############################################################################################################
+######################################### flex command to load Net xls ########################################
+###############################################################################################################
+sub flxLoadNetXls {
+  my $fileName = $_[0];
+
+  if ( $DEBUG == 328 ) {
+    return (caller(0))[3] . " $fileName";
+  }
+  loadNetXls($fileName);
+  return "<root><infomsg>Net XLS file has been loaded</infomsg></root>";
+}#sub flxLoadNetXls
+
+
+###############################################################################################################
+################################# Read Block xls and return data in xml format ################################
+###############################################################################################################
+sub flxGetBlockXml {
+  if ( $DEBUG == 328 ) {
+    return (caller(0))[3];
+  }
+#my $xml_out;
+$xml_out = "";
+my $xml = new XML::Writer(OUTPUT => \$xml_out);
+   $xml->startTag("design");
+   &call_flxGetBlockXml($GLOBAL->dbfGlobalGetTOP,$xml,1);
+   &editModule("-module",$GLOBAL->dbfGlobalGetTOP);
+   $xml_out .= "\n";
+   $xml->endTag();
+   $xml->end();
+ return $xml_out;
+}#sub flxGetBlockXml
+
+sub call_flxGetBlockXml{
+   my $moduleName = $_[0];
+   my $xml = $_[1];
+   my $count = $_[2];
+
+   if(exists $PSEUDO_MODULE_ALREADY{$moduleName} ) {
+      my @size = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetSize;   
+      my $width = abs($size[2]-$size[0]);      
+      my $height = abs($size[3]-$size[1]);      
+      if($count == 1){
+         $xml_out .= "\n";
+         $xml->startTag("block" => ('row',$count));         
+         $xml->dataElement("cell" => $moduleName);   
+         $xml->dataElement("parent" => "self");   
+         $xml->dataElement("inst" => "");   
+         $xml->dataElement("size" => $width.",".$height);   
+         $xml->dataElement("loc" => "");   
+         $xml->dataElement("status" => "");   
+         $xml->dataElement("ffs" => "");   
+         $xml->dataElement("io" => "");   
+         $xml->dataElement("tc" => "");   
+         $xml->dataElement("rc" => "");
+         $xml->endTag();   
+         $count++;
+      }
+      foreach my $instance ( keys %{$PSEUDO_VINST_ALREADY{$moduleName}} ) {
+         my ($inst_locX, $inst_locY, $inst_width, $inst_height);
+         my ($RC,$TC,$ff,$in,$out) = (0,0,0,0,0);
+         if($instance eq "PIN"){ 
+         }else{ 
+            my $cellref = $PSEUDO_VINST_ALREADY{$moduleName}{$instance}->dbPimDBGetInstCellref;
+            my @loc = $PSEUDO_VINST_ALREADY{$moduleName}{$instance}->dbPimDBGetInstRelBbox;
+            if(exists $PSEUDO_MODULE_ALREADY{$cellref}){
+               $RC = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetRoutingComplexity;
+               $TC = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetTimingComplexity;
+               $ff = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetSeqComps;
+               $in = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetInCount;
+               $out = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetOutCount;
+            }
+            if($loc[0]==0 && $loc[1]==0 && $loc[2]==0 && $loc[3]==0){  
+               $PSEUDO_VINST_ALREADY{$moduleName}{$instance}->dbPimDBSetInstStatus("UNPLACED");
+            }#if location is (0,0,0,0)
+            my $status = $PSEUDO_VINST_ALREADY{$moduleName}{$instance}->dbPimDBGetInstStatus;
+          
+            if($status eq "UNPLACED" || $status eq "UND"){
+               my @mod_bbox = &return_pseudo_vinst_size($moduleName,$instance);
+               $inst_locX = 0;
+               $inst_locY = 0;
+               $inst_width = sprintf("%.2f",(abs($mod_bbox[2] - $mod_bbox[0])));
+               $inst_height = sprintf("%.2f",(abs($mod_bbox[3] - $mod_bbox[1])));
+            }else{
+               $inst_locX = sprintf("%.2f", ($loc[0]));
+               $inst_locY = sprintf("%.2f", ($loc[1]));
+               $inst_width = sprintf("%.2f", (abs($loc[2] - $loc[0])));
+               $inst_height = sprintf("%.2f", (abs($loc[3] - $loc[1])));
+            }
+            $xml_out .= "\n";
+            $xml->startTag("block" => ('row',$count));         
+            $xml->dataElement("cell" => $cellref);   
+            $xml->dataElement("parent" => $moduleName);   
+            $xml->dataElement("inst" => $instance);   
+            $xml->dataElement("size" => $inst_width.",".$inst_height);   
+            $xml->dataElement("loc" => $inst_locX.",".$inst_locY);   
+            $xml->dataElement("status" => $status);   
+            $xml->dataElement("ffs" => $ff);   
+            $xml->dataElement("io" => $in.",".$out);   
+            $xml->dataElement("tc" => $TC);   
+            $xml->dataElement("rc" => $RC);   
+            $xml->endTag();   
+            $count++;
+            if(exists $PSEUDO_MODULE_ALREADY{$cellref}){
+               &editModule("-module",$cellref);
+               $count = &call_flxGetBlockXml($cellref,$xml,$count);
+            }
+         }
+      }#foreach hier instance
+    }#if module exists
+    return $count;
+}#sub call_flxGetBlockXml
+
+###############################################################################################################
+################################## Read Net xls and return data in xml format #################################
+###############################################################################################################
+sub flxGetNetXml {
+  if ( $DEBUG == 328 ) {
+    return (caller(0))[3];
+  }
+#my $xml_out;
+$xml_out = "";
+my $xml = new XML::Writer(OUTPUT => \$xml_out);
+   $xml->startTag("nets");
+   &call_flxGetNetXml($GLOBAL->dbfGlobalGetTOP,$xml, 1);
+   &editModule("-module",$GLOBAL->dbfGlobalGetTOP);
+   $xml_out .= "\n";
+   $xml->endTag();
+   $xml->end();
+ return $xml_out;
+}#sub flxGetNetXml
+
+sub call_flxGetNetXml{
+   my $moduleName = $_[0];
+   my $xml = $_[1];
+   my $count = $_[2];
+   
+   if(exists $PSEUDO_MODULE_ALREADY{$moduleName} ) {
+     if(exists $PSEUDO_VNET_ALREADY{$moduleName}){
+         foreach my $net (keys %{$PSEUDO_VNET_ALREADY{$moduleName}}) {
+           my @source = $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenGetPseudoNetSourceFanInList;
+           my @sink = $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenGetPseudoNetSinkFanOutList;
+           my $width = $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenGetPseudoNetWidth;
+           my $type = $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenGetPseudoNetType;
+           my $class = $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenGetPseudoNetClass;
+           $xml_out .= "\n";
+           $xml->startTag("net" => ('row',$count));         
+           $xml->dataElement("name" => $net);   
+           $xml->dataElement("parent" => $moduleName);   
+           $xml->dataElement("source" => "($source[0]:$source[1])");   
+           $xml->dataElement("sink" => "($sink[0]:$sink[1])");   
+           $xml->dataElement("width" => $width);   
+           $xml->dataElement("type" => $type);   
+           $xml->dataElement("class" => $class);   
+           $xml->endTag();   
+           $count++;
+         }
+     } 
+      foreach my $instance ( keys %{$PSEUDO_VINST_ALREADY{$moduleName}} ) {
+         if($instance eq "PIN"){ 
+         }else{ 
+            my $cellref = $PSEUDO_VINST_ALREADY{$moduleName}{$instance}->dbPimDBGetInstCellref;
+            if(exists $PSEUDO_MODULE_ALREADY{$cellref}){
+               &editModule("-module",$cellref);
+               $count = &call_flxGetNetXml($cellref,$xml,$count);
+            }
+         }
+      }#foreach hier instance
+   }#if module exists
+   return $count;
+}#sub call_flxGetNetXml
+
+
+###############################################################################################################
+#################################### flex command to update Block from XML ####################################
+###############################################################################################################
+sub flxUpdateBlockXml {
+  use Data::Dumper;
+  my $fileName = $_[0];
+
+  if ( $DEBUG == 328 ) {
+    return (caller(0))[3] . " $fileName";
+  }
+
+  # read block XML file and update pseudo DB
+  if(!defined($fileName)){
+     print "\nUsage: flxUpdateBlockXml <filename(xml file)>\n";
+     return;
+  }
+  if(!-e $fileName){
+     print "\nWARN: $fileName does not exists\n";
+     return;
+  }
+  my $xml = new XML::Simple;
+  my $data = $xml->XMLin($fileName,KeyAttr => "block"); #returns hash reference
+  
+  my $topHash = shift @{$data->{block}};
+  my $topModule = $topHash->{cell};
+  my $topSize = $topHash->{size};
+  my ($topWidth, $topHeight) = (split(/\,/,$topSize))[0,1];
+  &createPseudoTopModule("-top", $topModule, "-H", $topHeight, "-W", $topWidth);
+  my $current_top = $topModule;
+  foreach my $blkHash (@{$data->{block}}){
+       my $parentName = $blkHash->{parent};
+       my $cellName = $blkHash->{cell};
+       my $instName = $blkHash->{inst};
+       my $size = $blkHash->{size};
+       my $loc = $blkHash->{loc};
+
+       if(ref($parentName) eq "HASH"){$parentName = "";}
+       if(ref($cellName) eq "HASH"){$cellName = "";}
+       if(ref($instName) eq "HASH"){$instName = "";}
+       if(ref($size) eq "HASH"){$size = "";}
+       if(ref($loc) eq "HASH"){$loc = "";}
+
+       my ($width, $height) = (split(/\,/,$size))[0,1];
+       my ($llx, $lly) = (split(/\,/,$loc))[0,1];
+
+       my $urx = $llx + $width; 
+       my $ury = $lly + $height; 
+
+       if($parentName ne $current_top){
+          &commitModule("-module", $current_top);
+          &editModule("-module", $parentName);
+       }                                         
+       if(exists $PLDB{$cellName}){                     
+          &createPseudoInstance("-parent", $parentName, "-cell", $cellName, "-inst", $instName, "-loc", "{$llx,$lly}", "-orient", "N");
+       }else {
+          &createPseudoModule("-top", "$parentName", "-module", $cellName, "-bbox", "{$llx,$lly,$urx,$ury}");
+          &createPseudoHierModuleInst("-parent", $parentName, "-bbox", "{$llx,$lly,$urx,$ury}","-cellref", "$cellName", "-inst", "$instName");
+       }
+       $current_top = $parentName;
+  }
+  &commitModule("-module", $current_top);
+  &editModule("-module", $topModule);
+  return "<root><infomsg>Block XML has been updated</infomsg></root>";
+}#sub flxUpdateBlockXml
+
+###############################################################################################################
+###################################### flex command to update Net from XML ####################################
+###############################################################################################################
+sub flxUpdateNetXml {
+  my $fileName = $_[0];
+
+  if ( $DEBUG == 328 ) {
+    return (caller(0))[3] . " $fileName";
+  }
+
+  # read net XML file and update pseudo DB
+  if(!defined($fileName)){
+     print "\nUsage: flxUpdateNetXml <filename(xml file)>\n";
+     return;
+  }
+  if(!-e $fileName){
+     print "\nWARN: $fileName does not exists\n";
+     return;
+  }
+  my $xml = new XML::Simple;
+  my $data = $xml->XMLin($fileName,KeyAttr => "net"); #returns hash reference
+  my $topModule = $GLOBAL->dbfGlobalGetTOP;
+  my $current_top = $topModule;
+
+  foreach my $netHash (@{$data->{net}}){
+       my ($srcOpt, $sinkOpt) = ("-pin", "-pin");
+       my $parentName = $netHash->{parent};
+       my $netName = $netHash->{name};
+       my $srcList = $netHash->{source};
+       my $sinkList = $netHash->{sink};
+       my $width = $netHash->{width};
+       my $type = $netHash->{type};
+       my $class = $netHash->{class};
+
+       if(ref($parentName) eq "HASH"){$parentName = "";}
+       if(ref($netName) eq "HASH"){$netName = "";}
+       if(ref($srcList) eq "HASH"){$srcList = "";}
+       if(ref($sinkList) eq "HASH"){$sinkList = "";}
+       if(ref($width) eq "HASH"){$width = "";}
+       if(ref($type) eq "HASH"){$type = "";}
+       if(ref($class) eq "HASH"){$class = "";}
+
+       $srcList =~ s/\(//;
+       $srcList =~ s/\)//;
+       my ($srcInst, $srcPin) = (split(/\:/,$srcList))[0,1];
+       if($srcPin eq ""){$srcOpt = "";}
+
+       $sinkList =~ s/\(//;
+       $sinkList =~ s/\)//;
+       my ($sinkInst, $sinkPin) = (split(/\:/,$sinkList))[0,1];
+       if($sinkPin eq ""){$sinkOpt = "";}
+
+       if($parentName ne $current_top){
+          &commitModule("-module", $current_top);
+          &editModule("-module", $parentName);
+       }                                         
+       &createPseudoNet("-parentModule","$parentName","-type",$type,"-class",$class,"-source","$srcInst",$srcOpt,$srcPin ,"-sink","$sinkInst",$sinkOpt, "{$sinkPin}","-prefix", $netName, "-wireWidth", $width);
+       $current_top = $parentName;
+  }
+  &commitModule("-module", $current_top);
+  &editModule("-module", $topModule);
+  return "<root><infomsg>Net XML has been updated</infomsg></root>";
+}#sub flxUpdateNetXml
+
+
+#sub blkXmlToPseudo {
+##my $xml_data_out = &flxGetBlockXml;
+#my $xml_data_out = '<design>
+#<block row="1"><cell>chip</cell><parent>self</parent><inst></inst><size>1000,1000</size><loc></loc><status></status><ffs></ffs><io></io><tc></tc><rc></rc></block>
+#<block row="2"><cell>blk1</cell><parent>chip</parent><inst>U1</inst><size>200.00,100.00</size><loc>20.00,20.00</loc><status>PLACED</status><ffs>0</ffs><io>0,0</io><tc>0</tc><rc>0</rc></block>
+#<block row="3"><cell>blk6</cell><parent>blk1</parent><inst>U6</inst><size>50.00,50.00</size><loc>20.00,20.00</loc><status>PLACED</status><ffs>0</ffs><io>0,0</io><tc>0</tc><rc>0</rc></block>
+#<block row="4"><cell>blk8</cell><parent>blk1</parent><inst>U8</inst><size>20.00,20.00</size><loc>50.00,50.00</loc><status>PLACED</status><ffs>0</ffs><io>0,0</io><tc>0</tc><rc>0</rc></block>
+#<block row="5"><cell>blk2</cell><parent>chip</parent><inst>U2</inst><size>200.00,200.00</size><loc>0.00,0.00</loc><status>PLACED</status><ffs>0</ffs><io>0,0</io><tc>0</tc><rc>0</rc></block>
+#<block row="6"><cell>blk4</cell><parent>blk2</parent><inst>U1</inst><size>100.00,100.00</size><loc>10.00,30.00</loc><status>PLACED</status><ffs>0</ffs><io>0,0</io><tc>0</tc><rc>0</rc></block>
+#<block row="7"><cell>blk7</cell><parent>blk4</parent><inst>U7</inst><size>30.00,40.00</size><loc>10.00,30.00</loc><status>PLACED</status><ffs>0</ffs><io>0,0</io><tc>0</tc><rc>0</rc></block>
+#<block row="8"><cell>blk9</cell><parent>blk4</parent><inst>U9</inst><size>30.00,30.00</size><loc>40.00,60.00</loc><status>PLACED</status><ffs>0</ffs><io>0,0</io><tc>0</tc><rc>0</rc></block>
+#<block row="9"><cell>blk5</cell><parent>blk2</parent><inst>U2</inst><size>50.00,50.00</size><loc>130.00,30.00</loc><status>PLACED</status><ffs>0</ffs><io>0,0</io><tc>0</tc><rc>0</rc></block>
+#<block row="10"><cell>blk3</cell><parent>chip</parent><inst>U3</inst><size>100.00,50.00</size><loc>0.00,0.00</loc><status>PLACED</status><ffs>0</ffs><io>0,0</io><tc>0</tc><rc>0</rc></block>
+#</design>';
+#   $xml_data_out =~ s/^<design>//;  # remove <design> tag
+#   $xml_data_out =~ s/<\/design>\s*$//;  # remove last </design> tag
+#   $xml_data_out =~ s/<\/block>\s*$//;  # remove last </block> tag
+#   my @compData = split('</block>', $xml_data_out);
+#   my ($topModule, $current_top);
+#   for(my $i = 0; $i < @compData; $i++ ) {
+#       my $data = $compData[$i];
+#       $data =~ s/\n//;
+#       my ($parent, $cellref,$instance, $status) = ("","","","");
+#       my ($ffs, $io, $tc,$rc) = (0,0,0,0);
+#       my ($llx,$lly,$urx,$ury,$width,$height);
+#
+#       if($data =~ /<\s*parent\s*>\s*(.*?)\s*<\s*\/\s*parent\s*>/){$parent = $1;}
+#       if($data =~ /<\s*cell\s*>\s*(.*?)\s*<\s*\/\s*cell\s*>/){$cellref = $1;}
+#       if($data =~ /<\s*inst\s*>\s*(.*?)\s*<\s*\/\s*inst\s*>/){$instance = $1;}
+#       if($data =~ /<\s*loc\s*>\s*(.*?)\s*<\s*\/\s*loc\s*>/){
+#          my $loc_str = $1;
+#          ($llx,$lly) = (split(/\,/,$loc_str))[0,1];
+#       }
+#       if($data =~ /<\s*size\s*>\s*(.*?)\s*<\s*\/\s*size\s*>/){
+#          my $size = $1;
+#          ($width,$height) = split(/\,/,$size);
+#       }
+#       if($data =~ /<\s*status\s*>\s*(.*?)\s*<\s*\/\s*status\s*>/){$status = $1;}
+#       if($data =~ /<\s*ffs\s*>\s*(.*?)\s*<\s*\/\s*ffs\s*>/){$ffs = $1;}
+#       if($data =~ /<\s*io\s*>\s*(.*?)\s*<\s*\/\s*io\s*>/){$io = $1;}
+#       if($data =~ /<\s*tc\s*>\s*(.*?)\s*<\s*\/\s*tc\s*>/){$tc = $1;}
+#       if($data =~ /<\s*rc\s*>\s*(.*?)\s*<\s*\/\s*rc\s*>/){$rc = $1;}
+#       $urx = $llx + $width;
+#       $ury = $lly + $height;
+#
+#       if($i == 0){
+#          $topModule = $cellref;
+#          &createPseudoTopModule("-top", $cellref, "-H", $height, "-W", $width);  
+#          $current_top = $topModule;
+#       }else{
+#          if($parent ne $current_top){
+#             &commitModule("-module", $current_top);
+#             &editModule("-module", $parent);
+#          }                                         
+#          if(exists $PLDB{$cellref}){                     
+#            &createPseudoInstance("-parent", $parent, "-cell", $cellref, "-inst", $instance, "-loc", "{$llx,$lly}", "-orient", "N");
+#          }else {
+#            &createPseudoModule("-top", "$parent", "-module", $cellref, "-bbox", "{$llx,$lly,$urx,$ury}");
+#            &createPseudoHierModuleInst("-parent", $parent, "-bbox", "{$llx,$lly,$urx,$ury}","-cellref", "$cellref", "-inst", "$instance");
+#          }
+#       }#if first row
+#       $current_top = $parent if($i != 0);
+#   }#
+#   &commitModule("-module", $current_top);
+#   &editModule("-module", $topModule);
+#}#sub blkXmlToPseudo
+#
+#
+#sub netXmlToPseudo {
+##my $xml_data_out = &flxGetNetXml;
+#my $xml_data_out = '<nets>
+#<net row="1"><name>net1</name><parent>chip</parent><source>(U1:BD0_outB0)</source><sink>(U2:BD0_inB0)</sink><width>16</width><type>bus</type></net>
+#<net row="2"><name>net2</name><parent>chip</parent><source>(U1:BD0_out1)</source><sink>(U3:BD0_in1)</sink><width>1</width><type>wire</type></net>
+#<net row="3"><name>net3</name><parent>chip</parent><source>(U2:BD0_outB0)</source><sink>(U3:BD0_inB0)</sink><width>16</width><type>bus</type></net>
+#<net row="4"><name>net4</name><parent>blk2</parent><source>(U1:BD0_outB0)</source><sink>(U2:BD0_inB0)</sink><width>16</width><type>bus</type></net>
+#<net row="5"><name>net5</name><parent>chip</parent><source>(PIN:)</source><sink>(U1:BD0_inB0)</sink><width>16</width><type>bus</type></net>
+#<net row="6"><name>net6</name><parent>chip</parent><source>(U2:BD0_outB1)</source><sink>(PIN:)</sink><width>16</width><type>bus</type></net>
+#<net row="7"><name>net7</name><parent>blk4</parent><source>(U7:BD0_out0)</source><sink>(U9:BD0_in0)</sink><width>1</width><type>wire</type></net>
+#<net row="8"><name>net8</name><parent>blk1</parent><source>(U6:BD0_outB0)</source><sink>(U8:BD0_inB0)</sink><width>16</width><type>bus</type></net>
+#</nets>';
+#   $xml_data_out =~ s/^<nets>//;  # remove <nets> tag
+#   $xml_data_out =~ s/<\/nets>\s*$//;  # remove last </nets> tag
+#   $xml_data_out =~ s/<\/net>\s*$//;  # remove last </net> tag
+#   my @netData = split('</net>', $xml_data_out);
+#   my $topModule = $GLOBAL->dbfGlobalGetTOP;
+#   my $current_top = $topModule;
+#   for(my $i = 0; $i < @netData; $i++ ) {
+#       my $data = $netData[$i];
+#       $data =~ s/\n//;
+#       my ($netName, $parent,$width, $type, $class) = ("","",1,"wire",$digital);
+#       my ($srcInst, $sinkInst, $srcPin,$sinkPin,$srcOpt,$sinkOpt) = ("","","","","-pin","-pin");
+#
+#       if($data =~ /<\s*name\s*>\s*(.*?)\s*<\s*\/\s*name\s*>/){$netName = $1;}
+#       if($data =~ /<\s*parent\s*>\s*(.*?)\s*<\s*\/\s*parent\s*>/){$parent = $1;}
+#       if($data =~ /<\s*source\s*>\s*(.*?)\s*<\s*\/\s*source\s*>/){
+#          my $src_str = $1;
+#          $src_str =~ s/\((.*)\)/\1/;
+#          ($srcInst, $srcPin) = (split(/\:/,$src_str))[0,1];
+#          if($srcPin eq ""){$srcOpt = "";}
+#       }
+#       if($data =~ /<\s*sink\s*>\s*(.*?)\s*<\s*\/\s*sink\s*>/){
+#          my $sink_str = $1;
+#          $sink_str =~ s/\((.*)\)/\1/;
+#          ($sinkInst, $sinkPin) = (split(/\:/,$sink_str))[0,1];
+#          if($sinkPin eq ""){$sinkOpt = "";}
+#       }
+#       if($data =~ /<\s*width\s*>\s*(.*?)\s*<\s*\/\s*width\s*>/){$width = $1;}
+#       if($data =~ /<\s*type\s*>\s*(.*?)\s*<\s*\/\s*type\s*>/){$type = $1;}
+#       if($data =~ /<\s*class\s*>\s*(.*?)\s*<\s*\/\s*class\s*>/){$class = $1;}
+#       if($parent ne $current_top){
+#          &commitModule("-module", $current_top);
+#          &editModule("-module", $parent);
+#       }
+#       &createPseudoNet("-parentModule","$parent","-type",$type,"-class",$class,"-source","$srcInst",$srcOpt,$srcPin ,"-sink","$sinkInst",$sinkOpt, "{$sinkPin}","-prefix", $netName, "-wireWidth", $width);
+#      $current_top = $parent;
+#   }#
+#   &commitModule("-module", $current_top);
+#   &editModule("-module", $topModule);
+#}#sub netXmlToPseudo
+
+1;

@@ -1,0 +1,589 @@
+
+#########################################################################
+# seedPlace function is temporary code to place the flops of the design #
+#########################################################################
+sub seedPlace {
+
+use Benchmark;
+my $t0 = new Benchmark;
+
+print "INFO-ALGO_PREPL-SEEDPL : 001 : Starting placement phase-I on $TOP_MODULE \n";
+#&dbPlaceSetDepth;
+
+       if ( exists $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}} ) {
+my @size = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetSize;
+$FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbgFlplanGetSize;
+my $llx = $size[0];
+my $lly = $size[1];
+my $urx = $size[2];
+my $ury = $size[3];
+
+print "INFO-ALGO_PREPL-SEEDPL : 002 : $llx, $lly,  : $urx, $ury\n";
+
+my @Flops = $PLACE{$TOP_MODULE}->dbPlaceGetFlopList;
+foreach my $flopName (@Flops) {
+     ##print " allocation location to $flopName\n";
+     my $x = int(rand($urx));
+     my $y = int(rand($ury));
+     $PLACE{$TOP_MODULE}->dbPlaceSetFlopLoc($flopName,$x,$y);
+                                               }# for all flops
+
+
+#my @temp =   $PLACE{$TOP_MODULE}->dbPlaceGetInPortList;
+#foreach ( @temp ) { print "$_\n"; }
+#@temp =  $PLACE{$TOP_MODULE}->dbPlaceGetOutPortList;
+#foreach ( @temp ) { print "$_\n"; }
+#@temp =  $PLACE{$TOP_MODULE}->dbPlaceGetFlopList;
+#foreach ( @temp ) { print "$_\n"; }
+
+my @InPorts = $PLACE{$TOP_MODULE}->dbPlaceGetInPortList;
+foreach my $portName (@InPorts ) {
+     my $x = int(rand($urx));
+     my $y = int(rand($ury));
+     print "INFO-ALGO_PREPL-SEEDPL : 003 : allocation location $x,$y to $portName\n";
+     $PLACE{$TOP_MODULE}->dbPlaceSetPortLoc($portName,$x,$y);
+     $PLACE{$TOP_MODULE}->dbPlaceSetInstOrient($portName,"E");
+                                               }# for all inputs
+
+my @OutPorts = $PLACE{$TOP_MODULE}->dbPlaceGetOutPortList;
+foreach my $portName (@OutPorts ) {
+     my $x = int(rand($urx));
+     my $y = int(rand($ury));
+     print "INFO-ALGO_PREPL-SEEDPL : 004 : allocation location $x,$y to $portName\n";
+     $PLACE{$TOP_MODULE}->dbPlaceSetPortLoc($portName,$x,$y);
+     $PLACE{$TOP_MODULE}->dbPlaceSetInstOrient($portName,"E");
+                                               }# for all inputs
+
+print "INFO-ALGO_PREPL-SEEDPL : 005 : Completed placement phase-I\n";
+                                 }# if the floorplan parameters are specified for the module
+else {
+     print "WARN-ALGO_PREPL-SEEDPL : 006 : the  floorplan parameters are not set for the module $TOP_MODULE \n";
+     }
+
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "Command seedPlace took:",timestr($td),"\n";
+
+}# sub seedPlace
+
+sub unPlaceNonRegCells {
+
+foreach my $instance ( keys %COMP_ALREADY ) {
+        my $cellref = $CADB{$instance}->dbCadbGetCellref;
+        my $func = $PLDB{$cellref}->dbMdbGetFunction;
+if ( $func eq "flop" ) {
+                      }
+else {
+     $CADB{$instance}->dbCadbSetStatus(UNPLACED);
+     }
+                                            }
+
+
+
+
+}# sub unPlaceNonRegCells
+
+sub dbgPlaceSnapRegToRows {
+
+use POSIX qw(ceil floor);
+my $cellHeight = $GLOBAL->dbGlobalGetRowHeight;
+# print "$cellHeight\n";
+$cellHeight = $cellHeight*$DEF_DATABASE_UNIT;
+
+if ( exists $PLACE{$TOP_MODULE} ) {
+foreach $inst ( keys %COMP_ALREADY ) {
+        my $cellref = $CADB{$inst}->dbCadbGetCellref;
+        if(exists $PLDB{$cellref}) {
+          my $inst_class = $PLDB{$cellref}->dbMdbGetClass;
+          if($inst_class eq "BLOCK") {
+            next;
+          }
+        }
+        my $isInstFlop = $PLACE{$TOP_MODULE}->dbPlaceGetIsInstFlop($inst);
+           if ( $isInstFlop == 1 ) {
+        my @temp_array = $PLACE{$TOP_MODULE}->dbPlaceGetFlopLoc($inst);
+            my  ($X)  = $temp_array[0];
+            my  ($Y) = $temp_array[1];    
+              my $num  = floor($Y/$cellHeight);
+                  #$Y = $num*$cellHeight;
+print "DBG-ALGO_PREPL : 001 : snapping flops/latch $inst from $Y\n" if ($debug);
+                  $Y = dbPlaceGetClosestRow($Y);
+                       $PLACE{$TOP_MODULE}->dbPlaceSetFlopLoc($inst,$X,$Y);
+print "DBG-ALGO_PREPL : 002 : snapping flops/latch $inst to $Y\n" if ($debug);
+                                    } #if instance is a flop
+                                     }# foreach
+                                 }# if the PLACE database exists
+else { print "WARN-ALGO_PREPL : 003 : the placement database is not setup properly\n"; }
+}#sub dbgPlaceSnapRegToRows
+
+
+
+#########################################################################
+# combiPlace function is temporary code to place the flops of the design #
+#########################################################################
+
+sub combiPlace {
+
+use Benchmark;
+my $t0 = new Benchmark;
+
+print "INFO-ALGO_PREPL : 001 : Starting placement phase-II\n";
+my @size = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetSize;
+#$FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbgFlplanGetSize;
+my $llx = $size[0];
+my $lly = $size[1];
+my $urx = $size[2];
+my $ury = $size[3];
+
+foreach my $instance ( keys %COMP_ALREADY ) {
+        my $cellref = $CADB{$instance}->dbCadbGetCellref;
+#        my $func = $PLDB{$cellref}->dbMdbGetFunction;
+   my $isFlop = $PLACE{$TOP_MODULE}->dbPlaceGetIsInstFlop($instance);
+#   print "$isFlop\n";
+   my $isPort = $PLACE{$TOP_MODULE}->dbPlaceGetIsInstPort($instance);
+if ( $isFlop == 0 ) {
+#     print " allocation location to $instance $cellref\n";
+     my $x = int(rand($urx));
+     my $y = int(rand($ury));
+     $CADB{$instance}->dbCadbSetLoc($x,$y);
+#     $CADB{$instance}->dbgCadbGetLoc;
+     $CADB{$instance}->dbCadbSetStatus(PLACED);
+     $CADB{$instance}->dbCadbSetOrient(N);
+                    }#if instance is not a register or port
+                                            }# foreach instance in design
+print "INFO-ALGO_PREPL : 002 : Completed placement phase-II\n";
+&set_inst_box;
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "Command combiPlace took:",timestr($td),"\n";
+}#sub combiPlace
+
+sub snapPlace {
+
+use Benchmark;
+my $t0 = new Benchmark;
+my $noOfArguments = @_;
+
+if( $_[0] eq '-h') { print "Usage : snapPlace \n";
+                     print "        --iosOnly\n";
+                     print "        --regOnly\n";
+                     print "        --comboOnly\n";
+                     print "        --honorBus\n";
+                     print "        --debug\n";
+                         }
+else { # if correct no. of inputs
+
+my $REGS = 0;
+my $COMBS = 0;
+my $IOS = 0;
+my $ALL = 1;
+my $BUS_BITS_TOGETHER = 0;
+my $debug = 0;
+
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "--iosOnly"){$IOS = 1; $ALL = 0; }
+if($_[$i] eq "--regOnly"){$REGS = 1;  $ALL = 0;}
+if($_[$i] eq "--comboOnly"){$COMBS = 1;  $ALL = 0;}
+if($_[$i] eq "--honorBus"){$BUS_BITS_TOGETHER = 1;}
+if($_[$i] eq "--honorBus"){$BUS_BITS_TOGETHER = 1;}
+if($_[$i] eq "--debug"){$debug = 1;}
+                                         } # for
+print "DBG-ALGO_PREPL-SNAPPL : 001 : Creating the temporary row database on which the placement legalization works\n" if ($DEBUG == 500);
+print "INFO-ALGO_PREPL-SNAPPL : 002 : Begin snapPlace\n";
+                     &dbgPlaceCreateRowHash; 
+if ( $COMBS ==1 || $ALL == 1 ) { 
+print "INFO-ALGO_PREPL-SNAPPL : 003 : Begin snapping non-anchor instances to the row ...\n";
+&dbgPlaceSnapCombiToRows;
+print "INFO-ALGO_PREPL-SNAPPL : 004 : End snapping non-anchor instances to the row ...\n";
+                               }
+if ( $REGS ==1 || $ALL == 1 ) { 
+print "INFO-ALGO_PREPL-SNAPPL : 005 : Begin snapping anchor instances to the row ...\n";
+&dbgPlaceSnapRegToRows;
+print "INFO-ALGO_PREPL-SNAPPL : 006 : End snapping anchor instances to the row ...\n";
+                               }
+if ( $IOS ==1 || $ALL == 1 ) {
+print "INFO-ALGO_PREPL-SNAPPL : 007 : Begin snapping ports to the boundary ...\n";
+#----------- commented by rajeev ----------#
+#&dbgPlaceConnPortsMoveToBoundary;
+
+&dbPlaceAllPortsMoveToBoundaryAndAssignLayers;
+&dbPlaceConnPortsAssignLayers;
+if  ($BUS_BITS_TOGETHER == 1) {
+	&dbPlaceBusBitsTogether;	
+}
+print "INFO-ALGO_PREPL-SNAPPL : 009 : End snapping ports to the boundary ...\n";
+                             }
+print "INFO-ALGO_PREPL-SNAPPL : 010 : End snapPlace\n";
+&dbgPlaceDelRowHash;
+      }# if correct no. of inputs
+
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "Command snapPlace took:",timestr($td),"\n";
+}# sub snapPlace
+
+sub dbgPlaceCreateRowHash {
+my @rows = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetRows;
+%tempRowHash = ();
+                foreach my $tag ( @rows ) {
+                        my ($rowName,$y) = (split(/\s+/, $tag))[0,3];
+                        $tempRowHash{$y}=$rowName;
+                                          }# foreach
+
+}#sub dbgPlaceCreateRowHash
+
+sub dbgPlaceDelRowHash {
+undef %tempRowHash ;
+}#sub dbgPlaceDelRowHash
+
+
+sub dbgPlaceSnapCombiToRows {
+use POSIX qw(ceil floor);
+my $cellHeight = $GLOBAL->dbGlobalGetRowHeight;
+ print "$cellHeight\n";
+$cellHeight = $cellHeight*$DEF_DATABASE_UNIT;
+
+foreach $inst ( keys %COMP_ALREADY ) {
+       if (exists $PLACE{$TOP_MODULE} ) {
+        my $cellref = $CADB{$inst}->dbCadbGetCellref;
+        if(exists $PLDB{$cellref}) {
+          my $inst_class = $PLDB{$cellref}->dbMdbGetClass;
+          if($inst_class eq "BLOCK") {
+            next;
+          }
+        }
+        $isInstFlop = $PLACE{$TOP_MODULE}->dbPlaceGetIsInstFlop($inst);
+                                        } else { $isInstFlop = 0 }
+           if ( $isInstFlop == 0 ) {
+        my @temp_array = $CADB{$inst}->dbCadbGetLoc;
+            my  ($X)  = $temp_array[0];
+            my  ($Y) = $temp_array[1];
+              my $num  = floor($Y/$cellHeight);
+                  #$Y = $num*$cellHeight;
+                  $Y = dbPlaceGetClosestRow($Y);
+                  print "closest row for $inst at @temp_array is $Y\n" if ($debug);
+                       $CADB{$inst}->dbCadbSetLoc($X,$Y);
+                       $CADB{$inst}->dbCadbSetStatus('PLACED');
+                                    } #if instance is a flop
+                                     }# foreach
+}#sub dbgPlaceSnapCombiToRows
+
+sub dbgPlaceConnPortsMoveToBoundary {
+print "DBG-ALGO_PREPL : 001 : Moving only connected ports to the boundary, to snap unconnected ports use the database attribute\n" if ($DEBUG == 500);
+         if ( exists $PLACE{$TOP_MODULE} ) {
+my @InPorts = $PLACE{$TOP_MODULE}->dbPlaceGetInPortList;
+foreach my $portName (@InPorts ) {
+     my @loc = $PLACE{$TOP_MODULE}->dbPlaceGetPortLoc($portName);
+     my $x = $loc[0]; my $y = $loc[1];
+        my($newX,$newY,$orient)=&dbPlaceFindClosestBoundary($x,$y);
+     print "DBG-ALGO_PREPL : 002 : Input port $portName snapped from $x,$y to $newX,$newY at $orient\n" if($DEBUG > 2);
+     $PLACE{$TOP_MODULE}->dbPlaceSetPortLoc($portName,$newX,$newY);
+     $PLACE{$TOP_MODULE}->dbPlaceSetInstOrient($portName,$orient);
+                                               }# for all input ports
+
+my @OutPorts = $PLACE{$TOP_MODULE}->dbPlaceGetOutPortList;
+foreach my $portName (@OutPorts ) {
+     my @loc = $PLACE{$TOP_MODULE}->dbPlaceGetPortLoc($portName);
+     my $x = $loc[0]; my $y = $loc[1];
+        my($newX,$newY,$orient)=&dbPlaceFindClosestBoundary($x,$y);
+     print "DBG-ALGO_PREPL : 003 : Output port $portName snapped to $newX,$newY at $orient\n" if($DEBUG > 2) ;
+     $PLACE{$TOP_MODULE}->dbPlaceSetPortLoc($portName,$newX,$newY);
+     $PLACE{$TOP_MODULE}->dbPlaceSetInstOrient($portName,$orient);
+                                               }# for all output ports
+
+                                             } else { print "WARN-ALGO_PREPL : 004 : the placement database is not setup properly\n"; }
+}#sub dbgPlaceConnPortsMoveToBoundary
+
+sub dbPlaceFindClosestBoundary {
+my $origX = $_[0];
+my $origY = $_[1];
+my $minX = 0;
+my $minY = 0;
+my $xbound = "W";
+my $ybound = "S";
+my $boundary = "N";
+my @size = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetSize;
+my $x1 = abs($origX - $size[0]);
+my $y1 = abs($origY - $size[1]);
+my $x2 = abs($origX - $size[2]);
+my $y2 = abs($origY - $size[3]);
+print "DBG-ALGO_PREPL : 001 : $x1 $y1 $x2 $y2\n" if ($DEBUG > 2);
+if( $x1 <= $x2) { $minX = $x1 ; $xbound = "W"; } else { $minX = $x2; $xbound = "E";}
+if( $y1 <= $y2) { $minY = $y1 ; $ybound = "S"; } else { $minY = $y2; $ybound = "N";}
+if($minX <= $minY ) { $boundary = $xbound; } else {  $boundary = $ybound; }
+print "DBG-ALGO_PREPL : 002 : closest boundary is $boundary\n" if ($DEBUG > 2);
+my($newX,$newY,$orient) = dbPlacePortsTransformCoordinates($origX,$origY,$boundary);
+return($newX,$newY,$orient);
+}#sub dbPlaceFindClosestBoundary
+
+sub dbPlacePortsTransformCoordinates {
+my $x = $_[0];
+my $y = $_[1];
+my $boundaryName = $_[2];
+print "DBG-ALGO_PREPL : 001 : New boundary and co-ordinates are $boundaryName $x  $y\n" if ($DEBUG > 2);
+my $newX = 0;
+my $newY = 0;
+my @size = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetSize;
+   if($boundaryName eq "S") { $newX = $x; $newY = $size[1]; } 
+elsif($boundaryName eq "E") { $newX = $size[2]; $newY = $y; } 
+elsif($boundaryName eq "N") { $newX = $x; $newY = $size[3]; } 
+elsif($boundaryName eq "W") { $newX = $size[0]; $newY = $y; } 
+else { print "WARN-ALGO_PREPL : 002 : p003 : unknown closest boundary\n"; }
+print "DBG-ALGO_PREPL : 003 : New boundary and co-ordinates are $boundaryName $newX $newY\n" if ($DEBUG > 2);
+return($newX,$newY,$boundaryName);
+}#sub dbPlacePortsTransformCoordinates
+
+sub dbPlaceConnPortsAssignLayers {
+my @HL = ();
+my @VL = ();
+$DBU = $GLOBAL->dbfGlobalGetDBU;
+                           foreach my $L ( keys %PTDB ) {
+                                   my $LayerDir = $PTDB{$L}->dbTechGetLayerDir;
+                                   my $LayerType = $PTDB{$L}->dbTechGetLayerType;
+                                      if ( $LayerType eq 'ROUTING' ) {
+                                   if ( $LayerDir eq "HORIZONTAL" ) { push(@HL,$L); }
+                                   elsif ( $LayerDir eq "VERTICAL" ) { push(@VL,$L); }
+                                                                     }
+                                                        }
+print join",", @HL; print "\n";
+print join",", @VL; print "\n";
+my $HLlen = @HL;
+my $VLlen = @VL;
+my $pinLayer ="";
+my $minWidth;
+my $minHeight;
+my $side;
+
+my @OutPorts = $PLACE{$TOP_MODULE}->dbPlaceGetOutPortList;
+   foreach my $portName ( @OutPorts ) {
+               print "INFO-ALGO_PREPL : 001 : $portName\n";
+               $pinLayer = $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortGetLayer;
+               $side = $PLACE{$TOP_MODULE}->dbPlaceGetInstOrient($portName);
+               if($pinLayer != 0){
+                  $minWidth = $PTDB{$pinLayer}->dbTechGetLayerWidth;
+                  my $layerMinArea = $PTDB{$pinLayer}->dbTechGetLayerArea;
+                  $minHeight = $layerMinArea/$minWidth;
+                  $minHeight = (int($minHeight*1000.0 + 0.5))/1000.0;
+                 $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortSetSize($minWidth,$minHeight);
+               }else{
+               if ( $side eq 'N' || $side eq 'S' ) { 
+                                                     my $pinLayerN = int( rand($VLlen) );
+                                                     $pinLayer = $VL[$pinLayerN]; 
+                                                   }
+               elsif ( $side eq 'E' || $side eq 'W' ) {
+                                                     my $pinLayerN = int( rand($HLlen) );
+                                                     $pinLayer = $HL[$pinLayerN]; 
+                                                      }
+               else {
+                                                     $PLACE{$TOP_MODULE}->dbPlaceSetInstOrient($portName,'E');
+                                                     my $pinLayerN = int( rand($HLlen) );
+                                                     $pinLayer = $HL[$pinLayerN]; 
+                    }
+               print "DBG-ALGO_PREPL : 002 : $portName : $side : $pinLayer\n" if ($DEBUG == 300);
+                 $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortSetLayer($pinLayer);
+                  $minWidth = $PTDB{$pinLayer}->dbTechGetLayerWidth;
+                  my $layerMinArea = $PTDB{$pinLayer}->dbTechGetLayerArea;
+                  $minHeight = $layerMinArea/$minWidth;
+                  $minHeight = (int($minHeight*1000.0 + 0.5))/1000.0;
+                 $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortSetSize($minWidth,$minHeight);
+               }
+           	my @loc = $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortGetLoc;
+     		my $x = $loc[0]; my $y = $loc[1];
+        	my($newX,$newY)=&dbPlacePortsAlignToTrack($x,$y,$side,$pinLayer,$minWidth);
+     		print "DBG-ALGO_PREPL : 003 : Output port $portName aligned to track to $newX,$newY at $side\n" if($DEBUG > 2) ;
+           	$PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortSetLoc($newX,$newY);
+     		$PLACE{$TOP_MODULE}->dbPlaceSetPortLoc($portName,$newX,$newY);
+		
+                                      }
+my @InPorts = $PLACE{$TOP_MODULE}->dbPlaceGetInPortList;
+   foreach my $portName ( @InPorts ) {
+               $pinLayer = $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortGetLayer;
+               $side = $PLACE{$TOP_MODULE}->dbPlaceGetInstOrient($portName);
+               if($pinLayer != 0){
+                  $minWidth = $PTDB{$pinLayer}->dbTechGetLayerWidth;
+                  my $layerMinArea = $PTDB{$pinLayer}->dbTechGetLayerArea;
+                  $minHeight = $layerMinArea/$minWidth;
+                  $minHeight = (int($minHeight*1000.0 + 0.5))/1000.0;
+                 $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortSetSize($minWidth,$minHeight);
+               }else{
+               if ( $side eq 'N' || $side eq 'S' ) { 
+                                                     my $pinLayerN = int( rand($VLlen) );
+                                                     $pinLayer = $VL[$pinLayerN]; 
+                                                   }
+               elsif ( $side eq 'E' || $side eq 'W' ) {
+                                                     my $pinLayerN = int( rand($HLlen) );
+                                                     $pinLayer = $HL[$pinLayerN]; 
+                                                      }
+               else {
+                                                     $PLACE{$TOP_MODULE}->dbPlaceSetInstOrient($portName,'W');
+                                                     my $pinLayerN = int( rand($HLlen) );
+                                                     $pinLayer = $HL[$pinLayerN]; 
+                    }
+               print "DBG-ALGO_PREPL : 004 : $portName : $side : $pinLayer\n" if ($DEBUG == 300);
+                $minWidth = $PTDB{$pinLayer}->dbTechGetLayerWidth;
+                my $layerMinArea = $PTDB{$pinLayer}->dbTechGetLayerArea;
+                $minHeight = $layerMinArea/$minWidth;
+                $minHeight = (int($minHeight*1000.0 + 0.5))/1000.0;
+               $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortSetSize($minWidth,$minHeight);
+               $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortSetLayer($pinLayer);
+               }	
+            	my @loc = $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortGetLoc;
+     		my $x = $loc[0]; my $y = $loc[1];
+        	my($newX,$newY)=&dbPlacePortsAlignToTrack($x,$y,$side,$pinLayer,$minWidth);
+     		print "DBG-ALGO_PREPL : 005 : Input port $portName aligned to track to $newX,$newY at $side\n" if($DEBUG > 2) ;
+            	$PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortSetLoc($newX,$newY);
+     		$PLACE{$TOP_MODULE}->dbPlaceSetPortLoc($portName,$newX,$newY);
+
+                                      }
+
+}#sub dbPlaceConnPortsAssignLayers
+
+sub dbPlacePortsAlignToTrack {
+$DBU = $GLOBAL->dbfGlobalGetDBU;
+my $x = $_[0];
+my $y = $_[1];
+my $boundaryName = $_[2];
+my $pinLayer = $_[3];
+my $layerWidth = $_[4] * $DBU;
+my $layerPitch =  $PTDB{$pinLayer}->dbTechGetLayerPitch ;
+$layerPitch = $layerPitch * $DBU ;
+my $offset = $layerPitch /2 ;
+my $newX ; my $newY ;
+
+ if ( $boundaryName eq 'N' || $boundaryName eq 'S' ) { 
+                                                my $temp1 = ceil( ($x - $offset)/$layerPitch );
+                                                my $temp2 = ($temp1 * $layerPitch )+$offset ;
+						$newX = $temp2 - ($layerWidth/2);
+						$newY = $y;
+                                                   }
+               elsif ( $boundaryName eq 'E' || $boundaryName eq 'W' ) {
+                                                my $temp1 = ceil( ($y - $offset)/$layerPitch );
+                                                my $temp2 = ($temp1 * $layerPitch) +$offset ;
+						$newY = $temp2 - ($layerWidth/2);
+						$newX = $x;
+                                                      }
+
+return($newX,$newY);
+}#sub dbPlacePortsAlignToTrack
+
+sub dbPlaceBusBitsTogether {
+my @inputs  = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetInput ;
+my @outputs  = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetOutput ;
+my @bidis  = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetBidi ;
+my @firstloc ;
+my $pinLayer;
+my $minWidth;
+my $side;
+foreach my $in ( @inputs ) {
+	my $type = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetInputType($in);
+	print "DBG-ALGO_PREPL : 001 : Input: $in, Type: $type \n" if ($debug);
+	if ($type == 1) {
+		 my $busWidth = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetInputBits($in);
+                 $busWidth =~ s/\[\s*//;
+                 $busWidth =~ s/\s*\]//;
+		 print "INFO-ALGO_PREPL : 002 : Buswidth: $busWidth \n";
+                 my @B = split(/\s*:\s*/, $busWidth );
+                 if ( $B[1] > $B[0] ) { $a = $B[0]; $b = $B[1]; $B[1] = $a; $B[0] = $b; }
+                 for ( my $xx = $B[1]; $xx <= $B[0] ; $xx++ ) {
+                 	my $inbus = $in."[".$xx."]";
+			if ($xx == $B[1]) {
+				@firstloc = $PORTS_ALREADY{$TOP_MODULE}{$inbus}->dbPortGetLoc;
+				$pinLayer = $PORTS_ALREADY{$TOP_MODULE}{$inbus}->dbPortGetLayer;
+				$minWidth = $PTDB{$pinLayer}->dbTechGetLayerWidth;
+            			$side = $PORTS_ALREADY{$TOP_MODULE}{$inbus}->dbPortGetSide;
+			} else {
+				$PORTS_ALREADY{$TOP_MODULE}{$inbus}->dbPortSetLoc($firstloc[0],$firstloc[1]);
+				$PLACE{$TOP_MODULE}->dbPlaceSetPortLoc($inbus,$firstloc[0],$firstloc[1]);
+				$PORTS_ALREADY{$TOP_MODULE}{$inbus}->dbPortSetLayer($pinLayer);	
+              			$PORTS_ALREADY{$TOP_MODULE}{$inbus}->dbPortSetSize($minWidth,$minWidth);
+            			$PORTS_ALREADY{$TOP_MODULE}{$inbus}->dbPortSetSide($side);
+     				$PLACE{$TOP_MODULE}->dbPlaceSetInstOrient($inbus,$side);
+			} #end else
+			
+                 }
+	}
+}#end foreach
+
+foreach my $out ( @outputs ) {
+	my $type = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetOutputType($out);
+	print "DBG-ALGO_PREPL : 003 : Output: $out, Type: $type \n" if ($debug);
+	if ($type == 1) {
+		 my $busWidth = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetOutputBits($out);
+                 $busWidth =~ s/\[\s*//;
+                 $busWidth =~ s/\s*\]//;
+		 print "INFO-ALGO_PREPL : 004 : Buswidth: $busWidth \n";
+                 my @B = split(/\s*:\s*/, $busWidth );
+                 if ( $B[1] > $B[0] ) { $a = $B[0]; $b = $B[1]; $B[1] = $a; $B[0] = $b; }
+                 for ( my $xx = $B[1]; $xx <= $B[0] ; $xx++ ) {
+                 	my $outbus = $out."[".$xx."]";
+			if ($xx == $B[1]) {
+				@firstloc = $PORTS_ALREADY{$TOP_MODULE}{$outbus}->dbPortGetLoc;
+				$pinLayer = $PORTS_ALREADY{$TOP_MODULE}{$outbus}->dbPortGetLayer;
+				$minWidth = $PTDB{$pinLayer}->dbTechGetLayerWidth;
+            			$side = $PORTS_ALREADY{$TOP_MODULE}{$outbus}->dbPortGetSide;
+			} else {
+				$PORTS_ALREADY{$TOP_MODULE}{$outbus}->dbPortSetLoc($firstloc[0],$firstloc[1]);
+				$PLACE{$TOP_MODULE}->dbPlaceSetPortLoc($outbus,$firstloc[0],$firstloc[1]);
+				$PORTS_ALREADY{$TOP_MODULE}{$outbus}->dbPortSetLayer($pinLayer);
+              			$PORTS_ALREADY{$TOP_MODULE}{$outbus}->dbPortSetSize($minWidth,$minWidth);	
+            			$PORTS_ALREADY{$TOP_MODULE}{$outbus}->dbPortSetSide($side);
+     				$PLACE{$TOP_MODULE}->dbPlaceSetInstOrient($outbus,$side);
+			} #end else
+			
+                 }
+	}
+}#end foreach
+
+foreach my $bidi ( @bidis ) {
+	my $type = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetBidiType($bidi);
+	print "DBG-ALGO_PREPL : 003 : Bidi: $bidi, Type: $type \n" if ($debug);
+	if ($type == 1) {
+		 my $busWidth = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetBidiBits($bidi);
+                 $busWidth =~ s/\[\s*//;
+                 $busWidth =~ s/\s*\]//;
+		 print "INFO-ALGO_PREPL : 004 : Buswidth: $busWidth \n";
+                 my @B = split(/\s*:\s*/, $busWidth );
+                 if ( $B[1] > $B[0] ) { $a = $B[0]; $b = $B[1]; $B[1] = $a; $B[0] = $b; }
+                 for ( my $xx = $B[1]; $xx <= $B[0] ; $xx++ ) {
+                 	my $bidibus = $bidi."[".$xx."]";
+			if ($xx == $B[1]) {
+				@firstloc = $PORTS_ALREADY{$TOP_MODULE}{$bidibus}->dbPortGetLoc;
+				$pinLayer = $PORTS_ALREADY{$TOP_MODULE}{$bidibus}->dbPortGetLayer;
+				$minWidth = $PTDB{$pinLayer}->dbTechGetLayerWidth;
+            			$side = $PORTS_ALREADY{$TOP_MODULE}{$bidibus}->dbPortGetSide;
+			} else {
+				$PORTS_ALREADY{$TOP_MODULE}{$bidibus}->dbPortSetLoc($firstloc[0],$firstloc[1]);
+				$PLACE{$TOP_MODULE}->dbPlaceSetPortLoc($bidibus,$firstloc[0],$firstloc[1]);
+				$PORTS_ALREADY{$TOP_MODULE}{$bidibus}->dbPortSetLayer($pinLayer);
+              			$PORTS_ALREADY{$TOP_MODULE}{$bidibus}->dbPortSetSize($minWidth,$minWidth);	
+            			$PORTS_ALREADY{$TOP_MODULE}{$bidibus}->dbPortSetSide($side);
+     				$PLACE{$TOP_MODULE}->dbPlaceSetInstOrient($bidibus,$side);
+			} #end else
+			
+                 }
+	}
+}#end foreach
+
+
+}#sub dbPlaceBusBitsTogether
+
+
+sub dbPlaceAllPortsMoveToBoundaryAndAssignLayers {
+    foreach $portName (keys %{$PORTS_ALREADY{$TOP_MODULE}} ) {
+            print "INFO-ALGO_PREPL : 001 : $portName ";
+            my @loc = $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortGetLoc;
+            my $side = $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortGetSide;
+            my $status = $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortGetStatus;
+            print "INFO-ALGO_PREPL : 002 : @loc $side $status\n";
+            my ($X,$Y,$side) = &dbPlaceFindClosestBoundary(@loc);
+            print "INFO-ALGO_PREPL : 003 : new port data : $X,$Y,$side\n";
+            $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortSetLoc($X,$Y);
+            $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortSetSide($side);
+            $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortSetStatus('PLACED');
+     $PLACE{$TOP_MODULE}->dbPlaceSetPortLoc($portName,$X,$Y);
+     $PLACE{$TOP_MODULE}->dbPlaceSetInstOrient($portName,$side);
+
+                                                       }
+}#sub dbPlaceAllPortsMoveToBoundaryAndAssignLayers
+
+1;

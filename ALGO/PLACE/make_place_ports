@@ -1,0 +1,146 @@
+#package placePorts;
+
+## sub new {
+##   my $placePorts = {
+## 	    };
+##   bless $placePorts, 'placePorts';
+##   return $placePorts;
+## }# sub new
+## 
+
+
+sub placePorts() {
+  my ($perimeter, $stride) = ("", "");
+  my ($portCount, $port, $count, $portX, $portY, $linearPos) = ("","",0,0,0,0);
+  my $debug = 1;
+  my @portOrder;
+
+  my @size = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetSize;
+  my $maxX = $size[2] - $size[0];
+  my $maxY = $size[3] - $size[1];
+
+
+  @portOrder = getPortSequence($debug);
+  $portCount = $#portOrder+1;
+  $perimeter = 2*($maxX + $maxY);
+  $stride    = $perimeter / $portCount;
+  print "DBG-ALGO_PL-PL_PRT : 001 : portCount=$portCount maX=$maxX maxy=$maxY peri=$perimeter stride=$stride\n" if $debug;
+  for ($count=0; $count<=$#portOrder; $count++) {
+    $port = $portOrder[$count];
+    $linearPos = $count * $stride;
+    printf("%-10s : %-10.2f ",$port, $linearPos) if $debug;
+    if ($linearPos <= $maxY) { #put on W edge 
+      $portX = 0;
+      $portY = $linearPos;
+    } elsif ( ($linearPos > $maxY) && ($linearPos <= ($maxX+$maxY))) {# put on N edge
+      $portX = $linearPos-$maxY;
+      $portY = $maxY;
+    } elsif ( ($linearPos > ($maxX+$maxY)) && ($linearPos <= ($maxX+(2*$maxY))) ) {# put on E edge
+      $portX = $maxX;
+      $portY = $maxY - ($linearPos - ($maxX + $maxY))
+    } elsif ( ($linearPos > ($maxX+(2*$maxY))) && ($linearPos <= (2*($maxX+$maxY))) ) {# put on E edge
+      $portX = $maxX - ($linearPos - ($maxX + (2*$maxY)));
+      $portY = 0;
+    } else { #critical error
+      die("make_seed_place : critical error encountered while placing ports, $port not on an edge");
+    } #if
+    printf("%-10.2f %-10.2f\n",$portX, $portY) if $debug;
+    $PLACE{$TOP_MODULE}->dbPlaceSetPortLoc($port,$portX,$portY);
+    syncPlace;
+  } #for
+  printf("DBG-ALGO_PL-PL_PRT : 002 : Initial Port Placement Updated into database\n");
+
+} #sub placePorts
+
+sub getPortSequence {
+  my ($debug) = @_;
+  my %portConnMatrix;
+  my %portCost;
+  my ($refInst, $isPort) = ("", "");
+  my @portList = ();
+  my @placedPortList = ();
+  my ($srcPort, $dstPort, $p2pFlopDist, $maxCostPort) = ("", "", "", "");
+  my $i;
+
+  ### get list of all ports
+  @portList = ($PLACE{$TOP_MODULE}->dbPlaceGetInPortList(), $PLACE{$TOP_MODULE}->dbPlaceGetOutPortList());
+
+  ### create an initial conn matrix with cost of each P2P
+  printf("\n") if $debug;
+  foreach $srcPort (@portList) {
+    $portCost{$srcPort} = 0;
+    printf("%-10s: ",$srcPort) if $debug;
+    foreach $dstPort (@portList) {
+      $p2pFlopDist = $PLACE{$TOP_MODULE}->dbPlaceGetP2PFlopDist2($srcPort, $dstPort);
+      if ($p2pFlopDist != 0) {
+	${$portConnMatrix{$srcPort}{$dstPort}} = 1/$p2pFlopDist;
+      } else {
+	${$portConnMatrix{$srcPort}{$dstPort}} = 0;
+      } #if
+      $portCost{$srcPort} += ${$portConnMatrix{$srcPort}{$dstPort}};
+      printf("%-2.2f=>%-2.2f  ",$p2pFlopDist,${$portConnMatrix{$srcPort}{$dstPort}}) if $debug;
+    } #foreach
+    printf("\n") if $debug;
+  } #foreach
+
+
+  ### algo
+  for ($i=0; $i<=$#portList; $i++) {
+    printPortsCost(\@portList,\%portCost, $debug);
+    ($maxCostPort) = &findMaxCostPort(\@portList, \%portCost, $debug);
+    print"DBG-ALGO_PL : 001 : => Place $maxCostPort\n" if $debug;
+    push(@placedPortList,$maxCostPort);
+    &updatePortsCost(\@portList, \@placedPortList, \%portCost, \%portConnMatrix, $debug);
+  } #foreach
+  printf("\n\nDBG-ALGO_PL : 002 : PortOrder: ") if $debug;
+  print "DBG-ALGO_PL : 003 : @placedPortList"  if $debug;
+  printf("\n") if $debug;
+  return(@placedPortList);
+} #sub getPortSequence
+
+sub findMaxCostPort {
+  my ($portList, $portCost, $debug) = @_;
+  my $port;
+  my @retList = ();
+  my $maxCostPort = $portList->[0];
+  foreach $port (@$portList) {
+    if ($portCost->{$port} > $portCost->{$maxCostPort}) {
+      $maxCostPort = $port;
+    } #if
+  } #foreach
+  @retList = ($maxCostPort);
+  return @retList;
+} #sub findMaxCostPort
+
+sub updatePortsCost {
+  my ($portList, $placedPortList, $portCost, $portConnMatrix, $debug) = @_;
+  my $port;
+  my $placePort;
+
+  foreach $port (@$portList) {
+    $portCost->{$port} = 0;
+    foreach $placedPort (@$placedPortList) {
+      if ($port eq $placedPort) {
+	$portCost->{$port} = -1;
+	last;
+      } else {
+	$portCost->{$port} +=  ${$portConnMatrix->{$port}{$placedPort}};
+      } #if
+    } #foreach 
+  } #foreach
+} #sub updatePortsCost
+
+sub printPortsCost {
+  my ($portList, $portCost, $debug) = @_;
+  my $port;
+
+  printf("DBG-ALGO_PL : 001 : Ports Cost : ") if $debug;
+  foreach $port (@$portList) {
+    printf("DBG-ALGO_PL : 001 : $port:%-2.2f  ",$portCost->{$port}) if $debug;
+  } #foreach 
+
+} #sub printPortsCost
+
+1;
+
+

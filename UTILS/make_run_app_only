@@ -1,0 +1,1134 @@
+#######################################################################################################
+############################## subroutine to run app command only #####################################
+#######################################################################################################
+sub check_create_app_tcl{
+ &create_app_vs_func;
+ my $binName = (split(/\//, $0))[-1];
+ if($binName ne 'proton' && $binName ne 'proton_for_gschematic'){
+    if(exists $app_vs_func{$binName}){
+       my $app_cmd = $app_vs_func{$binName};
+       &{$app_cmd}(@ARGV);
+    }else{
+       print "WARN:This app is not valid...\n";
+    }
+    exit;
+ }
+}
+
+#######################################################################################################
+################################ app_name vs app_subroutine mapping ###################################
+#######################################################################################################
+sub create_app_vs_func{
+ %app_vs_func = (
+                 'combine_uniq_sp_files'=>'combine_uniq_sp_filesSub',
+                 'designAnalysisReport'=> 'designAnalysisReportSub',
+                 'genLVSData'=> 'genLVSDataSub',
+                 'writeLVSLabel'=> 'writeLVSLabelSub',
+                 'defMerge'=> 'defMergeSub',
+                 'vcd2cmd'=> 'vcd2cmdSub',
+                 'verilog2spice'=> 'verilog2spiceSub',
+                 'reportNets'=> 'reportNetsSub',
+                 'addPowerStripe'=> 'addPowerStripeAndRouteSub',
+                 'addPowerRoute'=> 'addPowerStripeAndRouteSub',
+                 'spiceViewer'=> 'spiceViewerSub',
+                 'rotateDef'=> 'rotateDefSub',
+                 'flipDef'=> 'flipDefSub',
+                 'netListGen'=> 'netListGenSub',
+                 'placeVerilogNetList'=> 'placeVerilogNetListSub',
+                 'routeDef'=> 'routeDefSub',
+                 'genBoundaryCheckingDef'=> 'genBoundaryCheckingDefSub',
+                 'def2gds'=> 'def2gdsSub',
+                 'lef2gds'=> 'lef2gdsSub',
+                 'def2lef'=> 'def2lefSub',
+                 'printSpiceInstInfo'=> 'printSpiceInstInfoSub',
+                 
+                );
+
+  #--------- binary of app in drupal is stored with dot ------#
+  my @apps = keys %app_vs_func;
+  foreach my $appName (@apps){
+    my $dup_app_with_dot = $appName.".";
+    $app_vs_func{$dup_app_with_dot} = $app_vs_func{$appName};
+  }
+  #-----------------------------------------------------------#
+}
+
+#######################################################################################################
+################################ App to combine sp files ##############################################
+#######################################################################################################
+sub combine_uniq_sp_filesSub{
+ my $numOfArg = @_;
+ if($numOfArg < 6 || $_[0] eq '-h' || $_[0] eq '-H' || $_[0] eq '-help' || $_[0] eq '-HELP'){
+    print "Usage:./combine_uniq_sp_files -spice_in <sp1> -spice_in <sp2> ...\n";
+    print "                              -spice_out <spice output file> (default: slvr_comb.sp)\n";
+    print "                              -in_unit <meter/micron>\n";
+    print "                              -out_unit <meter/micron>\n";
+    print "                              -spiceLib <path of the dir>\n";
+    print "                              --hier\n";
+    print "                              --flat\n";
+    print "                              --complete_spice\n";
+    print "                              --notWriteEmptyModule\n";
+    print "                              --vector_bit_blast\n";
+    print "                              --add_top_instance\n";
+    print "                              --global_change_pin_vss_to_gnd\n";
+    print "                              --add_first_blank_line\n";
+    print "                              --add_global_vdd_and_gnd\n";
+    print "                              --add_spice_missing_port\n";
+    print "                              --overwrite\n";
+ }else{
+    my @spInFileList = ();
+    my @wrSubArg = ();
+    for(my $xx=0; $xx<$numOfArg; $xx++){
+        if($_[$xx] eq '-spice_in'){
+           if(-e $_[$xx+1]){
+              push(@spInFileList, $_[$xx+1]);
+           }else{
+              my $spStr = $_[$xx+1];
+              $spStr =~ s/\{|\}//g;
+              push(@spInFileList, split(/\,/, $spStr));
+           }
+           $xx = $xx+1; #to skip next arg 
+        }elsif($_[$xx] eq '-spice_out'){
+           push(@wrSubArg, '-output');
+        }else{
+           push(@wrSubArg, $_[$xx]);
+        }
+    }#for each arg
+    
+    foreach my $spInFile (@spInFileList){
+      &read_spice_new('-sp', $spInFile, '--append_file_name');
+    }
+    &write_spice_multi_top_module(@wrSubArg);
+ }#if correct num of Arg
+}#sub combine_uniq_sp_filesSub
+
+#######################################################################################################
+####################################### defAnalysis App ###############################################
+#######################################################################################################
+sub designAnalysisReportSub {
+ my $numOfArg = @_;
+ if($numOfArg < 4 || $_[0] eq '-h' || $_[0] eq '-H' || $_[0] eq '-help' || $_[0] eq '-HELP'){
+    print "Usage:./designAnalysisReport -lef <lef1> -lef <lef2> ...\n";
+    print "                             -def <def file>\n";
+    print "                             --rpt (If report needed in txt format, by default It is in xml format)\n";
+ }else{
+    my @lefFileList = ();
+    my $defFile = "";
+    my $switch  = "";
+    for(my $xx=0; $xx<$numOfArg; $xx++){
+        if($_[$xx] eq '-lef'){
+           if(-e $_[$xx+1]){
+              push(@lefFileList, $_[$xx+1]);
+           }else{
+              my $lefStr = $_[$xx+1];
+              $lefStr =~ s/\{|\}//g;
+              push(@lefFileList, split(/\,/, $lefStr));
+           }
+        }
+        if($_[$xx] eq '-def'){$defFile = $_[$xx+1];}
+        if($_[$xx] eq '--rpt'){$switch = "--rpt";}
+    }#for each arg
+    
+    foreach my $lefFile (@lefFileList){
+      &read_lef('-lef', $lefFile, '-tech', 'also');
+    }
+    &read_defII('-def', $defFile, '--all');
+    &defAnalysis($switch);
+ }#if correct num of Arg
+}#sub designAnalysisReportSub
+
+#######################################################################################################
+############################### App to generate LVS data for given module #############################
+#######################################################################################################
+sub genLVSDataSub{
+ my $numOfArg = @_;
+ if($numOfArg < 6 || $_[0] eq '-h' || $_[0] eq '-H' || $_[0] eq '-help' || $_[0] eq '-HELP'){
+    print "Usage:./genLVSData -lef <lef1> -lef <lef2> ...\n";
+    print "                   -verilog_in <verilog input file>\n";
+    print "                   -verilog_out <verilog output file>\n";
+    print "                   -module <module name>\n";
+    #print "                   -def <def file name>\n";
+    print "                   -port_map_file <port map file name>\n";
+    print "                   -no_of_level_in_hierarchy <number of levels>\n";
+    print "                   -lvs_strategy <top_down|bottom_up> (default value is bottom_up)\n";
+    print "                   --overwrite\n";
+ }else{
+    my @lefFileList = ();
+    my $vlogInFile = "";
+    my @lvsArg = ();
+    for(my $xx=0; $xx<$numOfArg; $xx++){
+        if($_[$xx] eq '-lef'){
+           if(-e $_[$xx+1]){
+              push(@lefFileList, $_[$xx+1]);
+           }else{
+              my $lefStr = $_[$xx+1];
+              $lefStr =~ s/\{|\}//g;
+              push(@lefFileList, split(/\,/, $lefStr));
+           }
+        }
+        if($_[$xx] eq '-verilog_in'){
+           $vlogInFile = $_[$xx+1];
+        }
+        if($_[$xx] eq '-module'){
+           push(@lvsArg, $_[$xx], $_[$xx+1]);
+        }
+        #if($_[$xx] eq '-def'){
+        #   push(@lvsArg, '-def_file', $_[$xx+1]);
+        #}
+        if($_[$xx] eq '-verilog_out'){
+           push(@lvsArg, '-vlog_file', $_[$xx+1]);
+        }
+        if($_[$xx] eq '-port_map_file'){
+           push(@lvsArg, $_[$xx], $_[$xx+1]);
+        }
+        if($_[$xx] eq '-no_of_level_in_hierarchy'){
+           push(@lvsArg, $_[$xx], $_[$xx+1]);
+        }
+        if($_[$xx] eq '-lvs_strategy'){
+           push(@lvsArg, $_[$xx], $_[$xx+1]);
+        }
+        if($_[$xx] eq '--overwrite'){
+           push(@lvsArg, "--overwrite");
+        }
+    }#for each arg
+    
+    foreach my $lefFile (@lefFileList){
+      &read_lef('-lef', $lefFile, '-tech', 'also');
+    }
+    if(-e $vlogInFile){
+       my $option = '-v'; #It is added because chomp($_[$yy]) in read_verilog causes error.
+       &read_verilog($option, $vlogInFile);
+       #&read_verilog(-v, $vlogInFile);
+    }
+    &generate_LVS_data_for_given_module(@lvsArg);
+ }#if correct num of Arg
+}#sub genLVSDataSub
+
+
+#######################################################################################################
+###################################### App to write LVS label #########################################
+#######################################################################################################
+sub writeLVSLabelSub {
+ my $numOfArg = @_;
+ if($numOfArg < 4 || $_[0] eq '-h' || $_[0] eq '-H' || $_[0] eq '-help' || $_[0] eq '-HELP'){
+    print "Usage:./writeLVSLabel -lef <lef1> -lef <lef2> ...\n";
+    print "                      -def <def file>\n";
+    print "                      -output <output file name>\n";
+    print "                      --routed <output file name>\n";
+    print "                      --unrouted <output file name>\n";
+    print "                      --ports <output file name>\n";
+ }else{
+    my @lefFileList = ();
+    my @switchArg = ();
+    my $defFile = "";
+    my $outFile  = "";
+    for(my $xx=0; $xx<$numOfArg; $xx++){
+        if($_[$xx] eq '-lef'){
+           if(-e $_[$xx+1]){
+              push(@lefFileList, $_[$xx+1]);
+           }else{
+              my $lefStr = $_[$xx+1];
+              $lefStr =~ s/\{|\}//g;
+              push(@lefFileList, split(/\,/, $lefStr));
+           }
+        }
+        if($_[$xx] eq '-def'){$defFile = $_[$xx+1];}
+        if($_[$xx] eq '-output'){$outFile = $_[$xx+1];}
+        if($_[$xx] eq '--routed'){push(@switchArg, $_[$xx]);}
+        if($_[$xx] eq '--unrouted'){push(@switchArg, $_[$xx]);}
+        if($_[$xx] eq '--ports'){push(@switchArg, $_[$xx]);}
+    }#for each arg
+    
+    foreach my $lefFile (@lefFileList){
+      &read_lef('-lef', $lefFile, '-tech', 'also');
+    }
+    &read_defII('-def', $defFile, '--all');
+    &write_lvs_label('-output', $outFile, @switchArg);
+ }#if correct num of Arg
+}#sub writeLVSLabelSub
+
+#######################################################################################################
+###################################### App to merge def files #########################################
+#######################################################################################################
+sub defMergeSub{
+ my $numOfArg = @_;
+ if($numOfArg < 4 || $_[0] eq '-h' || $_[0] eq '-H' || $_[0] eq '-help' || $_[0] eq '-HELP'){
+    print "Usage:./defMerge -lef <lef1> -lef <lef2> ... OR -lef <lef1,lef2,...>\n";
+    print "                 -def <def1> -def <def2> ... OR -def <def1,def2,...>\n";
+    print "                 -output <output file name>\n";
+ }else{
+    my @lefFileList = ();
+    my @defFileList = ();
+    my $outFile  = "";
+    for(my $xx=0; $xx<$numOfArg; $xx++){
+        if($_[$xx] eq '-lef'){
+           if(-e $_[$xx+1]){
+              push(@lefFileList, $_[$xx+1]);
+           }else{
+              my $lefStr = $_[$xx+1];
+              $lefStr =~ s/\{|\}//g;
+              push(@lefFileList, split(/\,/, $lefStr));
+           }
+        }
+        if($_[$xx] eq '-def'){
+           if(-e $_[$xx+1]){
+              push(@defFileList, $_[$xx+1]);
+           }else{
+              my $defStr = $_[$xx+1];
+              $defStr =~ s/\{|\}//g;
+              push(@defFileList, split(/\,/, $defStr));
+           }
+        }
+        if($_[$xx] eq '-output'){$outFile = $_[$xx+1];}
+    }#for each arg
+    
+    foreach my $lefFile (@lefFileList){
+      &read_lef('-lef', $lefFile, '-tech', 'also');
+    }
+    my $temp_def_str = join ",",@defFileList;
+    &read_def_hierarchy('-def', $temp_def_str, '--all');
+    &hier2flat('--logical', '--physical');
+    &write_def('-output', $outFile,  '--overwrite', '--write_unconnected_instances');
+ }#if correct num of Arg
+}#sub defMergeSub
+
+#######################################################################################################
+#################################### App to convert vcd in cmd ########################################
+#######################################################################################################
+sub vcd2cmdSub{
+ my $numOfArg = @_;
+ if($numOfArg < 4 || $_[0] eq '-h' || $_[0] eq '-H' || $_[0] eq '-help' || $_[0] eq '-HELP'){
+    print "Usage:./vcd2cmd  -vcd <vcd file>\n";
+    print "                 -verilog <v1> -verilog <v2> ... OR -verilog <v1,v2,...>\n";
+    print "                 -cmd <out cmd file (default value is module)>\n";
+    print"                  --blio_write <to write blio>\n";
+ }else{
+    my @vlogFileList = ();
+    my $vcdFile = "";
+    my $outFile  = "module";
+    my $switch = "";
+    for(my $xx=0; $xx<$numOfArg; $xx++){
+        if($_[$xx] eq '-vcd'){$vcdFile = $_[$xx+1];}
+        if($_[$xx] eq '-verilog'){
+           if(-e $_[$xx+1]){
+              push(@vlogFileList, $_[$xx+1]);
+           }else{
+              my $vlogStr = $_[$xx+1];
+              $vlogStr =~ s/\{|\}//g;
+              push(@vlogFileList, split(/\,/, $vlogStr));
+           }
+        }
+        if($_[$xx] eq '-cmd'){$outFile = $_[$xx+1];}
+        if($_[$xx] eq "--blio_write"){$switch .= $_[$xx];}
+    }#for each arg
+    
+    foreach my $vlogFile (@vlogFileList){
+      my $op = '-v'; #Added because of this error: Modification of a read-only value attempted at /home/adityap/proj/proton/PARSER/make_rw_verilog line 4
+      &read_verilog($op, $vlogFile);
+    }
+    &create_cmd_file_from_vcd('-vcd', $vcdFile, '-cmd', $outFile, $switch);
+ }#if correct num of Arg
+}#sub vcd2cmdSub
+
+#######################################################################################################
+################################# App to convert verilog in spice #####################################
+#######################################################################################################
+sub verilog2spiceSub{
+ my $numOfArg = @_;
+ if($_[0] eq '-h' || $_[0] eq '-H' || $_[0] eq '-help' || $_[0] eq '-HELP'){
+    print"Usage:./verilog2spice  -verilog <v1> -verilog <v2> ... OR -verilog <v1,v2,...>\n";
+    print "                      -spiceLib <dir1> -spiceLib <dir2> ... OR -spiceLib <dir1,dir2,...>\n";
+    print"                       -in_unit <meter/micron>\n";
+    print"                       -out_unit <meter/micron>\n";
+    print"                       -output <output spice file name (by default module)>\n";
+    print"                       --hier OR --flat\n";
+    print"                       --complete_spice (if given, it will write complete spice)\n";
+    print"                       --add_spice_missing_port\n";
+    print"                       --notWriteEmptyModule\n";
+    print"                       --vector_bit_blast\n";
+    print"                       --overwrite\n";
+ }else{
+    my @vlogFileList = ();
+    my @spLibDirList = ();
+    my @argList = ();
+    for(my $xx=0; $xx<$numOfArg; $xx++){
+        if($_[$xx] eq '-verilog'){
+           if(-e $_[$xx+1]){
+              push(@vlogFileList, $_[$xx+1]);
+           }else{
+              my $vlogStr = $_[$xx+1];
+              $vlogStr =~ s/\{|\}//g;
+              push(@vlogFileList, split(/\,/, $vlogStr));
+           }
+           $xx++;
+        }elsif($_[$xx] eq '-spiceLib'){
+           if(-e $_[$xx+1]){
+              push(@spLibDirList, $_[$xx+1]);
+           }else{
+              my $dirStr = $_[$xx+1];
+              $dirStr =~ s/\{|\}//g;
+              push(@spLibDirList, split(/\,/, $dirStr));
+           }
+           $xx++;
+        }else{
+           push(@argList, $_[$xx]);
+        }
+    }#for each arg
+    
+    foreach my $vlogFile (@vlogFileList){
+       #&read_verilog('-v', $vlogFile);
+       my $op = '-v'; #Added because of this error: Modification of a read-only value attempted at /home/adityap/proj/proton/PARSER/make_rw_verilog line 4
+       &read_verilog($op, $vlogFile);
+    }
+    my $temp_spLib_str = join ",",@spLibDirList;
+    push(@argList, '-spiceLib', $temp_spLib_str);
+    &write_spice_file(@argList);
+ }#if correct num of Arg
+}#sub verilog2spiceSub
+
+#######################################################################################################
+######################################## App to report Nets ###########################################
+#######################################################################################################
+sub reportNetsSub{
+ my $numOfArg = @_;
+ if($numOfArg < 4 || $_[0] eq '-h' || $_[0] eq '-H' || $_[0] eq '-help' || $_[0] eq '-HELP'){
+    print"Usage: ./reportNets -def <def file name>\n";
+    print"                    -output <output filename (default value is report_nets.txt)>\n";
+    print"                    -nets <{net1,net2,net3...}>\n";
+    print"                    --net_connectivity <to report net's connectivity>\n";
+    print"                    --routed_info <report routing>\n";
+    print"                    --sp_routed_info <roport special net's routing>\n";
+    print"                    --all <reports net's all info>\n";
+    print"                    --layer_vs_length <report layer wise net's wirelength>\n";
+    print"                    --total_wl <report net's total wire length>\n";
+ }else{
+    my @argList = ();
+    my $defFile = "";
+    my $outFile = "report_nets.txt";
+
+    for(my $xx=0; $xx<$numOfArg; $xx++){
+       if($_[$xx] eq "-def"){
+          $defFile = $_[$xx+1];
+          $xx++;
+       }elsif($_[$xx] eq "-output"){
+          $outFile = $_[$xx+1];
+          $xx++;
+       }else{
+          push(@argList, $_[$xx]);
+       }
+    }
+
+    push(@argList, '-output', $outFile);
+
+    &read_defII('-def', $defFile, '--all');
+    &get_listed_nets(@argList);
+ }#if correct num of Arg
+}#sub reportNetsSub
+
+#######################################################################################################
+################################# App to add power stripes/Routes #####################################
+#######################################################################################################
+sub addPowerStripeAndRouteSub{
+ my $numOfArg = @_;
+ if($numOfArg < 4 || $_[0] eq '-h' || $_[0] eq '-H' || $_[0] eq '-help' || $_[0] eq '-HELP'){
+    print "Usage:./addPower*   -lef <lef1> -lef <lef2> ... OR -lef <lef1,lef2,...>\n";
+    print "                    -def <def file>\n";
+    print "                    -xls <xls file>\n";
+    print "                    -output <output file name (default value is powerRoute.def)>\n";
+ }else{
+    my @lefFileList = ();
+    my $defFile  = "";
+    my $xlsFile  = "";
+    my $outFile  = "powerRoute.def";
+
+    for(my $xx=0; $xx<$numOfArg; $xx++){
+        if($_[$xx] eq '-lef'){
+           if(-e $_[$xx+1]){
+              push(@lefFileList, $_[$xx+1]);
+           }else{
+              my $lefStr = $_[$xx+1];
+              $lefStr =~ s/\{|\}//g;
+              push(@lefFileList, split(/\,/, $lefStr));
+           }
+        }
+        if($_[$xx] eq '-def'){$defFile = $_[$xx+1];}
+        if($_[$xx] eq '-xls'){$xlsFile = $_[$xx+1];}
+        if($_[$xx] eq '-output'){$outFile = $_[$xx+1];}
+    }#for each arg
+    
+    foreach my $lefFile (@lefFileList){
+      &read_lef('-lef', $lefFile, '-tech', 'also');
+    }
+
+    &read_defII('-def', $defFile, '--components', '--pins', '--specialNets', '--routing');
+    &run_xls_cmd($xlsFile);
+    &write_def('-output', $outFile, '--spnets', '--routes',  '--overwrite');
+ }#if correct num of Arg
+}#sub addPowerStripeAndRouteSub
+
+#######################################################################################################
+###################################### App to spice hierarchy #########################################
+#######################################################################################################
+sub spiceViewerSub{
+ my $numOfArg = @_;
+ if($_[0] eq '-h' || $_[0] eq '-H' || $_[0] eq '-help' || $_[0] eq '-HELP'){
+    print "Usage:./spiceViewerSub\n";
+ }else{
+    &spiceGUI;
+ }#if correct num of Arg
+}#sub spiceViewerSub
+
+#######################################################################################################
+#################################### App to roatate def clockwise #####################################
+#######################################################################################################
+sub rotateDefSub{
+ my $numOfArg = @_;
+ if($numOfArg < 4 || $_[0] eq '-h' || $_[0] eq '-H' || $_[0] eq '-help' || $_[0] eq '-HELP'){
+    print "Usage:./rotateDef   -lef <lef1> -lef <lef2> ... OR -lef <lef1,lef2,...>\n";
+    print "                    -def <def file>\n";
+    print "                    -output <output file name (default value is rotated.def)>\n";
+ }else{
+    my @lefFileList = ();
+    my $defFile  = "";
+    my $outFile  = "rotated.def";
+
+    for(my $xx=0; $xx<$numOfArg; $xx++){
+        if($_[$xx] eq '-lef'){
+           if(-e $_[$xx+1]){
+              push(@lefFileList, $_[$xx+1]);
+           }else{
+              my $lefStr = $_[$xx+1];
+              $lefStr =~ s/\{|\}//g;
+              push(@lefFileList, split(/\,/, $lefStr));
+           }
+        }
+        if($_[$xx] eq '-def'){$defFile = $_[$xx+1];}
+        if($_[$xx] eq '-output'){$outFile = $_[$xx+1];}
+    }#for each arg
+    
+    foreach my $lefFile (@lefFileList){
+      &read_lef('-lef', $lefFile, '-tech', 'also');
+    }
+
+    &read_defII('-def', $defFile, '--all');
+    &rotate_instance_ninety_degree_clockwise;
+    &write_def('-output', $outFile, '--overwrite');
+ }#if correct num of Arg
+}#sub rotateDefSub
+
+#######################################################################################################
+########################################## App to flip chip  ##########################################
+#######################################################################################################
+sub flipDefSub{
+ my $numOfArg = @_;
+ if($numOfArg < 4 || $_[0] eq '-h' || $_[0] eq '-H' || $_[0] eq '-help' || $_[0] eq '-HELP'){
+    print "Usage:./flipDef   -lef <lef1> -lef <lef2> ... OR -lef <lef1,lef2,...>\n";
+    print "                    -def <def file>\n";
+    print "                    -axis <X/Y (default is Y)>\n";
+    print "                    -output <output file name (default value is flip.def)>\n";
+ }else{
+    my @lefFileList = ();
+    my $defFile  = "";
+    my $axis  = "Y";
+    my $outFile  = "flip.def";
+
+    for(my $xx=0; $xx<$numOfArg; $xx++){
+        if($_[$xx] eq '-lef'){
+           if(-e $_[$xx+1]){
+              push(@lefFileList, $_[$xx+1]);
+           }else{
+              my $lefStr = $_[$xx+1];
+              $lefStr =~ s/\{|\}//g;
+              push(@lefFileList, split(/\,/, $lefStr));
+           }
+        }
+        if($_[$xx] eq '-def'){$defFile = $_[$xx+1];}
+        if($_[$xx] eq '-axis'){$axis = $_[$xx+1];}
+        if($_[$xx] eq '-output'){$outFile = $_[$xx+1];}
+    }#for each arg
+    
+    foreach my $lefFile (@lefFileList){
+      &read_lef('-lef', $lefFile, '-tech', 'also');
+    }
+
+    &read_defII('-def', $defFile, '--all');
+    &flip_chip("-axis", $axis);;
+    &write_def('-output', $outFile, '--overwrite');
+ }#if correct num of Arg
+}#sub flipDefSub
+
+#######################################################################################################
+########################################## App to generate netlist  ###################################
+#######################################################################################################
+sub netListGenSub
+{
+ my $numOfArg = @_;
+ if($numOfArg < 0 || $_[0] eq '-h' || $_[0] eq '-H' || $_[0] eq '-help' || $_[0] eq '-HELP'){
+    print "Usage:./netListGen   -lef <lef1> -lef <lef2> ... OR -lef {<lef1> <lef2> ...}\n";
+    print "                     -lib <lib1> -lib <lib2> ... OR -lib {<lib1> <lib2> ...}\n";
+    print "                     -foot_print <footprint file>\n";
+    print "                     -top_module <top module name,bydefault it is top>\n";
+    print "                     -no_of_input <no of inputs in netlist,bydefault it is 10>\n";
+    print "                     -no_of_output <no of outputs in netlist,bydefault it is 10>\n";
+    print "                     -no_of_flop <no of flops in netlist,bydefault it is 50>\n";
+    print "                     -cluster_size <size of cluster, should be less than number of flops,bydefault it is a random number less than 5>\n";
+    print "                     -timing_complexity_index <index in number,bydefault it is 1>\n";
+    print "                     -physical_complexity_index <index in number,bydefault it is 1>\n";
+    print "                     -gen_algo_complexity <basic|medium|high,bydefault it is basic>\n";
+    print "                     -output_verilog_file <output verilog file name,bydefault it is netListGen>\n";
+ }else{
+    my @lefFileList = ();
+    my @libFileList = ();
+    my @footprintFileList  = ();
+    my $topModule  = "top";
+    my $noOfInput  = 10;
+    my $noOfOutput  = 10;
+    my $noOfFlop  = 50;
+    my $clusterSize  = 0;
+    my $timingComplexityIndex = 1;
+    my $physicalComplexityIndex = 1;
+    my $genAlgoComplexity = 1;
+    my $outputVerilog = "netListGen";
+    my $isLefFile = 0;
+    my $isLibFile = 0;
+    my $isFootprintFile = 0;
+
+    for(my $xx=0; $xx<$numOfArg; $xx++){
+        if($_[$xx] eq '-lef'){
+           if($_[$xx+1] =~ /^\{.*\}/){
+              $isLefFile = 0;
+           }elsif($_[$xx+1] =~ /^\{/){
+              $isLefFile = 1;
+           }else{
+              $isLefFile = 0;
+           }
+           my $lefStr = $_[$xx+1];
+           $lefStr =~ s/\{\s*|\s*\}//g;
+           push(@lefFileList, split(/\s+/, $lefStr));
+        }elsif($_[$xx] eq '-lib'){
+           if($_[$xx+1] =~ /^\{.*\}/){
+              $isLibFile = 0;
+           }elsif($_[$xx+1] =~ /^\{/){
+              $isLibFile = 1;
+           }else{
+              $isLibFile = 0;
+           }
+           my $libStr = $_[$xx+1];
+           $libStr =~ s/\{\s*|\s*\}//g;
+           push(@libFileList, split(/\s+/, $libStr));
+        }elsif($_[$xx] eq '-foot_print'){
+          if($_[$xx+1] =~ /^\{.*\}/){
+             $isFootprintFile = 0;
+          }elsif($_[$xx+1] =~ /^\{/){
+             $isFootprintFile = 1;
+          }else{
+             $isFootprintFile = 0;
+          }
+          my $footprintStr = $_[$xx+1];
+          $footprintStr =~ s/\{\s*|\s*\}//g;
+          push(@footprintFileList, split(/\s+/, $footprintStr));
+        }elsif($_[$xx] =~ /\}$/){
+          if($isLefFile == 1){
+            my $lefStr = $_[$xx+1];
+            $lefStr =~ s/\{\s*|\s*\}//g;
+            push(@lefFileList, split(/\s+/, $lefStr));
+            $isLefFile = 0;
+          }elsif($isLibFile == 1){
+            my $libStr = $_[$xx+1];
+            $libStr =~ s/\{\s*|\s*\}//g;
+            push(@libFileList, split(/\s+/, $libStr));
+            $isLibFile = 0;
+          }elsif($isFootprintFile == 1){
+            my $footprintStr = $_[$xx+1];
+            $footprintStr =~ s/\{\s*|\s*\}//g;
+            push(@footprintFileList, split(/\s+/, $footprintStr));
+            $isLibFile = 0;
+          }
+        }elsif($_[$xx] eq '-top_module'){
+          $topModule = $_[$xx+1];
+        }elsif($_[$xx] eq '-no_of_input'){
+          $noOfInput = $_[$xx+1];
+        }elsif($_[$xx] eq '-no_of_output'){
+          $noOfOutput = $_[$xx+1];
+        }elsif($_[$xx] eq '-no_of_flop'){
+          $noOfFlop = $_[$xx+1];
+        }elsif($_[$xx] eq '-cluster_size'){
+          $clusterSize = $_[$xx+1];
+        }elsif($_[$xx] eq '-timing_complexity_index'){
+          $timingComplexityIndex = $_[$xx+1];
+        }elsif($_[$xx] eq '-physical_complexity_index'){
+          $physicalComplexityIndex = $_[$xx+1];
+        }elsif($_[$xx] eq '-gen_algo_complexity'){
+          $genAlgoComplexity = $_[$xx+1];
+          if($genAlgoComplexity eq "basic"){
+            $genAlgoComplexity = 1;
+          }elsif($genAlgoComplexity eq "medium"){
+            $genAlgoComplexity = 2;
+          }elsif($genAlgoComplexity eq "high"){
+            $genAlgoComplexity = 200;
+          }
+        }elsif($_[$xx] eq '-output_verilog_file'){
+          $outputVerilog = $_[$xx+1];
+        }else{
+          if($isLefFile == 1){
+            my $lefStr = $_[$xx+1];
+            $lefStr =~ s/\{\s*|\s*\}//g;
+            push(@lefFileList, split(/\s+/, $lefStr));
+            $isLefFile = 1;
+          }elsif($isLibFile == 1){
+            my $libStr = $_[$xx+1];
+            $libStr =~ s/\{\s*|\s*\}//g;
+            push(@libFileList, split(/\s+/, $libStr));
+            $isLibFile = 1;
+          }elsif($isFootprintFile == 1){
+            my $footprintStr = $_[$xx+1];
+            $footprintStr =~ s/\{\s*|\s*\}//g;
+            push(@footprintFileList, split(/\s+/, $footprintStr));
+            $isFootprintFile = 1;
+          }
+        }
+    }#for each arg
+    if(($#lefFileList<0)||($#libFileList<0)||($#footprintFileList<0)){
+      print "Error:Please use atleast one lef,one liberty and one footprint file\n";
+      exit;
+    } 
+    foreach my $lefFile (@lefFileList){
+      &read_lef('-lef', $lefFile, '-tech', 'also');
+    }
+    foreach my $libFile (@libFileList){
+      &read_lib_old('-lib', $libFile);
+    }
+    foreach my $footprintFile (@footprintFileList){
+      &read_footprint('-f', $footprintFile);
+    }
+    open(NET_GEN_SPEC,">net_gen_spec");
+    print NET_GEN_SPEC "TOP_MODULE $topModule\n";
+    print NET_GEN_SPEC "INPUTS $noOfInput\n";
+    print NET_GEN_SPEC "OUTPUTS $noOfOutput\n";
+    print NET_GEN_SPEC "FLOPS $noOfFlop\n";
+    print NET_GEN_SPEC "ALGO $genAlgoComplexity\n";
+    print NET_GEN_SPEC "VERILOGFILENAME $outputVerilog\n";
+    if($clusterSize != 0){
+      print NET_GEN_SPEC "CLUSTERSIZE $clusterSize\n";
+    }
+    print NET_GEN_SPEC "TIMINGCOMPLEX $timingComplexityIndex\n";
+    print NET_GEN_SPEC "PHYSICALCOMPLEX $physicalComplexityIndex\n";
+    close(NET_GEN_SPEC);
+    &generate_netlist('-spec', 'net_gen_spec');
+    system("rm net_gen_spec");
+ }#if correct num of Arg
+}#sub netListGenSub
+
+#######################################################################################################
+########################################## App to place netlist #######################################
+#######################################################################################################
+sub placeVerilogNetListSub
+{
+ my $numOfArg = @_;
+ if($numOfArg < 0 || $_[0] eq '-h' || $_[0] eq '-H' || $_[0] eq '-help' || $_[0] eq '-HELP'){
+    print "Usage:./placeVerilogNetList -lef <lef1> -lef <lef2> ... OR -lef {<lef1> <lef2> ...}\n";
+    print "Usage:                      -vlog <vlog1> -vlog <vlog2> ... OR -vlog {<vlog1> <vlog2> ...}\n";
+    print "Usage:                      -utilization <utilization percent in number>\n";
+    print "Usage:                      -height <height in micron>\n";
+    print "Usage:                      -width <width in micron>\n";
+    print "Usage:                      -aspect_ratio <aspect ratio in decimal>\n";
+    print "Usage:                      -site_height <site height in micron>\n";
+    print "Usage:                      -site_width <site width in micron>\n";
+    print "                            -output_def <output def file name,bydefault it is top.def>\n";
+ }else{
+    my @lefFileList = ();
+    my @vlogFileList = ();
+    my $chipUtilization =70;
+    my $chipHeight ="";
+    my $chipWidth ="";
+    my $chipAspectRatio ="";
+    my $siteHeight="";
+    my $siteWidth="";
+    my $outputDef = "top.def";
+    my $isLefFile = 0;
+    my $isVlogFile = 0;
+    my $cloud_share_path = "";
+
+    for(my $xx=0; $xx<$numOfArg; $xx++){
+        if($_[$xx] eq '-lef'){
+           if($_[$xx+1] =~ /^\{.*\}/){
+              $isLefFile = 0;
+           }elsif($_[$xx+1] =~ /^\{/){
+              $isLefFile = 1;
+           }else{
+              $isLefFile = 0;
+           }
+           my $lefStr = $_[$xx+1];
+           $lefStr =~ s/\{\s*|\s*\}//g;
+           push(@lefFileList, split(/\s+/, $lefStr));
+        }elsif($_[$xx] eq '-vlog'){
+           if($_[$xx+1] =~ /^\{.*\}/){
+              $isVlogFile = 0;
+           }elsif($_[$xx+1] =~ /^\{/){
+              $isVlogFile = 1;
+           }else{
+              $isVlogFile = 0;
+           }
+           my $vlogStr = $_[$xx+1];
+           $vlogStr =~ s/\{\s*|\s*\}//g;
+           push(@vlogFileList, split(/\s+/, $vlogStr));
+        }elsif($_[$xx] =~ /\}$/){
+          if($isLefFile == 1){
+            my $lefStr = $_[$xx+1];
+            $lefStr =~ s/\{\s*|\s*\}//g;
+            push(@lefFileList, split(/\s+/, $lefStr));
+            $isLefFile = 0;
+          }elsif($isVlogFile == 1){
+            my $vlogStr = $_[$xx+1];
+            $vlogStr =~ s/\{\s*|\s*\}//g;
+            push(@vlogFileList, split(/\s+/, $vlogStr));
+            $isVlogFile = 0;
+          }
+        }elsif($_[$xx] eq '-utilization'){
+          $chipUtilization = $_[$xx+1];
+        }elsif($_[$xx] eq '-height'){
+          $chipHeight = $_[$xx+1];
+        }elsif($_[$xx] eq '-width'){
+          $chipWidth = $_[$xx+1];
+        }elsif($_[$xx] eq '-aspect_ratio'){
+          $chipAspectRatio = $_[$xx+1];
+        }elsif($_[$xx] eq '-site_height'){
+          $siteHeight = $_[$xx+1];
+        }elsif($_[$xx] eq '-site_width'){
+          $siteWidth = $_[$xx+1];
+        }elsif($_[$xx] eq '-output_def'){
+          $outputDef = $_[$xx+1];
+        }elsif($_[$xx] eq "-cloud_share_path"){
+          $cloud_share_path = $ARGV[$xx+1];
+        }else{
+          if($isLefFile == 1){
+            my $lefStr = $_[$xx+1];
+            $lefStr =~ s/\{\s*|\s*\}//g;
+            push(@lefFileList, split(/\s+/, $lefStr));
+            $isLefFile = 1;
+          }elsif($isVlogFile == 1){
+            my $vlogStr = $_[$xx+1];
+            $vlogStr =~ s/\{\s*|\s*\}//g;
+            push(@vlogFileList, split(/\s+/, $vlogStr));
+            $isVlogFile = 1;
+          }
+        }
+    }#for each arg
+    if(($#lefFileList<0)||($#vlogFileList<0)){
+      print "Error:Please use atleast one lef and one verilog file\n";
+      exit;
+    } 
+    foreach my $lefFile (@lefFileList){
+      &read_lef('-lef', $lefFile, '-tech', 'also');
+    }
+    foreach my $vlogFile (@vlogFileList){
+      my $temp_option = "-v";
+      &read_verilog($temp_option, $vlogFile);
+    }
+    &elaborate();
+    if($chipUtilization ne ""){&set_floorplan_parameters("-UTILIZATION",$chipUtilization);}
+    if($chipAspectRatio ne ""){&set_floorplan_parameters("-ASPECT_RATIO",$chipAspectRatio);}
+    if($chipHeight ne ""){&set_floorplan_parameters("-HEIGHT",$chipHeight);}
+    if($chipWidth ne ""){&set_floorplan_parameters("-WIDTH",$chipWidth);}
+    if($siteHeight ne ""){&set_floorplan_parameters("-SITE_HEIGHT",$siteHeight);}
+    if($siteWidth ne ""){&set_floorplan_parameters("-SITE_WIDTH",$siteWidth);}
+    if(!exists $ENV{"PROTON_HOME"}){
+      $GLOBAL->dbfGlobalSetProtonHome("$cloud_share_path/apps/content/drupal_app/");
+    }
+    &set_floorplan();
+    &write_controlFile("-very_high_fanout","8","-trim_float_only","1","-basic_mode","1");
+    &place_graph();
+    #&place_graph_detail();
+    #&place_graph_detail_plan_3();
+    #&place_graph_plan_4();
+    #&place_graph_mpl();
+    #&place_graph_basic_mode();
+    #&place_graph_basic_mode_with_pin_offset();
+    #&place_graph_plan_6();
+    &prePlaceData("--noTrace","--noLevel");
+    &snapPlace;
+    &write_def("-output",$outputDef,"--overwrite");
+ }#if correct num of Arg
+}#sub placeVerilogNetListSub
+
+#######################################################################################################
+######################################### App to route chip  ##########################################
+#######################################################################################################
+sub routeDefSub{
+ my $numOfArg = @_;
+ if($numOfArg < 4 || $_[0] eq '-h' || $_[0] eq '-H' || $_[0] eq '-help' || $_[0] eq '-HELP'){
+    print "Usage:./routeDef  -lef <lef1> -lef <lef2> ... OR -lef <lef1,lef2,...>\n";
+    print "                  -def <def file>\n";
+    print "                  -output <output file name (default value is flip.def)>\n";
+ }else{
+    my @lefFileList = ();
+    my $defFile  = "";
+    my $outFile  = "silverline_routed.def";
+
+    for(my $xx=0; $xx<$numOfArg; $xx++){
+        if($_[$xx] eq '-lef'){
+           if(-e $_[$xx+1]){
+              push(@lefFileList, $_[$xx+1]);
+           }else{
+              my $lefStr = $_[$xx+1];
+              $lefStr =~ s/\{|\}//g;
+              push(@lefFileList, split(/\,/, $lefStr));
+           }
+        }
+        if($_[$xx] eq '-def'){$defFile = $_[$xx+1];}
+        if($_[$xx] eq '-output'){$outFile = $_[$xx+1];}
+        if($_[$xx] eq "-cloud_share_path"){$cloud_share_path = $ARGV[$xx+1];}
+    }#for each arg
+    
+    foreach my $lefFile (@lefFileList){
+      &read_lef('-lef', $lefFile, '-tech', 'also');
+    }
+
+    &read_defII('-def', $defFile, '--all');
+    if(!exists $ENV{"PROTON_HOME"}){
+      $GLOBAL->dbfGlobalSetProtonHome("$cloud_share_path/apps/content/drupal_app/");
+    }
+    &route_flat;
+    &write_def('-output', $outFile, '--overwrite');
+ }#if correct num of Arg
+}#sub routeDefSub
+
+#######################################################################################################
+########################################## App to generate def for boundary checking ##################
+#######################################################################################################
+sub genBoundaryCheckingDefSub
+{
+ my $numOfArg = @_;
+ if($numOfArg < 0 || $_[0] eq '-h' || $_[0] eq '-H' || $_[0] eq '-help' || $_[0] eq '-HELP'){
+    print "Usage:./genBoundaryCheckingDef -lef <lef1> -lef <lef2> ... OR -lef {<lef1> <lef2> ...}\n";
+    print "Usage:                      -height <height in micron>\n";
+    print "Usage:                      -width <width in micron>\n";
+    print "Usage:                      -utilization <chip utilization in percent>\n";
+    print "Usage:                      -design_name <def design name>\n";
+    print "                            -output_def <output def file name,bydefault it is top.def>\n";
+ }else{
+    my @lefFileList = ();
+    my $chipHeight ="";
+    my $chipWidth ="";
+    my $chipUtilization = 70;
+    my $designName ="";
+    my $outputDef = "top.def";
+    my $isLefFile = 0;
+
+    for(my $xx=0; $xx<$numOfArg; $xx++){
+        if($_[$xx] eq '-lef'){
+           if($_[$xx+1] =~ /^\{.*\}/){
+              $isLefFile = 0;
+           }elsif($_[$xx+1] =~ /^\{/){
+              $isLefFile = 1;
+           }else{
+              $isLefFile = 0;
+           }
+           my $lefStr = $_[$xx+1];
+           $lefStr =~ s/\{\s*|\s*\}//g;
+           push(@lefFileList, split(/\s+/, $lefStr));
+        }elsif($_[$xx] =~ /\}$/){
+          if($isLefFile == 1){
+            my $lefStr = $_[$xx+1];
+            $lefStr =~ s/\{\s*|\s*\}//g;
+            push(@lefFileList, split(/\s+/, $lefStr));
+            $isLefFile = 0;
+          }
+        }elsif($_[$xx] eq '-height'){
+          $chipHeight = $_[$xx+1];
+        }elsif($_[$xx] eq '-width'){
+          $chipWidth = $_[$xx+1];
+        }elsif($_[$xx] eq '-utilization'){
+          $chipUtilization = $_[$xx+1];
+        }elsif($_[$xx] eq '-design_name'){
+          $designName = $_[$xx+1];
+        }elsif($_[$xx] eq '-output_def'){
+          $outputDef = $_[$xx+1];
+        }else{
+          if($isLefFile == 1){
+            my $lefStr = $_[$xx+1];
+            $lefStr =~ s/\{\s*|\s*\}//g;
+            push(@lefFileList, split(/\s+/, $lefStr));
+            $isLefFile = 1;
+          }
+        }
+    }#for each arg
+    if($#lefFileList<0){
+      print "Error:Please use atleast one lef file\n";
+      exit;
+    } 
+    foreach my $lefFile (@lefFileList){
+      &read_lef('-lef', $lefFile, '-tech', 'also');
+    }
+    $TOP_MODULE = $designName;
+    if(($chipHeight ne "" && $chipHeight > 0)&&($chipWidth ne "" && $chipWidth > 0)){
+      &set_floorplan_parameters("-HEIGHT",$chipHeight,"-WIDTH",$chipWidth,"-ADVNC_UTILIZATION",$chipUtilization);
+    }else{
+      print "Error:Please specify height width a valid number in micron\n";
+      exit;
+    }
+    &set_floorplan();
+    &create_flat_design_pick_random_lef_cell();
+    &write_def("-output",$outputDef,"--overwrite");
+ }#if correct num of Arg
+}#sub genBoundaryCheckingDefSub
+
+#######################################################################################################
+#################################### App to convert def into gds ######################################
+#######################################################################################################
+sub def2gdsSub{
+ my $numOfArg = @_;
+ if($numOfArg < 4 || $_[0] eq '-h' || $_[0] eq '-H' || $_[0] eq '-help' || $_[0] eq '-HELP'){
+    print "Usage:./def2gds -lef <lef1> -lef <lef2> ... OR -lef <lef1,lef2,...>\n";
+    print "                -def <def file>\n";
+    print "                -output < out gds fileName> | by default it takes top module Name\n";
+    print "                -boundary_layer <layer number> | by default it takes 149\n";
+    print "                -boundary_data_type <layer data type> | by default it takes 150\n";
+    print "                --pin (used to write pins) | by default it off\n";
+    print "                --inst (used to write instance) | by default it on\n";
+    print "                --net (used to write nets) | by default it off\n";
+    print "                --spnet (used to write special nets) | by default it off\n";
+    print "                --pin_text (used to write pins) | by default it off\n";
+    print "                --inst_text (used to write instance name) | by default it off\n";
+    print "                --net_text (used to write net's name) | by default it is off\n";
+    print "                --spnet_text (used to write special net's name) | by default it is off\n";
+    print "                --include_cell (used to write cell polygons) | by default it is off\n";
+    print "                --cell_pin_text (used to write pin name) | by default it off\n";
+ }else{
+    my @lefFileList = ();
+    my @argList = ();
+    my $defFile  = "";
+
+    for(my $xx=0; $xx<$numOfArg; $xx++){
+        if($_[$xx] eq '-lef'){
+           if(-e $_[$xx+1]){
+              push(@lefFileList, $_[$xx+1]);
+           }else{
+              my $lefStr = $_[$xx+1];
+              $lefStr =~ s/\{|\}//g;
+              push(@lefFileList, split(/\,/, $lefStr));
+           }
+           $xx = $xx+1; #to skip next arg 
+        }elsif($_[$xx] eq '-def'){
+           $defFile = $_[$xx+1];
+           $xx = $xx+1; #to skip next arg 
+        }else{
+           push(@argList, $_[$xx]);
+        }
+    }#for each arg
+    
+    foreach my $lefFile (@lefFileList){
+       &read_lef('-lef', $lefFile, '-tech', 'also');
+    }
+
+    &read_defII('-def', $defFile, '--all');
+    &def2gds(@argList);
+ }#if correct num of Arg
+}#sub def2gdsSub
+
+#######################################################################################################
+#################################### App to convert lef into gds ######################################
+#######################################################################################################
+sub lef2gdsSub{
+ my $numOfArg = @_;
+ if($numOfArg < 2 || $_[0] eq '-h' || $_[0] eq '-H' || $_[0] eq '-help' || $_[0] eq '-HELP'){
+    print "Usage:./lef2gds -lef <lef1> -lef <lef2> ... OR -lef <lef1,lef2,...>\n";
+    print "                -cell <cell1,cell2,cell3...> | by default it will select all cellsf\n";
+    print "                -output < out gds fileName> | by default it is silverline.gds\n";
+    print "                -boundary_layer <layer number> | by default it takes 149\n";
+    print "                -boundary_data_type <layer data type> | by default it takes 150\n";
+    print "                --no_pin_text (used to not write pin name) | by default it is off\n";
+ }else{
+    my @lefFileList = ();
+    my @argList = ();
+
+    for(my $xx=0; $xx<$numOfArg; $xx++){
+        if($_[$xx] eq '-lef'){
+           if(-e $_[$xx+1]){
+              push(@lefFileList, $_[$xx+1]);
+           }else{
+              my $lefStr = $_[$xx+1];
+              $lefStr =~ s/\{|\}//g;
+              push(@lefFileList, split(/\,/, $lefStr));
+           }
+           $xx = $xx+1; #to skip next arg 
+        }else{
+           push(@argList, $_[$xx]);
+        }
+    }#for each arg
+    
+    foreach my $lefFile (@lefFileList){
+       &read_lef('-lef', $lefFile, '-tech', 'also');
+    }
+
+    &lef2gds(@argList);
+ }#if correct num of Arg
+}#sub lef2gdsSub
+
+#######################################################################################################
+#################################### App to convert def into lef ######################################
+#######################################################################################################
+sub def2lefSub{
+ my $numOfArg = @_;
+ if($numOfArg < 1 || $_[0] eq '-h' || $_[0] eq '-H' || $_[0] eq '-help' || $_[0] eq '-HELP'){
+    print "Usage:./def2lef -def < def file>\n";
+    print "                -lef < lef file> (to write regular nets as obs)\n";
+    print "                -output < out lef fileName> | by default it is <moduleName>.lef\n";
+ }else{
+    my $defFile = "";
+    my $lefFile = "";
+    my $outFile = "";
+
+    for(my $xx=0; $xx<$numOfArg; $xx++){
+        if($_[$xx] eq '-def'){
+           $defFile = $_[$xx+1];
+        }elsif($_[$xx] eq '-lef'){
+           $lefFile = $_[$xx+1];
+        }elsif($_[$xx] eq '-output'){
+           $outFile = $_[$xx+1];
+        }
+    }#for each arg
+    
+    if(-e $lefFile){
+       &read_lef("-lef",$lefFile ,"-tech", "only");
+    }
+    &read_defII('-def', $defFile, '--all');
+    &def2lef('-output', $outFile);
+ }#if correct num of Arg
+}#sub def2lefSub
+
+#######################################################################################################
+################################# App to genrate hier inst report######################################
+#######################################################################################################
+sub printSpiceInstInfoSub{
+  my $numOfArg = @_;
+  if($numOfArg < 1 || $_[0] eq '-h' || $_[0] eq '-H' || $_[0] eq '-help' || $_[0] eq '-HELP'){
+     print "Usage:./printSpiceInstInfo -input < spice file>\n";
+     print "                -outlog < output fileName>\n";
+     print "                -top_subckt <top_subckt_name>\n";
+  }else{
+     my $inputFile = "";
+     my $outLog = "";
+     my $top_subckt = "";
+     for(my $xx=0; $xx<$numOfArg; $xx++){
+       if($_[$xx] eq '-input'){
+         $inputFile = $_[$xx+1];
+       }elsif($_[$xx] eq '-outlog'){
+         $outLog = $_[$xx+1];
+       }elsif($_[$xx] eq '-top_subckt'){
+         $top_subckt = $_[$xx+1];
+       }
+     }#for each arg
+     if(-e $inputFile){
+       &read_spice_new ("-sp",$inputFile,"--flat_include");
+     }
+     &set_top_module ($top_subckt);
+     &get_data_of_hier_inst ("-outlog",$outLog);
+  }#if correct num of Arg
+}#sub printSpiceInstInfoSub
+
+#######################################################################################################
+#######################################################################################################
+#######################################################################################################
+
+1;

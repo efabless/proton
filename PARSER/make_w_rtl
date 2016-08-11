@@ -1,0 +1,1030 @@
+%flops = ();
+sub write_rtl  {
+
+my $noOfArguments = @_;
+
+if( $noOfArguments < 2 || $_[0] eq '-h') {
+        print "Usage : write_rtl \n";
+        print "                             -rtl <RTL FILENAME> \n";
+        print "                             <-debug>\n";
+}
+else { # if correct no. of inputs 
+        for(my $i = 0; $i < $noOfArguments; $i++){
+        if ($_[$i] eq "-rtl"){$rtl_file = $_[$i+1];}
+        elsif ($_[$i] eq "-debug"){$debug = 1 ;}
+
+        } #for
+}
+
+open (WRITE_RTL , ">$rtl_file");
+print WRITE_RTL "#RTL written from proton verion-$TOOL_VERSION\n";
+&get_module_definition;
+&get_cell_definition;
+
+print WRITE_RTL "\nendmodule\n";
+close (WRITE_RTL);
+
+}#sub write_rtl
+
+
+sub get_module_definition{
+print WRITE_RTL "module ${moduleName} \( ";
+my $referToPortsAdded = \%PORTS_ALREADY;
+my @temp = ();
+foreach $portName ( keys %{$PORTS_ALREADY{$moduleName}} ) { push(@temp,$portName); }
+print WRITE_RTL join ",",@temp;
+print WRITE_RTL "\)\;\n\n";
+foreach $portName ( keys %{$PORTS_ALREADY{$moduleName}} ) { 
+                                                          $dir = $PORTS_ALREADY{$moduleName}{$portName}->dbPortGetDir;
+                                                          print WRITE_RTL "$dir $portName\;\n"; 
+                                                          }
+print WRITE_RTL "\n\n";
+
+}#sub get_module_definition
+
+
+sub get_cell_definition {
+foreach $instName ( keys %COMP_ALREADY ) {
+	my $cellref =  $CADB{$instName}->dbCadbGetCellref;
+	my @pins = $PLDB{$cellref}->dbMdbGetPins;
+	my $cellType = $PLDB{$cellref}->dbMdbGetType;
+	my $cellFunction = $PLDB{$cellref}->dbMdbGetFunction;
+	foreach (@pins) {
+		if (($_ ne "VDD") && ($_ ne "VSS")) {
+			push (@temp1,$_);
+		}
+	}
+	@pins = @temp1;
+	$no_of_pins = @pins;
+print "No of pins : $no_of_pins and pin names: @pins and Celltype: $cellType and cellFunction: $cellFunction in $cellref\n";
+        @temp1=();
+	
+	if ($cellref =~ /INV/){ &inv_rtl($instName,$no_of_pins); }
+	elsif ($cellref =~ /BUF/){ &buf_rtl($instName,$no_of_pins); }
+	elsif ($cellref =~ /^AND/){ &and_rtl($instName,$no_of_pins); }
+	elsif ($cellref =~ /^OR/){ &or_rtl($instName,$no_of_pins); }
+	elsif ($cellref =~ /XOR/){ &xor_rtl($instName,$no_of_pins); }
+	elsif ($cellref =~ /XNOR/){ &xnor_rtl($instName,$no_of_pins); }
+	elsif ($cellref =~ /ADD/){ &add_rtl($instName,$no_of_pins); }
+	elsif ($cellref =~ /NAND/){ &nand_rtl($instName,$no_of_pins); }
+	elsif ($cellref =~ /DFF/){ $flops{$instName}{pins} = $no_of_pins; }
+	else {"print No rtl definition for $cellref\n";}
+}
+foreach (keys %flops) {
+	my $cellref =  $CADB{$_}->dbCadbGetCellref;
+	print "Instance NAme : $_ and no_of_pins : $flops{$_}{pins} Instance : $cellref\n";
+	&flop_rtl($_,$flops{$_}{pins});
+}
+}#sub get_cell_definition
+
+sub inv_rtl {
+	my $inst = $_[0];
+	$input = $COMP_ALREADY{$inst}{A};
+	$input =~ s/^.*\///g; 
+	$output = $COMP_ALREADY{$inst}{Y};
+	$output =~ s/^.*\///g; 
+	print WRITE_RTL "assign $output = \!$input \;\n";
+
+}#sub inv_rtl
+
+sub buf_rtl {
+	my $inst = $_[0];
+	$input = $COMP_ALREADY{$inst}{A};
+	$input =~ s/^.*\///g; 
+	$output = $COMP_ALREADY{$inst}{Y};
+	$output =~ s/^.*\///g; 
+	print WRITE_RTL "assign $output = $input \;\n";
+
+}#sub buf_rtl
+
+sub and_rtl {
+	my ($inst,$pins) = @_;
+	my $a = $COMP_ALREADY{$inst}{A};
+	$a =~ s/^.*\///g; 
+	my $b = $COMP_ALREADY{$inst}{B}; 
+	$b =~ s/^.*\///g; 
+	my $y = $COMP_ALREADY{$inst}{Y}; 
+	$y =~ s/^.*\///g; 
+	my $c = $COMP_ALREADY{$inst}{C}; 
+	$c =~ s/^.*\///g; 
+	my $d = $COMP_ALREADY{$inst}{D};
+	$d =~ s/^.*\///g;
+	if ($pins ==3) {
+		print WRITE_RTL "assign $y = $a \& $b \;\n";
+	}
+	elsif ($pins ==4) {
+		print WRITE_RTL "assign $y = $a \& $b \& $c \;\n";
+	}
+	elsif ($pins ==5) {
+		print WRITE_RTL "assign $y = $a \& $b \& $c \& $d \;\n";
+	}
+	
+}#sub and_rtl
+
+sub or_rtl {
+	my ($inst,$pins) = @_;
+	my $a = $COMP_ALREADY{$inst}{A};
+	$a =~ s/^.*\///g; 
+	my $b = $COMP_ALREADY{$inst}{B}; 
+	$b =~ s/^.*\///g; 
+	my $y = $COMP_ALREADY{$inst}{Y}; 
+	$y =~ s/^.*\///g; 
+	my $c = $COMP_ALREADY{$inst}{C}; 
+	$c =~ s/^.*\///g; 
+	my $d = $COMP_ALREADY{$inst}{D};
+	$d =~ s/^.*\///g;
+	if ($pins ==3) {
+		print WRITE_RTL "assign $y = $a \| $b \;\n";
+	}
+	elsif ($pins ==4) {
+		print WRITE_RTL "assign $y = $a \| $b \| $c \;\n";
+	}
+	elsif ($pins ==5) {
+		print WRITE_RTL "assign $y = $a \| $b \| $c \| $d \;\n";
+	}
+	
+}#sub or_rtl	
+
+sub xor_rtl {
+	my ($inst,$pins) = @_;
+	my $a = $COMP_ALREADY{$inst}{A};
+	$a =~ s/^.*\///g; 
+	my $b = $COMP_ALREADY{$inst}{B}; 
+	$b =~ s/^.*\///g; 
+	my $y = $COMP_ALREADY{$inst}{Y}; 
+	$y =~ s/^.*\///g; 
+	my $c = $COMP_ALREADY{$inst}{C}; 
+	$c =~ s/^.*\///g;
+	if ($pins ==3) {
+		print WRITE_RTL "assign $y = $a \^ $b \;\n";
+	}
+	elsif ($pins ==4) {
+		print WRITE_RTL "assign $y = $a \^ $b \^ $c \;\n";
+	}	
+}#sub xor_rtl
+
+sub xnor_rtl {
+	my ($inst,$pins) = @_;
+	my $a = $COMP_ALREADY{$inst}{A};
+	$a =~ s/^.*\///g; 
+	my $b = $COMP_ALREADY{$inst}{B}; 
+	$b =~ s/^.*\///g; 
+	my $y = $COMP_ALREADY{$inst}{Y}; 
+	$y =~ s/^.*\///g; 
+	my $c = $COMP_ALREADY{$inst}{C}; 
+	$c =~ s/^.*\///g;
+	if ($pins ==3) {
+		print WRITE_RTL "assign $y = $a \^~ $b \;\n";
+	}
+	elsif ($pins ==4) {
+		print WRITE_RTL "assign $y = $a \^~ $b \^~ $c \;\n";
+	}	
+}#sub xnor_rtl
+
+sub add_rtl {
+	my ($inst,$pins) = @_;
+	my $cellref =  $CADB{$inst}->dbCadbGetCellref;
+	my $a = $COMP_ALREADY{$inst}{A};
+	$a =~ s/^.*\///g; 
+	my $b = $COMP_ALREADY{$inst}{B}; 
+	$b =~ s/^.*\///g; 
+	my $ci = $COMP_ALREADY{$inst}{CI}; 
+	$ci =~ s/^.*\///g;
+	my $s = $COMP_ALREADY{$inst}{S}; 
+	$s =~ s/^.*\///g; 
+	my $co = $COMP_ALREADY{$inst}{CO}; 
+	$co =~ s/^.*\///g;
+	print WRITE_RTL "\/\/RTL definition for adder\n";
+	if ($cellref =~/ADDF/) {
+		print WRITE_RTL "assign $s = $a \^ $b \^ $ci \;\n";	
+		print WRITE_RTL "assign $co = \(\($a \^ $b\)\& $ci\)\|\($a \& $b\) \;\n";	
+	}
+	else {
+		print WRITE_RTL "assign $s = $a \^ $b  \;\n";	
+		print WRITE_RTL "assign $co = $a \& $b \;\n";	
+	}
+}#sub add_rtl
+
+sub nand_rtl {
+	my ($inst,$pins) = @_;
+	my $cellref =  $CADB{$inst}->dbCadbGetCellref;
+	if ($cellref =~ /NAND\dX(\d|L)/) {
+		my $a = $COMP_ALREADY{$inst}{A};
+		$a =~ s/^.*\///g; 
+		my $b = $COMP_ALREADY{$inst}{B}; 
+		$b =~ s/^.*\///g; 
+		my $y = $COMP_ALREADY{$inst}{Y}; 
+		$y =~ s/^.*\///g; 
+		if ($pins ==3) {
+			print WRITE_RTL "assign $y = \!\($a \&\& $b\) \;\n";
+		}
+		elsif ($pins ==4) {
+			my $c = $COMP_ALREADY{$inst}{C}; 
+			$c =~ s/^.*\///g; 
+			print WRITE_RTL "assign $y =\!\( $a \&\& $b \&\& $c\) \;\n";
+		}
+		elsif ($pins ==5) {
+			my $c = $COMP_ALREADY{$inst}{C}; 
+			$c =~ s/^.*\///g; 
+			my $d = $COMP_ALREADY{$inst}{D}; 
+			$d =~ s/^.*\///g; 
+			print WRITE_RTL "assign $y = \!1\($a \&\& $b \&\& $c \&\& $d\) \;\n";
+		}	
+	}	
+	elsif ($cellref =~ /NAND\dBX(\d|L)/) {
+		my $an = $COMP_ALREADY{$inst}{AN};
+		$an =~ s/^.*\///g; 
+		my $b = $COMP_ALREADY{$inst}{B}; 
+		$b =~ s/^.*\///g; 
+		my $y = $COMP_ALREADY{$inst}{Y}; 
+		$y =~ s/^.*\///g; 
+		if ($pins ==3) {
+			print WRITE_RTL "assign $y = \!\(\!\($an\) \&\& $b\) \;\n";
+		}
+		elsif ($pins ==4) {
+			my $c = $COMP_ALREADY{$inst}{C}; 
+			$c =~ s/^.*\///g; 
+			print WRITE_RTL "assign $y =\!\(\!\($an\) \&\& $b \&\& $c\) \;\n";
+		}
+		elsif ($pins ==5) {
+			my $c = $COMP_ALREADY{$inst}{C}; 
+			$c =~ s/^.*\///g; 
+			my $d = $COMP_ALREADY{$inst}{D}; 
+			$d =~ s/^.*\///g; 
+			print WRITE_RTL "assign $y = \!\(\!\($an\) \&\& $b \&\& $c \&\& $d\) \;\n";
+		}	
+	}
+	elsif ($cellref =~ /NAND\dBBX(\d|L)/) {
+		my $an = $COMP_ALREADY{$inst}{AN};
+		$an =~ s/^.*\///g; 
+		my $bn = $COMP_ALREADY{$inst}{BN}; 
+		$bn =~ s/^.*\///g; 
+		my $c = $COMP_ALREADY{$inst}{C}; 
+		$c =~ s/^.*\///g; 
+		my $d = $COMP_ALREADY{$inst}{D}; 
+		$d =~ s/^.*\///g; 
+		my $y = $COMP_ALREADY{$inst}{Y}; 
+		print WRITE_RTL "assign $y = \!\(\!\($an\) \&\& \!\($bn\) \&\& $c \&\& $d\) \;\n";
+
+	}
+}#sub nand_rtl
+
+sub flop_rtl {
+	my ($inst,$pins) = @_;
+	my $reset = 0;
+	my $preset =0;
+	my $scan = 0;
+	my $enable = 0;
+	my $cellref =  $CADB{$inst}->dbCadbGetCellref;
+	$d = $COMP_ALREADY{$inst}{D};
+	$d =~ s/^.*\///g; 
+	$ck = $COMP_ALREADY{$inst}{CK};
+	$ck =~ s/^.*\///g; 
+	$ckn = $COMP_ALREADY{$inst}{CKN};
+	$ckn = s/^.*\///g;
+	$q = $COMP_ALREADY{$inst}{Q};
+	$q =~ s/^.*\///g; 
+	$qn = $COMP_ALREADY{$inst}{QN};
+	$qn =~ s/^.*\///g; 
+	$si = $COMP_ALREADY{$inst}{SI};
+	$si =~ s/^.*\///g;
+	$se = $COMP_ALREADY{$inst}{SE};
+	$se =~ s/^.*\///g;
+	$e = $COMP_ALREADY{$inst}{E};
+	$e =~ s/^.*\///g;
+	$sn = $COMP_ALREADY{$inst}{SN};
+	$sn =~ s/^.*\///g;
+	$rn = $COMP_ALREADY{$inst}{RN};
+	$rn =~ s/^.*\///g;
+	if ($rn !="") {  $reset=1};
+	if ($sn !="") {  $preset=1};
+	if ($se !="") {  $scan =1;}
+	if ($e !="") {  $enable =1;}
+	if ($cellref =~/^DFFN/) {
+		if (($reset ==1)&&($preset ==1)) { 
+			print WRITE_RTL "\nalways \@\( negedge $ckn or $sn or $rn \) \n";
+			print WRITE_RTL "begin\n";
+			print WRITE_RTL "	if \($sn == 0)\n";
+			print WRITE_RTL "		$q \<\= 1 \;\n";
+			print WRITE_RTL " 	else if  \($rn == 0)\n";
+			print WRITE_RTL "		$q \<\= 0 \;\n";
+			print WRITE_RTL "	else $q \<\= $d \;\n";
+			print WRITE_RTL "end\n\n";
+		}
+		elsif (($reset ==1)&&($preset ==0)) { 
+			print WRITE_RTL "\nalways \@\( negedge $ckn or $rn \) \n";
+			print WRITE_RTL "begin\n";
+			print WRITE_RTL " 	if  \($rn == 0)\n";
+			print WRITE_RTL "		$q \<\= 0 \;\n";
+			print WRITE_RTL "	else $q \<\= $d \;\n";
+			print WRITE_RTL "end\n\n";
+		} 
+		elsif (($reset ==0)&&($preset ==1)) { 
+			print WRITE_RTL "\nalways \@\( negedge $ckn or $sn \) \n";
+			print WRITE_RTL "begin\n";
+			print WRITE_RTL " 	if  \($sn == 0)\n";
+			print WRITE_RTL "		$q \<\= 1 \;\n";
+			print WRITE_RTL "	else $q \<\= $d \;\n";
+			print WRITE_RTL "end\n\n";
+		}
+		else {
+			print WRITE_RTL "\nalways \@\( negedge $ckn \) \n";
+			print WRITE_RTL "begin\n";
+			print WRITE_RTL "	$q \<\= $d \;\n";
+			print WRITE_RTL "end\n\n";
+		}
+	}#end DFFN	
+	
+	elsif ($cellref =~/^DFF/) {
+		if (($reset ==1)&&($preset ==1)) { 
+			print WRITE_RTL "\nalways \@\( posedge $ck or $sn or $rn \) \n";
+			print WRITE_RTL "begin\n";
+			print WRITE_RTL "	if \($sn == 0)\n";
+			print WRITE_RTL "		$q \<\= 1 \;\n";
+			print WRITE_RTL " 	else if  \($rn == 0)\n";
+			print WRITE_RTL "		$q \<\= 0 \;\n";
+			print WRITE_RTL "	else $q \<\= $d \;\n";
+			print WRITE_RTL "end\n\n";
+		}
+		elsif (($reset ==1)&&($preset ==0)) { 
+			print WRITE_RTL "\nalways \@\( posedge $ck or $rn \) \n";
+			print WRITE_RTL "begin\n";
+			print WRITE_RTL " 	if  \($rn == 0)\n";
+			print WRITE_RTL "		$q \<\= 0 \;\n";
+			print WRITE_RTL "	else $q \<\= $d \;\n";
+			print WRITE_RTL "end\n\n";
+		} 
+		elsif (($reset ==0)&&($preset ==1)) { 
+			print WRITE_RTL "\nalways \@\( posedge $ck or $sn \) \n";
+			print WRITE_RTL "begin\n";
+			print WRITE_RTL " 	if  \($sn == 0)\n";
+			print WRITE_RTL "		$q \<\= 1 \;\n";
+			print WRITE_RTL "	else $q \<\= $d \;\n";
+			print WRITE_RTL "end\n\n";
+		}
+		else {
+			print WRITE_RTL "\nalways \@\( posedge $ck \) \n";
+			print WRITE_RTL "begin\n";
+			print WRITE_RTL "	$q \<\= $d \;\n";
+			print WRITE_RTL "end\n\n";
+		}
+	}#end DFF
+
+	if ($cellref =~/^SDFFN/) {
+		if (($reset ==1)&&($preset ==1)) { 
+			print WRITE_RTL "\nalways \@\( negedge $ckn or $sn or $rn \) \n";
+			print WRITE_RTL "begin\n";
+			print WRITE_RTL "	if \($sn == 0)\n";
+			print WRITE_RTL "		$q \<\= 1 \;\n";
+			print WRITE_RTL " 	else if  \($rn == 0)\n";
+			print WRITE_RTL "		$q \<\= 0 \;\n";
+			if ($scan ==0) { print WRITE_RTL "	else $q \<\= $d \;\n";}
+			else { print WRITE_RTL "	else $q \<\= $se \? $d : $si \;\n";}
+			print WRITE_RTL "end\n\n";
+		}
+		elsif (($reset ==1)&&($preset ==0)) { 
+			print WRITE_RTL "\nalways \@\( negedge $ckn or $rn \) \n";
+			print WRITE_RTL "begin\n";
+			print WRITE_RTL " 	if  \($rn == 0)\n";
+			print WRITE_RTL "		$q \<\= 0 \;\n";
+			if ($scan ==0) { print WRITE_RTL "	else $q \<\= $d \;\n";}
+			else { print WRITE_RTL "	else $q \<\= $se \? $d : $si \;\n";}
+			print WRITE_RTL "end\n\n";
+		} 
+		elsif (($reset ==0)&&($preset ==1)) { 
+			print WRITE_RTL "\nalways \@\( negedge $ckn or $sn \) \n";
+			print WRITE_RTL "begin\n";
+			print WRITE_RTL " 	if  \($sn == 0)\n";
+			print WRITE_RTL "		$q \<\= 1 \;\n";
+			if ($scan ==0) { print WRITE_RTL "	else $q \<\= $d \;\n";}
+			else { print WRITE_RTL "	else $q \<\= $se \? $d : $si \;\n";}
+			print WRITE_RTL "end\n\n";
+		}
+		else {
+			print WRITE_RTL "\nalways \@\( negedge $ckn \) \n";
+			print WRITE_RTL "begin\n";
+			if ($scan ==0) { print WRITE_RTL " 	$q \<\= $d \;\n";}
+			else { print WRITE_RTL "	$q \<\= $se \? $d : $si \;\n";}
+			print WRITE_RTL "end\n\n";
+		}
+	}#end SDFFN	
+	
+	elsif ($cellref =~/^SDFF/) {
+		if (($reset ==1)&&($preset ==1)) { 
+			print WRITE_RTL "\nalways \@\( posedge $ck or $sn or $rn \) \n";
+			print WRITE_RTL "begin\n";
+			print WRITE_RTL "	if \($sn == 0)\n";
+			print WRITE_RTL "		$q \<\= 1 \;\n";
+			print WRITE_RTL " 	else if  \($rn == 0)\n";
+			print WRITE_RTL "		$q \<\= 0 \;\n";
+			if ($scan ==0) { print WRITE_RTL "	else $q \<\= $d \;\n";}
+			else { print WRITE_RTL "	else $q \<\= $se \? $d : $si \;\n";}
+			print WRITE_RTL "end\n\n";
+		}
+		elsif (($reset ==1)&&($preset ==0)) { 
+			print WRITE_RTL "\nalways \@\( posedge $ck or $rn \) \n";
+			print WRITE_RTL "begin\n";
+			print WRITE_RTL " 	if  \($rn == 0)\n";
+			print WRITE_RTL "		$q \<\= 0 \;\n";
+			if ($scan ==0) { print WRITE_RTL "	else $q \<\= $d \;\n";}
+			else { print WRITE_RTL "	else $q \<\= $se \? $d : $si \;\n";}
+			print WRITE_RTL "end\n\n";
+		} 
+		elsif (($reset ==0)&&($preset ==1)) { 
+			print WRITE_RTL "\nalways \@\( posedge $ck or $sn \) \n";
+			print WRITE_RTL "begin\n";
+			print WRITE_RTL " 	if  \($sn == 0)\n";
+			print WRITE_RTL "		$q \<\= 1 \;\n";
+			if ($scan ==0) { print WRITE_RTL "	else $q \<\= $d \;\n";}
+			else { print WRITE_RTL "	else $q \<\= $se \? $d : $si \;\n";}
+			print WRITE_RTL "end\n\n";
+		}
+		else {
+			print WRITE_RTL "\nalways \@\( posedge $ck \) \n";
+			print WRITE_RTL "begin\n";
+			if ($scan ==0) { print WRITE_RTL "	$q \<\= $d \;\n";}
+			else { print WRITE_RTL "	$q \<\= $se \? $d : $si \;\n";}
+			print WRITE_RTL "end\n\n";
+		}
+	}#end SDFF
+
+		elsif ($cellref =~/^SEDFF/) {
+		if ($reset ==1) { 
+			print WRITE_RTL "\nalways \@\( posedge $ck or $rn \) \n";
+			print WRITE_RTL "begin\n";
+			print WRITE_RTL " 	if  \($rn == 0)\n";
+			print WRITE_RTL "		$q \<\= 0 \;\n";
+			if (($scan ==0)&&($enable==0)) { print WRITE_RTL "	else $q \<\= $d \;\n";}
+			elsif (($scan ==1)&&($enable==0)) { print WRITE_RTL "	else $q \<\= $se \? $d : $si \;\n";}
+			elsif (($scan ==0)&&($enable==1)) { print WRITE_RTL "	else if \($e == 1\)\n";
+							    print WRITE_RTL "		$q \<\= $d \;\n";}
+			else { print WRITE_RTL "	else if \($e == 1\)\n";
+				print WRITE_RTL "		$q \<\= $se \? $d : $si \;\n";}
+			print WRITE_RTL "end\n\n";
+		}
+		else {
+			print WRITE_RTL "\nalways \@\( posedge $ck \) \n";
+			print WRITE_RTL "begin\n";
+			if (($scan ==0)&&($enable==0)) { print WRITE_RTL "	$q \<\= $d \;\n";}
+			elsif (($scan ==1)&&($enable==0)) { print WRITE_RTL "	$q \<\= $se \? $d : $si \;\n";}
+			elsif (($scan ==0)&&($enable==1)) { print WRITE_RTL "	if \($e == 1\)\n";
+							    print WRITE_RTL "		$q \<\= $d \;\n";}
+			else { print WRITE_RTL "	if \($e == 1\)\n";
+				print WRITE_RTL "		$q \<\= $se \? $d : $si \;\n";}
+			print WRITE_RTL "end\n\n";
+		}
+	}#end SEDFF
+
+	
+}#sub flop_rtl
+#---------------------------------------------------------------------------------------------------------------------#
+sub write_rtl_data {
+  open(WRITE,">read.txt");
+  foreach my $moduleName (keys %MODULE_ALREADY){
+  print WRITE "module $moduleName\n";
+  print WRITE "always\@pos";
+   &get_all_uniq_reg_sig_for_each_module($moduleName);
+   foreach my $alw (sort keys %{$RTLDB{$moduleName}}){
+     my $get_list = $RTLDB{$moduleName}{$alw}->dbRTLDB_Get_SensitivityList;
+     my @get_block = $RTLDB{$moduleName}{$alw}->dbRTLDB_ALWAYS_Get_Block;
+     &print_block(\@get_block,$moduleName);
+     my @reg_assign_list = $RTLDB{$moduleName}{$alw}->dbRTLDB_Get_Reg_Assign_List;
+     foreach my $reg_assign (@reg_assign_list){
+       my $lhs_assign = $reg_assign->dbRTLDB_REGISTER_ASSIGN_Get_lhs_expression;
+       &get_oprtr_data($lhs_assign,$moduleName);
+       my $rhs_assign = $reg_assign->dbRTLDB_REGISTER_ASSIGN_Get_rhs_expression;
+       &get_oprtr_data($rhs_assign,$moduleName);
+      }
+  }
+}
+close(WRITE);
+}#sub write_rtl_data
+#--------------------------------------------------------------------------------------------------------------------------------------#
+sub print_block {
+my @block_list = @{$_[0]};
+my $moduleName = $_[1];
+my $case_cond_size = $_[2];
+my $label_start = 0;
+my %TEMP_HASH_SIG = ();
+my %TEMP_HASH_COND = ();
+my %TEMP_HASH_TYPE = ();
+foreach my $block (@block_list){
+  my $block_type = $block->dbRTLDB_BLOCK_Get_BLK_Type;
+  my @blk_list = $block->dbRTLDB_BLOCK_Get_Block;
+  if(($block_type eq "IF")||($block_type eq "CASE")){ 
+    foreach my $oprnd (keys %TEMP_HASH_COND){
+       print WRITE "$TEMP_HASH_TYPE{$oprnd} $TEMP_HASH_COND{$oprnd} $TEMP_HASH_SIG{$oprnd}\n";
+    }
+    %TEMP_HASH_SIG = ();
+    %TEMP_HASH_COND = ();
+    %TEMP_HASH_TYPE = ();
+    my @block_reg_assignment = $block->dbRTLDB_BLOCK_Get_BLK_Reg_Assign_List;
+    my $block_cond_expr = $block->dbRTLDB_BLOCK_Get_condition_expression;
+    my $cond_value_size = &get_bitSize_for_cond_expr($block_cond_expr,$moduleName);
+    &get_oprtr_data($block_cond_expr,$moduleName);
+    foreach my $blk_assign (@block_reg_assignment){
+      my $lhs_assign = $blk_assign->dbRTLDB_REGISTER_ASSIGN_Get_lhs_expression;
+      my @operand_array = $lhs_assign->dbRTLDB_EXPRESSION_Get_Operand_Array;
+      foreach my $oprnd (@operand_array){
+        my $bitSize = &calculate_operand_size($oprnd,$moduleName);
+        $TEMP_HASH_SIG{$oprnd} = $bitSize;
+        $TEMP_HASH_COND{$oprnd} = $cond_value_size;  
+        $TEMP_HASH_TYPE{$oprnd} = "IF"; 
+      }
+    }
+  }elsif($block_type eq "ELSE_IF"){
+     my @block_reg_assignment = $block->dbRTLDB_BLOCK_Get_BLK_Reg_Assign_List;
+     my $block_cond_expr = $block->dbRTLDB_BLOCK_Get_condition_expression;
+     my $cond_value_size = &get_bitSize_for_cond_expr($block_cond_expr,$moduleName);
+     &get_oprtr_data($block_cond_expr,$moduleName);
+     foreach my $blk_assign (@block_reg_assignment){
+      my $lhs_assign = $blk_assign->dbRTLDB_REGISTER_ASSIGN_Get_lhs_expression;
+      my @operand_array = $lhs_assign->dbRTLDB_EXPRESSION_Get_Operand_Array;
+      foreach my $oprnd (@operand_array){
+        my $bitSize = &calculate_operand_size($oprnd,$moduleName);
+          print WRITE "ELSE_IF $cond_value_size $bitSize\n";  
+       }
+      }
+  }elsif($block_type eq "ELSE"){
+     my @block_reg_assignment = $block->dbRTLDB_BLOCK_Get_BLK_Reg_Assign_List;
+     foreach my $blk_assign (@block_reg_assignment){
+       my $lhs_assign = $blk_assign->dbRTLDB_REGISTER_ASSIGN_Get_lhs_expression;
+       my @operand_array = $lhs_assign->dbRTLDB_EXPRESSION_Get_Operand_Array;
+       foreach my $oprnd (@operand_array){
+         my $bitSize = &calculate_operand_size($oprnd,$moduleName);
+         if(exists $TEMP_HASH_COND{$oprnd}){
+           my $existing_type = $TEMP_HASH_TYPE{$oprnd};
+             $TEMP_HASH_TYPE{$oprnd} = $existing_type."_"."ELSE";
+         }else {
+            $TEMP_HASH_SIG{$oprnd} = $bitSize;
+            $TEMP_HASH_COND{$oprnd} = $block_cond;  
+            $TEMP_HASH_TYPE{$oprnd} = "ELSE"; 
+         }
+       }
+     }
+  }elsif ($block_type eq "LABEL"){
+     if($label_start == 0 ){
+       $label_start = 1 ;
+       foreach my $oprnd (keys %TEMP_HASH_COND){
+          print WRITE "$TEMP_HASH_TYPE{$oprnd} $TEMP_HASH_COND{$oprnd} $TEMP_HASH_SIG{$oprnd}\n";
+       }
+       %TEMP_HASH_SIG = ();
+       %TEMP_HASH_COND = ();
+       %TEMP_HASH_TYPE = ();
+     }
+     my @block_reg_assignment = $block->dbRTLDB_BLOCK_Get_BLK_Reg_Assign_List; 
+     foreach my $blk_assign (@block_reg_assignment){
+       my $lhs_assign = $blk_assign->dbRTLDB_REGISTER_ASSIGN_Get_lhs_expression;
+       my @operand_array = $lhs_assign->dbRTLDB_EXPRESSION_Get_Operand_Array;
+       foreach my $oprnd (@operand_array){
+         my $bitSize = &calculate_operand_size($oprnd,$moduleName);
+         $TEMP_HASH_SIG{$oprnd} = $bitSize;
+         $TEMP_HASH_COND{$oprnd} = $case_cond_size;
+         $TEMP_HASH_TYPE{$oprnd} = "CASE";
+       }
+     }
+  }
+  my @block_reg_assignment = $block->dbRTLDB_BLOCK_Get_BLK_Reg_Assign_List; 
+  foreach my $get_assign_list (@block_reg_assignment){
+    my $lhs_assign = $get_assign_list->dbRTLDB_REGISTER_ASSIGN_Get_lhs_expression;
+    &get_oprtr_data($lhs_assign,$moduleName);
+    my $rhs_assign = $get_assign_list->dbRTLDB_REGISTER_ASSIGN_Get_rhs_expression;
+    &get_oprtr_data($rhs_assign,$moduleName);
+  }
+}
+foreach my $oprnd (keys %TEMP_HASH_COND){
+  print WRITE "$TEMP_HASH_TYPE{$oprnd} $TEMP_HASH_COND{$oprnd} $TEMP_HASH_SIG{$oprnd}\n";
+}
+foreach $block (@block_list){
+  my $block_type = $block->dbRTLDB_BLOCK_Get_BLK_Type;
+  my @blk_list = $block->dbRTLDB_BLOCK_Get_Block;
+  if($block_type eq "CASE"){ 
+  my $block_cond_expr = $block->dbRTLDB_BLOCK_Get_condition_expression;
+  my $cond_value_size = &get_bitSize_for_cond_expr($block_cond_expr,$moduleName);
+  my @blk_list = $block->dbRTLDB_BLOCK_Get_Block;
+  &print_block(\@blk_list,$moduleName,$cond_value_size);
+  }else{
+  &print_block(\@blk_list,$moduleName);
+  }
+}
+}#sub print_block
+#------------------------------------------------------------------------------------------------------------------------------------#
+sub get_bitSize_for_cond_expr {
+my $cond_expr = $_[0];
+my $moduleName =$_[1];
+my @all_size = ();
+my $get_value = "";
+my @operand_array = $cond_expr->dbRTLDB_EXPRESSION_Get_Operand_Array;
+foreach my  $oprnd (@operand_array){
+  my $get_size = &calculate_operand_size($oprnd,$moduleName);
+  push (@all_size,$get_size);
+}
+my @sorted_oprnd_list = sort { $a <=> $b;} @all_size;
+if ($#sorted_oprnd_list == 1){
+$get_value = $sorted_oprnd_list[0];
+}else {
+  $get_value = $sorted_oprnd_list[-1];
+}
+return($get_value);
+}#sub get_bitSize_for_cond_expr
+#--------------------------------------------------------------------------------------------------------------------------------------#
+sub get_all_uniq_reg_sig_for_each_module {
+my $moduleName = $_[0];
+my $sig_cnt = 1;
+@all_reg_assign_list = ();
+my %CHECK_HASH_SIG = ();
+my %REG_SIG_HASH = ();
+foreach my $alw  (sort keys %{$RTLDB{$moduleName}}){
+  my $get_list = $RTLDB{$moduleName}{$alw}->dbRTLDB_Get_SensitivityList;
+  if(($get_list =~ /pos.*/)|| ($get_list =~ /neg.*/)){
+  my @reg_assign_list = $RTLDB{$moduleName}{$alw}->dbRTLDB_Get_Reg_Assign_List;
+  foreach my $reg_assign (@reg_assign_list){
+    my $lhs_assign = $reg_assign->dbRTLDB_REGISTER_ASSIGN_Get_lhs_expression;
+    my @operand_array = $lhs_assign->dbRTLDB_EXPRESSION_Get_Operand_Array;
+    foreach my $oprnd (@operand_array){
+      $oprnd =~ s/\[.*\]//;
+      push(@all_reg_assign_list,$oprnd);
+    }
+   }
+  my @get_block = $RTLDB{$moduleName}{$alw}->dbRTLDB_ALWAYS_Get_Block;
+    &get_reg_sig_for_blk(\@get_block,$moduleName);
+ }
+}
+foreach my $oprnd (@all_reg_assign_list){
+  if(exists $CHECK_HASH_SIG{$oprnd}){
+    my $num = $CHECK_HASH_SIG{$oprnd};
+  }else{
+      $CHECK_HASH_SIG{$oprnd} = $sig_cnt;
+      my $num = $CHECK_HASH_SIG{$oprnd};
+      my $bitSize = &calculate_operand_size($oprnd,$moduleName); 
+      #my $reg_data = $oprnd." ".$bitSize;
+      my $reg_data = $bitSize;
+      $REG_SIG_HASH{$sig_cnt} = $reg_data;
+      $sig_cnt++;
+  }
+}
+foreach my $reg_num (sort {$a <=> $b} keys %REG_SIG_HASH){
+  print WRITE "  $reg_num $REG_SIG_HASH{$reg_num}\n\t  ";
+}
+print WRITE"\n";
+}#sub get_all_uniq_reg_sig_for_each_module
+#----------------------------------------------------------------------------------------------------------------------------------------#
+sub get_reg_sig_for_blk {
+my @block_list = @{$_[0]};
+my $moduleName =$_[1];
+foreach my $block (@block_list){
+  my @blk_list = $block->dbRTLDB_BLOCK_Get_Block;
+  my @block_reg_assignment = $block->dbRTLDB_BLOCK_Get_BLK_Reg_Assign_List; 
+  foreach my $get_assign_list (@block_reg_assignment){
+    my $lhs_assign = $get_assign_list->dbRTLDB_REGISTER_ASSIGN_Get_lhs_expression;
+    my @operand_array = $lhs_assign->dbRTLDB_EXPRESSION_Get_Operand_Array;
+    foreach my $oprnd (@operand_array){
+      $oprnd =~ s/\[.*\]//;
+      push (@all_reg_assign_list,$oprnd);
+    }
+  }    
+ &get_reg_sig_for_blk(\@blk_list,$moduleName);
+} 
+}#sub get_reg_sig_for_blk
+#----------------------------------------------------------------------------------------------------------------------------------------#
+sub calculate_operand_size {
+my $oprnd = $_[0];
+$oprnd =~ s/^\s*//;
+$oprnd =~ s/\s*$//;
+#print "\nNarendra operand is $oprnd";
+my $moduleName = $_[1];
+my $bitSize = 0;
+if($oprnd =~ /^$/){
+  $bitSize = 0 ;
+}elsif($oprnd =~ /^\s*\{/){
+  $oprnd =~ s/^\s*\{//;
+  $oprnd =~ s/\}\s*$//;
+  my $condition_bracket_status=0;
+  my $temp_expr="";
+  my $tempCnt = -1;
+  foreach my $char (split //, $oprnd) {
+    $tempCnt++;
+    my $tempLength = length($oprnd);
+    if($char eq "{"){
+      $condition_bracket_status++;
+      $temp_expr = $temp_expr."".$char;
+    }elsif($char eq "}"){
+      $condition_bracket_status--;
+      $temp_expr = $temp_expr."".$char;
+      if($condition_bracket_status == 0){
+        $bitSize = $bitSize + &calculate_operand_size($temp_expr,$moduleName);
+        $temp_expr="";
+      }
+    }elsif($condition_bracket_status > 0){
+      $temp_expr = $temp_expr."".$char;
+    }elsif($char eq ","){
+      $bitSize = $bitSize + &calculate_operand_size($temp_expr,$moduleName);
+      $temp_expr="";
+    }elsif($tempCnt == (length($oprnd) -1)){
+      $temp_expr = $temp_expr."".$char;
+      $bitSize = $bitSize + &calculate_operand_size($temp_expr,$moduleName);
+    }else{
+      $temp_expr = $temp_expr."".$char;
+    }
+  }
+}elsif($oprnd =~ /^\s*(\d+)\s*\{/){
+  my $tempMult = $1;
+  $oprnd =~ s/^\s*\d+\s*\{/\{/;
+  my $temp_bitSize = &calculate_operand_size($oprnd,$moduleName);
+  $bitSize = $bitSize + $temp_bitSize * $tempMult;
+}elsif($oprnd =~ /^\s*\(?\s*([^\=]*)\=\=([^\=]*)\s*\)?\s*$/){
+  $bitSize = &calculate_operand_size($1,$moduleName);
+}elsif($oprnd =~ /^\s*\w+\s*\[\s*([^\]\:\+\-]*)\s*(\+|\-)\s*\:\s*([^\]\:\+\-]*)\s*\]\s*$/){
+   $bitSize = $3;
+}elsif($oprnd =~ /^\s*\w+\s*\[\s*([^\]\:]*)\s*\:\s*([^\]\:]*)\s*\]\s*$/){
+  $bitSize = (abs($1-$2)+1);
+}elsif($oprnd =~ /\s*\w+\s*\[\s*[^\]\:]*\s*\]\s*/){
+   $bitSize = "1";
+}elsif ($oprnd =~ /^\s*(\d+)\s*\'.*$/){
+   $bitSize = $1;
+}elsif ($oprnd =~ /^\s*\b(\d+)\b\s*$/){
+   $bitSize = $1;
+}elsif(exists $MODULE_ALREADY{$moduleName}){
+  if($MODULE_ALREADY{$moduleName}->dbVNOMHasReg($oprnd)){
+      my $reg_size = $MODULE_ALREADY{$moduleName}->dbVNOMGetRegSize($oprnd);
+      $bitSize = $reg_size; 
+  }elsif($MODULE_ALREADY{$moduleName}->dbVNOMHasInput($oprnd)){
+        my $busWidth = "";
+        my $type = $MODULE_ALREADY{$moduleName}->dbVNOMGetInputType($oprnd); 
+        if ( $type == 1 ) {
+          $busWidth = $MODULE_ALREADY{$moduleName}->dbVNOMGetInputBits($oprnd); 
+          $busWidth =~ s/\[//; $busWidth =~ s/\]//;
+          my ($Msb,$Lsb) = (split(/\:/,$busWidth))[0,1];
+          $bitSize = (abs($Msb-$Lsb)+1);
+        }elsif($type == 0){
+         $bitSize = 1;
+        }
+  }elsif($MODULE_ALREADY{$moduleName}->dbVNOMHasOutput($oprnd)){
+       my $busWidth = "";
+       my $type = $MODULE_ALREADY{$moduleName}->dbVNOMGetOutputType($oprnd);
+       if ( $type == 1) {
+          $busWidth = $MODULE_ALREADY{$moduleName}->dbVNOMGetOutputBits($oprnd); 
+          $busWidth =~ s/\[//; $busWidth =~ s/\]//;
+          my ($Msb,$Lsb) = (split(/\:/,$busWidth))[0,1];
+          $bitSize = (abs($Msb-$Lsb)+1);	
+       }elsif($type == 0){
+          $bitSize = 1;
+       }
+  }elsif($MODULE_ALREADY{$moduleName}->dbVNOMHasBidi($oprnd)){
+       my $busWidth = "";
+       my $type = $MODULE_ALREADY{$moduleName}->dbVNOMGetBidiType($oprnd);
+       if ( $type == 1) {
+          $busWidth = $MODULE_ALREADY{$moduleName}->dbVNOMGetBidiBits($oprnd); 
+          $busWidth =~ s/\[//; $busWidth =~ s/\]//;
+          my ($Msb,$Lsb) = (split(/\:/,$busWidth))[0,1];
+          $bitSize = (abs($Msb-$Lsb)+1);	
+       }elsif($type == 0){
+          $bitSize = 1;
+       }
+  }elsif($MODULE_ALREADY{$moduleName}->dbVNOMHasNet($oprnd)){
+       my $busWidth = ""; 
+       my $type = $MODULE_ALREADY{$moduleName}->dbVNOMGetNetType($oprnd);
+       if($type == 1){
+          $busWidth = $MODULE_ALREADY{$moduleName}->dbVNOMGetNetBits($oprnd); 
+          $busWidth =~ s/\[//;$busWidth =~ s/\]//;
+          my ($Msb,$Lsb) = (split(/\:/,$busWidth))[0,1];
+          $bitSize = (abs($Msb-$Lsb)+1); 
+       }
+ }else {
+        if($oprnd ne ""){
+          $bitSize = 1;
+        }
+ }
+}#if exists module
+#print "\nNarendra operand size is $bitSize";
+return($bitSize);
+}#sub calculate_operand_size 
+#------------------------------------------------------------------------------------------------------------------------#
+sub get_expr_data {
+my $expr = $_[0];
+my $moduleName = $_[1];
+my @oprtr_data = ();
+my @operand_array = $expr->dbRTLDB_EXPRESSION_Get_Operand_Array;
+#print "NEW ";
+#print join",",@operand_array; print "\n";
+my @operator_array = $expr->dbRTLDB_EXPRESSION_Get_Operator_Array;
+#print "NEW ";
+#print join ",",@operator_array;print "\n";
+my $num_of_operand = @operand_array;
+my $num_of_oprtr = @operator_array;
+if($num_of_oprtr != 0){
+  if($num_of_operand > $num_of_oprtr){
+     for (my $i=0 ; $i<=$num_of_operand;$i++){
+          my $operator = $operator_array[$i];
+          if($operator =~ /\?\:/){
+          my $oprnd_lhs = $operand_array[$i];
+          my $oprnd_lhs_size= &calculate_operand_size($oprnd_lhs,$moduleName);
+          my $oprnd_rhs = $operand_array[$i+1];
+          my $oprnd_rhs_size = &calculate_operand_size($oprnd_rhs,$moduleName);
+              push(@oprtr_data,[$operator,$oprnd_lhs_size,$oprnd_rhs_size]);
+              #push(@oprtr_data,[$operator,$oprnd_lhs,$oprnd_rhs]);
+              shift(@operand_array);
+          }else{
+          my $oprnd_lhs = $operand_array[$i];
+          my $oprnd_rhs = $operand_array[$i+1];
+          my $oprnd_lhs_size  = &calculate_operand_size($oprnd_lhs,$moduleName);
+          my $oprnd_rhs_size = &calculate_operand_size($oprnd_rhs,$moduleName);
+              push(@oprtr_data,[$operator,$oprnd_lhs_size,$oprnd_rhs_size]);
+              #push(@oprtr_data,[$operator,$oprnd_lhs,$oprnd_rhs]);
+          }
+     }
+  }elsif($num_of_operand == $num_of_oprtr){
+     for (my $j=0; $j<=$num_of_operand;$j++){
+          my $operator = $operator_array[$j]; 
+          if($operator =~ /\?\:/){
+            my $oprnd_lhs = $operand_array[$i];
+            my $oprnd_lhs_size= &calculate_operand_size($oprnd_lhs,$moduleName);
+            my $oprnd_rhs = $operand_array[$i+1];
+            my $oprnd_rhs_size = &calculate_operand_size($oprnd_rhs,$moduleName);
+                push(@oprtr_data,[$operator,$oprnd_lhs_size,$oprnd_rhs_size]);
+                #push(@oprtr_data,[$operator,$oprnd_lhs,$oprnd_rhs]);
+                shift(@operand_array);
+          }else{
+            my $oprnd_lhs = $operand_array[$j];
+            my $oprnd_rhs = $operand_array[$j+1];
+            my $oprnd_lhs_size = &calculate_operand_size($oprnd_lhs,$moduleName);
+            my $oprnd_rhs_size = &calculate_operand_size($oprnd_rhs,$moduleName);
+            push(@oprtr_data,[$operator,$oprnd_lhs_size,$oprnd_rhs_size]);
+            #push(@oprtr_data,[$operator,$oprnd_lhs,$oprnd_rhs]);
+          }
+     }
+  }else {
+     for (my $i=0 ; $i<=$num_of_oprtr;$i++){
+          my $operator = $operator_array[$i];
+          if($operator =~ /\?\:/){
+            my $oprnd_lhs = $operand_array[$i];
+            my $oprnd_lhs_size= &calculate_operand_size($oprnd_lhs,$moduleName);
+            my $oprnd_rhs = $operand_array[$i+1];
+            my $oprnd_rhs_size = &calculate_operand_size($oprnd_rhs,$moduleName);
+             push(@oprtr_data,[$operator,$oprnd_lhs_size,$oprnd_rhs_size]);
+            #push(@oprtr_data,[$operator,$oprnd_lhs,$oprnd_rhs]);
+            shift(@operand_array);
+          }else{
+              if($operator =~ (/\~|\!/)){
+                my $oprnd_lhs = $operand_array[$i];
+                my $oprnd_rhs = $operand_array[$i+1];
+                my $oprnd_lhs_size  = &calculate_operand_size($oprnd_lhs,$moduleName);
+                my $oprnd_rhs_size  = &calculate_operand_size($oprnd_rhs,$moduleName);
+                my $next_oprtr = $operator_array[$i+1];
+                #push(@oprtr_data,[$operator,$oprnd_lhs,$oprnd_rhs,$next_oprtr]);
+                push(@oprtr_data,[$operator,$oprnd_lhs_size,$oprnd_rhs_size,$next_oprtr]);
+                shift(@operator_array);
+              }else{
+                my $oprnd_lhs = $operand_array[$i];
+                my $oprnd_rhs = $operand_array[$i+1];
+                my $oprnd_lhs_size  = &calculate_operand_size($oprnd_lhs,$moduleName);
+                my $oprnd_rhs_size = &calculate_operand_size($oprnd_rhs,$moduleName);
+                    push(@oprtr_data,[$operator,$oprnd_lhs_size,$oprnd_rhs_size]);
+                    #push(@oprtr_data,[$operator,$oprnd_lhs,$oprnd_rhs]);
+              }
+          }
+     }
+  }
+}
+return(@oprtr_data);
+}#sub get_expr_data
+#------------------------------------------------------------------------------------------------------------------------------------------------#
+sub get_oprtr_data {
+my $expr_str = $_[0];
+my $moduleName = $_[1];
+my @oprtr_size = &get_expr_data($expr_str,$moduleName);
+foreach my $oprtr_var (@oprtr_size){ 
+  my $data_oprtr = join" ",@$oprtr_var;
+  my ($oprtr_symbol,$get_size_1,$get_size_2,$next_oprtr) = (split(/\s+/,$data_oprtr))[0,1,2,3];
+  if($oprtr_symbol eq "&&"){
+     print WRITE "$oprtr_symbol $get_size_1 $get_size_2\n"; 
+  }elsif($oprtr_symbol eq "&"){
+     print WRITE "$oprtr_symbol  $get_size_1 $get_size_2\n";
+  }elsif($oprtr_symbol eq "!="){
+     print WRITE "$oprtr_symbol  $get_size_1 $get_size_2\n";
+  }elsif ($oprtr_symbol eq "+"){
+     print WRITE "$oprtr_symbol  $get_size_1 $get_size_2\n";
+  }elsif($oprtr_symbol eq "|"){
+     print WRITE "$oprtr_symbol  $get_size_1 $get_size_2\n";
+  }elsif($oprtr_symbol eq "~"){
+     print WRITE "$oprtr_symbol  $get_size_1\n";
+     if($next_oprtr ne ""){
+     print WRITE "$next_oprtr  $get_size_1 $get_size_2\n";
+     }
+  }elsif($oprtr_symbol eq "=="){
+     print WRITE "$oprtr_symbol  $get_size_1 $get_size_2\n";
+  }elsif($oprtr_symbol eq "<<"){
+    print WRITE "$oprtr_symbol $get_size_1 $get_size_2\n";
+  }elsif($oprtr_symbol eq ">>"){
+    print WRITE "$oprtr_symbol $get_size_1 $get_size_2\n";
+  }elsif($oprtr_symbol eq "<"){
+    print WRITE "$oprtr_symbol $get_size_1 $get_size_2\n";
+  }elsif($oprtr_symbol eq ">"){
+    print WRITE "$oprtr_symbol $get_size_1 $get_size_2\n";
+  }elsif($oprtr_symbol eq "==="){
+    print WRITE "$oprtr_symbol $get_size_1 $get_size_2\n";
+  }elsif($oprtr_symbol eq "!=="){
+    print WRITE "$oprtr_symbol $get_size_1 $get_size_2\n";
+  }elsif($oprtr_symbol eq "!"){
+    print WRITE "$oprtr_symbol $get_size_1\n";
+     if($next_oprtr ne ""){
+     print WRITE "$next_oprtr  $get_size_1 $get_size_2\n";
+     }
+  }elsif($oprtr_symbol eq "^"){
+    print WRITE "$oprtr_symbol $get_size_1 $get_size_2\n";
+  }elsif($oprtr_symbol eq "\?\:"){
+    print WRITE "$oprtr_symbol $get_size_1 $get_size_2\n";
+  }elsif($oprtr_symbol eq "-"){
+    print WRITE "$oprtr_symbol $get_size_1 $get_size_2\n";
+  }elsif($oprtr_symbol eq "||"){
+    print WRITE "$oprtr_symbol $get_size_1 $get_size_2\n";
+  }elsif($oprtr_symbol eq "*"){
+    print WRITE "$oprtr_symbol $get_size_1 $get_size_2\n";
+  }elsif($oprtr_symbol eq ">="){
+    print WRITE "$oprtr_symbol $get_size_1 $get_size_2\n";
+  }
+}
+}#sub get_oprtr_data
+#---------------------------------------------------------------------------------------------------#
+#------------------------------------------------This code is added for RTculate--------------------#
+sub populate_pldb_frm_vnom {
+use Benchmark;
+my $t0 = new Benchmark;
+
+my $top_module = $GLOBAL->dbfGlobalGetTOP;
+foreach my $moduleName (keys %MODULE_ALREADY){
+  if($moduleName ne $top_module){
+    &read_hdl_data ("-module_name", $moduleName, "-hier_level","top");
+    &write_rtl_data;
+    &rtl_area_estimation ("-f","read.txt"); 
+    my $rtlArea = &get_module_rtl_area ("-module_name",$moduleName,"-hier_level","top");
+    my $size = sqrt ($rtlArea);
+    my $width = sprintf ("%.2f",$rtlArea); 
+
+    $PLDB{$moduleName} = MacroDB::new();
+    $PLDB{$moduleName}->dbMdbSetClass("RTL");
+    $PLDB{$moduleName}->dbMdbSetSize($width,$width);
+
+    my @input_pin = $MODULE_ALREADY{$moduleName}->dbVNOMGetInput;
+    foreach my $in (@input_pin){
+      $PLDB{$moduleName}->dbMdbSetPinDir($in,"input");
+      my $type = $MODULE_ALREADY{$moduleName}->dbVNOMGetInputType($in);
+      if($type == 1){
+        my $busWidth = $MODULE_ALREADY{$moduleName}->dbVNOMGetInputBits($in); 
+        my @port_with_bit_blast = &get_vector_bit_blast($in,$busWidth,$type);
+        foreach my $pin (@port_with_bit_blast){
+          $PLDB{$moduleName}->dbMdbAddPin($pin);  
+        }
+      }else {
+        $PLDB{$moduleName}->dbMdbAddPin($in);  
+      }
+    }#foreach 
+    my @output_pin = $MODULE_ALREADY{$moduleName}->dbVNOMGetOutput;
+    foreach my $out (@output_pin){
+      $PLDB{$moduleName}->dbMdbSetPinDir($out,"output");
+      my $type = $MODULE_ALREADY{$moduleName}->dbVNOMGetOutputType($out);
+      if($type == 1){
+        my $busWidth = $MODULE_ALREADY{$moduleName}->dbVNOMGetOutputBits($out);
+        my @port_with_bit_blast = &get_vector_bit_blast($out,$busWidth,$type);
+        foreach my $pin (@port_with_bit_blast){
+          $PLDB{$moduleName}->dbMdbAddPin($pin); 
+        }
+      }else {
+        $PLDB{$moduleName}->dbMdbAddPin($out); 
+      } 
+    }#foreach
+    my @bidi_pin = $MODULE_ALREADY{$moduleName}->dbVNOMGetBidi;
+    foreach my $bidi(@bidi_pin){
+      $PLDB{$moduleName}->dbMdbSetPinDir($bidi,"inout");
+      my $type = $MODULE_ALREADY{$moduleName}->dbVNOMGetBidiType($bidi);
+      if($type == 1){
+        my $busWidth = $MODULE_ALREADY{$moduleName}->dbVNOMGetBidiBits($bidi);
+        my @port_with_bit_blast = &get_vector_bit_blast($bidi,$busWidth,$type);
+        foreach my $pin (@port_with_bit_blast){
+          $PLDB{$moduleName}->dbMdbAddPin($pin);
+        }
+      }else {
+        $PLDB{$moduleName}->dbMdbAddPin($bidi);
+      } 
+    }#foreach 
+  }#if
+}#foreach 
+
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "Command rtl_module_set_in_pldb took:",timestr($td),"\n";
+}#sub populate_pldb_frm_vnom 
+#---------------------------------------------------------------------------------------------------#
+sub get_rtl_area_foreach_module {
+  foreach my $mod (keys %MODULE_ALREADY){
+    &read_hdl_data("-module_name",$mod,"-hier_level","top");
+    &write_rtl_data;
+    &rtl_area_estimation ("-f","read.txt");
+    my $rtl_area = &get_module_rtl_area("-module_name",$mod,"-hier_level","top");
+    print "Mansi $mod => $rtl_area\n";
+  }#foreach
+}#sub get_rtl_area_foreach_module
+#------------------------------------------------This code is added for RTculate--------------------#
+#---------------------------------------------------------------------------------------------------#
+1;
+

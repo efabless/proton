@@ -1,0 +1,58 @@
+#!/usr/bin/perl 
+use Benchmark;
+my $t0 = new Benchmark;
+
+my @libFileList = ();
+my @inVlogFileList = ();
+my $synthOutVerilogFile = "vernan_output.v";
+my $logFile = "vernan.log";
+my $memModStr = "";
+my $cloud_share_path = "";
+for(my $i =0; $i<=$#ARGV;$i++){
+  if($ARGV[$i] eq "-lib_file"){
+    my $libFileStr = $ARGV[$i+1];
+    $libFileStr =~ s/\{|\}//g;
+    push(@libFileList, split(/\,/, $libFileStr));
+    $i++;
+  }elsif($ARGV[$i] eq "-synth_out"){
+    $synthOutVerilogFile = $ARGV[$i+1];
+    $i++;
+  }elsif($ARGV[$i] eq "-log_file"){
+    $logFile = $ARGV[$i+1];
+    $i++;
+  }elsif($ARGV[$i] eq "-memmod"){
+    $memModStr = $ARGV[$i+1];
+    $i++;
+  }elsif($ARGV[$i] eq "-cloud_share_path"){
+    $cloud_share_path = $ARGV[$i+1];
+    $i++;
+  }else{
+    my $inVlogFileStr = $ARGV[$i];
+    $inVlogFileStr =~ s/\{|\}//g;
+    push(@inVlogFileList, split(/\,/, $inVlogFileStr));
+  }
+}
+my @memModList = split(/\,/, $memModStr);
+my $memModOptStr = "";
+foreach my $tmpMemMod (@memModList){
+  $memModOptStr = $memModOptStr." -memmod ".$tmpMemMod;
+}
+my $spaceSeparatedVlogFileList = join " ", @inVlogFileList;
+system("$cloud_share_path/apps/content/drupal_app/hana -l $logFile -s temp_synth_out.v $memModOptStr $spaceSeparatedVlogFileList" );
+open(WRITE_SCRIPT,">synthesis.tcl");
+foreach my $tmpLibfile (@libFileList){
+  print WRITE_SCRIPT "read_lib -lib $tmpLibfile\n";
+}
+print WRITE_SCRIPT "read_verilog -v temp_synth_out.v\n";
+print WRITE_SCRIPT "read_verilog -v $cloud_share_path/uploads/content/tmp/generic.v\n";
+print WRITE_SCRIPT "replace_bb_inst_with_liberty_cell_inst\n";
+print WRITE_SCRIPT "write_verilog -output $synthOutVerilogFile --notWriteEmptyModule --hier --overwrite\n";
+print WRITE_SCRIPT "exit\n";
+close (WRITE_SCRIPT);
+system("$cloud_share_path/apps/content/drupal_app/proton -f synthesis.tcl" );
+system("sed -i s/hana/vernan/g $logFile");
+system("rm temp_synth_out.v");
+system("rm synthesis.tcl");
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "script vernan took: ",timestr($td),"\n";

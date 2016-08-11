@@ -1,0 +1,716 @@
+###########################################################################################
+########################### subroutine to create flatView svg #############################
+###########################################################################################
+sub create_flat_svg{
+  use Benchmark;
+  my $t0 = new Benchmark;
+  my $noOfArg = @_;
+  my @bbox = ();
+  my @errBBox = ();
+  my $outFile = "flatView.svg";
+  
+  if($_[0] eq "-h" || $_[0] eq "-help" || $_[0] eq "-HELP"){
+     print"Usage: create_flat_svg -output <output filename>\n";
+     print"                         -width <image width>\n";
+     print"                         -height <image height>\n";
+     print"                         -margin <margin from chip boundary in micron>\n";
+     print"                         -bbox <{x1,y1,x2,y2} in dbu>\n";
+     print"                         --die <boundary display>\n";
+     print"                         --inst <instance display>\n";
+     print"                         --row <rows display>\n";
+     print"                         --port <ports display>\n";
+     print"                         --net <nets display>\n";
+     print"                         --spnet <special nets display>\n";
+     print"                         --text <text display>\n";
+     print" default value <output:flat_view.svg>\n";
+     print" default value <width:500>\n";
+     print" default value <height:500>\n";
+     return @errBBox;
+  }else{
+     my $dbu = $GLOBAL->dbfGlobalGetDBU;
+     my ($svg_width, $svg_height) = (500,500);
+     my ($boundary_display,$inst_display,$row_display,$port_display,$net_display,$spnet_display,$text_display) = (0,0,0,0,0,0,0);
+     my ($marginX, $marginY) = (0, 0);
+     for(my $xx=0; $xx<$noOfArg; $xx++){
+         if($_[$xx] eq "-output"){$outFile = $_[$xx+1];}
+         if($_[$xx] eq "-width"){$svg_width = $_[$xx+1];}
+         if($_[$xx] eq "-height"){$svg_height = $_[$xx+1];}
+         if($_[$xx] eq "-bbox"){
+            my $bbox_str = $_[$xx+1];
+            $bbox_str =~ s/\{//;         
+            $bbox_str =~ s/\}//;        
+            @bbox = split(/\,/,$bbox_str);
+         }
+         if($_[$xx] eq "--die"){$boundary_display = 1;}
+         if($_[$xx] eq "--inst"){$inst_display = 1;}
+         if($_[$xx] eq "--row"){$row_display = 1;}
+         if($_[$xx] eq "--port"){$port_display = 1;}
+         if($_[$xx] eq "--net"){$net_display = 1;}
+         if($_[$xx] eq "--spnet"){$spnet_display = 1;}
+         if($_[$xx] eq "--text"){$text_display = 1;}
+     }
+     if($outFile !~m/\.svg$/){
+        $outFile .= '.svg';
+     }
+     
+     &create_gcell_db;
+     if($#GCellArray < 0){
+        print"WARN: first you should run command \"create_gcell\"\n";
+        print"use -h/-help/-HELP option to get help for \"create_gcell\"\n";
+        return @errBBox;
+     }
+     
+     open(WRITE,">$outFile");
+     my $outStr = '<svg width="'.$svg_width.'" height="'.$svg_height.'" style="background: #000000" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1">';
+
+     my ($bllx,$blly,$burx,$bury);
+     my ($guiWidth, $guiHeight);
+     my $MICRONFACTOR = 1;
+     my $dieIsCentre = 0;
+     
+     if(exists $DIE_ALREADY{dieArea} ) {
+        my $guiDiellx = $DIE_ALREADY{dieArea}[0];
+        my $guiDielly = $DIE_ALREADY{dieArea}[1];
+        my $guiDieurx = $DIE_ALREADY{dieArea}[2];
+        my $guiDieury = $DIE_ALREADY{dieArea}[3];
+  
+        my $guiMuDiellx = $guiDiellx/$dbu;
+        my $guiMuDielly = $guiDielly/$dbu;
+        my $guiMuDieurx = $guiDieurx/$dbu;
+        my $guiMuDieury = $guiDieury/$dbu;
+        
+        if($guiDiellx == 0 && $guiDielly == 0 ){
+           $dieIsCentre = 0; 
+        }elsif($guiDiellx+$guiDieurx == 0 && $guiDieury+$guiDielly == 0){
+           $dieIsCentre = 1;
+        }else {
+           $dieIsCentre = 2;
+        }
+        
+        ################## if -bbox option is used ##############
+        #-------- we should scale the design with bbox ---------#
+        if((@bbox < 4) || ($bbox[0] == 0 && $bbox[1] == 0 && $bbox[2] == 0 && $bbox[3] == 0)){
+           @bbox = ($guiDiellx,$guiDielly,$guiDieurx,$guiDieury);
+        }
+        $guiWidth = abs(($bbox[2] - $bbox[0])/$dbu) ; 
+        $guiHeight = abs(($bbox[3] - $bbox[1])/$dbu); 
+        #print "dieWidth:$guiWidth dieHeight:$guiHeight\n";
+  
+        my $shiftX = $bbox[0];
+        my $shiftY = $bbox[1];
+        #print "shiftX:$shiftX shiftY:$shiftY\n";
+
+        my $dieHMultFact  = $svg_height/$guiHeight;
+        my $dieWMultFact  = $svg_width/$guiWidth;
+        #-------------------------------------------------------#
+        if($dieHMultFact < $dieWMultFact){
+           $MICRONFACTOR = $dieHMultFact;
+        }else{
+           $MICRONFACTOR =  $dieWMultFact; 
+        }
+        my $MulFactor = $MICRONFACTOR/$dbu;
+        #print "mulFact:$MulFactor\n";
+
+        ############### Calculating X margin & Y margin to display image in centre ##############
+        $marginX = ( $svg_width - $guiWidth*$MICRONFACTOR )/2;
+        $marginY = ( $svg_height - $guiHeight*$MICRONFACTOR )/2;
+        #print "marginX:$marginX marginY:$marginY\n";
+  
+        #####   display the die area boundary  ###
+        if($dieIsCentre == 0 || $dieIsCentre == 2 ) {
+           $blly = ($svg_height - $marginY) - ($guiMuDielly - $shiftY/$dbu)*$MICRONFACTOR;
+           $bury = ($svg_height - $marginY) - ($guiMuDieury - $shiftY/$dbu)*$MICRONFACTOR;
+           $bllx = ($guiMuDiellx - $shiftX/$dbu)*$MICRONFACTOR + $marginX;
+           $burx = ($guiMuDieurx - $shiftX/$dbu)*$MICRONFACTOR + $marginX;
+        }else {
+           $blly = ($svg_height/2) - ($guiMuDielly - $shiftY/$dbu)*$MICRONFACTOR;
+           $bury = ($svg_height/2) - ($guiMuDieury - $shiftY/$dbu)*$MICRONFACTOR;
+           $bllx = ($guiMuDiellx - $shiftX/$dbu)*$MICRONFACTOR + ($svg_width/2);
+           $burx = ($guiMuDieurx - $shiftX/$dbu)*$MICRONFACTOR + ($svg_width/2);
+        }
+        if($boundary_display == 1 && ((($bllx >= 0 && $bllx <= $svg_width) || ($burx >= 0 && $burx <= $svg_width)) || (($blly >= 0 && $blly <= $svg_height) || ($bury >= 0 && $bury <= $svg_height)))){
+           $outStr .= '<polygon points="'."$bllx,$blly $burx,$blly $burx,$bury $bllx,$bury".'" fill="none" stroke="#00EE00" stroke-width="1"/>';
+        }
+
+        ######   display the ROWS   #####
+        if($row_display == 1){
+           if (exists $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}){
+               my @rows = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetRows;
+               foreach my $tag ( @rows ) {
+                       my ($x,$y) = (split(/\s+/, $tag))[2,3];
+                       my $Row_llx = ($x-$shiftX)*$MulFactor;    
+                       my $Row_lly = ($y-$shiftY)*$MulFactor;    
+                       if($dieIsCentre == 1) {
+                          $Row_llx = $Row_llx + ($svg_width/2);
+                          $Row_lly = ($svg_height/2) - $Row_lly;
+                       }else {
+                          $Row_llx = $Row_llx + $marginX;
+                          $Row_lly = ($svg_height - $marginY) - $Row_lly;
+                       }
+                       if($Row_lly >= 0 && $bury <= $svg_height){
+                          $outStr .= '<line x1="'.$Row_llx.'" y1="'.$Row_lly.'" x2="'.$burx.'" y2="'.$Row_lly.'" stroke="#A9A9A9" stroke-width="0.2"/>';
+                       }
+               }# foreach
+           }
+        }#if row display is ON
+
+        #####   display the ports of the top module  ###
+        if($port_display == 1){
+           my $moduleName = $TOP_MODULE;
+           foreach my $port ( keys %{$PORTS_ALREADY{$moduleName}} ) {
+                   my $status = $PORTS_ALREADY{$moduleName}{$port}->dbPortGetStatus;
+                   if($status == 2 || $status == 3 ) {
+                      my @loc = $PORTS_ALREADY{$moduleName}{$port}->dbPortGetLoc;
+                      my ($X,$Y,$orient) = &dbPlaceFindClosestBoundary($loc[0],$loc[1]);
+                      $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortSetSide($orient);
+                      my $dir = $PORTS_ALREADY{$moduleName}{$port}->dbPortGetDir;
+                      my $orient = $PORTS_ALREADY{$moduleName}{$port}->dbPortGetSide;
+                      my $x = ($loc[0]-$shiftX)*$MulFactor;
+                      my $y = ($loc[1]-$shiftY)*$MulFactor;
+                      if($dieIsCentre == 1) {
+                         $x = $x + ($svg_width/2);
+                         $y = ($svg_height/2) - $y;
+                      }else {
+                         $x = $x + $marginX;
+                         $y = ($svg_height - $marginY) - $y;
+                      }
+                      if(($x >= 0 || $x <= $svg_width) && ($y >= 0 || $y <= $svg_height)){
+                         my @poly = &create_pin_shape($x,$y,$orient,$dir);
+                         $outStr .= '<polygon points="'."$poly[0],$poly[1] $poly[2],$poly[3] $poly[4],$poly[5]".'" fill="#CDCD00" stroke="black" stroke-width="0.01"/>';
+                         if($text_display == 1){
+                            $outStr .= '<text x="'.(($poly[0]+$poly[2]+$poly[4])/3).'" y="'.(($poly[1]+$poly[3]+$poly[5])/3).'" style="fill:#FFFFFF;font-size:1px;text-anchor:middle;">'.$port.'</text>'; 
+                         }
+                      }
+                   }#if status is placed or fixed
+           }# foreach
+        }#if port display is ON
+        ########  dispay the Instances  #######
+        if($inst_display == 1){
+           for(my $i=0; $i<=$#GCellArray ; $i++) {
+              for (my $j=0; $j<=$#{@GCellArray[0]} ; $j++) {
+                   my @instList = $GCellArray[$i][$j]->dbgGcellGetInst; 
+                   my @filtered_inst_array = ();
+                   foreach my $InstanceName (@instList){
+                        my @Inst_bbox = $CADB{$InstanceName}->dbCadbGetbBox;
+                        my $cellref =  $CADB{$InstanceName}->dbCadbGetCellref;
+                        my $status =  $CADB{$InstanceName}->dbCadbGetStatus;
+                        my $InstColor = "red";      
+                        if($PLDB{$cellref}->dbMdbGetClass eq "BLOCK") {
+                           $InstColor = "yellow";
+                        }
+                        if($status eq "PLACED" || $status eq "FIXED" ) {
+                           my $llx = ($Inst_bbox[0]-$shiftX)*$MulFactor;
+                           my $lly = ($Inst_bbox[1]-$shiftY)*$MulFactor;
+                           my $urx = ($Inst_bbox[2]-$shiftX)*$MulFactor;
+                           my $ury = ($Inst_bbox[3]-$shiftY)*$MulFactor;
+                           if($dieIsCentre == 1) {
+                              $lly = ($svg_height/2) - $lly;
+                              $ury = ($svg_height/2) - $ury;
+                              $llx = $llx + ($svg_width/2);
+                              $urx = $urx + ($svg_width/2);
+                           }else {
+                              $lly = ($svg_height - $marginY) - $lly;
+                              $ury = ($svg_height - $marginY) - $ury;
+                              $llx = $llx + $marginX;
+                              $urx = $urx + $marginX;
+                           }
+                           if((($llx >= 0 && $llx <= $svg_width) || ($urx >= 0 && $urx <= $svg_width)) || (($lly >= 0 && $lly <= $svg_height) || ($ury >= 0 && $ury <= $svg_height))){
+                              $outStr .= '<polygon points="'."$llx,$ury $urx,$ury $urx,$lly $llx,$lly".'" fill="red" stroke="black" stroke-width="0.01" opacity="0.8"/>';
+                              if($text_display == 1){
+                                 #$outStr .= '<text x="'.$urx.'" y="'.$lly.'" style="fill:none;stroke:#FFFFFF;font-size:0.1px;text-anchor:start">'.$InstanceName.'</text>'; 
+                                 $outStr .= '<text x="'.(($llx + $urx)/2).'" y="'.(($lly + $ury)/2).'" style="fill:#FFFFFF;font-size:1px;text-anchor:middle;opacity=0.8">'.$InstanceName.'</text>'; 
+                              }
+                           }
+                        }# if component status is fixed or placed
+                   }#foreach Instance
+              }#for j
+           }#for i
+        }#if instance display ON
+
+        ################################### creating image of nets #####################################
+        if($net_display == 1){
+           foreach my $net ( keys %NETS_ALREADY ) {
+               if(exists $NETS_ROUTING_ALREADY{$net}) {
+                  my @data = $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBGetRegularRoute;
+                  foreach my $segment ( @data ) {
+                       my @seg = split(/\s+/,$segment);
+                       my @routeBox = xformNetSegToRouteBox($segment);
+                       my $llx = ($routeBox[0]-$shiftX)*$MulFactor;
+                       my $lly = ($routeBox[1]-$shiftY)*$MulFactor;
+                       my $urx = ($routeBox[2]-$shiftX)*$MulFactor;
+                       my $ury = ($routeBox[3]-$shiftY)*$MulFactor;
+                       if($dieIsCentre == 1) {
+                          $lly = ($svg_height/2) - $lly;
+                          $ury = ($svg_height/2) - $ury;
+                          $llx = $llx + ($svg_width/2);
+                          $urx = $urx + ($svg_width/2);
+                       }else {
+                          $lly = ($svg_height - $marginY) - $lly;
+                          $ury = ($svg_height - $marginY) - $ury;
+                          $llx = $llx + $marginX;
+                          $urx = $urx + $marginX;
+                       }
+                       if((($llx >= 0 && $llx <= $svg_width) || ($urx >= 0 && $urx <= $svg_width)) || (($lly >= 0 && $lly <= $svg_height) || ($ury >= 0 && $ury <= $svg_height))){
+                          if(exists $PTDB{$seg[0]} ) {
+                             my $color = $PTDB{$seg[0]}->dbTechGetLayerColor;
+                             $outStr .= '<polygon points="'."$llx,$lly $urx,$lly $urx,$ury $llx,$ury".'" fill="'.$color.'" stroke="'.$color.'" stroke-width="0.01" opacity="0.8"/>';
+                          }#if the metal layer exists in the technology
+                       }#if the metal layer exists in the technology
+                  }#foreach segment of routing
+               }# if routing data is present
+           }#for all nets in the database
+        }#if net display is ON
+        ################################ creating image of special nets ##################################
+        if($spnet_display == 1){
+           foreach my $net ( keys %NETS_ALREADY ) {
+               my $netType = $NADB{$net}->dbNadbGetNetType;
+               if (($netType == 1) || ($netType == 2)) {
+                   if (exists $NETS_ROUTING_ALREADY{$net}) { 
+                       my @data = ();
+                       push(@data, $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBGetSpecialRoute);
+                       push(@data, $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBGetFixedRoute);
+                       foreach my $segment ( @data ) {
+                         my @seg = split(/\s+/,$segment);
+                         my @routeBox = xformNetSegToSpecialRouteBox($segment);
+                         my $llx = ($routeBox[0]-$shiftX)*$MulFactor;
+                         my $lly = ($routeBox[1]-$shiftY)*$MulFactor;
+                         my $urx = ($routeBox[2]-$shiftX)*$MulFactor;
+                         my $ury = ($routeBox[3]-$shiftY)*$MulFactor;
+                         if($dieIsCentre == 1) {
+                            $lly = ($svg_height/2) - $lly;
+                            $ury = ($svg_height/2) - $ury;
+                            $llx = $llx + ($svg_width/2);
+                            $urx = $urx + ($svg_width/2);
+                         }else {
+                            $lly = ($svg_height - $marginY) - $lly;
+                            $ury = ($svg_height - $marginY) - $ury;
+                            $llx = $llx + $marginX;
+                            $urx = $urx + $marginX;
+                         }
+                         if((($llx >= 0 && $llx <= $svg_width) || ($urx >= 0 && $urx <= $svg_width)) || (($lly >= 0 && $lly <= $svg_height) || ($ury >= 0 && $ury <= $svg_height))){
+                            if (exists $PTDB{$seg[0]} ) {
+                               my $color = $PTDB{$seg[0]}->dbTechGetLayerColor;
+                               $outStr .= '<polygon points="'."$llx,$lly $urx,$lly $urx,$ury $llx,$ury".'" fill="'.$color.'" stroke="'.$color.'" stroke-width="0.01" opacity="0.8"/>';
+                            }
+                         }
+                       }
+                   }#if exists
+               }#if type is 1 or 2
+           }#foreach special net
+        }#if special net display is ON
+        #------------------------------------------------------------------------------------#
+        ##################### context bbox #########################
+        $bbox[0] = $bbox[0] - $marginX/$MulFactor;
+        $bbox[1] = $bbox[1] - $marginY/$MulFactor;
+        $bbox[2] = $bbox[0] + $svg_width/$MulFactor;
+        $bbox[3] = $bbox[1] + $svg_height/$MulFactor;
+        ############################################################
+     }#if dieArea exists
+     $outStr .= '</svg>';
+     # Open a file for writing 
+     open(WRITE, ">$outFile") or $! and print"permission denied to write $outFile\n" and return @errBBox;
+     
+     print WRITE "$outStr";
+     close WRITE;
+  }
+  
+  #$GLOBAL->dbGlobalSetFlatImageBBox(@bbox);
+  
+  $t1 = new Benchmark;
+  my $td = timediff($t1, $t0);
+  print "flat svg ($outFile) creation took:",timestr($td),"\n";
+  return(@bbox);
+}#sub create_flat_svg
+
+############################################################################################
+######################## Subroutine to convert pixels in db ################################
+############################################################################################
+#sub getBboxPixel2DB {
+# my ($llx, $lly, $urx, $ury, $svg_width, $svg_height) = @_;
+# my $displayFactor;
+#
+# my ($context_llx, $context_lly, $context_urx, $context_ury) = $GLOBAL->dbGlobalGetFlatImageBBox;
+#
+# my $context_width = $context_urx - $context_llx; 
+# my $context_height = $context_ury - $context_lly;
+#
+# my $xDisFactor = ($svg_width -40)/$context_width;
+# my $yDisFactor = ($svg_height-40)/$context_height;
+#
+# if ($xDisFactor < $yDisFactor){
+#    $displayFactor = $xDisFactor;
+# } else {
+#    $displayFactor = $yDisFactor;
+# }
+#
+# my $new_llx = $context_llx + ($llx - 20)/$displayFactor;
+# my $new_lly = $context_lly + (($svg_height-20) - $lly)/$displayFactor;
+# my $new_urx = $context_llx + ($urx - 20)/$displayFactor;
+# my $new_ury = $context_lly + (($svg_height - 20) - $ury)/$displayFactor;
+#  
+# return($new_llx,$new_lly,$new_urx,$new_ury);
+#}#sub getBboxPixel2DB
+
+############################################################################################
+######################## Subroutine to create pin shape ####################################
+############################################################################################
+sub create_pin_shape {
+  my $originX = $_[0];
+  my $originY = $_[1];
+  my $orient = $_[2];
+  my $dir = $_[3];
+  my ($x1,$x2,$x3,$y1,$y2,$y3);
+  
+  if ( $dir eq "OUTPUT" || $dir eq "output" ) {
+       if ( $orient eq "E" ) {
+            $x1 = $originX ;
+            $x2 = $originX + 2 ;   
+            $x3 = $originX ;   
+            $y1 = $originY + 1;
+            $y2 = $originY;
+            $y3 = $originY - 1;
+                             }
+       elsif ( $orient eq "W" ) {
+            $x1 = $originX;
+            $x2 = $originX - 2;   
+            $x3 = $originX;   
+            $y1 = $originY + 1;
+            $y2 = $originY;
+            $y3 = $originY - 1;
+                             }
+       elsif ( $orient eq "S" ) {
+            $x1 = $originX + 1;
+            $x2 = $originX;   
+            $x3 = $originX - 1;   
+            $y1 = $originY;
+            $y2 = $originY - 2;
+            $y3 = $originY;
+                             }
+       elsif ( $orient eq "N" ) {
+            $x1 = $originX + 1;
+            $x2 = $originX;     
+            $x3 = $originX - 1;
+            $y1 = $originY;
+            $y2 = $originY + 2;
+            $y3 = $originY;
+                             }
+                          }
+  elsif ( $dir eq "INPUT" || $dir eq "input" ) {
+       if ( $orient eq "W" ) {
+            $x1 = $originX - 2;
+            $x2 = $originX;
+            $x3 = $originX - 2;
+            $y1 = $originY + 1;
+            $y2 = $originY;
+            $y3 = $originY - 1;
+                             }
+       elsif ( $orient eq "E" ) {
+            $x1 = $originX + 2;
+            $x2 = $originX;
+            $x3 = $originX + 2;
+            $y1 = $originY + 1;
+            $y2 = $originY;
+            $y3 = $originY - 1;
+                             }
+       elsif ( $orient eq "N" ) {
+            $x1 = $originX + 1;
+            $x2 = $originX;
+            $x3 = $originX - 1;
+            $y1 = $originY + 2;
+            $y2 = $originY;
+            $y3 = $originY + 2;
+                             }
+       elsif ( $orient eq "S" ) {
+            $x1 = $originX + 1;
+            $x2 = $originX;
+            $x3 = $originX - 1;
+            $y1 = $originY - 2;
+            $y2 = $originY;
+            $y3 = $originY - 2;
+                             }
+  
+                            }
+  elsif ( $dir eq "INOUT" || $dir eq "inout" ) {
+       if ( $orient eq "W" ) {
+            $x1 = $originX - 2;
+            $x2 = $originX;
+            $x3 = $originX - 2;
+            $y1 = $originY + 1;
+            $y2 = $originY;
+            $y3 = $originY - 1;
+                             }
+       elsif ( $orient eq "E" ) {
+            $x1 = $originX + 2;
+            $x2 = $originX;
+            $x3 = $originX + 2;
+            $y1 = $originY + 1;
+            $y2 = $originY;
+            $y3 = $originY - 1;
+                             }
+       elsif ( $orient eq "N" ) {
+            $x1 = $originX + 1;
+            $x2 = $originX;
+            $x3 = $originX - 1;
+            $y1 = $originY + 2;
+            $y2 = $originY;
+            $y3 = $originY + 2;
+                             }
+       elsif ( $orient eq "S" ) {
+            $x1 = $originX + 1;
+            $x2 = $originX;
+            $x3 = $originX - 1;
+            $y1 = $originY - 2;
+            $y2 = $originY;
+            $y3 = $originY - 2;
+                             }
+  
+                            }
+  else {print "WARN : GUI-001 : unknown direction of the pin\n"; }
+  
+  return($x1,$y1,$x2,$y2,$x3,$y3);
+}# sub create_pin_shape
+
+#####################################################################################
+sub create_gcells_flat_svg {
+  use Benchmark;
+  my $t0 = new Benchmark;
+  
+  my $noOfArg = @_;
+  
+  if($_[0] eq "-h" || $_[0] eq "-help" || $_[0] eq "-HELP"){
+     print"Usage: create_gcells_flat_svg \n";
+     print"                         -width <image width>\n";
+     print"                         -height <image height>\n";
+     print"                         -margin <margin from chip boundary in micron>\n";
+     print"                         -zoom_level <num of zoom levels>\n";
+     print"                         --die <boundary display>\n";
+     print"                         --inst <instance display>\n";
+     print"                         --row <rows display>\n";
+     print"                         --port <ports display>\n";
+     print"                         --net <nets display>\n";
+     print"                         --spnet <special nets display>\n";
+     print"                         --text <text display>\n";
+     print" default value <width:500>\n";
+     print" default value <height:500>\n";
+     return;
+  }else{
+     my $dbu = $GLOBAL->dbfGlobalGetDBU;
+     my ($svg_width, $svg_height) = (500, 500); 
+     my $margin = 0; 
+     my $max_zoom_levels = -1; 
+     my @switchArg = ();
+     for(my $xx=0; $xx<$noOfArg; $xx++){
+        if($_[$xx] eq "-width"){$svg_width = $_[$xx+1];}
+        if($_[$xx] eq "-height"){$svg_height = $_[$xx+1];}
+        if($_[$xx] eq "-margin"){$margin = $_[$xx+1];}
+        if($_[$xx] eq "-zoom_level"){$max_zoom_levels = $_[$xx+1];}
+        if($_[$xx] eq "--die"){push(@switchArg, $_[$xx]);}
+        if($_[$xx] eq "--inst"){push(@switchArg, $_[$xx]);}
+        if($_[$xx] eq "--row"){push(@switchArg, $_[$xx]);}
+        if($_[$xx] eq "--port"){push(@switchArg, $_[$xx]);}
+        if($_[$xx] eq "--net"){push(@switchArg, $_[$xx]);}
+        if($_[$xx] eq "--spnet"){push(@switchArg, $_[$xx]);}
+        if($_[$xx] eq "--text"){push(@switchArg, $_[$xx]);}
+     }
+
+     my $min_value = 0;
+     my $cnt = 0;
+     foreach my $macro (keys %PLDB){
+        my @size = sort{$a<=>$b}($PLDB{$macro}->dbMdbGetSize);
+        #print "@size\n";
+        if($cnt == 0){
+           $min_value = $size[0];
+        }
+        if($size[0] < $min_value){
+           $min_value = $size[0];
+        }
+        $cnt++;
+     }
+     #print "min $min_value\n";
+     $min_value *= $dbu;
+     my $marginX_in_dbu = $margin*$dbu;
+     my $marginY_in_dbu = $margin*$dbu;
+     if(exists $DIE_ALREADY{dieArea} ) {
+        my $chip_llx = $DIE_ALREADY{dieArea}[0];
+        my $chip_lly = $DIE_ALREADY{dieArea}[1];
+        my $chip_urx = $DIE_ALREADY{dieArea}[2];
+        my $chip_ury = $DIE_ALREADY{dieArea}[3];
+
+        if(($chip_urx - $chip_llx) > ($chip_ury - $chip_lly)){
+           $marginX_in_dbu = ($chip_urx - $chip_llx)/30 if($margin == 0);
+           $marginY_in_dbu = $marginX_in_dbu + (($chip_urx - $chip_llx) - ($chip_ury - $chip_lly))/2;
+        }else{
+           $marginY_in_dbu = ($chip_ury - $chip_lly)/30 if($margin == 0);
+           $marginX_in_dbu = $marginY_in_dbu + (($chip_ury - $chip_lly) - ($chip_urx - $chip_llx))/2;
+        }
+        
+        # here chip width will be equal to chip height
+        my $chip_width = $chip_urx - $chip_llx + 2*$marginX_in_dbu; 
+        my $chip_height = $chip_ury - $chip_lly + 2*$marginY_in_dbu;
+        
+        if($max_zoom_levels < 0){ 
+           $max_zoom_levels = int($chip_width/$min_value);
+        }
+        #print "zoom_levels $max_zoom_levels\n";
+
+        # code to calculate font size 
+        my ($diaInMicron, $maxChar) = &get_text_size; #calculating text font in micron
+        my $diaInPixel = ($svg_width*(2**$max_zoom_levels)/$chip_width)* ($diaInMicron*$dbu);
+        my $fontSizeInPixel = $diaInPixel/$maxChar;
+        open(WRITE,">designParameters.txt");
+         print WRITE "DBU $dbu\n";
+         print WRITE "DIEAREA $chip_llx $chip_lly $chip_urx $chip_ury\n";
+         print WRITE "CIRCLE_DIA $diaInPixel px\n";
+         print WRITE "TEXT_FONT $fontSizeInPixel px\n";
+         print WRITE "MAX_ZOOM_LEVEL $max_zoom_levels\n";
+        close(WRITE);
+
+        for(my $i=0; $i<=$max_zoom_levels; $i++){
+            my $num_rows = 2**$i;
+            my $num_cols = $num_rows;
+            #print "level $i ($num_rows $num_cols)\n";
+            my $x_step_size = $chip_width/$num_rows;
+            my $y_step_size = $chip_height/$num_cols;
+            my $step_size = $x_step_size;
+            if($y_step_size > $x_step_size){
+               $step_size = $y_step_size;
+            } 
+            if($svg_width*$num_rows > 50000 || $svg_height*$num_cols > 50000){last;}
+            for($j=0; $j<$num_rows; $j++){
+                my $bbox_lly = $j*$step_size - $marginY_in_dbu;
+                my $bbox_ury = $bbox_lly + $step_size;
+                for($k=0; $k<$num_cols; $k++){
+                    #print "$i $j $k\n";
+                    my $bbox_llx = $k*$step_size - $marginX_in_dbu;  
+                    my $bbox_urx = $bbox_llx + $step_size;  
+                    #print "bbox $bbox_llx $bbox_lly $bbox_urx $bbox_ury\n";
+                    &create_flat_svg(@switchArg, -width, $svg_width, -height, $svg_height, -margin, $margin, -output, $i.'_'.$j.'_'.$k, -bbox, "{$bbox_llx, $bbox_lly, $bbox_urx, $bbox_ury}");
+                }
+            }
+        }
+     }
+  }
+  $t1 = new Benchmark;
+  my $td = timediff($t1, $t0);
+  print "cmd:create_gcells_flat_svg took:",timestr($td),"\n";
+}#sub create_gcells_flat_svg
+
+#sub get_text_size{
+#  my $diff = 0;
+#  my $maxLen = 0;
+#  foreach my $macroName (keys %PLDB){
+#     print "macro:$macroName\n";
+#     my @size = $PLDB{$macroName}->dbMdbGetSize;
+#     my @pins = $PLDB{$macroName}->dbMdbGetPins;
+#     my @XX = ();
+#     my @YY = ();
+#     foreach my $pinName (@pins){
+#        print "  pin:$pinName\n";
+#        my @RECTS = $PLDB{$macroName}->dbMdbGetPinRect($pinName);
+#        my ($midx, $midy) = (0, 0);
+#        if(@RECTS > 0){
+#           my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$RECTS[0]))[0,2,3,4,5];
+#           $midx = ($llx + $urx)/2;
+#           $midy = ($lly + $ury)/2;
+#           push(@XX, $midx);
+#           push(@YY, $midy);
+#        }else{
+#           my @POLYS = $PLDB{$macroName}->dbMdbGetPinPolygon($pinName);
+#           my @polygon = (split(/\s+/,$POLYS[0]));
+#           my $layer = shift @polygon;
+#           shift @polygon;
+#           for(my $i=0; $i<@polygon; $i=$i+2){
+#               $midx += $polygon[$i];
+#               $midy += $polygon[$i+1];
+#           }
+#           $midx /= (@polygon/2);
+#           $midy /= (@polygon/2);
+#           push(@XX, $midx);
+#           push(@YY, $midy);
+#        }
+#        if($maxLen < (length $pinName)){
+#           $maxLen = length $pinName;
+#        }
+#     }#foreach pin
+#
+#     @XX = sort{$a<=>$b}@XX;
+#     @YY = sort{$a<=>$b}@YY;
+#     print "  XX:@XX\n";
+#     print "  YY:@YY\n";
+#
+#     for(my $i=0; $i<$#XX; $i++){
+#         if(($XX[$i+1] - $XX[$i]) > 0.000001){
+#            if($diff == 0){
+#               $diff = $XX[$i+1] - $XX[$i];
+#            }
+#            if($diff > ($XX[$i+1] - $XX[$i])){
+#               $diff = $XX[$i+1] - $XX[$i];
+#            }
+#            print "  diff:$i $diff\n";
+#         }
+#     }
+#     for(my $i=0; $i<$#YY; $i++){
+#         if(($YY[$i+1] - $YY[$i]) > 0.000001){
+#            if($diff > ($YY[$i+1] - $YY[$i])){
+#               $diff = $YY[$i+1] - $YY[$i];
+#            }
+#            print "  diff:$i $diff\n";
+#         }
+#     }
+#  }#for each macro
+#  return($diff, $maxLen);
+#  print "diff:: $diff max:$maxLen\n";
+#}#sub get_text_size
+
+sub get_text_size{
+  my $diff = 0;
+  my $maxLen = 0;
+  foreach my $macroName (keys %PLDB){
+     my @size = $PLDB{$macroName}->dbMdbGetSize;
+     my @pins = $PLDB{$macroName}->dbMdbGetPins;
+     my @coords = ();
+     foreach my $pinName (@pins){
+        my @RECTS = $PLDB{$macroName}->dbMdbGetPinRect($pinName);
+        my ($midx, $midy) = (0, 0);
+        if(@RECTS > 0){
+           my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$RECTS[0]))[0,2,3,4,5];
+           $midx = ($llx + $urx)/2;
+           $midy = ($lly + $ury)/2;
+           push(@coords, [$midx, $midy]);
+        }else{
+           my @POLYS = $PLDB{$macroName}->dbMdbGetPinPolygon($pinName);
+           my @polygon = (split(/\s+/,$POLYS[0]));
+           my $layer = shift @polygon;
+           shift @polygon;
+           for(my $i=0; $i<@polygon; $i=$i+2){
+               $midx += $polygon[$i];
+               $midy += $polygon[$i+1];
+           }
+           $midx /= (@polygon/2);
+           $midy /= (@polygon/2);
+           push(@coords, [$midx, $midy]);
+        }
+        if($maxLen < (length $pinName)){
+           $maxLen = length $pinName;
+        }
+     }#foreach pin
+
+     for(my $i=0; $i<$#coords; $i++){
+         my @startPoint = @{$coords[$i]};
+         for(my $j=$i+1; $j<=$#coords; $j++){
+             my @endPoint = @{$coords[$j]};
+             if(abs($endPoint[0] - $startPoint[0]) > 0.000001 || abs($endPoint[1] - $startPoint[1]) > 0.000001){
+                my $dis = sqrt(($endPoint[0] - $startPoint[0])**2 + ($endPoint[1] - $startPoint[1])**2);
+                if($diff == 0 || $diff > $dis){
+                   $diff = $dis;
+                }
+             }
+         }
+     }
+  }#for each macro
+  return($diff, $maxLen);
+}#sub get_text_size
+
+#####################################################################################
+
+1;

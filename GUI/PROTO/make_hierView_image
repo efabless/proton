@@ -1,0 +1,301 @@
+sub create_hier_image{
+use Benchmark;
+my $t0 = new Benchmark;
+
+my $noOfArg = @_; 
+my ($image_width, $image_height) = (540,540);
+my ($outFile, $format) = ("hier_view", "png");
+my ($boundary_display,$inst_display,$net_display) = (0,0,0);
+my ($shiftX, $shiftY, $marginX, $marginY) = (0, 0, 0, 0);
+my ($xMulFact, $yMulFact, $MICRONFACTOR) = (1, 1, 1);
+my @bbox = ();
+my @errBBox = (); 
+
+if($_[0] eq "-h" || $_[0] eq "-help" || $_[0] eq "-HELP"){
+   print"Usage: create_hier_image -output <output filename>\n";
+   print"                         -width <image width>\n";
+   print"                         -height <image height>\n";
+   print"                         -bbox <{x1,y1,x2,y2}>\n";
+   print"                         --die <boundary display>\n";
+   print"                         --inst <instances display>\n";
+   print"                         --net <nets display>\n";
+   print"                         -format <file format (png/jpeg/gif/gd/gd2>\n";
+   print" default value <output:hier_view.png>\n";
+   print" default value <width:540>\n";
+   print" default value <height:540>\n";
+   print" default value <format:png>\n";
+   return @errBBox;
+}else{
+   for(my $xx=0; $xx<$noOfArg; $xx++){
+       if($_[$xx] eq "-output"){$outFile = $_[$xx+1];}
+       if($_[$xx] eq "-width"){$image_width = $_[$xx+1];}
+       if($_[$xx] eq "-height"){$image_height = $_[$xx+1];}
+       if($_[$xx] eq "-format"){$format = $_[$xx+1];}
+       if($_[$xx] eq "-bbox"){
+          my $bbox_str = $_[$xx+1];
+          $bbox_str =~ s/\{//;         
+          $bbox_str =~ s/\}//;        
+          @bbox = split(/\,/,$bbox_str);
+       }
+       if($_[$xx] eq "--die"){$boundary_display = 1;}
+       if($_[$xx] eq "--inst"){$inst_display = 1;}
+       if($_[$xx] eq "--net"){$net_display = 1;}
+   }
+   $outFile = $outFile.".".$format; 
+
+   # Create a new image
+   my $im = new GD::Image($image_width,$image_height,[0,0,0]);
+   my $po = new Graphics::ColorNames('X');
+   # Allocate some colors
+   &InitColors($im);
+   # Make the background transparent and interlaced
+   #$im->transparent($red);
+   #$im->interlaced('true');
+   
+   if(exists $PSEUDO_MODULE_ALREADY{$TOP_MODULE} ) {
+      my @size = $PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenGetSize;   
+      my $chip_width = abs($size[2] - $size[0]);
+      my $chip_height = abs($size[3] - $size[1]);
+      ################## if -bbox option is used ##############
+      #-------- we should scale the design with bbox ---------#
+      if((@bbox < 4) || ($bbox[0] == 0 && $bbox[1] == 0 && $bbox[2] == 0 && $bbox[3] == 0)){
+         @bbox = @size;
+         $xMulFact = ($image_width-40)/$chip_width;
+         $yMulFact = ($image_height-40)/$chip_height;
+      }else{
+         $chip_width = abs($bbox[2] - $bbox[0]);
+         $chip_height = abs($bbox[3] - $bbox[1]);
+         $shiftX = $bbox[0];
+         $shiftY = $bbox[1];
+         $xMulFact = $image_width/$chip_width;
+         $yMulFact = $image_height/$chip_height;
+      }
+      #-------------------------------------------------------#
+      #my $xMulFact = ($image_width-40)/$chip_width;
+      #my $yMulFact = ($image_height-40)/$chip_height;
+      if($xMulFact < $yMulFact){
+         $MICRONFACTOR = $xMulFact;
+      }else {
+         $MICRONFACTOR = $yMulFact;
+      } 
+         #$GLOBAL->dbGlobalSetMicronFactor($MICRONFACTOR);
+      ############### Calculating X margin & Y margin to display image in centre ##############
+      $marginX = ($image_width - $chip_width*$MICRONFACTOR)/2;
+      $marginY = ($image_height - $chip_height*$MICRONFACTOR)/2;
+      #########################################################################################
+         if($boundary_display == 1){
+            $size[0] = $marginX + ($size[0] - $shiftX)*$MICRONFACTOR;      
+            $size[1] = ($image_height-$marginY) - ($size[1] - $shiftY)*$MICRONFACTOR;      
+            $size[2] = $marginX + ($size[2] - $shiftX)*$MICRONFACTOR;      
+            $size[3] = ($image_height-$marginY) - ($size[3] - $shiftY)*$MICRONFACTOR;      
+            $im->rectangle($size[0],$size[1],$size[2],$size[3],$green); 
+         }
+         if($inst_display == 1){ 
+            foreach my $instance ( keys %{$PSEUDO_VINST_ALREADY{$TOP_MODULE}} ) {
+              if($instance eq "PIN"){ 
+              }else{ 
+                my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$instance}->dbPimDBGetInstCellref;
+                my $class = $DLDB{$cellref}->dbDldbGetClass if(exists $DLDB{$cellref});
+                my $color = $red;
+                if($class == 0){$color = $orange;}# soft module 
+                elsif($class == 10){$color = $OliveDrab1;}#hard macro     
+                my @loc = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$instance}->dbPimDBGetInstRelBbox;
+                if($loc[0]==0 && $loc[1]==0 && $loc[2]==0 && $loc[3]==0){  
+                   $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$instance}->dbPimDBSetInstStatus("UNPLACED");
+                }#if location is (0,0,0,0)
+                my $status = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$instance}->dbPimDBGetInstStatus;
+                if($status eq "UNPLACED" || $status eq "UND"){
+                   if($class == 9){ #if std cell
+                   }else{
+                      my @mod_bbox = &return_pseudo_vinst_size($TOP_MODULE,$instance);
+                      my $mod_width = $mod_bbox[2] - $mod_bbox[0]; 
+                      my $mod_height = $mod_bbox[3] - $mod_bbox[1]; 
+                      $UNPLACED_HINST_WIDTH{$instance} = $mod_width;
+                      $UNPLACED_HINST_HEIGHT{$instance} = $mod_height;
+                    }
+                }else{
+                   my @polygon_rect = ();
+                   my $poly = new GD::Polygon; 
+                   my $no_of_cord = @loc;
+                   if($no_of_cord == 4){
+                     @polygon_rect = ($loc[0],$loc[1],$loc[2],$loc[1],$loc[2],$loc[3],$loc[0],$loc[3]);
+                   }else{
+                     @polygon_rect = @loc;
+                   }
+                   $_ *= $MICRONFACTOR for @polygon_rect; 
+                   foreach (my $i=0; $i<=$#polygon_rect; $i=$i+2){ 
+                       $polygon_rect[$i] = $marginX + ($polygon_rect[$i] - $shiftX*$MICRONFACTOR) ;       
+                       $polygon_rect[$i+1] = ($image_height - $marginY ) - ($polygon_rect[$i+1] - $shiftY*$MICRONFACTOR);       
+                       $poly->addPt($polygon_rect[$i],$polygon_rect[$i+1]);        
+                   }
+                   $im->polygon($poly,$color);
+                }
+              }#if instance is not PIN
+            }#for each instance
+            my $startX = $size[2];
+            my $startY = $size[1];
+            my @MaxWidth = ();
+            my @hinst = sort unplacedHashValueAsDecendingNum (keys(%UNPLACED_HINST_HEIGHT));
+            foreach my $instance(@hinst){
+               if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$instance}){
+                  my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$instance}->dbPimDBGetInstCellref;
+                  my $class = $DLDB{$cellref}->dbDldbGetClass if(exists $DLDB{$cellref});
+                  my $color = $red;
+                  if($class == 0){$color = $orange;}# soft module 
+                  elsif($class == 10){$color = $OliveDrab1}#hard macro     
+                  my @mod_bbox = &return_pseudo_vinst_size($TOP_MODULE,$instance);
+                  my $mod_width = ($mod_bbox[2] - $mod_bbox[0])*$MICRONFACTOR; 
+                  my $mod_height = ($mod_bbox[3] - $mod_bbox[1])*$MICRONFACTOR;
+                  if($mod_height > ($startY-$size[3])){ 
+                     $startY = $size[1];
+                     @MaxWidth = sort{$a<=>$b}@MaxWidth;
+                     $startX = $startX + $MaxWidth[-1];
+                     @MaxWidth = ();
+                  }  
+                  push(@MaxWidth,$mod_width);
+                  my $llx = $startX - $shiftX*$MICRONFACTOR; 
+                  my $lly = $startY - $shiftY*$MICRONFACTOR;
+                  my $urx = $llx+$mod_width;
+                  my $ury = $lly-$mod_height;
+                  $startX = $llx;
+                  $startY = $ury;
+                  $im->rectangle($llx,$lly,$urx,$ury, $color);
+               }
+            }#foreach unplaced hier instance
+         }#if instance display is on
+         ############################################# Net display ########################################
+         if($net_display == 1){
+            if( $GLOBAL->dbGlobalGetHRouterStatus == 1){
+             my $dbu = $GLOBAL->dbfGlobalGetDBU;
+             foreach my $net (keys %{$PSEUDO_VNET_ALREADY{$TOP_MODULE}}) {
+               my @netCoords = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net}->dbaTstgenGetPseudoExtNetCoords;
+               foreach my $rect (@netCoords){
+                  my @routeBox = @$rect;
+                  my $llx = $marginX + ($routeBox[0]/$dbu - $shiftX)*$MICRONFACTOR;
+                  my $lly = ($image_height-$marginY) - ($routeBox[1]/$dbu - $shiftY)*$MICRONFACTOR;
+                  my $urx = $marginX + ($routeBox[2]/$dbu - $shiftX)*$MICRONFACTOR;
+                  my $ury = ($image_height-$marginY) - ($routeBox[3]/$dbu - $shiftY)*$MICRONFACTOR;
+                  if($llx > $urx ){ my $t = $llx; $llx = $urx; $urx = $t;}
+                  if($lly > $ury ){ my $t = $lly; $lly = $ury; $ury = $t;}
+                  my $layer = $routeBox[4];
+                  if(exists $PTDB{$layer} ) {
+                     my $color = $PTDB{$layer}->dbTechGetLayerColor;
+                     #my @rgb = $po->rgb($color);
+                     #my $im_color = $im->colorAllocate(@rgb);
+                     my $im_color = $im->colorAllocate($po->rgb($color));
+                     $im->filledRectangle($llx,$lly,$urx,$ury,$im_color);
+                  }#if the metal layer exists in the technology
+               }#foreach rect
+             }#foreach net
+            }else{
+             foreach my $net (keys %{$PSEUDO_VNET_ALREADY{$TOP_MODULE}}) {
+               my @wireCoords = ();
+               my $color = "";
+               my $width = 0;
+               my @coords = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net}->dbaTstgenGetPseudoNetCoords; 
+               my @extcoords = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net}->dbaTstgenGetPseudoExtNetCoords; 
+               my $type = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net}->dbaTstgenGetPseudoNetType;
+               my @source = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net}->dbaTstgenGetPseudoNetSourceFanInList;
+               for(my $i=0; $i<=$#coords; $i=$i+2){
+                   my $xcoordInMicToGui = $marginX + ($coords[$i] - $shiftX)*$MICRONFACTOR;
+                   my $ycoordInMicToGui = ($image_height-$marginY) - ($coords[$i+1] - $shiftY)*$MICRONFACTOR;
+                   push(@wireCoords,$xcoordInMicToGui,$ycoordInMicToGui);
+               }
+               if($source[0] eq "'b0"){
+                  if($#wireCoords >= 3){
+                     my $poly = new GD::Polygon;
+                     for(my $i=0; $i <=$#wireCoords; $i=$i+2){
+                         $poly->addPt($wireCoords[$i],$wireCoords[$i+1]);
+                     }
+                     $im->unclosedPolygon($poly,$green);
+                     $im->setThickness(4)
+                  }
+               }elsif($source[0] eq "'b1"){ 
+                  if($#wireCoords >= 3){
+                     my $poly = new GD::Polygon;
+                     for(my $i=0; $i <=$#wireCoords; $i=$i+2){
+                         $poly->addPt($wireCoords[$i],$wireCoords[$i+1]);
+                     }
+                     $im->unclosedPolygon($poly,$red);
+                     $im->setThickness(4)
+                  }
+               }elsif($source[0] =~ m/^.*(\d+)'b.+$/){ 
+                  if($#wireCoords >= 3){
+                     my $poly = new GD::Polygon;
+                     for(my $i=0; $i <=$#wireCoords; $i=$i+2){
+                         $poly->addPt($wireCoords[$i],$wireCoords[$i+1]);
+                     }
+                     $im->unclosedPolygon($poly,$maroon4);
+                     $im->setThickness(4)
+                  }
+               }elsif($type eq "bump"){ 
+                  if($#wireCoords == 3){
+                     my $poly = new GD::Polygon;
+                     for(my $i=0; $i <=$#wireCoords; $i=$i+2){
+                         $poly->addPt($wireCoords[$i],$wireCoords[$i+1]);
+                     }
+                     $im->unclosedPolygon($poly,$pink);
+                     $im->setThickness(4)
+                  }
+               }else{
+                  if($type eq "bus"){$color = $blue; }
+                  else {$color = $yellow; } 
+                    my $poly = new GD::Polygon;
+                    for(my $i=0; $i <=$#wireCoords; $i=$i+2){
+                        $poly->addPt($wireCoords[$i],$wireCoords[$i+1]);
+                    }
+                    if($#wireCoords >= 3){
+                       $im->unclosedPolygon($poly,$color);
+                       #$im->setThickness(1)
+                    }
+                    if($#extcoords >= 0){
+                       foreach my $rect (@extcoords){
+                            my @extwireCoords = ();
+                            my @wire_coords = @$rect;  
+                            for(my $j=0; $j<=$#wire_coords; $j=$j+2){
+                                my $extxcoordInMicToGui = $marginX + ($wire_coords[$j]-$shiftX)*$MICRONFACTOR;
+                                my $extycoordInMicToGui = ($image_height-$marginY) - ($wire_coords[$j+1]-$shiftY)*$MICRONFACTOR;
+                                push(@extwireCoords,$extxcoordInMicToGui,$extycoordInMicToGui);
+                            }
+                            if($#extwireCoords >= 3){
+                               my $poly = new GD::Polygon;
+                               for(my $i=0; $i <=$#wireCoords; $i=$i+2){
+                                   $poly->addPt($wireCoords[$i],$wireCoords[$i+1]);
+                               }
+                               $im->unclosedPolygon($poly,$color);
+                               $im->setThickness(4)
+                            }  
+                        }
+                    }#if extended wire found
+               }#if not power/ground
+             }#foreach net
+            }#else
+         }#if net display is ON
+         ##################### context bbox #########################
+         $bbox[0] = $bbox[0] - $marginX/$MICRONFACTOR;
+         $bbox[1] = $bbox[1] - $marginY/$MICRONFACTOR;
+         $bbox[2] = $bbox[0] + $image_width/$MICRONFACTOR;
+         $bbox[3] = $bbox[1] + $image_height/$MICRONFACTOR;
+         ############################################################
+   }# if top module exists
+   # Open a file for writing 
+   open(PICTURE, ">$outFile") or $! and print"WARN: permission denied to write $outFile\n" and return @errBBox;
+
+   # Make sure we are writing to a binary stream
+   binmode PICTURE;
+   
+   # Convert the image to PNG and print it to the file PICTURE
+   print PICTURE $im->png if($format eq "png");
+   print PICTURE $im->jpeg if($format eq "jpeg");
+   print PICTURE $im->gif() if($format eq "gif");
+   print PICTURE $im->gd if($format eq "gd");
+   print PICTURE $im->gd2 if($format eq "gd2");
+   close PICTURE;
+}
+$t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "hier image creation took:",timestr($td),"\n";
+return(@bbox);
+}#sub create_hier_image
+
+1;

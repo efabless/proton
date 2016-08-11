@@ -1,0 +1,242 @@
+
+########################################################################
+sub report_verilog_area {
+
+  my (@args) =  @_;
+#----------------- Defaults --------------------#
+my ($help, $debug, $verbose, $regress) = (0,0,0,0);
+my $module = $TOP_MODULE;
+
+  $args = join(' ',@args);
+use Getopt::Long qw(GetOptionsFromString);
+  my $parseResult = GetOptionsFromString ($args , 
+     # read args here
+     "module=s"   => \$module,
+     "h"          => \$help,
+     "help"       => \$help,
+     "HELP"       => \$help,
+     "debug"      => \$debug,
+     "verbose"    => \$verbose,
+     "regress"    => \$regress,
+    );
+
+  if ( $help || $args[0] eq "HELP" ) {
+    print "Usage : report_verilog_area \n";
+    print "                   -module <module name>\n";
+    print "                   --verbose\n";
+    return;
+  }
+
+  if (!defined($MODULE_ALREADY{$module})) {
+    print "INFO-UTS-RPT_VERI_AREA : 001 : report_verilog_area: Module '$module' not loaded\n";
+    return();
+  } 
+  print "INFO-UTS-RPT_VERI_AREA : 001.1 : finding area of $module starting from top\n";
+  my $area = &find_verilog_area($module, $verbose);
+  my $leafArea = $MODULE_ALREADY{$module}->dbVNOMGetLeafArea;
+  print "INFO-UTS-RPT_VERI_AREA : 002 : LeafArea for $module : $leafArea\n";
+  my $hierArea = $MODULE_ALREADY{$module}->dbVNOMGetHierArea;
+  print "INFO-UTS-RPT_VERI_AREA : 003 : HierArea for $module : $hierArea\n";
+  my $rtlArea = $MODULE_ALREADY{$module}->dbVNOMGetRtlArea;
+  print "INFO-UTS-RPT_VERI_AREA : 003 : RtlArea for $module : $rtlArea\n";
+  my $totArea = $hierArea + $leafArea + $rtlArea;
+  print "INFO-UTS-RPT_VERI_AREA : 004 : Total Area for $module : $totArea\n";
+  $GLOBAL->dbGlobalSetVerilogArea(1);
+  return($totArea) if ($regress);
+}
+
+sub find_verilog_area {
+  #first find the total area of all leaf cell in this module
+  my ($mod, $verbose) = @_;
+  my $leafArea = 0;
+  my $hierArea = 0;
+  my $rtlArea = 0;
+
+if ( exists $MODULE_ALREADY{$mod}  ) {
+  print "report_verilog_area: Finding area for $mod...\n";
+  if ($MODULE_ALREADY{$mod}->dbVNOMHasLeafArea) {
+    $leafArea = $MODULE_ALREADY{$mod}->dbVNOMGetLeafArea;
+  } else {
+    my @leafCells = $MODULE_ALREADY{$mod}->dbVNOMGetLeafInst();
+    foreach my $cell (@leafCells) {
+      my $cellRef = $MODULE_ALREADY{$mod}->dbVNOMGetLeafInstCell($cell);
+      my @size = $PLDB{$cellRef}->dbMdbGetSize;
+      my $delA = $size[0]*$size[1];
+      $leafArea += $delA;
+    } #for
+    $MODULE_ALREADY{$mod}->dbVNOMSetLeafArea($leafArea);
+  }
+  print "LeafArea for $mod : $leafArea\n" if ( $verbose );
+
+  if ($MODULE_ALREADY{$mod}->dbVNOMHasHierArea) {
+    $hierArea = $MODULE_ALREADY{$mod}->dbVNOMGetHierArea;
+  } else {
+    my @hierCells = $MODULE_ALREADY{$mod}->dbVNOMGetHierInst();
+    foreach my $cell (@hierCells) {
+      my $instRef = $MODULE_ALREADY{$mod}->dbVNOMGetHierInstCell($cell);
+      my $delA = find_verilog_area($instRef, $verbose);
+      $hierArea += $delA;
+    } #for
+    $MODULE_ALREADY{$mod}->dbVNOMSetHierArea($hierArea);
+  }
+  if($GLOBAL->dbfGlobalGetInputType ne "spice"){
+     if ($MODULE_ALREADY{$mod}->dbVNOMHasRtlArea) {
+       $rtlArea = $MODULE_ALREADY{$mod}->dbVNOMGetRtlArea;
+     } else {
+       $rtlArea = &get_module_rtl_area("-module_name",$mod,"-hier_level","top");
+       $MODULE_ALREADY{$mod}->dbVNOMSetRtlArea($rtlArea);
+     }
+  }
+
+  print "HierArea for $mod : $hierArea\n" if ( $verbose );
+
+  my $totArea = $hierArea + $leafArea + $rtlArea;
+  print "Total Area for $mod : $totArea\n" if ( $verbose );
+  $MODULE_ALREADY{$mod}->dbVNOMSetArea($totArea);
+  return($totArea);
+                                               }
+}
+
+sub array_of_blasted_expr
+{
+   my $curr_expr = $_[0] ;
+   my $curr_module = $_[1] ;
+   $curr_expr =~ s/\s+//g;
+   my @temp_array_bits = () ;
+   if ( $curr_expr =~ /\{/ ) { 
+       $curr_expr =~ s/\{//; 
+       $curr_expr =~ s/\}//;
+       @temp_array_bits = split(/\s*\,\s*/, $curr_expr);
+   }elsif ( $curr_expr =~ /\[\s*[0-9]+\s*\:\s*[0-9]+\s*\]/ ) {
+     $curr_expr =~ s/\[/ /; $curr_expr =~ s/\]//; $curr_expr =~ s/\:/ /;
+     my ($name,$from,$to) = (split(/\s+/,$curr_expr))[0,1,2];
+     if ( $from <= $to ) {
+       for ( my $xx = $from ; $xx <= $to ; $xx++ ){
+         my $newNetName = $name."[".$xx."]";
+         push(@temp_array_bits,$newNetName);
+       }
+     } else {
+       for ( my $xx = $from ; $xx >= $to ; $xx-- ){
+         my $newNetName = $name."[".$xx."]";
+         push(@temp_array_bits,$newNetName);
+       }
+     } 
+   }elsif (( exists $MODULE_ALREADY{$curr_module}->{ins}{$curr_expr})
+       && ($MODULE_ALREADY{$curr_module}->dbVNOMGetInputType($curr_expr) == 1)){
+       my $width = $MODULE_ALREADY{$curr_module}->dbVNOMGetInputBits($curr_expr);
+       $width =~ s/\[//; $width =~ s/\]//;
+       my @W = split(/\s*\:\s*/,$width);
+       if ( $W[0] <= $W[1] ) {
+         for (my $xx = $W[0] ; $xx <=$W[1]; $xx++ ) {
+           my $pinName = $curr_expr."[".$xx."]";
+           push(@temp_array_bits,$pinName);
+         }
+       } elsif ( $W[0] > $W[1] ) {
+         for (my $xx = $W[0] ; $xx >=$W[1]; $xx-- ) {
+           my $pinName = $curr_expr."[".$xx."]";
+           push(@temp_array_bits,$pinName);
+         }
+       }
+   }elsif (( exists $MODULE_ALREADY{$curr_module}->{outs}{$curr_expr})
+       && ($MODULE_ALREADY{$curr_module}->dbVNOMGetOutputType($curr_expr) == 1)){
+       my $width = $MODULE_ALREADY{$curr_module}->dbVNOMGetOutputBits($curr_expr);
+       $width =~ s/\[//; $width =~ s/\]//;
+       my @W = split(/\s*\:\s*/,$width);
+       if ( $W[0] <= $W[1] ) {
+         for (my $xx = $W[0] ; $xx <=$W[1]; $xx++ ) {
+           my $pinName = $curr_expr."[".$xx."]";
+           push(@temp_array_bits,$pinName);
+         }
+       } elsif ( $W[0] > $W[1] ) {
+         for (my $xx = $W[0] ; $xx >=$W[1]; $xx-- ) {
+           my $pinName = $curr_expr."[".$xx."]";
+           push(@temp_array_bits,$pinName);
+         }
+       }
+   }elsif (( exists $MODULE_ALREADY{$curr_module}->{bidis}{$curr_expr})
+       && ($MODULE_ALREADY{$curr_module}->dbVNOMGetBidiType($curr_expr) == 1)){
+       my $width = $MODULE_ALREADY{$curr_module}->dbVNOMGetBidiBits($curr_expr);
+       $width =~ s/\[//; $width =~ s/\]//;
+       my @W = split(/\s*\:\s*/,$width);
+       if ( $W[0] <= $W[1] ) {
+         for (my $xx = $W[0] ; $xx <=$W[1]; $xx++ ) {
+           my $pinName = $curr_expr."[".$xx."]";
+           push(@temp_array_bits,$pinName);
+         }
+       } elsif ( $W[0] > $W[1] ) {
+         for (my $xx = $W[0] ; $xx >=$W[1]; $xx-- ) {
+           my $pinName = $curr_expr."[".$xx."]";
+           push(@temp_array_bits,$pinName);
+         }
+       }
+   }else{
+     push(@temp_array_bits,$curr_expr);
+   }
+   return @temp_array_bits;
+}
+#-----------------------------------------------------------------------------------------------------------------------------#
+sub dbSetModuleArea {
+my $noOfArguments = @_;
+my $module_name = "";
+my $module_area = "";
+
+if( $noOfArguments < 2 || $_[0] eq '-h') {print "Usage : dbSetModuleArea\n";
+                                          print "      : -mod_name\n";
+                                          print "      : -mod_area\n";
+                                         }
+
+else {
+   for (my $i = 0; $i < $noOfArguments; $i++){
+     if($_[$i] eq "-mod_name"){$module_name = $_[$i+1];}
+     if($_[$i] eq "-mod_area"){$module_area = $_[$i+1];}
+  }
+  if(exists $MODULE_ALREADY{$module_name}){
+    $MODULE_ALREADY{$module_name}->dbVNOMSetArea($module_area);
+  }
+}
+}#sub dbSetModuleArea
+#-----------------------------------------------------------------------------------------------------------------------------#
+sub dbGetModuleArea {
+my $noOfArguments = @_;
+my $module_name = "";
+my $area = "";
+if($noOfArguments < 0 || $_[0] eq '-h'){print "Usage : dbGetModuleArea\n";
+                                        print "      : -mod_name\n";
+                                       }
+else {
+  for (my $i = 0; $i < $noOfArguments; $i++){
+    if($_[$i] eq "-mod_name"){$module_name = $_[$i+1];}
+  }
+  if(exists $MODULE_ALREADY{$module_name}){
+    my $get_area = $MODULE_ALREADY{$module_name}->dbVNOMGetArea;
+#    print "Area = $area micron sq\n";
+  }
+}
+}#sub dbGetModuleArea
+
+sub get_module_rtl_area
+{
+my $get_verilog_file_type = $GLOBAL->dbfGlobalGetInputType;
+if($get_verilog_file_type eq "netlist_verilog"){
+return;
+}else{
+my $noOfArguments = @_;
+
+if ($noOfArguments > 4 || $_[0] eq '-h')   {
+  print "Usage: get_module_rtl_area -module_name <module name> -hier_level <top|full>\n";
+  return (1);
+} 
+my $module_name_for_area = $GLOBAL->dbfGlobalGetTOP();
+my $hier_level = "full";
+for ( my $i = 0; $i < $noOfArguments; $i++ ) {
+  if ($_[$i] eq "-module_name") { $module_name_for_area = $_[$i+1]; }
+  if ($_[$i] eq "-hier_level") { $hier_level = $_[$i+1]; }
+}
+&read_hdl_data("-module_name",$module_name_for_area,"-hier_level",$hier_level); 
+&write_rtl_data();
+my $temp_area = &rtl_area_estimation ("-f", "read.txt"); 
+return $temp_area;
+}
+}
+
+1;

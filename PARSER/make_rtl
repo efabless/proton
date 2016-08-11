@@ -1,0 +1,482 @@
+%flops = ();
+sub write_rtl  {
+
+my $noOfArguments = @_;
+
+if( $noOfArguments < 2 || $_[0] eq '-h') {
+        print "Usage : write_rtl \n";
+        print "                             -rtl <RTL FILENAME> \n";
+        print "                             <-debug>\n";
+}
+else { # if correct no. of inputs 
+        for(my $i = 0; $i < $noOfArguments; $i++){
+        if ($_[$i] eq "-rtl"){$rtl_file = $_[$i+1];}
+        elsif ($_[$i] eq "-debug"){$debug = 1 ;}
+
+        } #for
+}
+
+open (WRITE_RTL , ">$rtl_file");
+print WRITE_RTL "#RTL written from proton verion-$TOOL_VERSION\n";
+&get_module_definition;
+&get_cell_definition;
+
+print WRITE_RTL "\nendmodule\n";
+close (WRITE_RTL);
+
+}#sub write_rtl
+
+
+sub get_module_definition{
+print WRITE_RTL "module ${moduleName} \( ";
+my $referToPortsAdded = \%PORTS_ALREADY;
+my @temp = ();
+foreach $portName ( keys %{$PORTS_ALREADY{$moduleName}} ) { push(@temp,$portName); }
+print WRITE_RTL join ",",@temp;
+print WRITE_RTL "\)\;\n\n";
+foreach $portName ( keys %{$PORTS_ALREADY{$moduleName}} ) { 
+                                                          $dir = $PORTS_ALREADY{$moduleName}{$portName}->dbPortGetDir;
+                                                          print WRITE_RTL "$dir $portName\;\n"; 
+                                                          }
+print WRITE_RTL "\n\n";
+
+}#sub get_module_definition
+
+
+sub get_cell_definition {
+foreach $instName ( keys %COMP_ALREADY ) {
+	my $cellref =  $CADB{$instName}->dbCadbGetCellref;
+	my @pins = $PLDB{$cellref}->dbMdbGetPins;
+	my $cellType = $PLDB{$cellref}->dbMdbGetType;
+	my $cellFunction = $PLDB{$cellref}->dbMdbGetFunction;
+	foreach (@pins) {
+		if (($_ ne "VDD") && ($_ ne "VSS")) {
+			push (@temp1,$_);
+		}
+	}
+	@pins = @temp1;
+	$no_of_pins = @pins;
+print "INFO-PAR : 001 : No of pins : $no_of_pins and pin names: @pins and Celltype: $cellType and cellFunction: $cellFunction in $cellref\n";
+        @temp1=();
+	
+	if ($cellref =~ /INV/){ &inv_rtl($instName,$no_of_pins); }
+	elsif ($cellref =~ /BUF/){ &buf_rtl($instName,$no_of_pins); }
+	elsif ($cellref =~ /^AND/){ &and_rtl($instName,$no_of_pins); }
+	elsif ($cellref =~ /^OR/){ &or_rtl($instName,$no_of_pins); }
+	elsif ($cellref =~ /XOR/){ &xor_rtl($instName,$no_of_pins); }
+	elsif ($cellref =~ /XNOR/){ &xnor_rtl($instName,$no_of_pins); }
+	elsif ($cellref =~ /ADD/){ &add_rtl($instName,$no_of_pins); }
+	elsif ($cellref =~ /NAND/){ &nand_rtl($instName,$no_of_pins); }
+	elsif ($cellref =~ /DFF/){ $flops{$instName}{pins} = $no_of_pins; }
+	else {"print WARN-PAR : 002 : No rtl definition for $cellref\n";}
+}
+foreach (keys %flops) {
+	my $cellref =  $CADB{$_}->dbCadbGetCellref;
+	print "INFO-PAR : 003 : Instance NAme : $_ and no_of_pins : $flops{$_}{pins} Instance : $cellref\n";
+	&flop_rtl($_,$flops{$_}{pins});
+}
+}#sub get_cell_definition
+
+sub inv_rtl {
+	my $inst = $_[0];
+	$input = $COMP_ALREADY{$inst}{A};
+	$input =~ s/^.*\///g; 
+	$output = $COMP_ALREADY{$inst}{Y};
+	$output =~ s/^.*\///g; 
+	print WRITE_RTL "assign $output = \!$input \;\n";
+
+}#sub inv_rtl
+
+sub buf_rtl {
+	my $inst = $_[0];
+	$input = $COMP_ALREADY{$inst}{A};
+	$input =~ s/^.*\///g; 
+	$output = $COMP_ALREADY{$inst}{Y};
+	$output =~ s/^.*\///g; 
+	print WRITE_RTL "assign $output = $input \;\n";
+
+}#sub buf_rtl
+
+sub and_rtl {
+	my ($inst,$pins) = @_;
+	my $a = $COMP_ALREADY{$inst}{A};
+	$a =~ s/^.*\///g; 
+	my $b = $COMP_ALREADY{$inst}{B}; 
+	$b =~ s/^.*\///g; 
+	my $y = $COMP_ALREADY{$inst}{Y}; 
+	$y =~ s/^.*\///g; 
+	my $c = $COMP_ALREADY{$inst}{C}; 
+	$c =~ s/^.*\///g; 
+	my $d = $COMP_ALREADY{$inst}{D};
+	$d =~ s/^.*\///g;
+	if ($pins ==3) {
+		print WRITE_RTL "assign $y = $a \& $b \;\n";
+	}
+	elsif ($pins ==4) {
+		print WRITE_RTL "assign $y = $a \& $b \& $c \;\n";
+	}
+	elsif ($pins ==5) {
+		print WRITE_RTL "assign $y = $a \& $b \& $c \& $d \;\n";
+	}
+	
+}#sub and_rtl
+
+sub or_rtl {
+	my ($inst,$pins) = @_;
+	my $a = $COMP_ALREADY{$inst}{A};
+	$a =~ s/^.*\///g; 
+	my $b = $COMP_ALREADY{$inst}{B}; 
+	$b =~ s/^.*\///g; 
+	my $y = $COMP_ALREADY{$inst}{Y}; 
+	$y =~ s/^.*\///g; 
+	my $c = $COMP_ALREADY{$inst}{C}; 
+	$c =~ s/^.*\///g; 
+	my $d = $COMP_ALREADY{$inst}{D};
+	$d =~ s/^.*\///g;
+	if ($pins ==3) {
+		print WRITE_RTL "assign $y = $a \| $b \;\n";
+	}
+	elsif ($pins ==4) {
+		print WRITE_RTL "assign $y = $a \| $b \| $c \;\n";
+	}
+	elsif ($pins ==5) {
+		print WRITE_RTL "assign $y = $a \| $b \| $c \| $d \;\n";
+	}
+	
+}#sub or_rtl	
+
+sub xor_rtl {
+	my ($inst,$pins) = @_;
+	my $a = $COMP_ALREADY{$inst}{A};
+	$a =~ s/^.*\///g; 
+	my $b = $COMP_ALREADY{$inst}{B}; 
+	$b =~ s/^.*\///g; 
+	my $y = $COMP_ALREADY{$inst}{Y}; 
+	$y =~ s/^.*\///g; 
+	my $c = $COMP_ALREADY{$inst}{C}; 
+	$c =~ s/^.*\///g;
+	if ($pins ==3) {
+		print WRITE_RTL "assign $y = $a \^ $b \;\n";
+	}
+	elsif ($pins ==4) {
+		print WRITE_RTL "assign $y = $a \^ $b \^ $c \;\n";
+	}	
+}#sub xor_rtl
+
+sub xnor_rtl {
+	my ($inst,$pins) = @_;
+	my $a = $COMP_ALREADY{$inst}{A};
+	$a =~ s/^.*\///g; 
+	my $b = $COMP_ALREADY{$inst}{B}; 
+	$b =~ s/^.*\///g; 
+	my $y = $COMP_ALREADY{$inst}{Y}; 
+	$y =~ s/^.*\///g; 
+	my $c = $COMP_ALREADY{$inst}{C}; 
+	$c =~ s/^.*\///g;
+	if ($pins ==3) {
+		print WRITE_RTL "assign $y = $a \^~ $b \;\n";
+	}
+	elsif ($pins ==4) {
+		print WRITE_RTL "assign $y = $a \^~ $b \^~ $c \;\n";
+	}	
+}#sub xnor_rtl
+
+sub add_rtl {
+	my ($inst,$pins) = @_;
+	my $cellref =  $CADB{$inst}->dbCadbGetCellref;
+	my $a = $COMP_ALREADY{$inst}{A};
+	$a =~ s/^.*\///g; 
+	my $b = $COMP_ALREADY{$inst}{B}; 
+	$b =~ s/^.*\///g; 
+	my $ci = $COMP_ALREADY{$inst}{CI}; 
+	$ci =~ s/^.*\///g;
+	my $s = $COMP_ALREADY{$inst}{S}; 
+	$s =~ s/^.*\///g; 
+	my $co = $COMP_ALREADY{$inst}{CO}; 
+	$co =~ s/^.*\///g;
+	print WRITE_RTL "\/\/RTL definition for adder\n";
+	if ($cellref =~/ADDF/) {
+		print WRITE_RTL "assign $s = $a \^ $b \^ $ci \;\n";	
+		print WRITE_RTL "assign $co = \(\($a \^ $b\)\& $ci\)\|\($a \& $b\) \;\n";	
+	}
+	else {
+		print WRITE_RTL "assign $s = $a \^ $b  \;\n";	
+		print WRITE_RTL "assign $co = $a \& $b \;\n";	
+	}
+}#sub add_rtl
+
+sub nand_rtl {
+	my ($inst,$pins) = @_;
+	my $cellref =  $CADB{$inst}->dbCadbGetCellref;
+	if ($cellref =~ /NAND\dX(\d|L)/) {
+		my $a = $COMP_ALREADY{$inst}{A};
+		$a =~ s/^.*\///g; 
+		my $b = $COMP_ALREADY{$inst}{B}; 
+		$b =~ s/^.*\///g; 
+		my $y = $COMP_ALREADY{$inst}{Y}; 
+		$y =~ s/^.*\///g; 
+		if ($pins ==3) {
+			print WRITE_RTL "assign $y = \!\($a \&\& $b\) \;\n";
+		}
+		elsif ($pins ==4) {
+			my $c = $COMP_ALREADY{$inst}{C}; 
+			$c =~ s/^.*\///g; 
+			print WRITE_RTL "assign $y =\!\( $a \&\& $b \&\& $c\) \;\n";
+		}
+		elsif ($pins ==5) {
+			my $c = $COMP_ALREADY{$inst}{C}; 
+			$c =~ s/^.*\///g; 
+			my $d = $COMP_ALREADY{$inst}{D}; 
+			$d =~ s/^.*\///g; 
+			print WRITE_RTL "assign $y = \!1\($a \&\& $b \&\& $c \&\& $d\) \;\n";
+		}	
+	}	
+	elsif ($cellref =~ /NAND\dBX(\d|L)/) {
+		my $an = $COMP_ALREADY{$inst}{AN};
+		$an =~ s/^.*\///g; 
+		my $b = $COMP_ALREADY{$inst}{B}; 
+		$b =~ s/^.*\///g; 
+		my $y = $COMP_ALREADY{$inst}{Y}; 
+		$y =~ s/^.*\///g; 
+		if ($pins ==3) {
+			print WRITE_RTL "assign $y = \!\(\!\($an\) \&\& $b\) \;\n";
+		}
+		elsif ($pins ==4) {
+			my $c = $COMP_ALREADY{$inst}{C}; 
+			$c =~ s/^.*\///g; 
+			print WRITE_RTL "assign $y =\!\(\!\($an\) \&\& $b \&\& $c\) \;\n";
+		}
+		elsif ($pins ==5) {
+			my $c = $COMP_ALREADY{$inst}{C}; 
+			$c =~ s/^.*\///g; 
+			my $d = $COMP_ALREADY{$inst}{D}; 
+			$d =~ s/^.*\///g; 
+			print WRITE_RTL "assign $y = \!\(\!\($an\) \&\& $b \&\& $c \&\& $d\) \;\n";
+		}	
+	}
+	elsif ($cellref =~ /NAND\dBBX(\d|L)/) {
+		my $an = $COMP_ALREADY{$inst}{AN};
+		$an =~ s/^.*\///g; 
+		my $bn = $COMP_ALREADY{$inst}{BN}; 
+		$bn =~ s/^.*\///g; 
+		my $c = $COMP_ALREADY{$inst}{C}; 
+		$c =~ s/^.*\///g; 
+		my $d = $COMP_ALREADY{$inst}{D}; 
+		$d =~ s/^.*\///g; 
+		my $y = $COMP_ALREADY{$inst}{Y}; 
+		print WRITE_RTL "assign $y = \!\(\!\($an\) \&\& \!\($bn\) \&\& $c \&\& $d\) \;\n";
+
+	}
+}#sub nand_rtl
+
+sub flop_rtl {
+	my ($inst,$pins) = @_;
+	my $reset = 0;
+	my $preset =0;
+	my $scan = 0;
+	my $enable = 0;
+	my $cellref =  $CADB{$inst}->dbCadbGetCellref;
+	$d = $COMP_ALREADY{$inst}{D};
+	$d =~ s/^.*\///g; 
+	$ck = $COMP_ALREADY{$inst}{CK};
+	$ck =~ s/^.*\///g; 
+	$ckn = $COMP_ALREADY{$inst}{CKN};
+	$ckn = s/^.*\///g;
+	$q = $COMP_ALREADY{$inst}{Q};
+	$q =~ s/^.*\///g; 
+	$qn = $COMP_ALREADY{$inst}{QN};
+	$qn =~ s/^.*\///g; 
+	$si = $COMP_ALREADY{$inst}{SI};
+	$si =~ s/^.*\///g;
+	$se = $COMP_ALREADY{$inst}{SE};
+	$se =~ s/^.*\///g;
+	$e = $COMP_ALREADY{$inst}{E};
+	$e =~ s/^.*\///g;
+	$sn = $COMP_ALREADY{$inst}{SN};
+	$sn =~ s/^.*\///g;
+	$rn = $COMP_ALREADY{$inst}{RN};
+	$rn =~ s/^.*\///g;
+	if ($rn !="") {  $reset=1};
+	if ($sn !="") {  $preset=1};
+	if ($se !="") {  $scan =1;}
+	if ($e !="") {  $enable =1;}
+	if ($cellref =~/^DFFN/) {
+		if (($reset ==1)&&($preset ==1)) { 
+			print WRITE_RTL "\nalways \@\( negedge $ckn or $sn or $rn \) \n";
+			print WRITE_RTL "begin\n";
+			print WRITE_RTL "	if \($sn == 0)\n";
+			print WRITE_RTL "		$q \<\= 1 \;\n";
+			print WRITE_RTL " 	else if  \($rn == 0)\n";
+			print WRITE_RTL "		$q \<\= 0 \;\n";
+			print WRITE_RTL "	else $q \<\= $d \;\n";
+			print WRITE_RTL "end\n\n";
+		}
+		elsif (($reset ==1)&&($preset ==0)) { 
+			print WRITE_RTL "\nalways \@\( negedge $ckn or $rn \) \n";
+			print WRITE_RTL "begin\n";
+			print WRITE_RTL " 	if  \($rn == 0)\n";
+			print WRITE_RTL "		$q \<\= 0 \;\n";
+			print WRITE_RTL "	else $q \<\= $d \;\n";
+			print WRITE_RTL "end\n\n";
+		} 
+		elsif (($reset ==0)&&($preset ==1)) { 
+			print WRITE_RTL "\nalways \@\( negedge $ckn or $sn \) \n";
+			print WRITE_RTL "begin\n";
+			print WRITE_RTL " 	if  \($sn == 0)\n";
+			print WRITE_RTL "		$q \<\= 1 \;\n";
+			print WRITE_RTL "	else $q \<\= $d \;\n";
+			print WRITE_RTL "end\n\n";
+		}
+		else {
+			print WRITE_RTL "\nalways \@\( negedge $ckn \) \n";
+			print WRITE_RTL "begin\n";
+			print WRITE_RTL "	$q \<\= $d \;\n";
+			print WRITE_RTL "end\n\n";
+		}
+	}#end DFFN	
+	
+	elsif ($cellref =~/^DFF/) {
+		if (($reset ==1)&&($preset ==1)) { 
+			print WRITE_RTL "\nalways \@\( posedge $ck or $sn or $rn \) \n";
+			print WRITE_RTL "begin\n";
+			print WRITE_RTL "	if \($sn == 0)\n";
+			print WRITE_RTL "		$q \<\= 1 \;\n";
+			print WRITE_RTL " 	else if  \($rn == 0)\n";
+			print WRITE_RTL "		$q \<\= 0 \;\n";
+			print WRITE_RTL "	else $q \<\= $d \;\n";
+			print WRITE_RTL "end\n\n";
+		}
+		elsif (($reset ==1)&&($preset ==0)) { 
+			print WRITE_RTL "\nalways \@\( posedge $ck or $rn \) \n";
+			print WRITE_RTL "begin\n";
+			print WRITE_RTL " 	if  \($rn == 0)\n";
+			print WRITE_RTL "		$q \<\= 0 \;\n";
+			print WRITE_RTL "	else $q \<\= $d \;\n";
+			print WRITE_RTL "end\n\n";
+		} 
+		elsif (($reset ==0)&&($preset ==1)) { 
+			print WRITE_RTL "\nalways \@\( posedge $ck or $sn \) \n";
+			print WRITE_RTL "begin\n";
+			print WRITE_RTL " 	if  \($sn == 0)\n";
+			print WRITE_RTL "		$q \<\= 1 \;\n";
+			print WRITE_RTL "	else $q \<\= $d \;\n";
+			print WRITE_RTL "end\n\n";
+		}
+		else {
+			print WRITE_RTL "\nalways \@\( posedge $ck \) \n";
+			print WRITE_RTL "begin\n";
+			print WRITE_RTL "	$q \<\= $d \;\n";
+			print WRITE_RTL "end\n\n";
+		}
+	}#end DFF
+
+	if ($cellref =~/^SDFFN/) {
+		if (($reset ==1)&&($preset ==1)) { 
+			print WRITE_RTL "\nalways \@\( negedge $ckn or $sn or $rn \) \n";
+			print WRITE_RTL "begin\n";
+			print WRITE_RTL "	if \($sn == 0)\n";
+			print WRITE_RTL "		$q \<\= 1 \;\n";
+			print WRITE_RTL " 	else if  \($rn == 0)\n";
+			print WRITE_RTL "		$q \<\= 0 \;\n";
+			if ($scan ==0) { print WRITE_RTL "	else $q \<\= $d \;\n";}
+			else { print WRITE_RTL "	else $q \<\= $se \? $d : $si \;\n";}
+			print WRITE_RTL "end\n\n";
+		}
+		elsif (($reset ==1)&&($preset ==0)) { 
+			print WRITE_RTL "\nalways \@\( negedge $ckn or $rn \) \n";
+			print WRITE_RTL "begin\n";
+			print WRITE_RTL " 	if  \($rn == 0)\n";
+			print WRITE_RTL "		$q \<\= 0 \;\n";
+			if ($scan ==0) { print WRITE_RTL "	else $q \<\= $d \;\n";}
+			else { print WRITE_RTL "	else $q \<\= $se \? $d : $si \;\n";}
+			print WRITE_RTL "end\n\n";
+		} 
+		elsif (($reset ==0)&&($preset ==1)) { 
+			print WRITE_RTL "\nalways \@\( negedge $ckn or $sn \) \n";
+			print WRITE_RTL "begin\n";
+			print WRITE_RTL " 	if  \($sn == 0)\n";
+			print WRITE_RTL "		$q \<\= 1 \;\n";
+			if ($scan ==0) { print WRITE_RTL "	else $q \<\= $d \;\n";}
+			else { print WRITE_RTL "	else $q \<\= $se \? $d : $si \;\n";}
+			print WRITE_RTL "end\n\n";
+		}
+		else {
+			print WRITE_RTL "\nalways \@\( negedge $ckn \) \n";
+			print WRITE_RTL "begin\n";
+			if ($scan ==0) { print WRITE_RTL " 	$q \<\= $d \;\n";}
+			else { print WRITE_RTL "	$q \<\= $se \? $d : $si \;\n";}
+			print WRITE_RTL "end\n\n";
+		}
+	}#end SDFFN	
+	
+	elsif ($cellref =~/^SDFF/) {
+		if (($reset ==1)&&($preset ==1)) { 
+			print WRITE_RTL "\nalways \@\( posedge $ck or $sn or $rn \) \n";
+			print WRITE_RTL "begin\n";
+			print WRITE_RTL "	if \($sn == 0)\n";
+			print WRITE_RTL "		$q \<\= 1 \;\n";
+			print WRITE_RTL " 	else if  \($rn == 0)\n";
+			print WRITE_RTL "		$q \<\= 0 \;\n";
+			if ($scan ==0) { print WRITE_RTL "	else $q \<\= $d \;\n";}
+			else { print WRITE_RTL "	else $q \<\= $se \? $d : $si \;\n";}
+			print WRITE_RTL "end\n\n";
+		}
+		elsif (($reset ==1)&&($preset ==0)) { 
+			print WRITE_RTL "\nalways \@\( posedge $ck or $rn \) \n";
+			print WRITE_RTL "begin\n";
+			print WRITE_RTL " 	if  \($rn == 0)\n";
+			print WRITE_RTL "		$q \<\= 0 \;\n";
+			if ($scan ==0) { print WRITE_RTL "	else $q \<\= $d \;\n";}
+			else { print WRITE_RTL "	else $q \<\= $se \? $d : $si \;\n";}
+			print WRITE_RTL "end\n\n";
+		} 
+		elsif (($reset ==0)&&($preset ==1)) { 
+			print WRITE_RTL "\nalways \@\( posedge $ck or $sn \) \n";
+			print WRITE_RTL "begin\n";
+			print WRITE_RTL " 	if  \($sn == 0)\n";
+			print WRITE_RTL "		$q \<\= 1 \;\n";
+			if ($scan ==0) { print WRITE_RTL "	else $q \<\= $d \;\n";}
+			else { print WRITE_RTL "	else $q \<\= $se \? $d : $si \;\n";}
+			print WRITE_RTL "end\n\n";
+		}
+		else {
+			print WRITE_RTL "\nalways \@\( posedge $ck \) \n";
+			print WRITE_RTL "begin\n";
+			if ($scan ==0) { print WRITE_RTL "	$q \<\= $d \;\n";}
+			else { print WRITE_RTL "	$q \<\= $se \? $d : $si \;\n";}
+			print WRITE_RTL "end\n\n";
+		}
+	}#end SDFF
+
+		elsif ($cellref =~/^SEDFF/) {
+		if ($reset ==1) { 
+			print WRITE_RTL "\nalways \@\( posedge $ck or $rn \) \n";
+			print WRITE_RTL "begin\n";
+			print WRITE_RTL " 	if  \($rn == 0)\n";
+			print WRITE_RTL "		$q \<\= 0 \;\n";
+			if (($scan ==0)&&($enable==0)) { print WRITE_RTL "	else $q \<\= $d \;\n";}
+			elsif (($scan ==1)&&($enable==0)) { print WRITE_RTL "	else $q \<\= $se \? $d : $si \;\n";}
+			elsif (($scan ==0)&&($enable==1)) { print WRITE_RTL "	else if \($e == 1\)\n";
+							    print WRITE_RTL "		$q \<\= $d \;\n";}
+			else { print WRITE_RTL "	else if \($e == 1\)\n";
+				print WRITE_RTL "		$q \<\= $se \? $d : $si \;\n";}
+			print WRITE_RTL "end\n\n";
+		}
+		else {
+			print WRITE_RTL "\nalways \@\( posedge $ck \) \n";
+			print WRITE_RTL "begin\n";
+			if (($scan ==0)&&($enable==0)) { print WRITE_RTL "	$q \<\= $d \;\n";}
+			elsif (($scan ==1)&&($enable==0)) { print WRITE_RTL "	$q \<\= $se \? $d : $si \;\n";}
+			elsif (($scan ==0)&&($enable==1)) { print WRITE_RTL "	if \($e == 1\)\n";
+							    print WRITE_RTL "		$q \<\= $d \;\n";}
+			else { print WRITE_RTL "	if \($e == 1\)\n";
+				print WRITE_RTL "		$q \<\= $se \? $d : $si \;\n";}
+			print WRITE_RTL "end\n\n";
+		}
+	}#end SEDFF
+
+	
+}#sub flop_rtl
+
+1;
+

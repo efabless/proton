@@ -1,0 +1,66 @@
+sub elaborate 
+{
+  use Benchmark;
+  my $t0 = new Benchmark;
+  
+  if ( exists $MODULE_ALREADY{$TOP_MODULE} ) {
+    my @conns = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetConn;
+    foreach $connLine ( @conns ) {
+      $connLine =~ s/\(/\)\,/;
+      $connLine =~ s/\)\s*\;//;
+      my ($cell,$inst) = ( split(/\s+/, $connLine ))[0,1];
+      if ( $MODULE_ALREADY{$TOP_MODULE}->dbVNOMHasHierInst($inst) ) {
+        @TEMP_PATH = ();
+        push(@TEMP_PATH,$inst);
+        my $class = $MODULE_ALREADY{$cell}->dbVNOMGetClass;
+        if ( $class == 11 ) { 
+          $instName = $hierPath."/".$inst;
+          print "X $cell $instName \n";
+        }else {
+          &dbgElaborateHierInsts($inst,$cell);
+          pop(@TEMP_PATH);
+        }
+      }elsif ( $MODULE_ALREADY{$TOP_MODULE}->dbVNOMHasLeafInst($inst) ) {
+          $instName = $hierPath."/".$inst;
+          print "X $cell $instName \n";
+      }
+    }
+  }
+}
+
+sub dbgElaborateHierInsts 
+{
+  local $hierInstName = $_[0];
+  local $cellName = $_[1];
+  local $hierPath = "";
+  my $len = @TEMP_PATH;
+  $hierPath = join( "/", @TEMP_PATH);
+  print "X $cellName $hierPath \n";
+  if ( exists $MODULE_ALREADY{$cellName} ) {
+    local @conns = $MODULE_ALREADY{$cellName}->dbVNOMGetConn;
+    foreach $connLine ( @conns ) {
+      $connLine =~ s/\(/\)\,/;
+      $connLine =~ s/\)\s*\;//;
+      my ($cell,$inst) = ( split(/\s+/, $connLine ))[0,1];
+      my $inst_hash_key = $inst."_".$len ;
+      my $len_one_less = $len - 1 ;
+      if ( $MODULE_ALREADY{$cellName}->dbVNOMHasHierInst($inst) ) {
+        my $class = $MODULE_ALREADY{$cell}->dbVNOMGetClass;
+        push(@TEMP_PATH,$inst)if($class != 11);
+        my $class = $MODULE_ALREADY{$cell}->dbVNOMGetClass;
+        print "DBG-PAR-ELA : 036 : checking if $cell is a blackbox hierarchical instance, it is class : $class\n" if ( $DEBUG == 300 );
+        if ( $class == 11 ) { 
+          $instName = $hierPath."/".$inst;
+          print "X $cell $instName \n";
+        } else {
+          &dbgElaborateHierInsts($inst,$cell);
+          delete $TEMP_HIER_PORT_NET_MAP{$inst_hash_key} ;
+          pop(@TEMP_PATH);
+        }
+      } elsif ( $MODULE_ALREADY{$cellName}->dbVNOMHasLeafInst($inst) ) {
+          $instName = $hierPath."/".$inst;
+          print "X $cell $instName \n";
+      }
+      }
+  }
+}#sub dbgElaborateHierInsts

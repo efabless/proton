@@ -1,0 +1,90 @@
+	
+sub place_design {
+use Benchmark;
+my $t0 = new Benchmark;
+
+my $noOfArguments = @_;
+
+if( $_[0] eq '-h') { print "Usage : place_design \n";
+                           print "        --global \n";
+                           print "        --detail \n";
+                           print "        note : by defaul all sections are written out\n";
+                         }
+else { # if correct no. of inputs
+my $DEFAULT = 1;
+my $GLOBAL = 0;
+my $DETAIL = 0;
+my $REFINE = 0;
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "--global"){$GLOBAL = 1; $DEFAULT = 0;}
+if($_[$i] eq "--detail"){$DETAIL = 1; $DEFAULT = 0;}
+if($_[$i] eq "--refine"){$REFINE = 1; $DEFAULT = 0;}
+                                         } # for
+
+#-------------------------------------------------------------------------------------#
+# if user chooses to run only global or final placer                                  #
+if ( $GLOBAL == 1 && $DETAIL == 0 && $REFINE == 0 ) {
+     &place_graph;
+                                    }
+elsif ( $DETAIL ==  1 && $GLOBAL == 1 && $REFINE == 0 ) {
+&set_no_delete_tmp_placer_files ;
+&write_controlFile("-basic_mode", "1");
+&place_graph;
+&write_graph_modified ("--pinOffset");
+&write_xy_out ("-output", "xy.out", "--overwrite");
+&run_plan_6();
+&read_graph_detail;
+                                        }
+
+if ( $REFINE == 1 && $DETAIL ==  1 && $GLOBAL == 1) {
+&set_no_delete_tmp_placer_files ;
+&write_controlFile("-basic_mode", "1");
+&place_graph;
+&write_graph_modified ("--pinOffset");
+&write_xy_out ("-output", "xy.out", "--overwrite");
+&run_plan_6();
+&read_graph_detail;
+&prePlaceData("--noTrace");
+&snapPlace;
+&syncPlace;
+&remove_overlap;
+                                                    }
+     }# if correct no. of inputs
+
+$t1 = new Benchmark;
+my $td = timediff($t1,$t0);
+print "command place_design took:",timestr($td),"\n";
+}#sub place_design
+
+sub run_place_design {
+use Benchmark;
+my $t0 = new Benchmark;
+
+my $noOfArguments = @_;
+
+if( $_[0] eq '-h') { print "Usage : run_place_design \n";
+                           print "        --global \n";
+                           print "        --detail \n";
+                           print "        --refine \n";
+                           print "        note : by defaul all sections are written out\n";
+                         }
+else { # if correct no. of inputs
+my $DEFAULT = 1;
+my $GLOBAL = 0;
+my $DETAIL = 0;
+my $REFINE = 0;
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "--global"){$GLOBAL = 1; $DEFAULT = 0;}
+if($_[$i] eq "--detail"){$DETAIL = 1; $DEFAULT = 0; $GLOBAL = 1;}
+if($_[$i] eq "--refine"){$REFINE = 1; $DEFAULT = 0;}
+                                         } # for
+
+  if ( $DEFAULT == 1 ) { &place_graph_detail; }
+  elsif ( $DETAIL == 1 ) { &place_graph_detail; }
+  elsif ( $GLOBAL == 1 ) { &place_graph; }
+  &prePlaceData("--noTrace");
+  &snapPlace("--iosOnly"); 
+}
+}#sub run_place_design
+1
+

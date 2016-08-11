@@ -1,0 +1,158 @@
+## implement placement using simulated annealing functions in this file
+
+## TBD:
+## Capture restart points
+
+###### very high level psedu-code
+###### each iteration works through N flops (N TBD) 
+###### until it can find a lower cost solution
+###### each flop movement in an iteration is calls a move
+##sub placeSA {
+##  while ((solnCost > MIN_COST) && iterCount < MAX_ITER_COUNT)) {
+##    currTempt = calcTempt(iterCount,MAX_ITER_COUNT,initTempt);    
+##    while (moveCount < MAX_FLOP_MVMT_PER_ITERATION) {
+##      currSolnCost = calcSolnCost();
+##      mFlop = findFlopToMove();
+##      mLoc = calcFlopOptLoc(mFlop);
+##      if (mLoc != empty) {
+##        findNearestEmptyLoc(lowerCostFlop);
+##      }
+##      costDelta = calcSolnCostDelta();
+##      if boolAcceptNewSoln(costDelta,currSolnCost,currTempt) { 
+##        acceptSoln();
+##      }
+##      moveCount++;
+##    }
+##    iterCount++;
+##  }
+##}
+
+sub placeSA() {
+    my ($MIN_COST, $MAX_ITER_COUNT, $MAX_FLOP_MVMT_PER_ITER) = (0,1,1);
+    my ($solnCost, $iterCount, $currTempt) = (0,0,0);
+    my ($moveCount, $currSolnCost);
+
+
+    #initialize
+    placeSA_seedPlace();
+    $solnCost = placeSA_calcSolnCost();
+    
+
+
+##  while ((solnCost > MIN_COST) && iterCount < MAX_ITER_COUNT)) {
+##    currTempt = calcTempt(iterCount,MAX_ITER_COUNT,initTempt);    
+##    while (moveCount < MAX_FLOP_MVMT_PER_ITERATION) {
+##      currSolnCost = calcSolnCost();
+##      mFlop = findFlopToMove();
+##      mLoc = calcFlopOptLoc(mFlop);
+##      if (mLoc != empty) {
+##        findNearestEmptyLoc(lowerCostFlop);
+##      }
+##      costDelta = calcSolnCostDelta();
+##      if boolAcceptNewSoln(costDelta,currSolnCost,currTempt) { 
+##        acceptSoln();
+##      }
+##      moveCount++;
+##    }
+##    iterCount++;
+##  }
+
+}
+
+
+##### support functions
+## calcTempt(iterCount,MAX_ITER_COUNT,initTempt)
+## calcSolnCost()
+## findFlopToMove()
+## calcFlopOptLoc(flop)
+## findFlopCost(flop)
+## findNearestEmptyLoc(flop)
+## calcSolnCostDelta
+## boolAcceptNewSoln(costDelta,currSolnCost,currTempt)
+## acceptSoln
+## calcPathWeight($startPoint,$endPoint)
+
+sub placeSA_calcSolnCost() {
+  ## solnCost = foreach (flop) {
+  ## foreach (connectedFlop) {
+  ##   solnCost += weight * abs(actLen - optLen(flop) - optLen(cFlop))
+  ## }
+
+my @flopList = ();
+my @connFlopList = ();
+
+my $flop = "";
+my $connFlop = "";
+  my ($weight, $optLen, $actLen) = (0,0,0);
+  my ($x0, $y0, $x1, $y1) = (0,0,0,0);
+  
+  @flopList = $PLACE{$TOP_MODULE}->dbPlaceGetFlopList;
+  foreach $flop (@flopList) {
+    ($x0, $y0) = $PLACE{$TOP_MODULE}->dbPlaceGetFlopLoc($flop);
+    @connFlopList = ($PLACE{$TOP_MODULE}->dbPlaceGetFanInFlops($PLACE{$TOP_MODULE}->dbPlaceGetNumberByName($flop)),
+                     $PLACE{$TOP_MODULE}->dbPlaceGetFanOutFlops($PLACE{$TOP_MODULE}->dbPlaceGetNumberByName($flop)));
+    print"INFO-ALGO_PL-PLSA_CALC_SOLNCOST : 001 : $flop :: \n";
+    foreach $connFlop (@connFlopList) {
+      $connFlop = $PLACE{$TOP_MODULE}->dbPlaceGetNameByNumber($connFlop);
+      $weight = placeSA_calcPathWeight($flop,$connFlop);
+##      $optLen = $PLACE{$TOP_MODULE}->dbPlaceGetOptLen($flop) +
+##                $PLACE{$TOP_MODULE}->dbPlaceGetOptLen($connFlop);
+      $optLen = 1;
+      ($x1, $y1) = $PLACE{$TOP_MODULE}->dbPlaceGetFlopLoc($connFlop);
+      $actLen = abs($x0 - $x1) + abs($y0 - $y1);
+      $addCost = $weight * abs($actLen - $optLen);
+      print"\tINFO-ALGO_PL-PLSA_CALC_SOLNCOST : 002 : $connFlop: $actLen $optLen $addCost\n";
+    }#$connFlop
+    print"\n";
+  }#flop
+}#sub
+
+sub placeSA_calcPathWeight {
+  return (1) ;
+}
+
+sub placeSA_seedPlace() {
+my @size = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetSize;
+$FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbgFlplanGetSize;
+my $llx = $size[0];
+my $lly = $size[1];
+my $urx = $size[2];
+my $ury = $size[3];
+
+#print "placeSA_seedPlace: $llx, $lly,  : $urx, $ury\n";
+print "INFO-ALGO_PL : 001 : placeSA_seedPlace: $llx, $lly,  : $urx, $ury\n";
+
+my @Flops = $PLACE{$TOP_MODULE}->dbPlaceGetFlopList;
+foreach my $flopName (@Flops) {
+     my $x = int(rand($urx));
+     my $y = int(rand($ury));
+     #print "placeSA_seedPlace: allocation location ($x,$y)to Flop:$flopName\n";
+     print "INFO-ALGO_PL : 002 : allocation location ($x,$y)to Flop:$flopName\n";
+     $PLACE{$TOP_MODULE}->dbPlaceSetFlopLoc($flopName,$x,$y);
+   }# for all flops
+
+
+my @InPorts = $PLACE{$TOP_MODULE}->dbPlaceGetInPortList;
+foreach my $portName (@InPorts ) {
+     my $x = int(rand($urx));
+     my $y = int(rand($ury));
+     #print "placeSA_seedPlace: allocation location ($x,$y)to Port:$portName\n";
+     print "INFO-ALGO_PL : 003 : allocation location ($x,$y)to Port:$portName\n";
+     $PLACE{$TOP_MODULE}->dbPlaceSetPortLoc($portName,$x,$y);
+   }# for all inputs
+
+my @OutPorts = $PLACE{$TOP_MODULE}->dbPlaceGetOutPortList;
+foreach my $portName (@OutPorts ) {
+     my $x = int(rand($urx));
+     my $y = int(rand($ury));
+     #print "placeSA_seedPlace: allocation location ($x,$y)to Port:$portName\n";
+     print "INFO-ALGO_PL : 004 : allocation location ($x,$y)to Port:$portName\n";
+     $PLACE{$TOP_MODULE}->dbPlaceSetPortLoc($portName,$x,$y);
+   }# for all inputs
+
+
+
+}# sub placeSA_seedPlace
+
+
+1

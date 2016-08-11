@@ -1,0 +1,115 @@
+
+sub read_cdump {
+
+
+my $noOfArguments = @_;
+
+if( $noOfArguments < 2 || $_[0] eq '-h') { print "Usage : read_cdump -cdump <input_cdump> \n";
+                         }
+
+else { # if correct no of inputs 
+
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-cdump"){$INPUT_CDUMP = $_[$i+1];}
+                                         }#for
+open ( READ_CDUMP, "$INPUT_CDUMP");
+print "INFO-PAR-CDUMP : 001 : Begin reading the cdump file $INPUT_CDUMP\n";
+
+###########################################################################
+## setting some initial variables                                        ##
+###########################################################################
+$macroName = "";
+$pinName = "";
+
+while(<READ_CDUMP>) {
+
+chomp();
+
+if($_ =~ /MicronsPerUserUnit\b/){ ($SCALING_FACTOR)=(split(/\s+/, $_))[1];
+                                print "INFO-PAR-CDUMP : 002 : convertion factor is $SCALING_FACTOR\n";
+                                }
+
+###### if the line contains the CELL cefinition #####
+if($_ =~ /^CELL/) { ($macroName, $origin_x, $origin_y, $size_x, $size_y) = (split(/\s+/, $_))[1,2,3,4,5];
+                    if ( exists $MACROS_ALREADY{$macroName} ) { 
+                                                              }
+                    else { 
+                    $MACROS_ALREADY{$macroName} = \%{$macroName};
+                     $MACROS_PROP_ALREADY{$macroName} = \@{$macroName};
+                         }
+                  }# Line starts teh cell definition in cdump
+
+################################################
+if( $_ =~ /^\s*FOREIGN\b/){ push(@{$macroName},$_);}
+if( $_ =~ /^\s*CLASS\b/){ push(@{$macroName},$_);}
+if( $_ =~ /^\s*SYMMETRY\b/){ push(@{$macroName},$_);}
+if( $_ =~ /^\s*SITE\b/){ push(@{$macroName},$_); 
+                                                 #$size_x = $size_x*$SCALING_FACTOR;
+                                                 #$size_y = $size_y*$SCALING_FACTOR;
+                                                 #$origin_y = $origin_y*$SCALING_FACTOR;
+                                                 #$origin_x = $origin_x*$SCALING_FACTOR;
+
+                                                 my $size = "  SIZE $size_x BY $size_y" ; 
+                                                 my $origin = "  ORIGIN $origin_x $origin_y";
+                                               push(@{$macroName}, $origin);
+                                               push(@{$macroName}, $size);
+                                               }
+#### if it is obstruction inside the cell ####
+if( $_ =~ /^\s+OBS\b/){ ($obs_layer)=(split(/\s+/, $_))[2];
+                      #print "$macroName $obs_layer\n";
+                      push(@{$macroName},$_);  
+                      }
+
+
+
+
+
+################################################
+
+###### if it cintains the PIN definition #######
+if ( $_ =~ /\s+PIN\b/) {
+
+                       ($pinName,$pinLayer)=(split(/\s+/, $_))[2,4];
+  if ( exists $MACROS_ALREADY{$macroName}{$pinName} ) { } else { # new pin entry
+                       $pindata = $pinName.$macroName;
+                       ${$macroName}{$pinName} = \%{$pindata};
+                                                             }# new pin entry
+                       #${$pindata}{layer} = $pinLayer;
+                       $pinRectLayer = "rect".$pinLayer._.$pindata;
+                       ${$pindata}{$pinRectLayer} = \@{$pinRectLayer};
+                       }
+##### if data is DIRECTION #####
+if ( $_ =~ /\s+DIRECTION\b/){ ($direction)=(split(/\s+/, $_))[2];
+                              ${$pindata}{direction} = $direction;
+                            }# if contains DIRECTION
+##### if data is TYPE #####
+if ( $_ =~ /\s+TYPE\b/){
+                       ( $type )=(split(/\s+/, $_))[2];
+                       ${$pindata}{type} = $type;
+                       }#if data is TYPE
+
+
+##### if data is SHAPE #####
+if ( $_ =~ /\s+SHAPE\b/) {
+                        ( $shape )=(split(/\s+/, $_))[2];
+                        ${$pindata}{shape} = $shape;
+                         }
+##### if it is a RECT associcated with a pin Name #####
+if ( $_ =~ /\s+RECT/ ){ push( @{$pinRectLayer}, $_ ); }# if rect is associated with the pin
+
+
+
+
+
+
+
+                    }#while
+
+print "INFO-PAR-CDUMP : 003 : End reading the cdump file\n"
+     }# if correct no of inputs
+
+} # sub read_cdump
+
+
+
+1;

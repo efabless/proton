@@ -1,0 +1,769 @@
+#!/bin/perl -w
+sub write_matlab {
+$noOfArguments = @_;
+if($noOfArguments < 2 || $_[0] eq '-h') {
+print "usage : write_matlab \n";
+print "                  -type < r2r / i2r / r2o / i2o / all>\n";
+                       } else {
+######## defaults #####################
+my $TYPE = "all";
+
+for(my $i = 0 ; $i < $noOfArguments ;  $i++){
+if($_[$i] eq "-type"){  $TYPE = $_[$i+1];}
+                                            }
+if ( $TYPE eq "r2r") { 
+                       $max_row = $PLACE{$TOP_MODULE}->dbPlaceGetFlopCount;
+                       $max_col = $PLACE{$TOP_MODULE}->dbPlaceGetFlopCount;
+                     }
+elsif ( $TYPE eq "r2o") {
+                     }
+elsif ( $TYPE eq "i2r") {
+                     }
+elsif ( $TYPE eq "i2o") {
+                     }
+elsif ( $TYPE eq "all") {
+                     $max_row = $PLACE{$TOP_MODULE}->dbPlaceGetMaxRow;
+                     $max_col = $PLACE{$TOP_MODULE}->dbPlaceGetMaxCol;
+                     }
+
+open(WRITE, ">matlab.txt");
+print WRITE "#MATLAB FILE written from proton verion-$TOOL_VERSION\n";
+&dbPlaceWriteMatlabDatFile($max_row,$max_col);
+close(WRITE);
+open(WRITE, ">Sgraph.txt");
+&dbPlaceWriteSgraph($max_row,$max_col);
+close(WRITE);
+                            }# if correct arguments
+}#sub write_matlab
+
+sub dbPlaceWriteSgraph {
+my $max_row = $_[0];
+my $max_col = $_[1];
+print "INFO-ALGO_PREPL : 001 : $max_row $max_col\n";
+
+# print " $max_row $max_col\n";
+for (my $yy = 1; $yy <= $max_row; $yy++ ) { # row
+    for ( my $xx = 1; $xx <= $max_col; $xx++ ) { #col
+          my $val = 0;
+          if ( $xx == $yy ) {
+               $val = $PLACE{$TOP_MODULE}->dbPlaceGetTpathVal($yy,$xx);
+                            }
+          else {
+               $val = $PLACE{$TOP_MODULE}->dbPlaceGetTpathVal($yy,$xx);
+               }
+          #print "$yy $xx $val\n";
+          if ($val == 0 ) { }
+          else {
+               print WRITE "$yy $xx $val\n"; 
+               }
+                                              }# col loop
+                                           }# row loop
+}# sub dbPlaceWriteSgraph
+
+sub dbPlaceWriteMatlabDatFile {
+my $max_row = $_[0];
+my $max_col = $_[1];
+open (cellFile,  ">_tmp_apna_tool_x_y_cell_file") ;
+open (eDistFile, ">_tmp_apna_tool_x_y_eDist_file");
+open (mDistFile, ">_tmp_apna_tool_x_y_mDist_file");
+open (slackFile, ">_tmp_apna_tool_x_y_slack_file");
+
+
+               print WRITE "y-axis \t x-axis  \tcells  \teDist  \tmDist  \tslack\n"; 
+# print " $max_row $max_col\n";
+for (my $xx = 1; $xx <= $max_row; $xx++ ) { # row
+    for ( my $yy = 1; $yy <= $max_col; $yy++ ) { #col
+          my $val = 0;
+          if ( $xx == $yy ) { 
+                            # $val = 1;
+               $val = $PLACE{$TOP_MODULE}->dbPlaceGetTpathVal($xx,$yy);
+                            }
+          else { 
+               $val = $PLACE{$TOP_MODULE}->dbPlaceGetTpathVal($xx,$yy);
+               }
+          if ($val == 0 ) { }
+          else { 
+               my $xName = $PLACE{$TOP_MODULE}->dbPlaceGetNameByNumber($xx);
+               my $yName = $PLACE{$TOP_MODULE}->dbPlaceGetNameByNumber($yy);
+               my @loc1 = $PLACE{$TOP_MODULE}->dbPlaceGetFlopLoc($xName);
+               my @loc2 = $PLACE{$TOP_MODULE}->dbPlaceGetFlopLoc($yName);
+               my $xdist =  ($loc1[0]/2000 - $loc2[0]/2000);
+               my $xdistSq =  $xdist*$xdist;
+               my $ydist =  ($loc1[1]/2000 - $loc2[1]/2000);
+               my $ydistSq =  $ydist*$ydist;
+### eucledian distance
+               my $eDist = sprintf("%.2f",sqrt($xdistSq + $ydistSq));
+### manhattan distance
+               my $mDist = abs($xdist) + abs($ydist);
+### slack
+               my $slack = $PLACE{$TOP_MODULE}->dbPlaceGetSlackVal($xx,$yy);
+#               print WRITE "$yName \t $xName  \t$val  \t$eDist  \t$mDist  \t$slack\n"; 
+               print WRITE "$yy \t $xx  \t$val  \t$eDist  \t$mDist  \t$slack\n"; 
+               print cellFile  "$xx \t $yy  \t$val\n"; 
+               print eDistFile "$xx \t $yy  \t$eDist\n"; 
+               print mDistFile "$xx \t $yy  \t$mDist\n"; 
+               print slackFile "$xx \t $yy  \t$slack\n"; 
+               }
+                                               }
+                                           }
+
+}#sub dbPlaceWriteMatlabDatFile
+
+
+###################################  hMetis #####################
+
+sub write_metis {
+open(WRITE, ">metis.txt");
+print WRITE "#MATIS FILE written from proton verion-$TOOL_VERSION\n";
+&dbPlaceWriteMetisDatFile;
+close(WRITE);
+}#sub write_metis
+
+sub dbPlaceWriteMetisDatFile {
+
+my $max_row = $PLACE{$TOP_MODULE}->dbPlaceGetFlopCount;
+my $max_col = $PLACE{$TOP_MODULE}->dbPlaceGetFlopCount;
+
+print WRITE "$max_row $max_col\n";
+for (my $xx = 1; $xx <= $max_row; $xx++ ) { # row
+          print WRITE "$xx ";
+    for ( my $yy = 1; $yy <= $max_col; $yy++ ) { #col
+          my $val = 0;
+          if ( $xx == $yy ) {
+                            #$val = 1;
+               $val = $PLACE{$TOP_MODULE}->dbPlaceGetTpathVal($xx,$yy);
+                            }
+          else {
+               $val = $PLACE{$TOP_MODULE}->dbPlaceGetTpathVal($xx,$yy);
+               }
+          if ($val == 0 ) { }
+          else { print WRITE "$yy "; }
+                                               }
+          print WRITE "\n";
+                                           }
+}#sub dbPlaceWriteMetisDatFile
+
+sub report_place {
+
+use Benchmark;
+my $t0 = new Benchmark;
+
+$noOfArguments = @_;
+if($noOfArguments < 2 || $_[0] eq '-h') {
+print "usage : report_place -inst < instanceName > \n";
+print "                  -fanIn \n";
+print "                  -fanOut \n";
+print "                  -type < r2r / i2r / r2o / i2o / all>\n";
+                       } else {
+######## defaults #####################
+my $TYPE = "r2r";
+my $FANIN =  0;
+my $FANOUT =  0;
+
+for(my $i = 0 ; $i < $noOfArguments ;  $i++){
+if($_[$i] eq "-inst"){  $INSTANCE = $_[$i+1];}
+if($_[$i] eq "-fanIn"){  $FANIN = 1; }
+if($_[$i] eq "-fanOut"){  $FANOUT = 1;}
+if($_[$i] eq "-type"){  $TYPE = $_[$i+1];}
+                                            }
+
+if ( exists $COMP_ALREADY{$INSTANCE} ) {
+     my $InstAddr = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByName($INSTANCE);
+if ( $TYPE eq "r2r" ) {
+     if ( $FANIN == 1 ){ #$PLACE{$TOP_MODULE}->dbgPlaceGetFanInFlops($InstAddr);
+                       my @temp = $PLACE{$TOP_MODULE}->dbPlaceGetFanInFlops($InstAddr); 
+                       foreach $num ( @temp ) {
+                           $name = $PLACE{$TOP_MODULE}->dbPlaceGetNameByNumber($num);
+                           print "INFO-ALGO_PREPL-RPT_PL : 001 : $name "
+                                              }
+                           print "\n";
+                       }
+     if ( $FANOUT == 1 ){ #$PLACE{$TOP_MODULE}->dbgPlaceGetFanOutFlops($InstAddr); 
+                       my @temp = $PLACE{$TOP_MODULE}->dbPlaceGetFanOutFlops($InstAddr);
+                       foreach $num ( @temp ) {
+                           $name = $PLACE{$TOP_MODULE}->dbPlaceGetNameByNumber($num);
+                           print "INFO-ALGO_PREPL-RPT_PL : 002 : $name "
+                                              }
+                           print "\n";
+                        }
+                     } # if type is r2r
+elsif ( $TYPE eq "r2o" ) {
+     if ( $FANOUT == 1 ){ $PLACE{$TOP_MODULE}->dbgPlaceGetFanOutPorts($InstAddr); 
+                       my @temp = $PLACE{$TOP_MODULE}->dbPlaceGetFanOutPorts($InstAddr);
+                       foreach $num ( @temp ) {
+                           $name = $PLACE{$TOP_MODULE}->dbPlaceGetNameByNumber($num);
+                           print "INFO-ALGO_PREPL-RPT_PL : 003 : $name "
+                                              }
+                           print "\n";
+                        }
+      if ( $FANIN == 1 ) {
+                        print "WARN-ALGO_PREPL-RPT_PL : 004 : -fanIn cannot be used with r2o\n";
+                         }
+
+                         }# if type is r2o
+elsif ( $TYPE eq "i2r" ) {
+                         print "WARN-ALGO_PREPL-RPT_PL : 005 : $INSTANCE cannot be used with i2r because its a memory cell not a input port\n";
+                         }# if type is i2r
+elsif ( $TYPE eq "i2o" ) {
+                         print "WARN-ALGO_PREPL-RPT_PL : 006 : $INSTANCE cannot be used with i2o because its a memory cell not a input port\n";
+                         }# if type is i2o
+                                       }#if -inst is an inst
+elsif ( exists $PORTS_ALREADY{$TOP_MODULE}{$INSTANCE} ) {
+if ( $TYPE eq "i2r" ) {
+     my $InstAddr = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByName($INSTANCE);
+     if ( $FANIN == 1 ){
+                       my @temp = $PLACE{$TOP_MODULE}->dbPlaceGetFanOutFlops($InstAddr);
+                       foreach $num ( @temp ) {
+                           $name = $PLACE{$TOP_MODULE}->dbPlaceGetNameByNumber($num);
+                           print "INFO-ALGO_PREPL-RPT_PL : 007 : $name "
+                                              }
+                           print "\n";
+                       }
+     elsif( $FANIN == 1 ) {
+                          print "WARN-ALGO_PREPL-RPT_PL : 008 : -fanIn cannot be used with i2r\n";
+                          }# fanin
+                         }# if type is i2r
+                                                        }# if -inst is a port
+ else { print "WARN-ALGO_PREPL-RPT_PL : 009 : instance $INSTANCE does not exist in the design\n"; }
+
+                                }#if correct arguments
+
+
+
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "subroutine report_palce took:",timestr($td),"\n";
+}#sub report_palce
+
+
+sub syncPlace {
+
+use Benchmark;
+my $t0 = new Benchmark;
+
+print "INFO-ALGO_PREPL-SYNCPL : 001 : Begin updating main database with new placement db\n";
+my @Flops = $PLACE{$TOP_MODULE}->dbPlaceGetFlopList;
+foreach $instance (@Flops) {
+     my @loc = $PLACE{$TOP_MODULE}->dbPlaceGetFlopLoc($instance);
+#     print "$instance , $loc[0],$loc[1] \n";
+     $CADB{$instance}->dbCadbSetLoc($loc[0],$loc[1]);
+     $CADB{$instance}->dbCadbSetStatus(PLACED);
+     $CADB{$instance}->dbCadbSetOrient(N);
+                                               }# for all flops
+my @InputPorts = $PLACE{$TOP_MODULE}->dbPlaceGetInPortList;
+foreach $portName (@InputPorts) {
+     my @loc = $PLACE{$TOP_MODULE}->dbPlaceGetPortLoc($portName);
+     my $side = $PLACE{$TOP_MODULE}->dbPlaceGetInstOrient($portName);
+     print "INFO-ALGO_PREPL-SYNCPL : 002 : $portName , $loc[0],$loc[1] \n";
+     $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortSetLoc($loc[0],$loc[1]);
+     $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortSetSide($side);
+     $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortSetStatus(PLACED);
+                                               }# for all input ports
+
+my @OutputPorts = $PLACE{$TOP_MODULE}->dbPlaceGetOutPortList;
+foreach $portName (@OutputPorts) {
+     my @loc = $PLACE{$TOP_MODULE}->dbPlaceGetPortLoc($portName);
+     my $side = $PLACE{$TOP_MODULE}->dbPlaceGetInstOrient($portName);
+#     print "$portName , $loc[0],$loc[1] \n";
+     $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortSetLoc($loc[0],$loc[1]);
+     $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortSetSide($side);
+     $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortSetStatus(PLACED);
+                                               }# for all output ports
+print "INFO-ALGO_PREPL-SYNCPL : 003 : End updating main database with new placement db\n";
+&set_inst_box;
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "subroutine syncPlace took:",timestr($td),"\n";
+}# sub syncPlace
+
+
+sub dbPlaceGetP2PFlopDist2 {
+my ($start,$end) = @_;
+my $x = int(rand(5) + 1 );
+return($x);
+}#sub dbPlaceGetP2PFlopDist2
+
+sub dbPlaceBackTrace {
+
+$noOfArguments = @_;
+if($noOfArguments < 1 || $_[0] eq '-h') {
+print "usage : dbPlaceBackTrace -inst < instance> \n";
+                       } else {
+######## defaults #####################
+
+for(my $i = 0 ; $i < $noOfArguments ;  $i++){
+if($_[$i] eq "-inst"){  $instance = $_[$i+1];}
+                              }# for no of arguments
+
+if ( exists $COMP_ALREADY{$instance} ) {
+print "INFO-ALGO_PREPL-PLBAKTR : 001 : $instance\n";
+     my $cellref = $CADB{$instance}->dbCadbGetCellref;
+print "INFO-ALGO_PREPL-PLBAKTR : 002 : $cellref\n";
+if ( $PLDB{$cellref}->dbMdbGetFunction eq "flop" && $PLDB{$cellref}->dbMdbGetType == 1 ) { # concerned only about flops now
+     my @pins = $PLDB{$cellref}->dbMdbGetPins;
+        foreach $pinName ( @pins ) {
+                $pinType = $PLDB{$cellref}->dbMdbGetPinType($pinName);
+                if ( $PLDB{$cellref}->dbMdbGetPinType($pinName) == 4 ) {
+                     my $driverInst = &dbPlaceTraceGetNetDriver($COMP_ALREADY{$instance}{$pinName});
+                     print "\tINFO-ALGO_PREPL-PLBAKTR : 003 : driver is $driverInst for $pinName\n";
+                     if ( exists $COMP_ALREADY{$driverInst} ) {
+                     my $driverCellref = $CADB{$driverInst}->dbCadbGetCellref;
+                     if ( $PLDB{$driverCellref}->dbMdbGetFunction eq "flop" &&  $PLDB{$driverCellref}->dbMdbGetType == 1 ) {
+#                    print "driver is a fanin cone flop $driverInst\n";
+#############################################################################################################
+my $row_num = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByNameRow($instance);
+my $col_num = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByNameCol($driverInst);
+my $val = 1;
+$PLACE{$TOP_MODULE}->dbPlaceSetTpathVal($row_num,$col_num,$val);
+#print WRITE "$row_num $col_num $val\n";
+#############################################################################################################
+
+                                                                             }# if the driver is a flop
+                     else {
+                          print "INFO-ALGO_PREPL-PLBAKTR : 004 : backward tracing\n";
+                           &dbPlaceReg2RegTraceTPaths($driverInst,1,$instance);
+                                print "INFO-ALGO_PREPL-PLBAKTR : 005 : Final comeback\n";
+                          }# if the drivel cell is not a flop
+                                                              }
+                                                                        }
+                                    }# for each pin
+                                                                                        } # if instance is a register
+                                    }#if instance exist in comp db
+else { print "ERR-ALGO_PREPL-PLBAKTR : 006 : the instance $inst does not exist\n"; }
+                                             }# if correct arguments
+
+}#sub dbPlaceBackTrace
+
+sub dbPlaceGenSlackRpt {
+print "Writing the report_timing tcl file to be sourced in FE\n";
+open (WRITE,">temp");
+my @Flops = $PLACE{$TOP_MODULE}->dbPlaceGetFlopList;
+foreach my $flopName ( @Flops ) {
+#print "$flopName\n";
+my $flopNum = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByName($flopName);
+#print "$flopNum\n";
+my @fanOut = $PLACE{$TOP_MODULE}->dbPlaceGetFanOutFlops($flopNum);
+   my $len =  @fanOut;
+#   print "$len\n";
+   foreach my $fanOutNum ( @fanOut ) {
+my $fanOutName = $PLACE{$TOP_MODULE}->dbPlaceGetNameByNumber($fanOutNum);
+   print WRITE "report_timing -from $flopName\/Q -to $fanOutName\/D\n";
+                                   }# foreach
+
+                                }# foreach
+close(WRITE);
+}#sub dbPlaceGenSlackRpt
+
+sub dbPlaceReadSlackRpt {
+
+open(READ,"raj");
+while(<READ>) {
+chomp();
+if( $_ =~ /Endpoint\:/ ) { ($eInst) = (split(/\s+/, $_))[1]; $eInst =~ s/\/D//;}
+if( $_ =~ /Beginpoint\:/ ) { ($bInst) = (split(/\s+/, $_))[1]; $bInst =~ s/\/Q//;}
+if( $_ =~ /Slack Time/ ) { ($slack) = (split(/\s+/, $_))[3];
+print "$bInst -> $eInst $slack\n";
+my $eInstNum = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByName($eInst);
+my $bInstNum = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByName($bInst);
+$PLACE{$TOP_MODULE}->dbPlaceSetSlackVal($eInstNum,$bInstNum,$slack);
+                                   }
+              }# while
+close(READ);
+
+
+
+}# sub dbPlaceReadSlackRpt
+
+sub refinePlace {
+print "INFO-ALGO_PREPL-REF_PL : 001 : Starting placement refine and overlap removal ...\n";
+&dbPlaceRemoveOverlap;
+print "INFO-ALGO_PREPL-REF_PL : 002 :Finish placement refine and overlap removal ...\n";
+}#sub refinePlace
+
+sub dbPlaceRemoveOverlap {
+&dbgPlaceCreateRowHash;
+%tempArrayOfHash = ();
+    foreach my $inst (keys %COMP_ALREADY) {
+            my @temp_array = $CADB{$inst}->dbCadbGetLoc;
+            my  ($X)  = $temp_array[0];
+            my  ($Y) = $temp_array[1];
+            if ( exists $tempRowHash{$Y} ) {
+                 my $rowName = $tempRowHash{$Y};
+                 if ( exists $tempArrayOfHash{$rowName} ) {
+                      push(@{$tempArrayOfHash{$rowName}},$inst);
+                                                          }# if row array already exist
+                 else {
+                      $tempArrayOfHash{$rowName} = [];
+                      }
+                                           }
+            else { print "DBG-ALGO_PREPL-REF_PL : 003 : instance $inst not snapped to row, wil not be refined ...\n" if($DEBUG > 3); }
+
+                                          }# foreach instance
+foreach $t ( keys %tempArrayOfHash ) { #print "$t\n"; 
+                                     my @temp = @{$tempArrayOfHash{$t}};
+                                     my $lenOfRow = dbPlaceGetRowLength($tag);  
+                                     my $sumTotalLength = dbPlaceGetSumLength(@temp);
+                                     my $util = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetUtilization;
+                                     my $effRowLen = $lenOfRow*$util/100;
+                                     #print "$sumTotalLength : $effRowLen\n";
+                                     foreach my $tag ( @temp ) {
+                                    
+                                                               }
+                                     }
+
+&dbgPlaceDelRowHash;
+}#sub dbPlaceRemoveOverlap
+
+sub dbPlaceGetSumLength {
+my @list = @_;
+my $len = 0;
+   foreach my $inst ( @list) {
+           my $cellref = $CADB{$inst}->dbCadbGetCellref;
+           my @size = $PLDB{$cellref}->dbMdbGetSize;
+           $len = $len + $size[0];
+                             }
+return($len);
+}#sub dbPlaceGetSumLength
+
+sub dbPlaceGetRowLength {
+my $rowName = $_[0];
+my @size = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetSize;
+my $len = $size[2] -$size[0];
+return($len);
+}#sub dbPlaceGetRowLength
+
+sub dbPlaceGetClosestRow {
+my $origY = $_[0];
+my $cellHeight = $GLOBAL->dbGlobalGetRowHeight; 
+$cellHeight = $cellHeight*$DEF_DATABASE_UNIT;
+my $num  = floor($origY/$cellHeight);
+my $newY = $num*$cellHeight;
+my $newYdn = ($num-1)*$cellHeight;
+my $newYup = ($num+1)*$cellHeight;
+   if ( exists $tempRowHash{$newY} ) {return($newY);}
+elsif ( exists $tempRowHash{$newYdn} ) {return($newYdn); }
+else { return($newYup);}
+}#sub dbPlaceGetClosestRow
+
+
+sub plot_analysis_graph {
+$noOfArguments = @_;
+if($noOfArguments < 2 || $_[0] eq '-h') {
+print "usage : plot_analysis_graph \n";
+print "                  -type < cell / eDist / mDist / slack / all> \n" ;
+                       } else {
+######## defaults #####################
+my $TYPE = "all";
+$is_cell = "no";
+$is_eDist = "no";
+$is_mDist = "no";
+$is_slack = "no";
+
+for(my $i = 0 ; $i < $noOfArguments ;  $i++){
+if($_[$i] eq "-type"){  $TYPE = $_[$i+1];}
+                                            }
+if ( $TYPE eq "cell") { 
+	$is_cell = "yes" ;
+                     }
+elsif ( $TYPE eq "eDist") {
+	$is_eDist = "yes" ;
+                     }
+elsif ( $TYPE eq "mDist") {
+	$is_mDist = "yes" ;
+                     }
+elsif ( $TYPE eq "slack") {
+	$is_slack = "yes" ;
+                     }
+elsif ( $TYPE eq "all") {
+	$is_cell = "yes" ;
+	$is_eDist = "yes" ;
+	$is_mDist = "yes" ;
+	$is_slack = "yes" ;
+                     }
+open (cellDoFile,  ">_tmp_apna_tool_x_y_cell_do_file");
+open (eDistDoFile, ">_tmp_apna_tool_x_y_eDist_do_file");
+open (mDistDoFile, ">_tmp_apna_tool_x_y_mDist_do_file");
+open (slackDoFile, ">_tmp_apna_tool_x_y_slack_do_file");
+
+print cellDoFile "set contour base \n";
+print cellDoFile "set title \"Apna Tool: Cell Value Analysis Graph\" \n";
+print cellDoFile "set pm3d scansbackward \n";
+print cellDoFile "set dgrid3d 10,10,3 \n";
+print cellDoFile "splot '_tmp_apna_tool_x_y_cell_file_sort' with pm3d \n";
+print cellDoFile "pause -1 \n";
+
+
+print eDistDoFile "set contour base \n";
+print eDistDoFile "set title \"Apna Tool: eDist  Value Analysis Graph\" \n";
+print eDistDoFile "set pm3d scansbackward \n";
+print eDistDoFile "set dgrid3d 10,10,3 \n";
+print eDistDoFile "splot '_tmp_apna_tool_x_y_eDist_file_sort' with pm3d \n";
+print eDistDoFile "pause -1 \n";
+
+print mDistDoFile "set contour base \n";
+print mDistDoFile "set title \"Apna Tool: mDist Value Analysis Graph\" \n";
+print mDistDoFile "set pm3d scansbackward \n";
+print mDistDoFile "set dgrid3d 10,10,3 \n";
+print mDistDoFile "splot '_tmp_apna_tool_x_y_mDist_file_sort' with pm3d \n";
+print mDistDoFile "pause -1 \n";
+
+print slackDoFile "set contour base \n";
+print slackDoFile "set title \"Apna Tool: Slack Value Analysis Graph\" \n";
+print slackDoFile "set pm3d scansbackward \n";
+print slackDoFile "set dgrid3d 10,10,3 \n";
+print slackDoFile "splot '_tmp_apna_tool_x_y_slack_file_sort' with pm3d \n";
+print slackDoFile "pause -1 \n";
+
+system "sort -g +0 -1 +1 -2 +2 -3  _tmp_apna_tool_x_y_cell_file  > _tmp_apna_tool_x_y_cell_file_sort ";
+system "sort -g +0 -1 +1 -2 +2 -3  _tmp_apna_tool_x_y_eDist_file > _tmp_apna_tool_x_y_eDist_file_sort ";
+system "sort -g +0 -1 +1 -2 +2 -3  _tmp_apna_tool_x_y_mDist_file > _tmp_apna_tool_x_y_mDist_file_sort ";
+system "sort -g +0 -1 +1 -2 +2 -3  _tmp_apna_tool_x_y_slack_file > _tmp_apna_tool_x_y_slack_file_sort ";
+
+if ( $is_cell eq "yes") { 
+system "gnuplot ./_tmp_apna_tool_x_y_cell_do_file";
+}
+if ( $is_eDist eq "yes") { 
+system "gnuplot ./_tmp_apna_tool_x_y_eDist_do_file";
+}
+if ( $is_mDist eq "yes") { 
+system "gnuplot ./_tmp_apna_tool_x_y_mDist_do_file";
+}
+if ( $is_slack eq "yes") { 
+system "gnuplot ./_tmp_apna_tool_x_y_slack_do_file";
+}
+                            }# if correct arguments
+}#sub plot_analysis_graph
+
+1;
+#****f* /delete_buffer_tree
+#  delete_buffer_tree
+# FUNCTION
+#
+#
+#
+#
+# SYNOPSIS
+#  delete_buffer_tree
+#
+#
+#
+#
+# INPUTS
+#
+#
+#
+#
+#	options :
+#
+#
+#
+#
+#	switches :
+#
+#
+#
+#
+# OUTPUTS
+#
+#
+#
+#
+#****
+sub delete_buffer_tree {
+$noOfArguments = @_;
+if($noOfArguments < 1 || $_[0] eq '-h') {
+print "usage : delete_buffer_tree \n";
+print "                 --bufs | --invPair | --allInv\n";
+                       } else {
+######## defaults #####################
+my $MODE = 0; # do not delete any inverters
+#  $MODE = 1; # delete only inverter pairs
+#  $MODE = 2;    # delete even single inverters
+
+for(my $i = 0 ; $i < $noOfArguments ;  $i++){
+if($_[$i] eq "--invPair"){  $MODE = 1;}
+if($_[$i] eq "--allInv"){  $MODE = 2;}
+if($_[$i] eq "--bufs"){  $MODE = 0;}
+                                            }
+
+print "INFO-ALGO_PREPL-DEL_BUFR_TREE : 001 : preparing to delete buffer and inverter-pair trees from the design ...\n";
+my @bufList = ();
+my @invList = ();
+foreach $inst ( keys %{COMP_ALREADY} ) {
+        my $cellref = $CADB{$inst}->dbCadbGetCellref;
+        my $func = $PLDB{$cellref}->dbMdbGetFunction;
+        if ($func eq "buf" ) {
+                push(@bufList,$inst);
+                             }# if cell is a buffer        
+        elsif ($func eq "inv" ) {
+                push(@invList,$inst);
+                             }# if cell is a inverter        
+                                       }# foreach inst
+#---------------------------------------------------------------------------------------#
+my $bufs = @bufList;
+my $invs = @invList;
+print "INFO-ALGO_PREPL-DEL_BUFR_TREE : 002 : identified $bufs buffers and $invs inverters to possibly remove ...\n";
+my $delInvCnt = 0;
+my $delBufCnt = 0;
+
+if ($MODE == 0 ) {
+foreach my $inst ( keys %{COMP_ALREADY}) {
+                  if (exists $CADB{$inst} ) {
+                  my $cellref = $CADB{$inst}->dbCadbGetCellref;
+                  my $func = $PLDB{$cellref}->dbMdbGetFunction;
+                  if ($func eq "buf" ) {
+                  my @pins = $PLDB{$cellref}->dbMdbGetPins;
+                  foreach my $pin ( @pins ) {
+                  my $dir = $PLDB{$cellref}->dbMdbGetPinDir($pin);
+                     if ( $dir == 0 ) {
+                          $Innet = $COMP_ALREADY{$inst}{$pin} ;
+                  print "\tDBG-ALGO_PREPL-DEL_BUFR_TREE : 004 : $pin : $dir : $Innet\n" if ($DEBUG > 21 ) ;
+                          delete $NETS_ALREADY{$Innet}{$inst} ;
+                                      }#if pin direction is input
+                     if ( $dir == 1 ) {
+                          $Outnet = $COMP_ALREADY{$inst}{$pin} ;
+                  print "\tDBG-ALGO_PREPL-DEL_BUFR_TREE : 005 : $pin : $dir : $Outnet\n" if ($DEBUG > 21 ) ;
+                          delete $NETS_ALREADY{$Outnet}{$inst} ;
+                                      }#if pin direction is output
+               
+                                            }#foreach pin of macro
+                  print "DBG-ALGO_PREPL-DEL_BUFR_TREE : 006 : $inst : $Innet : $Outnet\n" if ($DEBUG > 21 ) ;
+#------------------------------------------------------------------------------------------------------------#
+#                      step 1 : delete the 1 buffer instance from component section
+                  print "DBG-ALGO_PREPL-DEL_BUFR_TREE : 009 : delete the " if ($DEBUG > 21);
+                       delete $COMP_ALREADY{$inst};
+                       $delBufCnt = $delBufCnt + 1;
+#------------------------------------------------------------------------------------------------------------#
+#                      step 3 : merge Innet with Outnet
+                           foreach my $sink ( keys %{$NETS_ALREADY{$Outnet} } ) {
+                              # add them to the sink list of Innet
+                              $NETS_ALREADY{$Innet}{$sink} = $NETS_ALREADY{$Outnet}{$sink};
+#------------------------------------------------------------------------------------------------------------#
+#                      step 4 :  delete instance and net from verilog view also
+                       if ( $inst =~ /\//) {
+                       my $hierInstName = dirname($inst);
+                       my $hInst = basename($hierInstName);
+                       my $leafInstName = basename($inst);
+                       print "$hierInstName :: $inst\n";
+  my $parent_module = &get_parent_module($hierInstName);
+  my $cellref = $MODULE_ALREADY{$parent_module}->dbVNOMGetHierInstCell($hInst);
+                       print "$hierInstName :: $parent_module :: $inst :: $cellref\n";
+                       print "goint to delete $leafInstName from module $cellref\n";
+                       $MODULE_ALREADY{$cellref}->dbVNOMWipeLeafInst($leafInstName);
+                              @conns = $MODULE_ALREADY{$cellref}->dbVNOMGetConn;
+                              foreach my $l ( @conns ) {
+                                      if ( $l =~ /$leafInstName /) { print "edit line :: $l\n"; }
+                                   
+                                                       }
+                                           }
+
+                                   
+                                                                                 }# foreach sink of the outnet which now should be driven from the driver of deleted buffer
+                       
+
+                                }#if components is a buffer
+                                           }# if the instance CADB is there
+                                       }# foreach component in the design
+print "INFO-ALGO_PREPL-DEL_BUFR_TREE : 018 : $delBufCnt buffers deleted\n";
+              }# if MODE is 0
+if ($MODE == 1 ) {
+foreach my $net ( keys %{NETS_ALREADY}) {
+           my $connCnt = keys %{$NETS_ALREADY{$net}};
+           if ( $connCnt == 2 ) {
+                       print "DBG-ALGO_PREPL-DEL_BUFR_TREE : 003 : evaluating net $net\n" if ($DEBUG > 21);
+                my @invPairList  = keys %{$NETS_ALREADY{$net}};
+                my $srcInst = $invPairList[0];
+                my $sinkInst = $invPairList[1];
+                my @netPairList = ("","","");
+                  $inst = $invPairList[0];
+                  if (exists $CADB{$inst} ) {
+                  my $cellref = $CADB{$inst}->dbCadbGetCellref;
+                  my $func = $PLDB{$cellref}->dbMdbGetFunction;
+                  if ($func eq "inv" ) {
+                  my @pins = $PLDB{$cellref}->dbMdbGetPins;
+                  foreach my $pin ( @pins ) {
+                  my $dir = $PLDB{$cellref}->dbMdbGetPinDir($pin);
+                     if ( $dir == 0 ) {
+                          $Innet = $COMP_ALREADY{$inst}{$pin} ;
+                  print "\tDBG-ALGO_PREPL-DEL_BUFR_TREE : 004 : $pin : $dir : $Innet\n" if ($DEBUG > 21 ) ;
+                                      }#if pin direction is input
+                     if ( $dir == 1 ) {
+                          $Outnet = $COMP_ALREADY{$inst}{$pin} ;
+                  print "\tDBG-ALGO_PREPL-DEL_BUFR_TREE : 005 : $pin : $dir : $Outnet\n" if ($DEBUG > 21 ) ;
+                                      }#if pin direction is input
+               
+                                            }#foreach pin of macro
+                  print "DBG-ALGO_PREPL-DEL_BUFR_TREE : 006 : $inst : $Innet : $Outnet\n" if ($DEBUG > 21 ) ;
+                  if ( $Innet eq $net ) { $netPairList[2] = $Outnet; $netPairList[1] = $Innet; $sinkInst = $inst;}
+                  elsif ( $Outnet eq $net ) { $netPairList[1] = $Outnet; $netPairList[0] = $Innet; $srcInst = $inst;}
+                  else { print "ERR-ALGO_PREPL-DEL_BUFR_TREE : 007 : something is wrong\n";}
+
+                  $inst = $invPairList[1];
+                  if (exists $CADB{$inst} ) {
+                  my $cellref = $CADB{$inst}->dbCadbGetCellref;
+                  my $func = $PLDB{$cellref}->dbMdbGetFunction;
+                  if ($func eq "inv" ) {
+                  my @pins = $PLDB{$cellref}->dbMdbGetPins;
+                  foreach my $pin ( @pins ) {
+                  my $dir = $PLDB{$cellref}->dbMdbGetPinDir($pin);
+                     if ( $dir == 0 ) {
+                          $Innet = $COMP_ALREADY{$inst}{$pin} ;
+                                      }#if pin direction is input
+                     if ( $dir == 1 ) {
+                          $Outnet = $COMP_ALREADY{$inst}{$pin} ;
+                                      }#if pin direction is input
+                                            }#foreach pin of macro
+                  if ( $Innet eq $net ) { $netPairList[2] = $Outnet; $netPairList[1] = $Innet; $sinkInst = $inst;}
+                  elsif ( $Outnet eq $net ) { $netPairList[1] = $Outnet; $netPairList[0] = $Innet;  $srcInst = $inst;}
+                  else { print "ERR-ALGO_PREPL-DEL_BUFR_TREE : 008 : something is wrong\n";}
+                  print join ",", @netPairList if ($DEBUG > 21);
+                  print "\n" if ($DEBUG > 21);
+#------------------------------------------------------------------------------------------------------------#
+#                      step 1 : delete the 2 instances
+                  print "DBG-ALGO_PREPL-DEL_BUFR_TREE : 009 : delete the " if ($DEBUG > 21);
+                  print join ",", @invPairList if ($DEBUG > 21); print "DBG-ALGO_PREPL-DEL_BUFR_TREE : 010 : instances\n" if ($DEBUG > 21);
+                  print "DBG-ALGO_PREPL-DEL_BUFR_TREE : 011 : src : $srcInst, sink : $sinkInst\n" if ($DEBUG > 21);
+                       delete $COMP_ALREADY{$srcInst};
+                       delete $COMP_ALREADY{$sinkInst};
+                       $delInvCnt = $delInvCnt + 2;
+#------------------------------------------------------------------------------------------------------------#
+#                      step 2 : delete the net
+                       print "DBG-ALGO_PREPL-DEL_BUFR_TREE : 012 : delete net $net\n" if ($DEBUG > 21);
+                       delete $NETS_ALREADY{$net} ;
+#------------------------------------------------------------------------------------------------------------#
+#                      step 3 : merge net1 with net3
+                  print "DBG-ALGO_PREPL-DEL_BUFR_TREE : 013 : merge the $netPairList[2] into $netPairList[0] nets\n" if ($DEBUG > 21);
+                       delete $NETS_ALREADY{$netPairList[0]}{$srcInst} ;
+                       delete $NETS_ALREADY{$netPairList[2]}{$sinkInst} ;
+                       foreach $inst ( keys %{$NETS_ALREADY{$netPairList[2]}} ) { 
+                                       $pin = $NETS_ALREADY{$netPairList[2]}{$inst};
+                                       print "DBG-ALGO_PREPL-DEL_BUFR_TREE : 014 : adding $inst:$pin to $netPairList[0]\n" if ($DEBUG > 21); 
+                                       $NETS_ALREADY{$netPairList[0]}{$inst} = $pin;
+                                       if ( exists $COMP_ALREADY{$inst} ) {
+                                       print "INFO-ALGO_PREPL-DEL_BUFR_TREE : 015 : need to make changes here\n";
+                                                                          }
+                                       elsif ( $inst eq "PIN" ) {
+                                               if ( exists $PORTS_ALREADY{$TOP_MODULE}{$pin} ) {
+                                     $PORTS_ALREADY{$TOP_MODULE}{$pin}->dbPortSetConn($netPairList[0]);
+
+                                                                                               }
+                                                                }
+                                       else { print "ERR-ALGO_PREPL-DEL_BUFR_TREE : 016 : some things is wrong\n"; }
+                                                                                }
+#-----------------------------------------------------------------------------------------------------------#
+#                      step 4 : delete the merged net also
+                 print "DBG-ALGO_PREPL-DEL_BUFR_TREE : 017 : delete net $netPairList[2]\n" if ( $DEBUG > 21);
+                       delete $NETS_ALREADY{$netPairList[2]}
+#-----------------------------------------------------------------------------------------------------------#
+                                       }#if second comp is also inverter
+                                             }#if second instance is a component
+                                       }#if first comp is inverter
+                                             }#if first instance is a component
+                                }#if only 2 components are connected to the net
+        
+                                       }# foreach net in the design
+print "INFO-ALGO_PREPL-DEL_BUFR_TREE : 018 : $delInvCnt inverters in inverter-pairs deleted\n";
+              }# if MODE is 1
+
+                                    }#if correct number of arguments
+}# sub delete_buffer_tree

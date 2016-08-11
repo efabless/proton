@@ -1,0 +1,365 @@
+
+sub overlap_layer {
+    my $overlap = 0;
+    my @overlapRect = &findRectOverlap(@_);
+    my $overlap = @overlapRect;
+    if($overlap <= 0 ){return(0);} else{return(1);}
+}# sub overlap_layer
+
+#--------------------------------------------------------------------------------------------------------------------------------------------------#
+sub least_path_resistance_1 {
+
+#****f* /least_path_resistance
+# NAME
+# FUNCTION
+# Assumptions
+# SYNOPSIS
+# INPUTS
+# OUTPUTS
+#****
+#if ($noOfarguments < 1 || $_[0] eq '-h'){ print "Usage : [-instName] \n";
+#                                          print "        [-pinName] \n";
+#                                           }#if
+#else { 
+  my $noOfarguments = @_;
+  for (my $i = 0; $i<$noOfarguments; $i++){
+  if ($_[$i] eq "-instName"){$inst = $_[$i+1];}
+  if ($_[$i] eq "-pinName"){$pin = $_[$i+1];}
+                              }#for
+  my @spnets = ();
+  my @sp_nets = ();
+  my @special = ();
+  open(WRITE,">leastpath.resis");
+  if(exists $COMP_ALREADY{$inst}){
+    if (exists $COMP_ALREADY{$inst}{$pin}){
+      if (exists $CADB {$inst}){
+      my $cellref = $CADB{$inst}->dbCadbGetCellref;
+      my @instLoc = $CADB{$inst}->dbCadbGetLoc;
+         print "inst location @instLoc \n";
+      my $instOrient = $CADB{$inst}->dbCadbGetOrient;
+          print "$instOrient \n";
+        if ($instOrient eq "N" || $instOrient eq "FN" || $instOrient eq "S" || $instOrient eq "FS"){
+          if ( exists $PLDB{$cellref} ){
+          my @cellOrigin = $PLDB{$cellref}->dbMdbGetOrigin;
+          my @cellsize = $PLDB{$cellref}->dbMdbGetSize;
+           print "cell width and height @cellsize \n";
+          my @pins = $PLDB{$cellref}->dbMdbGetPins;
+            foreach my $p (@pins){
+              if ($p eq $pin){
+              my @pinRect = $PLDB{$cellref}->dbMdbGetPinRect($pin);
+                 print "pin rect @pinRect \n";
+                foreach my $r (@pinRect) {
+                  ($pinLayer,$pinllx,$pinlly,$pinurx,$pinury) = (split(/\s+/,$r)) [0,2,3,4,5];
+                   my $pinLn = $PTDB{$pinLayer}->dbTechGetLayerNum;
+                  foreach $specialnet (keys %SNETS_ALREADY){
+                  my $power = $NETS_ROUTING_ALREADY{$specialnet}->dbNetGetType;
+                    if($power eq "POWER"){
+                      my @routes = ();
+                      push(@routes, $NETS_ROUTING_ALREADY{$specialnet}->dbNetRoutingDBGetSpecialRoute);
+                      push(@routes, $NETS_ROUTING_ALREADY{$specialnet}->dbNetRoutingDBGetFixedRoute);
+                      foreach $rl (@routes){
+                       my $routeLayer = (split(/\s+/,$rl))[0];
+                       my $routeLn = $PTDB{$routeLayer}->dbTechGetLayerNum;
+                       my @routesBox = &xformNetSegToRouteBox($rl);
+                        if((abs($pinLn - $routeLn) == 2) || (abs ($pinLn -$routeLn) == 0)){
+                         my @absolutePinRect = &xformCellPinToInstPin($instLoc[0],$instLoc[1],$cellOrigin[0],$cellOrigin[1],$instOrient,$cellsize[0],$cellsize[1],$pinllx,$pinlly,$pinurx,$pinury);
+                            print " $p $pinLayer absolute @absolutePinRect\n";
+                         my @routesBox = &xformNetSegToRouteBox($rl);
+                            #print "$routeLayer $specialnet  @routesBox\n";
+                         my $pinRouteOverlap = &overlap_layer(@absolutePinRect,@routesBox);
+                            #print "overlap $pinRouteOverlap\n";
+                          if ($pinRouteOverlap == 1){
+                              push (@spnets,$specialnet);
+                              push (@sp_nets,[@routesBox]);
+                                                            }#if overlap
+                                                                    }#if pinlayer and routing layer
+                                                                       }#foreach routes
+                                                              }#if power
+                                                           }#foreach specialnet
+                                                         }#foreach pinrect 
+                                                        }#if pin eq p    
+                                                      }#foreach pins
+                                                     }#if exists cellref
+                                                   }#if orient
+                                                 }#if exists inst
+                                               }#if exists pin
+                                             }#if exists inst
+  foreach $sp (@spnets){
+    if(exists $NETS_ROUTING_ALREADY{$sp}){
+    @sproutes = ();
+    push(@sproutes ,$NETS_ROUTING_ALREADY{$sp}->dbNetRoutingDBGetSpecialRoute);
+    push(@sproutes ,$NETS_ROUTING_ALREADY{$sp}->dbNetRoutingDBGetFixedRoute);
+    foreach $sr (@sproutes){
+     my @sproutesBox = &xformNetSegToRouteBox($sr);
+      if ( exists $PORTS_ALREADY{$TOP_MODULE}) {
+        foreach $pinName ( keys %{$PORTS_ALREADY{$TOP_MODULE}} ) {
+         my $signal = $PORTS_ALREADY{$TOP_MODULE}{$pinName}->dbPortGetSignal;
+          if ($signal eq "POWER"){
+              my @nets = $PORTS_ALREADY{$TOP_MODULE}{$pinName}->dbPortGetConn;
+           foreach $net (@nets){
+             if (exists $NETS_ROUTING_ALREADY{$net}){
+                 my @Routes = $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBGetRegularRoute;
+               foreach $rt (@Routes){
+                 my @RouteBox = &xformNetSegToRouteBox($rt);
+                 my $over_lap = &overlap_layer(@sproutesBox,@RouteBox);
+                 if ($over_lap == 1){
+                 #print "overlap found $over_lap \n";
+                                                }
+                                               }#foreach net
+                                             }#if exists routing
+                                         }#foreach net
+                                       }#if signal power
+                                      }# foreach pinName
+                                     }#if exists Ports already
+                                  }#foreach sproutes
+                                   }# if exists
+                                }#foreach spnets
+ #}#else
+}#sub least_path_resistance
+
+
+#--------------------------------------------------------------------------------------------------------------------------------#
+sub instpin_to_spnet {
+    my $noOfarguments = @_; 
+    if ($noOfarguments < 0 || $_[0] eq '-h'){ print "Usage : [-instName] \n";
+                                              print "        [-pinName] \n";
+                                             }#if
+else {
+   for(my $i = 0;$i < $noOfArguments; $i++){
+   if($_[$i] eq "-instName"){$inst = $_[$i+1];}
+   if($_[$i] eq "-pinName"){$pin = $_[$i+1];}
+                                           }#for
+if (exists $COMP_ALREADY{$inst}){
+  if (exists $COMP_ALREADY{$inst}{$pin}){
+    if(exists $CADB{$inst}){
+        my $cellref = $CADB{$inst}->dbCadbGetCellref;
+        my @instLoc = $CADB{$inst}->dbCadbGetLoc;
+        my $instOrient = $CADB{$inst}->dbCadbGetOrient;
+      if ($instOrient eq "N" || $instOrient eq "FN" || $instOrient eq "S" || $instOrient eq "FS"){
+        if (exists $PLDB{$cellref}){
+             my @cellOrigin = $PLDB{$cellref}->dbMdbGetOrigin;
+             my @cellsize = $PLDB{$cellref}->dbMdbGetSize;
+             my @pins = $PLDB{$cellref}->dbMdbGetPins;
+          foreach my $p (@pins){
+            if ($p eq $pin){
+                 my @pinRect = $PLDB{$cellref}->dbMdbGetPinRect($pin);
+              foreach my $r (@pinRect) {
+                      ($pinLayer,$pinllx,$pinlly,$pinurx,$pinury) = (split(/\s+/,$r))[0,2,3,4,5];
+                       my $pinLn = $PTDB{$pinLayer}->dbTechGetLayerNum;
+                foreach $specialnet (keys %SNETS_ALREADY){
+                       my $power = $NETS_ROUTING_ALREADY{$specialnet}->dbNetGetType;
+                  if($power eq "POWER"){
+                       my @Routes = ();
+                       push(@Routes,$NETS_ROUTING_ALREADY{$specialnet}->dbNetRoutingDBGetSpecialRoute);
+                       push(@Routes,$NETS_ROUTING_ALREADY{$specialnet}->dbNetRoutingDBGetFixedRoute);
+                    foreach $rl (@Routes){
+                       my $routeLayer = (split(/\s+/,$rl))[0];
+                       my $routeLn = $PTDB{$routeLayer}->dbTechGetLayerNum;
+                       my @routesBox = &xformNetSegToSpecialRouteBox($rl);
+                       my $routes = join ",",@routesBox;
+                      if((abs ($pinLn - $routeLn) == 2) || (abs ($pinLn - $routeLn) == 0)){
+                       my @absolutePinRect = &xformCellPinToInstPin($instLoc[0],$instLoc[1],$cellOrigin[0],$cellOrigin[1],$instOrient,$cellsize[0],$cellsize[1],$pinllx,$pinlly,$pinurx,$pinury);
+                       my $pinrouteOverlap = &overlap_layer(@absolutePinRect,@routesBox);
+                        if ($pinrouteOverlap == 1){
+                           return($specialnet);
+                         }#if overlap
+                         else {
+                          }#else
+                        }#if pinlayer and routelayer
+                       }# foreach
+                      }#if power
+                     }#foreach special net  
+#----------------------------------------------------------------------------------------------------------------#
+                    }# foreach pin rect  
+                  }#if pin 
+                }#foreach pins
+               }#if exists cellref 
+             }# if orient
+           }#if CADB exists
+         }#if exists pin
+       }#if exists inst
+}#else
+}#sub instpin_to_spnet
+#----------------------------------------------------------------------------------------------------------------------------#
+sub sp_rect {
+    my $noOfarguments = @_; 
+    if ($noOfarguments < 0 || $_[0] eq '-h'){ print "Usage : [-instName] \n";
+                                              print "        [-pinName] \n";
+                                             }#if
+else {
+   for(my $i = 0;$i < $noOfArguments; $i++){
+   if($_[$i] eq "-instName"){$inst = $_[$i+1];}
+   if($_[$i] eq "-pinName"){$pin = $_[$i+1];}
+                                           }#for
+if (exists $COMP_ALREADY{$inst}){
+  if (exists $COMP_ALREADY{$inst}{$pin}){
+    if(exists $CADB{$inst}){
+        my $cellref = $CADB{$inst}->dbCadbGetCellref;
+        my @instLoc = $CADB{$inst}->dbCadbGetLoc;
+        my $instOrient = $CADB{$inst}->dbCadbGetOrient;
+      if ($instOrient eq "N" || $instOrient eq "FN" || $instOrient eq "S" || $instOrient eq "FS"){
+        if (exists $PLDB{$cellref}){
+             my @cellOrigin = $PLDB{$cellref}->dbMdbGetOrigin;
+             my @cellsize = $PLDB{$cellref}->dbMdbGetSize;
+             my @pins = $PLDB{$cellref}->dbMdbGetPins;
+          foreach my $p (@pins){
+            if ($p eq $pin){
+                 my @pinRect = $PLDB{$cellref}->dbMdbGetPinRect($pin);
+              foreach my $r (@pinRect) {
+                      ($pinLayer,$pinllx,$pinlly,$pinurx,$pinury) = (split(/\s+/,$r))[0,2,3,4,5];
+                       my $pinLn = $PTDB{$pinLayer}->dbTechGetLayerNum;
+                foreach $specialnet (keys %SNETS_ALREADY){
+                       my $power = $NETS_ROUTING_ALREADY{$specialnet}->dbNetGetType;
+                  if($power eq "POWER"){
+                       my @Routes = ();
+                       push(@Routes,$NETS_ROUTING_ALREADY{$specialnet}->dbNetRoutingDBGetSpecialRoute);
+                       push(@Routes,$NETS_ROUTING_ALREADY{$specialnet}->dbNetRoutingDBGetFixedRoute);
+                    foreach $rl (@Routes){
+                       my $routeLayer = (split(/\s+/,$rl))[0];
+                       my $routeLn = $PTDB{$routeLayer}->dbTechGetLayerNum;
+                       my @routesBox = &xformNetSegToSpecialRouteBox($rl);
+                       my $routes = join ",",@routesBox;
+                      if((abs ($pinLn - $routeLn) == 2) || (abs ($pinLn - $routeLn) == 0)){
+                       my @absolutePinRect = &xformCellPinToInstPin($instLoc[0],$instLoc[1],$cellOrigin[0],$cellOrigin[1],$instOrient,$cellsize[0],$cellsize[1],$pinllx,$pinlly,$pinurx,$pinury);
+                       my $pinrouteOverlap = &overlap_layer(@absolutePinRect,@routesBox);
+                        if ($pinrouteOverlap == 1){
+                            return(@routesBox);
+                         }#if overlap
+                         else {
+                          }#else
+                        }#if pinlayer and routelayer
+                       }# foreach
+                      }#if power
+                     }#foreach special net  
+#----------------------------------------------------------------------------------------------------------------#
+                    }# foreach pin rect  
+                  }#if pin 
+                }#foreach pins
+               }#if exists cellref 
+             }# if orient
+           }#if CADB exists
+         }#if exists pin
+       }#if exists inst
+}#else
+}#sub sp_rect 
+#----------------------------------------------------------------------------------------------------------------#
+sub chip_rect {
+$sp = &instpin_to_spnet; 
+  if(exists $NETS_ROUTING_ALREADY{$sp}){
+      my @sp_routes = ();
+      push(@sp_routes, $NETS_ROUTING_ALREADY{$sp}->dbNetRoutingDBGetSpecialRoute);
+      push(@sp_routes, $NETS_ROUTING_ALREADY{$sp}->dbNetRoutingDBGetFixedRoute);
+    foreach my $sr (@sp_routes){
+      my $routeLayer = (split(/\s+/,$sr))[0];
+      my $routeLn = $PTDB{$routeLayer}->dbTechGetLayerNum;
+      my @sproutes_Box = &xformNetSegToSpecialRouteBox($sr);
+      if(exists $PORTS_ALREADY{$TOP_MODULE}) {
+        foreach $pinName ( keys %{$PORTS_ALREADY{$TOP_MODULE}} ) {
+              my $Signal = $PORTS_ALREADY{$TOP_MODULE}{$pinName}->dbPortGetSignal;
+          if ($Signal eq "POWER"){
+              my @Nets = $PORTS_ALREADY{$TOP_MODULE}{$pinName}->dbPortGetConn;
+            foreach $net (@Nets){
+              if (exists $NETS_ROUTING_ALREADY{$net}){
+                   my @chip_routes = $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBGetRegularRoute;
+                foreach $rt (@chip_routes){
+                   my @Route_Box = &xformNetSegToRouteBox($rt);
+                   my $Routes_box = join ",",@Route_Box;
+                   my $over_lap = &overlap_layer(@sproutes_Box,@Route_Box);
+                  if ($over_lap == 1){
+                     return(@Route_Box);  
+                    }#if
+                  else { 
+                  }#else
+                           }#foreach
+                         }#if exists
+                       }#foreach   
+                     }#if power
+                   }#foreach pinName
+                }#if exists
+              }#foreach 
+            }# if exists 
+}#sub chip_rect 
+#----------------------------------------------------------------------------------------------------------------------#
+sub get_conn_rect {
+@sp_net = &instpin_to_spnet;
+$spnet = @sp_net;     
+for ($i=0;$i<$spnet;$i++){
+     $special = $sp_net[$i];
+     @chip_overlap = &get_conn_chiprect;
+                         }#for
+}#sub get_conn_rect 
+#-----------------------------------------------------------------------------------------------------------------------#
+sub get_conn_chiprect {
+    @chp_rect = &chip_rect;
+    @route_rect = &sp_rect;
+    $Over_lap = &overlap_layer(@chp_rect,@route_rect);
+    if ($Over_lap == 1){}
+    else{
+    @sproute = &get_conn_sprect;
+    $sp_routes = @sproute;
+    for($i=0;$i<$sp_routes;$i++){
+        my $sp_route = $sproute[$i];
+        @sp_rect = split/,/,$sp_route;
+        $ov_lap = &overlap_layer(@sp_rect,@chp_rect);
+        #print "overlapgot $ov_lap \n"; 
+            }#for   
+      }#else 
+}# sub get_conn_chiprect
+#------------------------------------------------------------------------------------------------------------------#
+sub get_conn_sprect {
+$sp_net = &instpin_to_spnet;
+$chip_overlap = 0;
+@rt_box = &chip_rect;
+$route_box = join ",",@rt_box;
+my @data = ();
+my @rectangle = ();
+my @rect = ();
+if(exists $NETS_ROUTING_ALREADY{$sp_net}){
+   my @sp_routes = ();
+   push(@sp_routes, $NETS_ROUTING_ALREADY{$sp_net}->dbNetRoutingDBGetSpecialRoute);
+   push(@sp_routes, $NETS_ROUTING_ALREADY{$sp_net}->dbNetRoutingDBGetFixedRoute);
+  foreach my $sr (@sp_routes) {
+      my $routeLayer = (split(/\s+/,$sr))[0];
+      my $routeLn = $PTDB{$routeLayer}->dbTechGetLayerNum;
+      my @sproutes_Box = &xformNetSegToSpecialRouteBox($sr);
+      my $sproute = join ",", @sproutes_Box;
+         push(@data,$sproute);
+         $NETS_ROUTING_ALREADY{$sp_net}->dbSNetSetVoltage($sproute,"X");
+      my $v = $NETS_ROUTING_ALREADY{$sp_net}->dbSNetGetVoltage($sproute); 
+      if ($route_box != $sproute){
+         $Over_Lap = &overlap_layer(@sproutes_Box,@rt_box);
+      if ($Over_Lap == 1){
+      my $chip_overlap = 1;
+         $NETS_ROUTING_ALREADY{$sp_net}->dbSNetSetVoltage($sproute,1);
+      my $voltage =  $NETS_ROUTING_ALREADY{$sp_net}->dbSNetGetVoltage($sproute);
+         print "$voltage \n";
+         push (@rectangle,$sproute);
+                             }#if overlap
+        else {
+         print "$v \n";
+        }#else
+       }#if routebox ne sproute
+     }# foreach sp_routes
+#if ($chip_overlap == 1){
+$no_of_rect = @data;
+$rect1 = join ",",@rectangle;
+@rect_1 = split /,/,$rect1;
+for($i=0;$i<$no_of_rect;$i++){
+    $rects = $data[$i];
+    @rts = split /,/,$rects;
+    if($rects != $rect1){
+    $overlap1 = &overlap_layer(@rts,@rect_1);
+    if ($overlap1 == 1){
+    $NETS_ROUTING_ALREADY{$sp_net}->dbSNetSetVoltage($rects,1);
+    $v1 = $NETS_ROUTING_ALREADY{$sp_net}->dbSNetGetVoltage($rects);
+    print "$v1 \n";
+                                }#if overlap
+    else{
+         print "$v \n";
+                        }#else
+                       }#if
+                      }#for
+                    #}#if
+                   }#if exists special net
+}#get_conn_sprect
+1;

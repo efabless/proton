@@ -1,0 +1,150 @@
+sub serGetHierInstData{
+  &dbfTstGenUpdateDesignLib;
+  my %UNPLACED_HINST_HEIGHT = (); 
+  my $TOP_MODULE = $GLOBAL->dbfGlobalGetTOP;
+  if(exists $PSEUDO_MODULE_ALREADY{$TOP_MODULE} ) {
+     my $str = "<module name=\"$TOP_MODULE\">\n";
+     my @size = $PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenGetSize;   
+     $str= $str." <bbox>@size</bbox>\n";
+     $str= $str." <components>\n";
+     foreach my $instance ( keys %{$PSEUDO_VINST_ALREADY{$TOP_MODULE}} ) {
+       if($instance eq "PIN"){ 
+       }else{ 
+         my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$instance}->dbPimDBGetInstCellref;
+         my @loc = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$instance}->dbPimDBGetInstRelBbox;
+         my $class = $DLDB{$cellref}->dbDldbGetClass if(exists $DLDB{$cellref});
+         if($loc[0]==0 && $loc[1]==0 && $loc[2]==0 && $loc[3]==0){  
+            $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$instance}->dbPimDBSetInstStatus("UNPLACED");
+         }#if location is (0,0,0,0)
+         my $status = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$instance}->dbPimDBGetInstStatus;
+         if($status eq "UNPLACED" || $status eq "UND"){
+            if($class == 9){ #if std cell
+            }else{
+               if(exists $PSEUDO_MODULE_ALREADY{$cellref}){
+                  my @mod_bbox = &return_pseudo_vinst_size($TOP_MODULE,$instance);
+                  my $mod_width = $mod_bbox[2] - $mod_bbox[0]; 
+                  my $mod_height = $mod_bbox[3] - $mod_bbox[1]; 
+                  $UNPLACED_HINST_HEIGHT{$instance} = $mod_height;
+               }elsif(exists $PLDB{$cellref} ) {
+                 my @mod_size = &return_pseudo_vinst_size($TOP_MODULE,$instance);
+                 $UNPLACED_HINST_HEIGHT{$instance} = $mod_size[3];
+               }
+            }
+         }else{
+            $str = $str."  <component name=\"$instance\" cellref=\"$cellref\" class=\"$class\">\n";
+            $str = $str."   <bbox>@loc</bbox>\n";
+            $str = $str."  </component>\n";
+         }
+       }#if instance is not PIN
+     }#for each instance
+     my $startX = $size[2];
+     my $startY = $size[1];
+     my @MaxWidth = ();
+     my @hinst = sort {$UNPLACED_HINST_HEIGHT{$b}<=>$UNPLACED_HINST_HEIGHT{$a}}(keys(%UNPLACED_HINST_HEIGHT));
+     foreach my $instance(@hinst){
+        if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$instance}){
+           my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$instance}->dbPimDBGetInstCellref;
+           my $class = $DLDB{$cellref}->dbDldbGetClass if(exists $DLDB{$cellref});
+           if(exists $PSEUDO_MODULE_ALREADY{$cellref}){
+              my @mod_bbox = &return_pseudo_vinst_size($TOP_MODULE,$instance);
+              my $mod_width = $mod_bbox[2] - $mod_bbox[0]; 
+              my $mod_height = $mod_bbox[3] - $mod_bbox[1];
+              if($mod_height > ($size[3] - $startY)){ 
+                 $startY = $size[1];
+                 @MaxWidth = sort{$a<=>$b}@MaxWidth;
+                 $startX = $startX + $MaxWidth[-1];
+                 @MaxWidth = ();
+              }  
+              push(@MaxWidth,$mod_width);
+              my $llx = $startX; 
+              my $lly = $startY;
+              my $urx = $llx+$mod_width;
+              my $ury = $lly+$mod_height;
+              $startX = $llx;
+              $startY = $ury;
+              $str = $str."  <component name=\"$instance\" cellref=\"$cellref\" class=\"$class\">\n";
+              $str = $str."   <bbox>$llx $lly $urx $ury</bbox>\n";
+              $str = $str."  </component>\n";
+            }elsif(exists $PLDB{$cellref} ) {
+              my @mod_size = &return_pseudo_vinst_size($TOP_MODULE,$instance);
+              my $width = $mod_size[2]; 
+              my $height = $mod_size[3];
+              if($height > ($size[3] - $startY)){ 
+                 $startY = $size[1];
+                 @MaxWidth = sort{$a<=>$b}@MaxWidth;
+                 $startX = $startX+$MaxWidth[-1];
+                 @MaxWidth = ();
+              }  
+              push(@MaxWidth,$width);
+              my $llx = $startX;
+              my $lly = $startY;
+              my $urx = $llx+$width;
+              my $ury = $lly+$height;
+              $startX = $llx;
+              $startY = $ury;
+              $str = $str."  <component name=\"$instance\" cellref=\"$cellref\" class=\"$class\">\n";
+              $str = $str."   <bbox>$llx $lly $urx $ury</bbox>\n";
+              $str = $str."  </component>\n";
+            }
+        }
+     }#foreach unplaced hier instance
+     $str = $str." </components>\n";
+     $str = $str."</module>\n";
+  }# if top module exists
+}#sub serGetHierInstData
+
+#############################################################################################################
+sub serGetHierFanInFanOutList{
+  &dbfTstgenConstructConnSMatrix($TOP_MODULE) if(exists $PSEUDO_MODULE_ALREADY{$TOP_MODULE});
+  my @instList = @_;
+  my $str;
+  foreach my $instance(@instList){
+     my @fanInList = ();
+     my @fanOutList = ();
+     my $instID = $CONN_SMATRIX->dbPlaceGetNumberByName($instance);
+     my $col = $row = $instID;
+     
+     my @fanin = $CONN_SMATRIX->dbPlaceGetFanInsByName($instance);
+     foreach my $in(@fanin){
+        my $input = $CONN_SMATRIX->dbPlaceGetNameByNumberCol($in);
+        my $tval = $CONN_SMATRIX->dbPlaceGetTpathVal($row, $in);
+        push(@fanInList, $input, $tval);  
+     }
+     my @fanout = $CONN_SMATRIX->dbPlaceGetFanOutsByName($instance);
+     foreach my $out (@fanout){
+        my $output = $CONN_SMATRIX->dbPlaceGetNameByNumberCol($out);
+        my $tval = $CONN_SMATRIX->dbPlaceGetTpathVal($out, $col);
+        push(@fanOutList, $output, $tval);  
+     }
+     $str = $str."<instance name=\"$instance\">\n" if(@fanInList > 0 || @fanOutList > 0);
+     $str = $str." <fanin>@fanInList</fanin>\n" if(@fanInList > 0);
+     $str = $str." <fanout>@fanOutList</fanout>\n" if(@fanOutList > 0);
+     $str = $str."</instance>\n" if(@fanInList > 0 || @fanOutList > 0);
+  }#foreach instance
+  return $str;
+}#sub serGetHierFanInFanOutList
+
+
+############################################
+sub flxGetDesignHier {
+  my $top_module = $_[0];
+  if (! $top_module) {
+    $top_module = $TOP_MODULE;
+  }
+
+  my @cmdArgs = ('-top', $top_module, '--xml');
+
+  my $cmdOptions = $_[1];
+  if ($cmdOptions) {
+    foreach my $opt ( split(/\-\-/, $cmdOptions) ) {
+      push(@cmdArgs, '--' . $opt) if ($opt);
+    }
+  }
+  else {
+    #push(@cmdArgs, '--all');
+  }
+
+  return report_design_hierarchy_bd(@cmdArgs);
+}#sub flxGetDesignHier
+
+1;

@@ -1,0 +1,386 @@
+#require "/home/pmangal/benaras/proj/proton/DB/make_GCell_package";
+
+#use Getopt::Long qw(GetOptionsFromString);
+
+#my @GCellArray;
+
+#&make_gcellDB(@ARGV);
+
+sub make_gcellDB {
+  my ($gcellSizeX, $gcellSizeY, $ngcellX, $ngcellY) = (0,0,0,0);
+  my ($_ngcellX, $_ngcellY)       = (10,10);
+  my ($_gcellSizeX, $_gcellSizeY) = (100000,100000);
+
+  my ($help, $debug, $verbose) = (0,0,0);
+  my ($gcellLocalWireCnt, $gcellSemiLocalWireCnt, $gcellSemiGlobalWireCnt, $gcellGlobalWireCnt) = (0,0,0,0);
+
+  use Benchmark;
+  my $t0 = new Benchmark;
+
+  my (@args) = @_;
+  $help = 0;
+  &make_gcellDB_readArgs(@args);
+  if ($help) {
+    &make_gcell_usage();
+  } else {
+    &gen_gcellDB;
+    &make_gcellDB_inst;
+#    &make_gcellDB_rows;
+ #   &make_gcellDB_nets;
+ #   &get_GcellMinMax_netstat;
+    #foreach my $comp (keys %COMP_ALREADY) {
+    #  &dbgCellManWireLen($comp);
+    #}
+} #if...else
+  &finish();
+
+$t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "gcell DB took:",timestr($td),"\n";
+} #sub make_gcellDB
+
+sub make_gcellDB_readArgs {
+  my (@args) =  @_;
+  if ($#args < 0) {
+    $help=1;
+  } else {
+    $args = join(' ',@args);
+    if (!defined($args)) {
+      $args = "";
+    }
+    my $parseResult = Getopt::Long::GetOptionsFromString($args , 
+							 "gx=i"       => \$gcellSizeX,
+							 "gy=i"       => \$gcellSizeY,
+							 "nx=i"       => \$ngcellX,
+							 "ny=i"       => \$ngcellY,
+							 "h"          => \$help,
+							 "help"       => \$help,
+							 "debug"      => \$debug,
+							 "verbose"    => \$verbose,
+							);
+    my ($llx, $lly, $urx, $ury) = @{$DIE_ALREADY{dieArea}};
+    if ($gcellSizeX == 0) {
+      if ($ngcellX == 0) {
+	$ngcellX = $_ngcellX;
+	$ngcellY = $_ngcellY;
+      } 
+      $gcellSizeX = ($urx - $llx + 1 )/$ngcellX;
+      $gcellSizeY = ($ury - $lly + 1)/$ngcellY;
+    } elsif ($ngcellX == 0) {
+      $ngcellX = ceil( ($urx - $llx )/$gcellSizeX);
+      $ngcellY = ceil( ($ury - $lly )/$gcellSizeY);
+    }
+  }
+} #sub make_gcellDB_readArgs
+
+sub finish() {
+}
+
+########################################################################
+sub gen_gcellDB {
+  ## divides the chip into gcells
+  ## the last row and column of gcells may be truncated
+  #my ($llx, $lly, $urx, $ury) = (0,0,2.5,2);
+  my ($llx, $lly, $urx, $ury) = @{$DIE_ALREADY{dieArea}};
+  my ($x, $y) = ($llx, $lly);
+  my ($numX, $numY) = (0,0);
+  my ($x1, $y1);
+  my ($pid);
+
+  #print "INFO-DES : 001 : Gcell size ($gcellSizeX, $gcellSizeY) in a die ($llx,$lly) ($urx,$ury) Num:($ngcellX, $ngcellY) \n" ;
+  while ($y < $ury) {
+    $y1 = $y + $gcellSizeY;
+    if ($y1 > $ury) {$y1 = $ury;}
+    while ($x < $urx) {
+      $x1 = $x + $gcellSizeX;
+      if ($x1 > $urx) {$x1 = $urx;}
+      $GCellArray[$numX][$numY] = new GCell;
+      $GCellArray[$numX][$numY]->dbgGcellSetBBox($x,$y, $x1,$y1);
+      $pid = min($numX+1, $numY+1, $ngcellX - $numX, $ngcellY - $numY);
+      $GCellArray[$numX][$numY]->dbgGcellSetPid($pid);
+      #print "INFO-DES : 002 : Creating new Gcell [$numX][$numY] pid:$pid at ($x,$y) ($x1,$y1)\n" ;
+      $x = $x1; $numX++;
+    } #while
+    $y = $y1; $numY++;
+    $x = $llx; $numX = 0;
+  } #while
+} #sub
+
+########################################################################
+sub make_gcellDB_inst {
+  foreach my $inst ( keys %COMP_ALREADY ) {
+    my @loc = $CADB{$inst}->dbCadbGetLoc;
+    my $gcellX = int ($loc[0]/$gcellSizeX);
+    my $gcellY = int ($loc[1]/$gcellSizeY);
+    $GCellArray[$gcellX][$gcellY]->dbgGcellAddInst($inst) if($gcellX < $ngcellX && $gcellY < $ngcellY);
+    #print "DBG-DES : 003 : Adding instance:$inst at location ($loc[0],$loc[1])to Gcell[$gcellX][$gcellY]\n" if ($debug);
+  }#foreach
+} #make_gcellDB_inst
+
+########################################################################
+sub make_gcellDB_nets {
+  my $netCount;
+  foreach my $net ( keys %NETS_ALREADY ) {
+    $netCount++;
+    printf ("DBG-DES : 001 : Net:%-20s",$net) if ($debug);
+    my $maxGcellDist = 0;
+    my @loc;
+    my ($ref, $pin, $dir, $srcComp);
+    my %glocHash;
+    my %dirHash;
+    my %netHash = %{$NETS_ALREADY{$net}};
+    my @conns = keys %netHash;
+    my $fanout = $#conns;
+
+    foreach my $comp (@conns) {
+      $pin = $netHash{$comp};
+      if ($comp eq "PIN") {
+	@loc = $PORTS_ALREADY{$moduleName}{$pin}->dbPortGetLoc;
+	$dir = $PORTS_ALREADY{$moduleName}{$pin}->dbPortGetDir;
+	if ($dir eq "input")     {$dir = 1;}
+	elsif ($dir eq "output") {$dir = 0;}
+	elsif ($dir eq "inout")  {$dir = 2;}
+
+      } else {
+	$ref = $CADB{$comp}->dbCadbGetCellref;
+	$dir = $PLDB{$ref}->dbMdbGetPinDir($pin);
+	@loc = $CADB{$comp}->dbCadbGetLoc;
+      }
+      my @gcellLoc;
+      $gcellLoc[0] = int ($loc[0]/$gcellSizeX);
+      $gcellLoc[1] = int ($loc[1]/$gcellSizeY);
+      $glocHash{$comp} = \@gcellLoc;
+      $dirHash{$comp} = $dir;
+      if ($dir == 1) {$srcComp = $comp;}
+      print "\t\tDBG-DES : 002 : Comp:$comp Pin:$pin Dir:$dir locX=$loc[0] locY=$loc[1] GcellX=$gcellLoc[0] GcellY=$gcellLoc[1] src:$srcComp \n" if ($debug);
+    }
+
+    foreach my $comp (@conns) {
+      my @gcellLoc;
+      if ($comp ne $srcComp) {
+	@gcellLoc = @{$glocHash{$comp}};
+	my $gcellDist = abs($gcellLoc[0] - $glocHash{$srcComp}->[0])
+	              + abs($gcellLoc[1] - $glocHash{$srcComp}->[1]);
+	if ($gcellDist == 0) {
+	  $GCellArray[$gcellLoc[0]][$gcellLoc[1]]->dbgGcellIncrNetStat(0);
+	} elsif ($gcellDist == 1) {
+	  $GCellArray[$gcellLoc[0]][$gcellLoc[1]]->dbgGcellIncrNetStat(1);
+	} elsif ($fanout <= 100) {
+	  $GCellArray[$gcellLoc[0]][$gcellLoc[1]]->dbgGcellIncrNetStat(2);
+	} else {
+	  $GCellArray[$gcellLoc[0]][$gcellLoc[1]]->dbgGcellIncrNetStat(3);
+	}
+      } #if
+    } #foreach
+	
+
+
+    foreach my $comp1 (@conns) {
+      foreach my $comp2 (@conns) {
+	my $gcellDist = abs($glocHash{$comp1}->[0] - $glocHash{$comp2}->[0])
+                	  + abs($glocHash{$comp1}->[1] - $glocHash{$comp2}->[1]);
+	if ($gcellDist > $maxGcellDist) {$maxGcellDist = $gcellDist;}
+      }
+    }
+    print "\tDBG-DES : 003 : fanout=$fanout  MaxGcellDist=$maxGcellDist \n" if ($debug);
+
+    if ($maxGcellDist == 0) {
+      $gcellLocalWireCnt++;
+    } elsif ($maxGcellDist == 1) {
+      $gcellSemiLocalWireCnt++;
+    } elsif ($fanout <= 100) {
+      $gcellSemiGlobalWireCnt++;
+    } else {
+      $gcellGlobalWireCnt++;
+    }
+  } #foreach
+
+    print "************************************************ \n";
+    print "Gcell MaxLength Net Statistics \n"; 
+    print "\tTotal Number of Nets   : $netCount\n";
+    print "\t     Local Wire Count  : $gcellLocalWireCnt\n";
+    print "\tSemi-Local Wire Count  : $gcellSemiLocalWireCnt\n";
+    print "\tSemi-Global Wire Count : $gcellSemiGlobalWireCnt\n";
+    print "\t     Global Wire Count : $gcellGlobalWireCnt\n";
+    print "************************************************ \n";
+
+
+} #make_gcellDB_inst
+
+########################################################################
+sub make_gcellDB_rows {
+  my @rows = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetRows;
+  foreach my $row ( @rows ) {
+    my ($rowName,$rowX,$rowY,$row_orient) = (split(/\s+/, $row))[0,2,3,4];
+    my $gcellY = int ($rowY/$gcellSizeY);
+    for (my $i=0; $i<=$#{@GCellArray[0]} ; $i++) {
+      $GCellArray[$i][$gcellY]->dbgGcellAddRow($row);
+      print "DBG-DES : 001 : Adding row:$rowName at location ($rowX,$rowY)to Gcell[$i][$gcellY]\n" if ($debug);
+    }#for
+  }#foreach
+} #make_gcellDB_row
+
+########################################################################
+sub make_gcell_get_mandist {
+  my ($x0, $x1, $y0, $y1) = @_;
+  my $dist = abs($x1 - $x0) + abs($y1 - $y0);
+  return ($dist);
+
+}
+
+########################################################################
+sub make_gcell_get_gcelldist {
+  my ($x0, $y0, $x1, $y1) = @_;
+
+  my $gcellX0 = int ($x0/$gcellSizeX);
+  my $gcellX1 = int ($x1/$gcellSizeX);
+  my $gcellY0 = int ($y0/$gcellSizeY);
+  my $gcellY1 = int ($y1/$gcellSizeY);
+  my $dist = abs($gcellX1 - $gcellX0) + abs($gcellY1 - $gcellY0);
+  return ($dist);
+
+}
+
+########################################################################
+sub make_gcell_print_netstat {
+
+  my ($l, $sl, $sg, $g) = (0,0,0,0);
+  print"\n\nmake_gcell:   X    Y ....    Local    Semi-Local    Semi-Global    Global\n";
+  for (my $i=0; $i<=$#GCellArray ; $i++) {
+    for (my $j=0; $j<=$#{@GCellArray[0]} ; $j++) {
+      my $netstat = $GCellArray[$i][$j]->dbgGcellGetNetStat;
+      my @netstat = split(/,/,$netstat);
+      printf("           %4d %4d .... %8d %13d %14d %9d\n",$i,$j,$netstat[0],$netstat[1],$netstat[2],$netstat[3]);
+      $l  += $netstat[0];
+      $sl += $netstat[1];
+      $sg += $netstat[2];
+      $g  += $netstat[3];
+    }
+  }#for
+  
+  print "-"x80;
+  printf("\n           Total     .... %8d %13d %14d %9d\n",$l,$sl,$sg,$g);
+  print "-"x80;
+  print "\n";
+
+my @size =  &get_num_gcell;
+#print "Size is : @size\n";  
+}#sub
+
+########################################################################
+sub get_GcellMinMax_netstat{
+  my ($Min, $Max) = (0, 0);
+  for (my $i=0; $i<=$#GCellArray ; $i++) {
+    for (my $j=0; $j<=$#{@GCellArray[0]} ; $j++) {
+      my $netstat = $GCellArray[$i][$j]->dbgGcellGetNetStat;
+      my @netstat = split(/,/,$netstat);
+      if    ($Max < $netstat[0]){ $Max = $netstat[0];
+      }elsif($Max < $netstat[1]){ $Max = $netstat[1];
+      }elsif($Max < $netstat[2]){ $Max = $netstat[2];
+      }elsif($Max < $netstat[3]){ $Max = $netstat[3];
+      }
+      if    ($Min > $netstat[0]){ $Min = $netstat[0];
+      }elsif($Min > $netstat[1]){ $Min = $netstat[1];
+      }elsif($Min > $netstat[2]){ $Min = $netstat[2];
+      }elsif($Min > $netstat[3]){ $Min = $netstat[3];
+      }
+    }
+  }#for
+   $GCellArray[0][0]->dbgGcellSetMinMaxNets($Min,$Max);
+}#sub get_GcellMinMax_netstat
+
+########################################################################
+sub make_gcell_usage {
+    print"make_gcell Usage: make_gcellDB -gx=X -gy=Y -nx=Nx -ny=Ny [-verbose -debug -norun -help]\n";
+    print"                  you can use either -gx -gy args to specify the size of a gcell in x and y\n";
+    print"                  or -nx and -ny to specify the number of gcell along x and y\n";
+    print"                  Default is 10 gcells X 10 gcells\n";
+	return;
+}
+ 
+sub get_num_gcell{
+	my @gcell;
+	$gcell[0] =  $#GCellArray +1;
+	$gcell[1] =  $#{@GCellArray[0]}+1;
+	print "\nINFO-DES : 001 : No of gcells along X : $gcell[0] \n";
+	print "INFO-DES : 002 : No of gcells along Y : $gcell[1] \n";
+	return (@gcell);
+}
+
+########################################################################
+sub dbgGcellLocalNets {
+
+
+
+}#sub dbgGcellLocalNets
+
+########################################################################
+sub dbgCellManWireLen {
+  my ($cell,$skipClk) = @_;
+  my $manWireLen = 0;
+
+  printf ("DBG-DES : 001 : Cell:%-20s\n",$cell) if ($debug);
+  foreach my $pin ( keys %{$COMP_ALREADY{$cell}} ) {
+    if ($pin eq $skipClk) {next;}
+    my %netHash;
+    my (@conns);
+    my ($ref, $net, $dir,@loc,$thisPinWireLen);
+
+    $net = $COMP_ALREADY{$cell}{$pin};
+    $ref = $CADB{$cell}->dbCadbGetCellref;
+    $dir = $PLDB{$ref}->dbMdbGetPinDir($pin); #0=out 1=in 2=inout
+    @loc = $CADB{$cell}->dbCadbGetLoc;
+    $loc[0] = int $loc[0] / 1000;
+    $loc[1] = int $loc[1] / 1000;
+    printf ("\tDBG-DES : 002 : Pin:%-20s locX=%-10s locY=%-10s\n",$pin,$loc[0],$loc[1]) if ($debug);
+
+    my %netHash = %{$NETS_ALREADY{$net}};
+    my @conns = keys %netHash;
+
+    # find max manhattan length per pin
+    foreach my $comp (@conns) {
+      if ($comp eq $cell) {next;}
+      my ($ref2, $pin2, $dir2,@loc2,$thisCompWireLen);
+
+      $pin2 = $netHash{$comp};
+      if ($comp eq "PIN") {
+	$dir2 = $PORTS_ALREADY{$moduleName}{$pin2}->dbPortGetDir;
+	@loc2 = $PORTS_ALREADY{$moduleName}{$pin2}->dbPortGetLoc;
+	if ($dir2 eq "input")     {$dir2 = 1;} #this is reverse of cell
+	elsif ($dir2 eq "output") {$dir2 = 0;} #this is reverse of cell
+	elsif ($dir2 eq "inout")  {$dir2 = 2;}
+
+      } else {
+	$ref2 = $CADB{$comp}->dbCadbGetCellref;
+	$dir2 = $PLDB{$ref2}->dbMdbGetPinDir($pin2);
+	@loc2 = $CADB{$comp}->dbCadbGetLoc;
+      }
+      if ( (($dir == 0) && ($dir2 == 1)) || (($dir == 1) && ($dir2 == 0)) ) {
+	$loc2[0] = int $loc2[0]/ 1000;
+	$loc2[1] = int $loc2[1]/ 1000;
+	$thisCompWireLen = abs($loc[0] - $loc2[0]) + abs($loc[1] - $loc2[1]);
+      } else {
+	next;
+      }
+      print "\t\tDBG-DES : 003 : Comp:$comp Pin2:$pin2 Dir2:$dir2 locX=$loc2[0] locY=$loc2[1] wireLen=$thisCompWireLen \n" if ($debug);
+      if ($thisCompWireLen >= $thisPinWireLen) {$thisPinWireLen = $thisCompWireLen;}
+    } #foreach
+    printf ("\tDBG-DES : 004 : Pin:%-20s thisPinWireLen=%-10s\n",$pin,$thisPinWireLen) if ($debug);
+    $manWireLen += $thisPinWireLen;
+  }
+  printf ("\tDBG-DES : 005 : Cell:%-20s manWireLen=%-10s\n",$cell,$manWireLen) if ($debug);
+  printf ("\tINFO-DES : 006 : Cell:%-20s manWireLen=%-10s\n",$cell,$manWireLen);
+  return($manWireLen);
+} #sub dbgCellManWireLen {
+
+########################################################################
+sub make_gcell_usage {
+    print"\nmake_gcell Usage: make_gcellDB -gx=X -gy=Y -nx=Nx -ny=Ny [-verbose -debug -norun -help]\n";
+    print"                  you can use either -gx -gy args to specify the size of a gcell in x and y\n";
+    print"                  or -nx and -ny to specify the number of gcell along x and y\n";
+    print"                  Default is 10 gcells X 10 gcells\n";
+    return;
+}
+ 
+
+1;

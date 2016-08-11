@@ -1,0 +1,887 @@
+#########  pie graph, log etc. -help "Mastering perl Tk" (Tk::CanvasPlot)######### 
+
+sub plot_graph {
+
+#****f* /plot_graph
+# NAME
+#    plot_graph
+#FUNCTION
+#    plotting graph between data of two fields 
+#Assumptions
+#    works if data is in KB database.
+#SYNOPSIS
+#    plot_graph -testName <name of testcase> 
+#                 -dataField <datafield>  
+#                 -refField <reference field>
+#                 -order <order of ref fields ASC/DESC (default is ASC)>
+#       optional  [-limit <limit of refField (default is max. length of refField)>]
+#       optional  [-offset <offset for refField (default is 0)>]
+#INPUTS
+#    options:
+#    -testName <name of testcase>, -dataField <datafield> ,
+#    -refField <reference field>,-order <order of ref fields ASC/DESC (default is ASC)>
+#     optional  [-limit <limit of refField (default is max. length of refField)>],
+#     optional  [-offset <offset for refField (default is 0)>]
+#OUTPUTS
+#     display graph
+#****
+
+my $DBvalue = $GLOBAL->dbfGlobalGetInitializeDB;
+if ( $DBvalue == 0 ) {
+  print "WARN-KNLBSE-PLT_GRPH : 001 : first call IntKB to create database table\n";
+  return;
+}
+my $noOfArguments = @_;
+if( $noOfArguments < 6 || $_[0] eq '-h' || $_[0] eq '-help' || $_[0] eq '-HELP') { 
+                           print "Usage : plot_graph -testName <testname> \n";
+                           print "                         -dataField <dataField> \n";
+                           print "                         -refField <refField> \n";
+                           print "                         -order <ASC or DESC> \n";
+                           print "  limit is optional      [-limit <limitno> ] \n";
+                           print "  offset is optional     [-offset <offsetno> ] \n";
+                           
+                                                 }#if no. of arg not eq
+else {#correct no of arguments
+
+####### find the testNames exists in database ########
+my @array_testName = ();
+my @array_test = ();
+my $j = 0;
+my %TESTS = ();
+
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","$KB_ADMIN","$KB_PASSWD" ) || die "Cannot connect: $DBI::errstr";
+my $sth = $dbh->prepare( "SELECT TestName FROM designStat WHERE RID = 0");
+$sth->execute();
+while (($tp )= $sth->fetchrow_array) { $TESTS{$tp} = $j; $j++;}
+
+### initialising all fields ###
+   $testName = "";
+   $dataField = "";
+   $refField = ""; 
+my $limitNo = "";   
+my $offsetNo = ""; 
+if ($offsetNo eq ""){$offsetNo = 0;}
+   $order = "";
+
+############################# Reading the arguments ##########################
+for (my $i =0; $i< $noOfArguments ; $i++){
+
+if($_[$i] eq "-testName"){
+   $testName = $_[$i+1];
+   @array_test  = split(/\,/,$testName);
+   foreach (@array_test) {
+        if (exists $TESTS{$_}){push (@array_testName, $_);}
+        else {print "WARN-KNLBSE-PLT_GRPH : 002 : $_ not found in database\n";}  
+                       }#foreach   
+             $testName = join(",", @array_testName);
+                           }
+if($_[$i] eq "-dataField"){
+$dataField = $_[$i+1];
+ @array_dataField = split(/\,/,$dataField);
+                              }
+if($_[$i] eq "-refField"){
+$refField = $_[$i+1];
+                             }
+if($_[$i] eq "-limit"){
+$limitNo = $_[$i+1];
+
+                         }
+if($_[$i] eq "-offset"){
+$offsetNo = $_[$i+1];
+if ($offsetNo eq ""){$offsetNo = 0;}
+else {$offsetNo = $offsetNo;}
+
+                         }
+if($_[$i] eq "-order"){
+$order = $_[$i+1];
+                         }
+
+                                         } # for no. of arguments
+
+
+if ($limitNo eq ""){
+my @count=();
+foreach $testName(@array_testName){
+#--------------------------------------------------------#
+my @ref1=();
+my $sth1 = $dbh->prepare( "SELECT $refField FROM designStat WHERE TestName = '$testName'");
+$sth1->execute();
+while (($tp1 )= $sth1->fetchrow_array) { push(@ref1,$tp1); }
+my $count_reffield = @ref1;
+push (@count, $count_reffield);
+@count =sort {$b<=>$a} @count;
+                             }#foreach testcase
+$limitNo = $count[0];
+                 }#if limit is empty
+#--------------------------------------------------------#
+
+my @plotData=();
+my @ref = ();
+my @refStorage = ();
+my @refLengths = ();
+my @refLengths1 = ();
+
+foreach $testName(@array_testName){
+my @ref1=();
+my $n;
+my $sth = $dbh->prepare( "SELECT $refField FROM designStat WHERE TestName = '$testName' ORDER BY RID $order LIMIT $limitNo OFFSET $offsetNo");
+$sth->execute();
+while (($tp) = $sth->fetchrow_array) { push(@ref1,$tp); }
+$n = @ref1;
+push (@refStorage, [@ref1]);
+push (@refLengths, $n);
+                                   }#foreach testname
+my $m = @refLengths;
+@refLengths1 = sort {$b<=>$a} @refLengths;
+for (my $k = 0; $k<$m ; $k++){
+if ($refLengths1[0] == $refLengths[$k]){
+@ref = @{$refStorage[$k]};}}
+  @plotData = (@plotData,[@ref]);
+
+foreach $testName(@array_testName){
+foreach $dataField(@array_dataField){
+my $sth2 = $dbh->prepare( "SELECT $dataField FROM designStat WHERE TestName = '$testName' ORDER BY RID $order LIMIT $limitNo OFFSET $offsetNo");
+$sth2->execute();
+my @data=();
+my @data1= ();
+my @data2 = ();
+while (($tp2) = $sth2->fetchrow_array) {
+                                      if ($tp2 eq ""){push(@data,"NULL");}
+                                      else {push(@data,$tp2);}
+                                     }
+my $datalen = @data;
+
+if ($datalen==$refLengths1[0]){@data2 = @data;}
+else {my $lenDiff = $refLengths1[0]-$datalen;
+    if ($order eq "DESC"){
+        for (my $i=0; $i<$lenDiff; $i++){
+                                      push (@data1,"NULL");
+                                         }
+           push (@data2,@data1);
+           push (@data2,@data);
+                         }
+   else {
+       for (my $i=0; $i<$lenDiff; $i++){
+                                      push (@data1,"NULL");
+                                         }
+           push (@data2,@data);
+           push (@data2,@data1);
+
+               }
+      }#else
+        
+@plotData = (@plotData,[@data2]);
+                                     }#foreach dataField
+                                      }#foreach testName
+                                                   
+&Plot_Kb_Graph(@plotData);
+                         }#else correct no. of arguments
+}#sub plot_graph
+
+ 
+
+sub plot_kb {
+
+# Both the arrays should same number of entries.
+#my @data = (['enc01', 'enc02', 'enc03', 'enc04' ],
+#            [80, 90, 85, 75], 
+#            [76, 55, 75, 95],
+#            [66, 58, 92, 83]);
+my @data = @_;
+my $mygraph = GD::Graph::lines->new(920, 320);
+
+$mygraph->set(
+    x_label     =>  $refField."  ----->",
+    y_label     =>  $dataField."  ----->",
+    title       =>  "Graph:-> ".$dataField." vs ".$refField,
+    # Draw datasets in 'solid', 'dashed' and 'dotted-dashed' lines
+    line_types  => [1, 2, 3, 4],
+    # Set the thickness of line
+    line_width  => 2,
+    # Set colors for datasets
+    dclrs       => ['blue', 'green', 'cyan', 'red', 'orange', 'dyellow', 'purple','dpink', 'marine', 'dbrown'], 
+) or warn $mygraph->error;
+
+$mygraph->set_legend_font(GD::gdMediumBoldFont);
+#$mygraph->set_legend('design 1', 'design 2', 'design 3');
+$mygraph->set_legend(@array_dataField);
+my $myimage = $mygraph->plot(\@data) or die $mygraph->error;
+
+#print "Content-type: image/png\n\n";
+open(PICTURE, ">picture.png") or die("Cannot open file for writing");
+
+# Make sure we are writing to a binary stream
+binmode PICTURE;
+
+# Convert the image to PNG and print it to the file PICTURE
+print PICTURE $myimage->png;
+#print PICTURE $myimage->jpeg;
+close PICTURE;
+
+my $img = $kbFrame3->Photo(-file=>"picture.png", -format => 'png');
+my $f = $kbFrame3->Frame->grid(-row=>0, -column=>0, -sticky=>'n');
+$f->Label(-image => $img)->grid;
+
+}#sub plot_kb
+
+############################################################################
+############################## new Graph code ##############################
+############################################################################
+sub Plot_Kb_Graph {
+my @data = @_;
+my $canvas = $KbCanvas;
+my $CanvasWidth = 925;
+my $CanvasHeight = 300;
+my @LineColor=("blue", "orange","orange red", "red","SeaGreen1","sienna", "sienna2","sienna4", "VioletRed","purple");
+my @LineType = ([2,4],[2,8],[4,4],[6,4],[6,4,2,4],[6,4,2,4,2,4]);
+my @Stipple = ("gray12","gray25","gray50","gray75");
+my $graphTitle = "Graph:->  For ".$testName.":-{".$dataField." vs ".$refField."}";
+my $xLabel = $refField."  ----->";
+my $yLabel = $dataField."  ----->";
+my $test = $testName;
+$canvas->delete("all");
+
+&Call_Plot_Kb_Graph(\@data,$CanvasWidth,$CanvasHeight,\@LineColor,\@LineType,\@Stipple,$graphTitle,$xLabel,$canvas,$dataField,$test);
+}#sub Plot_Kb_Graph
+
+########################################################################################################
+sub Call_Plot_Kb_Graph {
+
+my @arg =@_;
+my @data = @{$arg[0]};
+my $KbCanvasWidth = $arg[1];
+my $KbCanvasHeight = $arg[2];
+my @color = @{$arg[3]};
+my @linetype = @{$arg[4]};
+my @type = @{$linetype[1]};
+my @stipple = @{$arg[5]};
+my $title = $arg[6];
+my $xLabel = $arg[7];
+my $plotCanvas = $arg[8];
+my $dataFields = $arg[9];
+my @dataField = split(/\,/,$dataField);
+my $testName = $arg[10];
+my @testName = split(/\,/,$testName);
+##### remove hardcoding ####
+my $llx = 150;
+my $lly = $KbCanvasHeight-30;
+my $urx = $KbCanvasWidth-50;
+my $ury = 30;
+############################
+my $width = $urx-$llx;
+my $height = $lly-$ury;
+#my (@coords) = &get_plot_dataOrder(@data);########### execute the subroutine to get data ##############
+my @coords = @data;
+my $n = @coords;
+my @ref= @{$coords[0]};
+#?my @refSorted = sort {$a<=>$b} @ref;
+my $refsize = @ref;
+##############-----find the Min & Max Data Field----############
+my @Mindata = ();
+my @Maxdata = ();
+my @datafield = ();
+for (my $i=1; $i<$n; $i++){
+my @data = ();
+@data = @{$coords[$i]};
+@datafield = sort {$a <=> $b} @data;
+@Mindata = (@Mindata ,$datafield[0]);
+@Maxdata = (@Maxdata ,$datafield[$refsize-1]);
+                         }#for
+@Mindata = sort {$a <=> $b} @Mindata;  
+@Maxdata = sort {$a <=> $b} @Maxdata;
+my $Maxdatalength = @Maxdata;
+
+#?my $Minref = $ref[0];
+#?my $MinSortedref = $refSorted[0];
+#?my $Maxref = $ref[$refsize-1];
+
+my $Mindata = $Mindata[0];
+my $Maxdata = $Maxdata[$Maxdatalength-1];
+ 
+my $dataDiff = $Maxdata - $Mindata;
+#?my $refDiff = $Maxref - $Minref;
+
+my $dataStepSize = $dataDiff/6;
+#?my $refStepSize = $refDiff/$refsize;
+
+my $dataStepSize_integer = int ($dataDiff/6);
+if ($dataStepSize > $dataStepSize_integer){
+    $dataStepSize = $dataStepSize_integer+1;
+ 				           }#if dataStepSize
+#?my $refStepSize_integer = int ($refDiff/$refsize);
+#?if ($refStepSize > $refStepSize_integer){ 
+#?    $refStepSize = $refStepSize_integer+1;
+#?                                         }#if refStepSize
+
+
+$plotCanvas->createRectangle($llx,$lly,$urx,$ury, -outline,"green");
+
+##------------------- to create data fields in left Canvas -----------------##
+$plotCanvas->createRectangle(5,$lly,115,$ury, -outline,"yellow");
+$plotCanvas->createRectangle(5,$ury,115,$ury+25, -outline,"yellow");
+#$plotCanvas->createText(65,$ury+10,-font,'big', -text,"DataFields", -fill,"magenta");
+
+#-----------------------------------------------------------------------------------#
+
+
+for (my $i=0; $i<=6; $i++){
+##Co-ordinates for data fields Y-Axis##
+my $llx1 = $llx-4;
+my $lly1 = $lly- (($height*$i)/6); 
+my $llx2 = $llx+4; 
+my $lly2 = $lly - (($height*$i)/6);
+my $dataText = $Mindata +$dataStepSize*$i;
+
+$plotCanvas->createLine($llx1,$lly1,$llx2,$lly2, -fill,"red");
+#$plotCanvas->createText($llx1-14,$lly1, -text=>$dataText,-fill,"magenta");
+$plotCanvas->createText($llx1-14,$lly1, -text=>$dataText,-fill,"magenta4");
+
+###### if dataStepSize =0 #######
+if ($dataStepSize == 0){last;}
+#######################################
+
+                           }#for Y-Axis coordinates 
+
+for (my $j=1; $j<=$refsize; $j++){
+##Co-ordinates for ref fields##
+my $llx3 = $llx+($width*$j)/($refsize+1);
+my $lly3 = $lly+4;
+my $llx4 = $llx+($width*$j)/($refsize+1);
+my $lly4 = $lly-4; 
+#my $refText = $Minref+ $refStepSize*($j-1);
+
+$plotCanvas->createLine($llx3,$lly3,$llx4,$lly4, -fill,"red");
+#$plotCanvas->createText($llx3,$lly+9, -text=>$refText,-fill,"magenta");
+#$plotCanvas->createText($llx3,$lly+9, -text=>$ref[$j-1],-fill,"magenta");
+$plotCanvas->createText($llx3,$lly+9, -text=>$ref[$j-1],-fill,"magenta4");
+                                   }#for ref
+
+###########---plots for each data Field---############
+my $count = 1;
+for (my $k=1; $k<$n; $k++){
+my @data = ();
+@data = @{$coords[$k]};
+my $datasize = @data;
+my @linepoint =();
+my $color;
+my @lineType= ();
+my $stipple;
+my $tag = "graph".$k;
+my $m = @testName;
+
+if ($k <=10){$color = $color[$k-1];}
+else {$color = $color[$k-11];}
+if ($k <=6){@lineType = @{$linetype[$k-1]};$stipple = "";}
+else {
+    if($k> 6 && $k<=10){
+         @lineType = (4,4);
+         $stipple = @stipple[$k-7];
+                         }
+   else { @lineType = "";
+          $stipple = "";}
+     }
+
+######## case when dataStepSize = 0 ########
+
+#my $x1 = $llx+(($width/($refsize+1))*(1 + ($ref[0]-$Minref)/$refStepSize));
+my $x1;
+my $y1;
+if ($data[0] eq "NULL"){}
+else {
+ $x1 = $llx+($width/($refsize+1));
+    
+#-----------------------------------------------------------#
+if ($dataStepSize == 0) { 
+$y1 = $lly- ($height/6)*($data[0]-$Mindata);
+                          }#if dataStepSize is zero
+else {
+$y1 = $lly- (($height/6)*($data[0]-$Mindata)/$dataStepSize);
+      }#if dataStepSize not zero
+   push (@linepoint, $x1,$y1);  
+#-----------------------------------------------------------#
+
+$plotCanvas->createOval($x1-3,$y1+3,$x1+3,$y1-3, -fill=>$color,-tags,$tag);##creating circle joints 
+      }
+################### draw plot ##################################
+#for (my $l=1; $l< $refsize; $l++){
+for (my $l=1; $l< $datasize; $l++){
+ 
+#my $x2 = $llx+(($width/($refsize+1))*(1 + ($ref[$l]-$Minref)/$refStepSize));
+my $x2;
+my $y2;
+if ($data[$l] eq "NULL"){}
+else {
+ $x2 = $llx+(($width/($refsize+1))*(1 + $l));
+#-------------------------------------------------------------#
+if ($dataStepSize == 0) { 
+$y2 = $lly- ($height/6)*($data[$l]-$Mindata);
+                          }#if dataStepSize is zero
+else {
+$y2 = $lly- (($height/6)*($data[$l]-$Mindata)/$dataStepSize);
+      }#if dataStepSize not zero
+    
+#-------------------------------------------------------------#
+
+$plotCanvas->createOval($x2-3,$y2+3,$x2+3,$y2-3, -fill=>$color,-tags,$tag);##creating circle joints
+
+push (@linepoint, $x2,$y2);
+     }#if dataStepSize is not zero
+}#for plot
+
+my $XX = 5; my $YY = $ury+25+20*$k;
+my $XX1 = 30; my $YY1 = $ury+25+20*$k;
+
+my $lineLen = @linepoint;
+if($lineLen< 4){}
+else {
+$plotCanvas->createLine(@linepoint, -dash,[@lineType],-stipple,$stipple,-fill,$color,-tags,$tag);}
+$plotCanvas->createLine($XX,$YY,$XX1,$YY1, -dash,[@lineType],-stipple,$stipple,-fill,$color);## sample lines for leftside Display   
+
+my $t = ($n-1)/$m*$count;
+if ($k <= $t){$count = $count;}
+else {$count = $count+1;}
+
+#$plotCanvas->createText(45,$YY,-text,$testName[$count-1],-fill,$color,-tags,$tag);## dataField text for leftside Display  
+$plotCanvas->createText(85,$YY,-text,$dataField[$k-1-($n-1)/$m*($count-1)],-fill,$color,-tags,$tag);## dataField text for leftside Display  
+
+ $plotCanvas->bind($tag,"<Enter>"=> sub{$plotCanvas->itemconfigure($tag,-fill=>'white')});
+ $plotCanvas->bind($tag,"<Leave>"=> sub{ $plotCanvas->itemconfigure($tag,-fill=>$color);});
+                                  
+                           }#for each data field
+&graph_zoomIn_zoomOut($plotCanvas,$KbCanvasWidth,$KbCanvasHeight);
+#&ZoomInOut($plotCanvas,$KbCanvasWidth,$KbCanvasHeight,$llx,$lly,$urx,$ury);
+&draw_lable_title_color_graph($plotCanvas,$title,$xLabel,$llx,$lly,$width,$height);
+&print_xy($plotCanvas,$llx,$lly,$Mindata,$refsize,$dataStepSize,$width,$height,\@ref);
+#?&print_xy($plotCanvas,$llx,$lly,$Minref,$Mindata,$refsize,$refStepSize,$dataStepSize,$width,$height,$MinSortedref);
+#&delete_canvas_items($plotCanvas);
+}#sub Call_Plot_Kb_Graph
+
+########################################## arrange the reference in ascending order and data w.r.t reference ###############################
+sub get_plot_dataOrder {
+
+my @arg = @_;
+my @Y = ();
+my $n = @arg;
+my @ref =  @{$arg[0]};
+
+my $refSize = @ref;
+my @SortRef = sort {$a<=>$b} @ref;
+
+#---------push reference array in resultant array Y---------------#
+
+ @Y = (@Y, [@SortRef]);
+
+for (my $k =1; $k<$n; $k++){   ##### for each data array#####
+
+my @data = @{$arg[$k]};
+my $dataSize = @data;
+if ($refSize !=  $dataSize){
+print "MSG-KNLBSE : 001 : the length of datafield and reference field should be equal\n";}
+                     #return;}#if ref size and data size are not equal
+my @X = ();
+for (my $i=0; $i<$refSize; $i++){  ##-----for each sortref elements
+   for (my $j=0; $j<$refSize; $j++){  ##----for each ref elements
+
+             if ($SortRef[$i] == $ref[$j]){
+                            push (@X,$data[$j]);
+                                        }#if
+                                    }#for j 
+                                }#for i
+@Y = (@Y, [@X]);}
+                       return(@Y);
+}#sub get_plot_dataOrder 
+
+################ ZoomIn ZoomOut for GUI ####################
+
+sub graph_zoomIn_zoomOut {
+
+my($plotCanvas,$KbCanvasWidth,$KbCanvasHeight) = @_;
+my $box = [0,0,$KbCanvasWidth,$KbCanvasHeight];
+ my $zoomRect;
+ my @zoomRectCoords;
+        $plotCanvas->CanvasBind('<3>' => sub {
+            my $x = $plotCanvas->canvasx($Tk::event->x);
+            my $y = $plotCanvas->canvasy($Tk::event->y);
+
+            @zoomRectCoords = ($x, $y, $x, $y);
+
+            $zoomRect = $plotCanvas->createRectangle(
+                                            @zoomRectCoords,
+                                            -outline => 'red',
+                                            );
+        });
+                $plotCanvas->CanvasBind('<B3-Motion>' => sub {
+            @zoomRectCoords[2,3] = ($plotCanvas->canvasx($Tk::event->x),
+                                    $plotCanvas->canvasy($Tk::event->y));
+
+            $plotCanvas->coords($zoomRect => @zoomRectCoords);
+        });
+                $plotCanvas->CanvasBind('<B3-ButtonRelease>' => sub {
+            # Delete the rectangle.
+            $plotCanvas->delete($zoomRect);
+
+            # Was the rectangle big enough?
+            return if
+                abs($zoomRectCoords[0] - $zoomRectCoords[2]) < 10 ||
+                abs($zoomRectCoords[1] - $zoomRectCoords[3]) < 10;
+
+            # Let's find the zooming factor.
+            my $dx = $plotCanvas->width  /abs($zoomRectCoords[0] - $zoomRectCoords[2]);
+            my $dy = $plotCanvas->height /abs($zoomRectCoords[1] - $zoomRectCoords[3]);
+
+            my $scale = [$dx => $dy] -> [$dy <= $dx];
+
+            # Let's scale everything up.
+            $plotCanvas->Subwidget('scrolled')->scale('all' => 0, 0, $scale, $scale);
+
+            # Modify the bounding box.
+            $_ *= $scale for @$box;
+
+            # Resize the scrollregion.
+            $plotCanvas->configure(-scrollregion => $box);
+
+            # Now we change the view to center on correct area.
+            $plotCanvas->xviewMoveto($zoomRectCoords[0] * $scale / $box->[2]);
+            $plotCanvas->yviewMoveto($zoomRectCoords[1] * $scale / $box->[3]);
+        });
+
+            $plotCanvas->CanvasBind('<2>' => sub {
+             #my $scale = $KbCanvasWidth/$box->[2];
+             my $scale = $KbCanvasHeight/$box->[3];
+
+            $plotCanvas->Subwidget('scrolled')->scale('all' => 0, 0, $scale, $scale);
+            $box = [0, 0, $KbCanvasWidth, $KbCanvasHeight];
+            $plotCanvas->configure(-scrollregion => $box);
+        });
+
+}#sub graph_zoomIn_zoomOut
+
+
+sub ZoomInOut{
+my($plotCanvas,$KbCanvasWidth,$KbCanvasHeight,$llx,$lly,$urx,$ury) = @_;
+#my $box = [0,0,$KbCanvasWidth,$KbCanvasHeight];
+my $box = [$llx,$ury,$$urx,$lly];
+ my $zoomRect;
+ my @zoomRectCoords;
+        $plotCanvas->CanvasBind('<3>' => sub {
+            my $x = $plotCanvas->canvasx($Tk::event->x);
+            my $y = $plotCanvas->canvasy($Tk::event->y);
+
+            @zoomRectCoords = ($x, $y, $x, $y);
+
+            $zoomRect = $plotCanvas->createRectangle(
+                                            @zoomRectCoords,
+                                            -outline => 'red',
+                                            );
+        });
+                $plotCanvas->CanvasBind('<B3-Motion>' => sub {
+            @zoomRectCoords[2,3] = ($plotCanvas->canvasx($Tk::event->x),
+                                    $plotCanvas->canvasy($Tk::event->y));
+
+            $plotCanvas->coords($zoomRect => @zoomRectCoords);
+        });
+                $plotCanvas->CanvasBind('<B3-ButtonRelease>' => sub {
+            # Delete the rectangle.
+            $plotCanvas->delete($zoomRect);
+
+            # Was the rectangle big enough?
+            return if
+                abs($zoomRectCoords[0] - $zoomRectCoords[2]) < 10 ||
+                    abs($zoomRectCoords[1] - $zoomRectCoords[3]) < 10;
+
+            # Let's find the zooming factor.
+            my $dx = $plotCanvas->width  /abs($zoomRectCoords[0] - $zoomRectCoords[2]);
+            my $dy = $plotCanvas->height /abs($zoomRectCoords[1] - $zoomRectCoords[3]);
+
+            my $scale = [$dx => $dy] -> [$dy <= $dx];
+
+            # Let's scale everything up.
+            #$plotCanvas->Subwidget('scrolled')->scale('all' => 0, 0, $scale, $scale);
+            $plotCanvas->Subwidget('scrolled')->scale($box => 0, 0, $scale, $scale);
+
+            # Modify the bounding box.
+            $_ *= $scale for @$box;
+
+            # Resize the scrollregion.
+            $plotCanvas->configure(-scrollregion => $box);
+
+            # Now we change the view to center on correct area.
+            $plotCanvas->xviewMoveto($zoomRectCoords[0] * $scale / $box->[2]);
+            $plotCanvas->yviewMoveto($zoomRectCoords[1] * $scale / $box->[3]);
+        });
+
+            $plotCanvas->CanvasBind('<2>' => sub {
+             #my $scale = $KbCanvasWidth/$box->[2];
+             #my $scale = $KbCanvasHeight/$box->[3];
+             my $scale = ($lly-$ury)/$box->[3];
+
+            $plotCanvas->Subwidget('scrolled')->scale('all' => 0, 0, $scale, $scale);
+            #$box = [0, 0, $KbCanvasWidth, $KbCanvasHeight];
+            $box = [$llx, $ury, $urx, $lly];
+            $plotCanvas->configure(-scrollregion => $box);
+        });
+
+}#sub zoomInOut 
+
+######################## create label, Title of Graph ########################
+sub draw_lable_title_color_graph{
+my ($plotCanvas,$graphTitle,$labelX,$llx,$lly,$width,$height) = @_;
+my $labelY = "y-Axis ------->";
+
+my $X = $llx+$width/2;
+my $Y = $lly-$height-15;
+my $X1 = $llx+$width/2;
+my $Y1 = $lly+22;
+#my $X2 = 25;
+#my $Y2 = 200;
+
+#$plotCanvas->createText($X,$Y, -text,$graphTitle, -font,"Times 14 ", -fill,"orange red");  
+#$plotCanvas->createText($X1,$Y1, -text,$labelX, -font,"Times 12 ", -fill,"orange red");  
+
+#$plotCanvas->createText($X2,$Y2, -text,$labelY, -font,"Italic 18 bold", -fill,"orange red");  
+#$Plotcanv->markerCreate($X2,$Y2, -text,$labelY, -font,"Italic 18 bold", -fill,"orange red",-rotate,90);
+}#sub draw_lable_title_color_graph
+
+######################################################################
+sub canvasToDisplay {
+#?my ($plotCanvas,$llx, $lly,$MinRef,$MinData,$refSize,$refStepSize,$dataStepSize,$width,$height,$MinSortedRef) = @_;
+my @arg = @_;
+my $plotCanvas = $arg[0];
+my $llx = $arg[1];
+my $lly = $arg[2];
+my $MinData = $arg[3];
+my $refSize = $arg[4];
+my $dataStepSize = $arg[5];
+my $width = $arg[6];
+my $height = $arg[7];
+my @refFd = @{$arg[8]};
+
+my $x = $plotCanvas->canvasx($Tk::event->x);
+my $y = $plotCanvas->canvasy($Tk::event->y);
+my $x1;
+my $x2;
+my $rx1;
+#?if ($MinRef == $MinSortedRef){
+#?$x1 = ($MinRef/$refStepSize)+(($x-$llx)*($refSize+1)/$width)-1;
+#?                              }
+#?else {
+#?$x1 = ($MinRef/$refStepSize)+(($x-$llx)*($refSize+1)/$width);
+#?$x1 = -$x1;
+#?}
+
+if ($order eq "DESC") {
+@refFd = reverse @refFd;
+$x1 = $refSize -(($x-$llx)*($refSize+1)/$width);
+                       }
+else {
+$x1 = (($x-$llx)*($refSize+1)/$width)-1;
+         }
+
+my $f = $x1 -int $x1;
+if ($f > 0.5){ $rx1 = int($x1 + 1);}
+else {$rx1 = int $x1;}
+
+my $xMin = $rx1- 0.5;
+my $xMax = $rx1+ 0.5;
+if (($x1 >= $xMin) && ($x1 < $xMax)) {$x2 = $refFd[$rx1];}  
+else {$x2 = 0.00;}
+                  
+my $y1 = $MinData + (($lly-$y)*6*$dataStepSize/$height);
+
+my $t= sprintf("(x,y) %7s, %7.3f\n" ,  $x2,$y1);
+
+if ((($x >= $llx) && ($x <= ($llx + $width))) && (($y <= $lly) && ($y >= ($lly - $height)))) {
+$plotCanvas->createRectangle($x-60,$y-25,$x+60,$y-5, -outline=>"green",-fill=>"white",-tags=>"COORDSTEXT");
+$plotCanvas->createText($x,$y-5, -text=>$t ,-tags=>"COORDSTEXT");
+$plotCanvas->createLine($llx,$y,$x,$y, -width=> 0,-fill=>"yellow",-dash=>[6,4],-tags=>"COORDSTEXT");
+$plotCanvas->createLine($x,$lly,$x,$y, -width=> 0,-fill=>"yellow",-dash=>[6,4],-tags=>"COORDSTEXT");
+ }
+}#sub canvasToDisplay
+
+sub print_xy {
+my @arg = @_;
+my $plotCanvas = $arg[0];
+$plotCanvas->CanvasBind("<Button-1>"=> [sub {&canvasToDisplay(@arg); }]);
+$plotCanvas->CanvasBind("<B1-ButtonRelease>"=> [sub{$plotCanvas->delete(COORDSTEXT);}]);
+            
+}#sub print_xy
+
+sub delete_canvas_items {
+my $canvas = $_[0];
+my @items = $canvas->find('enclosed',$canvas->bbox('all'));
+foreach my $to_del(@items){
+$canvas->delete($to_del);
+}
+}#sub delete_canvas_items 
+
+#------------------------------------------------------------------------------------------#
+sub plot_graph_outside {
+
+#****f* /plot_graph_outside
+# NAME
+#    plot_graph_outside
+#FUNCTION
+#    writes final data file for plotting graph 
+#Assumptions
+#    works if data is in KB database.
+#SYNOPSIS
+#    plot_graph_outside -testName <name of testcase> 
+#                       -dataField <datafield>  
+#                       -refField <reference field>
+#                       -order <order of ref fields ASC/DESC (default is ASC)>
+#             optional  [-limit <limit of refField (default is max. length of refField)>]
+#             optional  [-offset <offset for refField (default is 0)>]
+#INPUTS
+#    options:
+#    -testName <name of testcase>, -dataField <datafield> ,
+#    -refField <reference field>,-order <order of ref fields ASC/DESC (default is ASC)>
+#     optional  [-limit <limit of refField (default is max. length of refField)>],
+#     optional  [-offset <offset for refField (default is 0)>]
+#OUTPUTS
+#     dataFile generate
+#****
+
+open (WRITE, ">dataFile");
+my $noOfArguments = @_;
+if( $noOfArguments < 8 || $_[0] eq '-h' || $_[0] eq '-help' || $_[0] eq '-HELP') { 
+                           print "Usage : plot_graph_outside -testName <testname> \n";
+                           print "                           -dataField <dataField> \n";
+                           print "                           -refField <refField> \n";
+                           print "                           -order <ASC or DESC> \n";
+                           print "    limit is optional      [-limit <limitno> ] \n";
+                           print "    offset is optional     [-offset <offsetno> ] \n";
+                           
+                                                 }#if no. of arg not eq
+else {#correct no of arguments
+
+   $testName;
+   $dataField;
+   $refField; 
+my $limitNo  ; 
+my $offsetNo ; 
+my $order;
+for (my $i =0; $i< $noOfArguments ; $i++){
+
+if($_[$i] eq "-testName"){
+   $testName = $_[$i+1];
+ @array_testName  = split(/\,/,$testName);
+                           }
+if($_[$i] eq "-dataField"){
+$dataField = $_[$i+1];
+ @array_dataField = split(/\,/,$dataField);
+                              }
+if($_[$i] eq "-refField"){
+$refField = $_[$i+1];
+                             }
+
+if($_[$i] eq "-limit"){
+$limitNo = $_[$i+1];
+#if ($limitNo eq ""){$limitNo = 100;}
+if ($limitNo eq ""){
+my @count=();
+foreach $testName(@array_testName){
+#--------------------------------------------------------#
+my @ref1=();
+my $dbh1 = DBI->connect( "dbi:mysql:$KB_DATABASE","qaadmin","qaadmin" ) || die "Cannot connect: $DBI::errstr";
+my $sth1 = $dbh1->prepare( "SELECT $refField FROM designStat WHERE TestName = '$testName'");
+$sth1->execute();
+while (($tp1 )= $sth1->fetchrow_array) { push(@ref1,$tp1); }
+my $count_reffield = @ref1;
+push (@count, $count_reffield);
+@count =sort {$b<=>$a} @count;
+#print "cont of limit is $count[0]\n";
+                             }#foreach testcase
+$limitNo = $count[0];
+                 }#if limit is empty
+#--------------------------------------------------------#
+else { $limitNo = $limitNo;}
+                         }
+if($_[$i] eq "-offset"){
+$offsetNo = $_[$i+1];
+if ($offsetNo eq ""){$offsetNo = 0;}
+else {$offsetNo = $offsetNo;}
+
+                         }
+if($_[$i] eq "-order"){
+$order = $_[$i+1];
+                         }
+
+                                         } # for no. of arguments
+#print join "," , @array_testName; print "testName\n";
+#print join "," , @array_dataField; print "dataField\n";
+#print "refField is $refField\n";
+#print "limit is $limitNo\n";
+
+my @plotData=();
+my @ref = ();
+my @refStorage = ();
+my @refLengths = ();
+my @refLengths1 = ();
+foreach $testName(@array_testName){
+my @ref1=();
+my $n;
+#my $testName = $array_testName[0] ;
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","qaadmin","qaadmin" ) || die "Cannot connect: $DBI::errstr";
+my $sth = $dbh->prepare( "SELECT $refField FROM designStat WHERE TestName = '$testName' ORDER BY $refField $order LIMIT $limitNo OFFSET $offsetNo");
+$sth->execute();
+#my @ref=();
+while (($tp) = $sth->fetchrow_array) { push(@ref1,$tp); }
+$n = @ref1;
+push (@refStorage, [@ref1]);
+push (@refLengths, $n);
+                                   }#foreach testname
+my $m = @refLengths;
+@refLengths1 = sort {$b<=>$a} @refLengths;
+for (my $k = 0; $k<$m ; $k++){
+if ($refLengths1[0] == $refLengths[$k]){
+@ref = @{$refStorage[$k]};}}
+  @plotData = (@plotData,[@ref]);
+print WRITE "@ref\n"; 
+foreach $testName(@array_testName){
+foreach $dataField(@array_dataField){
+my $sth = $dbh->prepare( "SELECT $dataField FROM designStat WHERE TestName = '$testName' ORDER BY $refField $order LIMIT $limitNo OFFSET $offsetNo");
+$sth->execute();
+my @data=();
+my @data1= ();
+my @data2 = ();
+while (($tp) = $sth->fetchrow_array) {
+                                      if ($tp eq ""){push(@data,"NULL");}
+                                      else {push(@data,$tp);}
+                                     }
+
+my $datalen = @data;
+
+if ($datalen==$refLengths1[0]){@data2 = @data;}
+else {my $lenDiff = $refLengths1[0]-$datalen;
+    if ($order eq "DESC"){
+        for (my $i=0; $i<$lenDiff; $i++){
+                                      push (@data1,"NULL");
+                                         }
+           push (@data2,@data1);
+           push (@data2,@data);
+                         }
+   else {
+       for (my $i=0; $i<$lenDiff; $i++){
+                                      push (@data1,"NULL");
+                                         }
+           push (@data2,@data);
+           push (@data2,@data1);
+
+               }
+      }#else
+ 
+print WRITE "@data2\n";       
+@plotData = (@plotData,[@data2]);
+                                     }#foreach dataField
+                                      }#foreach testName
+#open (WRITE, ">dataFile");
+#print WRITE "@plotData\n";
+close(WRITE);
+                                                   
+                         }#else correct no. of arguments
+}#sub plot_graph_outside
+#&plot_graph_outside('-testName','test1','-dataField','0utime','-refField','RID','-order','ASC','-limit','2','-offset', 0);
+
+
+#-------------------------------------------------------------------------------------------#
+1;

@@ -1,0 +1,321 @@
+sub getNetDriver {
+  my $netName = $_[0];
+  print "\nDBG-UTS : 001 : driver for net $netName" if($debug);
+  my $driverInst ="UND";
+  my @driverList=() ;
+     if ( exists $NETS_ALREADY{$netName} ) {
+          foreach my $instance ( keys %{$NETS_ALREADY{$netName}} ) {
+                  if ( exists $COMP_ALREADY{$instance} ) {
+                    print "\nDBG-UTS : 002 : net $netName connected to an instance $instance" if($debug);
+                    print "\nDBG-UTS : 003 : net $netName connected to an instance $instance and pin $NETS_ALREADY{$netName}{$instance}" if($debug) ;
+                    my $cellref = $CADB{$instance}->dbCadbGetCellref;
+  		    my @pins = $PLDB{$cellref}->dbMdbGetPins;
+  		    foreach my $pinName ( @pins ) {
+  		      my $conn_net = $COMP_ALREADY{$instance}{$pinName};
+                      print "\nDBG-UTS : 004 : net $netName connected to an instance $instance, processing pin $pinName its connected net is $conn_net" if($debug);
+  		      if ($conn_net eq $netName) {
+                          print "\nDBG-UTS : 005 : net $netName connected to an instance $instance and pin $pinName" if($debug);
+                          my $pinType = $PLDB{$cellref}->dbMdbGetPinType($pinName);
+                          my $pinDir  = $PLDB{$cellref}->dbMdbGetPinDir($pinName);
+                          print "\nDBG-UTS : 006 : $pinType $pinDir $cellType\n"  if ($debug);
+  	                  if (($pinType == 9) ||($pinType == 10) || ($pinType == 11) || ($pinType == 0 && $pinDir == 1 )) { 
+                            $driverInst = $instance; 
+  	                    push(@driverList,$driverInst); 
+  	                    push(@driverList,$pinName);
+  	                    return(@driverList); 
+                          }
+  		       }
+  		    }
+                  } elsif ( exists $PORTS_ALREADY{$TOP_MODULE}{$instance} ) {
+                    print "\nDBG-UTS : 007 : net $netName connected to a PIN " if($debug);
+  		    foreach my $port ( keys %{$PORTS_ALREADY{$TOP_MODULE}} ) {
+  		    	my @port_nets = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetConn;
+  		    	if ($netName eq $port_nets[0]){
+                           print "\nDBG-UTS : 008 : net $netName connected to a PIN $port" if($debug);
+                           my $dir = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetDir;
+                           if ( $dir eq "input" ) { 
+                             $driverInst = $port; 
+  	                     push(@driverList,$driverInst); 
+  	                     push(@driverList,"PIN");
+  	                     return(@driverList); 
+                           } 
+                        }
+  		    }
+                  } elsif ( $instance eq "PIN" ) {
+                    print "\nDBG-UTS : 009 : net $netName connected to a PIN " if($debug);
+  		    foreach my $port ( keys %{$PORTS_ALREADY{$TOP_MODULE}} ) {
+  		    	my @port_nets = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetConn;
+  		    	if ($netName eq $port_nets[0]){
+                              print "\nDBG-UTS : 010 : net $netName connected to a PIN $port" if($debug);
+                              my $dir = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetDir;
+                              if ( $dir eq "input" ) { 
+                                $driverInst = $port; 
+  	                        push(@driverList,$driverInst); 
+  	                        push(@driverList,"PIN");
+  	                        return(@driverList); 
+                              } 
+                        }
+  		    }
+                  } else { 
+                    print "\nDBG-UTS : 011 : connecting instance is unknown type\n"if($debug); 
+                  }
+          }# for each instance connected to net
+     } else { 
+       print "\nERR-UTS : 012 : net $netName does not exist in the database\n"; 
+     }
+     return($driverList);
+}#sub getNetDriver
+
+#-------------------------------------------------------------------------------------------------------------------------------------------------#
+
+sub getNetSink {
+  my $netName = $_[0];
+  my $driverInst ="UND";
+  my $driverPin ="UND";
+  my $sinkInst ="UND";
+  my @sinkList=() ;
+  my @driverList= &getNetDriver($netName) ;
+  print "\nDBG-UTS : 001 : Sink for net $netName" if($debug);
+  my $is_drive_found = $#driverList;
+     if($is_drive_found > 0) {
+       $driverInst = $driverList[0] ;
+       $driverPin = $driverList[1] ;
+     }
+     print "\nDBG-UTS : 002 : driverInst is $driverInst and driverPin is $driverPin" if($debug);
+     if ( exists $NETS_ALREADY{$netName} ) {
+          foreach my $instance ( keys %{$NETS_ALREADY{$netName}} ) {
+                  if ( exists $COMP_ALREADY{$instance} ) {
+                    print "\nDBG-UTS : 003 : net $netName connected to an instance $instance" if($debug);
+                    print "\nDBG-UTS : 004 : net $netName connected to an instance $instance and pin $NETS_ALREADY{$netName}{$instance}" if($debug);
+                    my $cellref = $CADB{$instance}->dbCadbGetCellref;
+  		    my @pins = $PLDB{$cellref}->dbMdbGetPins;
+  		    foreach my $pinName ( @pins ) {
+  		      my $conn_net = $COMP_ALREADY{$instance}{$pinName};
+                      print "\nDBG-UTS : 005 : net $netName connected to an instance $instance, processing pin $pinName its connected net is $conn_net" if($debug);
+  		      if ($conn_net eq $netName) {
+                        print "\nDBG-UTS : 006 : net $netName connected to an instance $instance and pin $pinName" if($debug);
+  		        if (($instance ne $driverInst) || ($pinName ne $driverPin)) {
+                            $sinkInst = $instance; 
+                            print "\nDBG-UTS : 007 : Adding net $netName connected to an instance $sinkInst and pin $pinName" if($debug);
+  	                    push(@sinkList,$sinkInst); 
+  	                    push(@sinkList,$pinName);
+                        }
+  		      }
+  		    }
+                  } elsif ( exists $PORTS_ALREADY{$TOP_MODULE}{$instance} ) {
+                    print "\nDBG-UTS : 008 : net $netName connected to a PIN " if($debug);
+  		    foreach my $port ( keys %{$PORTS_ALREADY{$TOP_MODULE}} ) {
+  		    	my @port_nets = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetConn;
+  		    	if ($netName eq $port_nets[0]){
+                             print "\nDBG-UTS : 009 : net $netName connected to a PIN $port" if($debug);
+  		             if (($port ne $driverInst) || ("PIN" ne $driverPin)) {
+                               print "\nDBG-UTS : 010 : Adding net $netName connected to a PIN $port" if($debug);
+                               $sinkInst = $port; 
+  	                       push(@sinkList,$sinkInst); 
+  	                       push(@sinkList,"PIN");
+                             } 
+                        }
+  		    }
+                  } elsif ( $instance eq "PIN" ) {
+                    print "\nDBG-UTS : 011 : net $netName connected to a PIN " if($debug);
+  		    foreach my $port ( keys %{$PORTS_ALREADY{$TOP_MODULE}} ) {
+  		    	my @port_nets = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetConn;
+  		    	if ($netName eq $port_nets[0]){
+                             print "\nDBG-UTS : 012 : net $netName connected to a PIN $port" if($debug);
+  		             if (($port ne $driverInst) || ("PIN" ne $driverPin)) {
+                               print "\nDBG-UTS : 013 : Adding net $netName connected to a PIN $port" if($debug);
+                               $sinkInst = $port; 
+  	                       push(@sinkList,$sinkInst); 
+  	                       push(@sinkList,"PIN");
+                             } 
+                        }
+  		    }
+                  } else { 
+                    print "DBG-UTS : 014 : connecting instance is unknown type\n"; 
+                  }
+          }# for each instance connected to net
+     } else { 
+       print "ERR-UTS : 015 : net $netName does not exist in the database\n"; 
+     }
+     return(@sinkList);
+}#sub getNetSink
+#---------------------------------------------------------------------------------------------------------------------------#
+sub get_sink_list_of_buffer_or_inv {
+my $noOfArguments = @_;
+if( $noOfArguments < 0 || $_[0] eq '-h') { print "Usage : get_sink_list_of_buffer_or_inv\n";
+                                           print "      : -net<netName>\n";
+                                           print "      : -tab_cnt<0|1|2|3......>\n";
+                                         }
+else {
+my $net = "";
+my $tab_cnt = 0;
+#my $output = "clock_tree_forgiven_net.txt";
+my $inst_output = "";
+my $net_output = "";
+for(my $i = 0; $i < $noOfArguments; $i++){
+  if($_[$i] eq "-net"){$net = $_[$i+1];}
+  if($_[$i] eq "-tab_cnt"){$tab_cnt = $_[$i+1];}
+  if($_[$i] eq "-inst_output"){$inst_output = $_[$i+1];}
+  if($_[$i] eq "-net_output"){$net_output = $_[$i+1];}
+}
+my @sink_list = &getNetSink($net);
+for(my $i=0;$i<=$#sink_list;$i=$i+2){
+  my $inst = $sink_list[$i];
+  my $pin = $sink_list[$i+1]; 
+  open(WRITE_INST,">>$inst_output");
+  for(my $temp_cnt = 0;$temp_cnt<$tab_cnt;$temp_cnt++){
+    print WRITE_INST "\t";
+    #print WRITE_NET "\t";
+  }
+  #print "$inst => $pin\n";
+  print WRITE_INST "$inst => $pin\n";
+  close(WRITE_INST);
+  #print WRITE "$inst => $pin\n";
+  my $is_buffer_or_inv = &check_inst_is_buffer_or_inv($inst);
+  if($is_buffer_or_inv == 1 ) {
+    my $out_pin = &get_buf_inv_out_pin($inst);
+    my $net_out = $COMP_ALREADY{$inst}{$out_pin};
+    open(WRITE_NET,">>$net_output");
+    print WRITE_NET "$net_out\n";
+    close(WRITE_NET);
+    #print "NET $net_out\n";
+    #print "\n buffer found , inst is $inst, in pin is $pin, out pin is $out_pin, net is $net_out ";
+    &get_sink_list_of_buffer_or_inv("-net",$net_out,"-tab_cnt",$tab_cnt+1,"-inst_output",$inst_output,"-net_output",$net_output);
+  } 
+}#for
+}#else 
+}#sub get_sink_list_of_buffer_or_inv
+
+sub check_inst_is_buffer_or_inv {
+my $inst = $_[0];
+my $is_buffer_or_inv = 0;
+if(exists $CADB{$inst}){
+  my $cellref = $CADB{$inst}->dbCadbGetCellref;
+  if(exists $PLDB{$cellref}){
+    my @pins = $PLDB{$cellref}->dbMdbGetPins;
+    my $no_of_pins = @pins;
+    #print "\nno of pins is $no_of_pins";
+    if($no_of_pins == 4){
+      my $in_pin_cnt = 0;
+      my $out_pin_cnt = 0;
+      foreach my $pinName (@pins){
+        my $dir = $PLDB{$cellref}->dbMdbGetPinDir($pinName);
+        my $type = $PLDB{$cellref}->dbMdbGetPinType($pinName);
+        if (($dir == 0) && ($type != 1)&& ($type != 2)){
+          $in_pin_cnt++;
+        }
+        if (($dir == 1) && ($type != 1)&& ($type != 2)){
+          $out_pin_cnt++;
+        }
+      }#foreach
+      #print "\nno of in pins is $in_pin_cnt no of out pins is $out_pin_cnt";
+      if(($in_pin_cnt == 1)&&($out_pin_cnt == 1)){
+        $is_buffer_or_inv = 1;
+      }else {
+        $is_buffer_or_inv = 0;
+      }
+    }
+  }else {
+    print "WARN : 001 : $cellref not exists in PLDB\n";
+  }
+}#if
+return($is_buffer_or_inv);
+}#sub check_inst_is_buffer_or_inv
+
+sub get_buf_inv_out_pin {
+my $inst = $_[0];
+my $out_pin = "";
+if(exists $CADB{$inst}){
+  my $cellref = $CADB{$inst}->dbCadbGetCellref;
+  if(exists $PLDB{$cellref}){
+    my @pins = $PLDB{$cellref}->dbMdbGetPins;
+    foreach my $pinName (@pins){
+      my $dir = $PLDB{$cellref}->dbMdbGetPinDir($pinName);
+      if($dir == 1 ){
+        return $pinName;
+      }
+    }#foreach
+  }
+}
+}#sub pin_info
+sub print_clock_tree_info {
+my @sink_list = @{$_[0]};
+my $inst_info_file = $_[1];
+my $net_info_file = $_[2];
+my $tab_cnt = $_[3];
+my @new_sink_list = ();
+my @temp_sink_list = ();
+my @loc_x = ();
+my @loc_y = ();
+for(my $i=0;$i<=$#sink_list;$i=$i+2){
+  my $inst = $sink_list[$i];
+  my $pin = $sink_list[$i+1]; 
+  open(WRITE_INST,">>$inst_info_file");
+  for(my $temp_cnt = 0;$temp_cnt<$tab_cnt;$temp_cnt++){
+    print WRITE_INST "\t";
+  }
+#  print  "$inst => $pin\n";
+  print WRITE_INST "$inst => $pin\n";
+#  close(WRITE_INST);
+  my $is_buffer_or_inv = &check_inst_is_buffer_or_inv($inst);
+  if($is_buffer_or_inv == 1 ) {
+    my $out_pin = &get_buf_inv_out_pin($inst);
+    my $net_out = $COMP_ALREADY{$inst}{$out_pin};
+    open(WRITE_NET,">>$net_info_file");
+    print WRITE_NET "$net_out\n";
+    close(WRITE_NET);
+    @temp_sink_list = &getNetSink($net_out);
+    push(@new_sink_list,@temp_sink_list);
+    my @loc = $CADB{$inst}->dbCadbGetLoc;
+    push(@loc_x ,$loc[0]);
+    push(@loc_y ,$loc[1]);
+  } 
+}#for
+#print "@loc_x => @loc_y\n";
+if($#loc_x < 0 || $#loc_y < 0){
+  my @sorted_loc_x = sort{$a<=>$b}@loc_x;
+  my @sorted_loc_y = sort{$a<=>$b}@loc_y;
+  my $min_x = $sorted_loc_x[0];
+  my $min_y = $sorted_loc_y[0];
+  my $max_x = $sorted_loc_x[-1];
+  my $max_y = $sorted_loc_y[-1];
+  for(my $temp_cnt = 0;$temp_cnt<$tab_cnt;$temp_cnt++){
+    print WRITE_INST "\t";
+  }
+  print WRITE_INST "Min $min_x $min_y\n";
+  for(my $temp_cnt = 0;$temp_cnt<$tab_cnt;$temp_cnt++){
+    print WRITE_INST "\t";
+  }
+  print WRITE_INST "Max $max_x $max_y\n";
+}
+close(WRITE_INST);
+if(@new_sink_list != 0){
+  &print_clock_tree_info(\@new_sink_list,$inst_info_file,$net_info_file,$tab_cnt+1);
+}
+}#sub print_clock_tree_info
+
+sub print_clock_tree_info_cmd {
+my $noOfArguments = @_;
+if( $noOfArguments < 0 || $_[0] eq '-h') { print "Usage : get_sink_list_of_buffer_or_inv\n";
+                                           print "      : -net<netName>\n";
+                                           print "      : -tab_cnt<0|1|2|3......>\n";
+                                           print "      : -inst_output<fileName>\n";
+                                           print "      : -net_output<fileName>\n";
+                                         }
+else {
+my $net = "";
+my $tab_cnt = 0;
+my $inst_output = "";
+my $net_output = "";
+for(my $i = 0; $i < $noOfArguments; $i++){
+  if($_[$i] eq "-net"){$net = $_[$i+1];}
+  if($_[$i] eq "-tab_cnt"){$tab_cnt = $_[$i+1];}
+  if($_[$i] eq "-inst_output"){$inst_output = $_[$i+1];}
+  if($_[$i] eq "-net_output"){$net_output = $_[$i+1];}
+}
+my @sink_list = &getNetSink($net);
+&print_clock_tree_info(\@sink_list,$inst_output,$net_output,$tab_cnt);
+}#else 
+}#sub print_clock_tree_info_cmd
+
+1;

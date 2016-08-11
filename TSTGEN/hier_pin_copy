@@ -1,0 +1,453 @@
+sub pin_place_hier {
+my $flplanName;
+my $topLayer;
+my $bottomLayer;
+my $topLayerNum;
+my $bottomLayerNum;
+my $spaceTracks;
+my $BUS_BITS_TOGETHER = 0;
+my $debug = 0;
+my $flag = 0;
+my $noOfArguments = @_;
+%bus_pins = ();
+ %pinGuideHash = ();
+($topLayer,$bottomLayer) = &pldb_layer_info;
+
+if( $_[0] eq '-h') { print "\nUsage : pin_place_hier \n";
+                     print "        -topLayer <topLayerName>\n";
+                     print "              default taken as $topLayer\n";
+                     print "        -bottomLayer <bottomLayerName>\n";
+                     print "              default taken as $bottomLayer\n";
+                     print "        -spaceTracks <integer value>\n";
+                     print "        --honorBus\n";
+                     print "        --honorPinGuide\n";
+                     print "        -debug\n";
+                         }
+else { # if correct no. of inputs
+
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-topLayer"){$topLayer =  $_[$i+1]; }
+if($_[$i] eq "-bottomLayer"){$bottomLayer = $_[$i+1];}
+if($_[$i] eq "-spaceTracks"){$spaceTracks = $_[$i+1];}
+if($_[$i] eq "--honorBus"){$BUS_BITS_TOGETHER = 1;}
+if($_[$i] eq "--honorPinGuide"){$HONOR_PIN_GUIDE = 1;}
+if($_[$i] eq "-debug"){$debug = 1;}
+} # for
+
+$topLayerNum = $PTDB{$topLayer}->dbTechGetLayerNum;
+$bottomLayerNum = $PTDB{$bottomLayer}->dbTechGetLayerNum;
+
+if ($bottomLayerNum > $topLayerNum) {
+	print "\nERR-TST-PN_PL_HR : 001 : Please specify the topLayer greater than the bottom layer\n";
+	$flag = 1;
+}
+
+if ($flag == 0) { 
+#Working in $FLOORPLAN_ALREADY:
+#
+#Find floorplan using module name:
+#  my $flplanName = "$module/_self_";
+#
+#Find floorplan using inst name:
+#  my $flplanName = "$parent/$inst";
+#
+#----------------------------------------------------------------
+#For example:
+#
+#module A ()
+#B u1
+#B u2
+#endmodule
+#
+#if each of u1 and u2 has its own floorplan,
+#the names are "A/u1" and "A/u2"
+#if both u1 and u2 share the same floorplan,
+#the name is "B/_self_"
+#----------------------------------------------------------------
+
+foreach (keys %FLOORPLAN_LOOKUP) {
+$flplanName = $_ ;
+%bus_pins = ();
+my ($flplanID, $flplan) = &dbfTstgenGetInstFlplanID($flplanName);
+  print "INFO-TST-PN_PL_HR : 002 : ID: $flplanID , Flplan: $flplan \n";
+  my ($module, $inst) = split ("/",$flplan);
+#	if ($module eq 'mychip') { next;}	
+  if ( $flplanID == 0 ) {
+	print "ERR-TST-PN_PL_HR : 003 : Floorplan does not exist \n";	  
+  }
+  my $dbu = $GLOBAL->dbfGlobalGetDBU;
+  my @bbox = $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetSize;
+ 
+my @pins = $MODULE_ALREADY{$module}->dbVNOMGetPins;
+foreach my $pin ( @pins ) {
+  if ( $FLOORPLAN_ALREADY{$flplanID}->dbFlplanHasPin($pin) ) {
+    next;
+  }
+  $FLOORPLAN_ALREADY{$flplanID}->dbFlplanAddPin($pin);
+}
+
+
+ my @legalizedPins = ();
+  foreach my $pin ( $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetPinList ) {
+####Hard coding done for pad block###
+if ($pin eq "pad") {
+my $llx = $bbox[0]+2000;
+my $lly = $bbox[3]-40000;
+my $urx = $bbox[2] - 2000;
+my $ury = $bbox[3] - 4000;
+my $rect = "$topLayer $llx $lly $urx $ury  ";
+print "INFO-TST-PN_PL_HR : 004 : Bbox:@bbox, Pin size: $rect\n";
+$FLOORPLAN_ALREADY{$flplanID}->dbFlplanSetPinStatus($pin, "PLACED");
+$FLOORPLAN_ALREADY{$flplanID}->dbFlplanAddPinRect($pin, $rect);
+}
+    my $status = $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetPinStatus($pin);
+	print "DBG-TST-PN_PL_HR : 005 : Pin: $pin, Status: $status \n" if ($debug);
+    if ( $status > 1 ) {
+      next;
+    }
+    push(@legalizedPins, $pin);
+    if ($pin =~ m/\[.+\]/) {
+	print "DBG-TST-PN_PL_HR : 006 : $pin is bus pin\n" if ($debug);
+	my @pin_info = split(/\[/, $pin);
+	$pin_info[1] =~ s/\]// ;
+	print "DBG-TST-PN_PL_HR : 007 : @pin_info \n" if ($debug);
+	push(@{$bus_pins{$pin_info[0]}{bits}} , $pin_info[1]);
+	
+    }
+    my @shapes = $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetPinRect($pin);
+    # $shapes[0] contains string: "$layer $x1 $y1 $x2 $y2"
+    # copy info to your program
+  }
+ foreach (keys %bus_pins){
+	my @sorted_list;
+	@sorted_list = sort {$a <=> $b} @{$bus_pins{$_}{bits}};
+	print "DBG-TST-PN_PL_HR : 008 : Sorted list is @sorted_list \n" if ($debug);	
+	print "DBG-TST-PN_PL_HR : 009 : LSB: $sorted_list[0] , MSB: $sorted_list[$#sorted_list]\n " if ($debug);
+	$bus_pins{$_}{LSB} = $sorted_list[0];
+	$bus_pins{$_}{MSB} = $sorted_list[$#sorted_list];
+
+ }
+my @bbox1;
+my @guides = $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetPinGuideList;
+foreach my $guide ( @guides ) {
+  if ( $FLOORPLAN_ALREADY{$flplanID}->dbFlplanPinGuideIsKeepOut($guide) ) {
+    next;
+  }
+  my @pins = $FLOORPLAN_ALREADY{$flplanID}->dbFlplanPinGuideGetPinList($guide);
+  for my $pin ( @pins ) {
+    $pinGuideHash{$pin} = $guide;
+    my $layer = $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetPinGuideLayer($guide);
+    if ($layer =='') { $layer = 'NONE';}
+    @bbox1 = $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetPinGuideBbox($guide);
+    my $rect = "$layer $bbox1[0] $bbox[1] $bbox1[2] $bbox1[3]";
+	 $FLOORPLAN_ALREADY{$flplanID}->dbFlplanWipePinRect($pin);
+	 print "DBG-TST-PN_PL_HR : 010 : Pinrect : $rect\n\n" if ($debug);
+    	 $FLOORPLAN_ALREADY{$flplanID}->dbFlplanAddPinRect($pin, $rect);
+  }
+}# foreach guide
+
+
+ &hier_pins_legalize($topLayer,$bottomLayer,$spaceTracks,$flplanID,$debug,@legalizedPins);	
+ &remove_hier_pins_overlap($flplanID,$spaceTracks);
+ if ($BUS_BITS_TOGETHER == 1){
+ &hier_dbPlaceBusBitsTogether($flplanID);
+}
+ #print "Line to test\n" if ($debug);
+  # run your pin legalization here
+  # might need @bbox and @legalizedPins
+
+#  foreach my $pin ( @legalizedPins ) {
+#    $FLOORPLAN_ALREADY{$flplanID}->dbFlplanSetPinStatus($pin, "PLACED");
+#    $FLOORPLAN_ALREADY{$flplanID}->dbFlplanWipePinRect($pin);
+#    # copy result of pin placement
+#    my $rect = "$layer $x1 $y1 $x2 $y2";
+#    $FLOORPLAN_ALREADY{$flplanID}->dbFlplanAddPinRect($pin, $rect);
+#  }
+
+#=============================================================================
+#
+#Working in $PSEUDO_MODULE_ALREADY:
+#
+#  my @bbox = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetSize;
+#  my @legalizedPins = ();
+#  foreach my $pin ( $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetPins ) {
+#    my $status = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetPinStatus($pin);
+#    if ( $status > 1 ) {
+#      next;
+#    }
+#    push(@legalizedPins, $pin);
+#    my @shapes = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetPinRect($pin);
+#    # $shapes[0] contains string: "$layer $x1 $y1 $x2 $y2"
+#    # copy info to your program
+#  }
+#
+#  # run your pin legalization here
+#  # might need @bbox and @legalizedPins
+#
+#  foreach my $pin ( @legalizedPins ) {
+#    $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenSetPinStatus($pin, "PLACED");
+#    $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenWipePinRect($pin);
+#    # copy result of pin placement
+#    my $rect = "$layer $x1 $y1 $x2 $y2";
+#    $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenAddPinRect($pin, $rect);
+#  }
+
+
+
+}#end foreach
+}#end if
+}#end else
+ %pinGuideHash = ();
+%bus_pins = ();
+}#sub pin_place_hier
+
+
+
+sub hier_pins_legalize {
+my @pins;
+my $debug =0;
+my $sTracks;
+my $topL ; my $bottomL;
+my $topLNum; my $bottomLNum ; my $LNum;
+my $dbu = $GLOBAL->dbfGlobalGetDBU;
+($topL,$bottomL,$sTracks,$flplanID,$debug,@pins) = @_;
+$topLNum = $PTDB{$topL}->dbTechGetLayerNum;
+$bottomLNum = $PTDB{$bottomL}->dbTechGetLayerNum;
+print "INFO-TST : 001 : Begin hier_pins_legalize\n";
+my @bbox = $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetSize;
+print "DBG-TST : 002 : BBOX : @bbox \n" if ($debug);
+my @HL = ();
+my @VL = ();
+foreach my $L ( keys %PTDB ) {
+        my $LayerDir = $PTDB{$L}->dbTechGetLayerDir;
+        my $LayerType = $PTDB{$L}->dbTechGetLayerType;
+        if ( $LayerType eq 'ROUTING' ) {
+	$LNum = $PTDB{$L}->dbTechGetLayerNum;
+	if (($LNum > $topLNum) || ($LNum < $bottomLNum)) { print "DBG-TST : 003 : Moving to next key\n" if ($debug); next; }
+        if ( $LayerDir eq "HORIZONTAL" ) { push(@HL,$L); }
+        elsif ( $LayerDir eq "VERTICAL" ) { push(@VL,$L); }
+        }
+}
+my $HLlen = @HL;
+my $VLlen = @VL;
+my $pinLayer ="";
+my $bus_pin = 0;
+my @pin_info ;
+foreach my $pin ( @pins ) {
+	my $layer;
+	my @loc;
+        #-- Added by Rajeev ---#
+	my $side = 'E';
+	if ($pin =~ m/\[.+\]/) {
+		$bus_pin = 1;
+		@pin_info = split(/\[/, $pin);
+    	}
+	
+	
+ 	my @shapes = $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetPinRect($pin);
+	print "DBG-TST : 004 : Shapes: @shapes \n" if ($debug);
+	my @shapes_info = split(/\s/, $shapes[0]);
+	$layer = $shapes_info[0];
+	$loc[0] = $shapes_info[1];
+	$loc[1] = $shapes_info[2];
+	$loc[2] = $shapes_info[3];
+	$loc[3] = $shapes_info[4];
+        if ($loc[0] == $bbox[0]) { $side = 'E'; }
+        elsif ($loc[2] == $bbox[2]) { $side = 'W'; }
+        elsif ($loc[1] == $bbox[1]) { $side = 'S'; }
+        elsif ($loc[3] == $bbox[3]) { $side = 'N'; }
+        print "DBG-TST : 005 : Loc and side: @loc $side \n" if ($debug);
+	########################################	
+	####Assign layer to the pin
+	########################################
+       	if ($layer  eq 'NONE') {
+	
+	 if ( $side eq 'N' || $side eq 'S' ) { 
+                                                     my $pinLayerN = int( rand($VLlen) );
+                                                     $layer = $VL[$pinLayerN]; 
+                                                   }
+               elsif ( $side eq 'E' || $side eq 'W' ) {
+                                                     my $pinLayerN = int( rand($HLlen) );
+                                                     $layer = $HL[$pinLayerN]; 
+                                                      }
+               print "DBG-TST : 006 : $pin : $side : $layer\n" if ($debug) ;
+	} #end if	
+	if ($bus_pin ==1) {
+		if (defined $bus_pins{$pin_info[0]}{layer} )	{
+			$layer = $bus_pins{$pin_info[0]}{layer};
+		} else {
+			$bus_pins{$pin_info[0]}{layer} = $layer;
+		}
+	}		
+         my $layerWidth = $PTDB{$layer}->dbTechGetLayerWidth;
+	$layerWidth = $layerWidth * $dbu ;
+ 	
+	#######################################
+	#####Align pins on track###############
+	#######################################
+	$DBU = $GLOBAL->dbfGlobalGetDBU;
+	my $layerPitch =  $PTDB{$layer}->dbTechGetLayerPitch ;
+	$layerPitch = $layerPitch * $dbu ;
+	my $offset = $layerPitch /2 ;
+	my $newX ; my $newY ;
+	my $rect;
+
+ 	if ( $side eq 'N' ) { 
+        	my $temp1 = ceil( ($loc[0] - $offset)/$layerPitch );
+                my $temp2 = ($temp1 * $layerPitch )+$offset ;
+		$newX = $temp2 - ($layerWidth/2);
+		$newY = $loc[1];
+	 	$shapes_info[2] = $newX + ($layerWidth);
+	 	$shapes_info[3] = $newY - ($layerWidth);
+    	 	$rect = "$layer $newX $shapes_info[3] $shapes_info[2] $newY";
+        }
+	elsif ( $side eq 'S' ) { 
+        	my $temp1 = ceil( ($loc[0] - $offset)/$layerPitch );
+                my $temp2 = ($temp1 * $layerPitch )+$offset ;
+		$newX = $temp2 - ($layerWidth/2);
+		$newY = $loc[1];
+	 	$shapes_info[2] = $newX + ($layerWidth);
+	 	$shapes_info[3] = $newY + ($layerWidth);
+    	 	$rect = "$layer $newX $newY $shapes_info[2] $shapes_info[3]";
+        }
+        elsif ( $side eq 'E' ) {
+                my $temp1 = ceil( ($loc[1] - $offset)/$layerPitch );
+                my $temp2 = ($temp1 * $layerPitch) +$offset ;
+		$newY = $temp2 - ($layerWidth/2);
+		$newX = $loc[0];
+		$shapes_info[2] = $newX + ($layerWidth);
+	 	$shapes_info[3] = $newY + ($layerWidth);
+    	 	$rect = "$layer $newX $newY $shapes_info[2] $shapes_info[3]";
+        }
+	elsif ( $side eq 'W' ) {
+                my $temp1 = ceil( ($loc[1] - $offset)/$layerPitch );
+                my $temp2 = ($temp1 * $layerPitch) +$offset ;
+		$newY = $temp2 - ($layerWidth/2);
+		$newX = $loc[0];
+		$shapes_info[2] = $newX - ($layerWidth);
+	 	$shapes_info[3] = $newY + ($layerWidth);
+    	 	$rect = "$layer $shapes_info[2] $newY $newX $shapes_info[3]";
+        }
+   	 $FLOORPLAN_ALREADY{$flplanID}->dbFlplanSetPinStatus($pin, "PLACED");
+	 $FLOORPLAN_ALREADY{$flplanID}->dbFlplanWipePinRect($pin);
+	 print "Pinrect : $rect\n\n" if ($debug);
+    	 $FLOORPLAN_ALREADY{$flplanID}->dbFlplanAddPinRect($pin, $rect);
+
+}#end foreach
+
+print "INFO-TST : 007 : End hier_pins_legalize\n";
+}# sub hier_pins_legalize
+
+sub pldb_layer_info {
+my %bd;
+my $bottomL = '';
+my $topL = '';
+my $bottomLNum = -1;
+my $topLNum = 0;
+foreach my $layerName ( keys %PTDB ) {
+
+ $LN = $PTDB{$layerName}->dbTechGetLayerName;
+ $Ln = $PTDB{$layerName}->dbTechGetLayerNum;
+      $bd{$LN}=$Ln;
+                          }#foreach
+  my @key = sort hash_Value_AscendingNum (keys(%bd));
+  print "DBG-TST : 001 : layer name are @key\n" if ($debug);
+    my $n = @key;
+for (my $i = 0; $i<$n; $i++){
+        $layerName = $key[$i];
+ 	$Ln = $PTDB{$layerName}->dbTechGetLayerNum;
+	
+	my $LayerType = $PTDB{$layerName}->dbTechGetLayerType;
+        if ( $LayerType eq 'ROUTING' ) {
+		if ($bottomLNum == -1) {
+			$bottomL = $layerName;
+			$bottomLNum = $Ln;
+		}
+		if ($Ln > $topLNum) {
+			$topL = $layerName;
+			$topLNum = $Ln;
+		}
+	}
+}
+return($topL,$bottomL);
+}#end sub
+
+
+sub hier_dbPlaceBusBitsTogether {
+my $flplanID = $_[0];
+my $layer;
+my @loc_i;
+my @loc_j;
+my @loc_temp;
+my $side;
+my $pin_i;
+my $pin_j;
+
+
+  my @bbox = $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetSize;
+foreach ( keys %bus_pins ) {
+	for (my $i = $bus_pins{$_}{LSB} ; $i < $bus_pins{$_}{MSB} ; $i++){
+		$pin_i = "$_"."[$i]";
+		my @shapes = $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetPinRect($pin_i);
+		print "DBG-TST : 001 : Shapes: @shapes \n" if ($debug);
+		my @shapes_info = split(/\s/, $shapes[0]);
+		$layer = $shapes_info[0];
+		$loc_i[0] = $shapes_info[1];
+		$loc_i[1] = $shapes_info[2];
+		$loc_i[2] = $shapes_info[3];
+		$loc_i[3] = $shapes_info[4];
+        	if ($loc_i[0] == $bbox[0]) { $side = 'E'; }
+       		elsif ($loc_i[2] == $bbox[2]) { $side = 'W'; }
+        	elsif ($loc_i[1] == $bbox[1]) { $side = 'S'; }
+        	elsif ($loc_i[3] == $bbox[3]) { $side = 'N'; }
+        	print "DBG-TST : 002 : Loc and side: @loc_i $side \n" if ($debug);
+		
+		for (my $j = $i ; $j <= $bus_pins{$_}{MSB} ; $j++) {
+			$pin_j = "$_"."[$j]";
+			my @shapes = $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetPinRect($pin_j);
+			print "DBG-TST : 003 : Shapes: @shapes \n" if ($debug);
+			my @shapes_info = split(/\s/, $shapes[0]);
+			$loc_j[0] = $shapes_info[1];
+			$loc_j[1] = $shapes_info[2];
+			$loc_j[2] = $shapes_info[3];
+			$loc_j[3] = $shapes_info[4];
+        		print "DBG-TST : 004 : Loc and side: @loc_j  \n" if ($debug);
+			
+			if (($side == 'E') || ($side == 'W')) {
+				if ($loc_i[1] > $loc_j[1]) {
+					@loc_temp = @loc_i;
+					@loc_i = @loc_j;
+					@loc_j = @loc_temp;
+					my $rect_i = "$layer @loc_i";
+					my $rect_j = "$layer @loc_j";
+	 				$FLOORPLAN_ALREADY{$flplanID}->dbFlplanWipePinRect($pin_i);
+    	 				$FLOORPLAN_ALREADY{$flplanID}->dbFlplanAddPinRect($pin_i, $rect_i);
+	 				$FLOORPLAN_ALREADY{$flplanID}->dbFlplanWipePinRect($pin_j);
+    	 				$FLOORPLAN_ALREADY{$flplanID}->dbFlplanAddPinRect($pin_j, $rect_j);
+        			}
+
+			}
+			if (($side == 'N') || ($side == 'S')) {
+				if ($loc_i[0] > $loc_j[0]) {
+					@loc_temp = @loc_i;
+					@loc_i = @loc_j;
+					@loc_j = @loc_temp;
+					my $rect_i = "$layer @loc_i";
+					my $rect_j = "$layer @loc_j";
+	 				$FLOORPLAN_ALREADY{$flplanID}->dbFlplanWipePinRect($pin_i);
+    	 				$FLOORPLAN_ALREADY{$flplanID}->dbFlplanAddPinRect($pin_i, $rect_i);
+	 				$FLOORPLAN_ALREADY{$flplanID}->dbFlplanWipePinRect($pin_j);
+    	 				$FLOORPLAN_ALREADY{$flplanID}->dbFlplanAddPinRect($pin_j, $rect_j);
+        			}
+
+			}
+		}#end for
+	}#end for
+}#end foreach
+
+}#sub hier_dbPlaceBusBitsTogether
+
+
+
+1;
+

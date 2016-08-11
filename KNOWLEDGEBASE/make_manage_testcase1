@@ -1,0 +1,195 @@
+sub set_kb_field_order {
+#my $fieldString = $_[0];
+#my @fields = split(/\s+/, $fieldString );
+my @fields = @_;
+my @prevOrder = $GLOBAL->dbGlobalGetKbfo();
+my %tempHash = ();
+   foreach my $pf ( @prevOrder ) {
+   $tempHash{$pf} = 1;
+                                 }#foreach
+my @currOrder = ();
+foreach my $f (@fields){
+        if(exists $tempHash{$f}){
+        push(@currOrder,$f);
+                                }
+        else {
+        print "WARN-KNLBSE-SET_KB_FLD_OR : 005 : the field $f does not exist in the database\n";
+             }
+                        }
+$GLOBAL->dbGlobalSetKbfo(@currOrder);
+}# sub set_kb_field_order
+
+
+sub csv2sql {
+
+my $delimit = "\,*";
+my $noOfArguments = @_;
+if( $noOfArguments < 2 || $_[0] eq '-h' ) { print "Usage : csv2sql -f <csv file> \n";
+                           print "                [-delimit <delimiter character>] \n";
+                           print "                 note : by defaul delimiter is a \"\,\"\n";
+                         }
+else { # if correct no. of inputs
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-f"){$CSV_FILE = $_[$i+1];}
+if($_[$i] eq "-delimit"){$delimit = $_[$i+1];}
+                                         }#for
+
+#$KB_DATABASE = "DB;aditya.lnx4.com";
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","qaadmin","qaadmin" ) || die "Cannot connect: $DBI::errstr";
+my $sth = qq{CREATE TABLE JollyTheGreatStat (ID FLOAT)};
+$dbh->do($sth);
+
+$sth = $dbh->prepare("select column_name, data_type, ordinal_position from information_schema.columns where table_name='JollyTheGreatStat'");
+$sth->execute();
+while ( @rows = $sth->fetchrow_array() ){
+$item = $rows[0] ;
+if($item ne "ID") {
+print "INFO-KNLBSE-CSV_2_SQL : 001 : Dropin column $item from the table\n";
+$sth_drop = $dbh->prepare( "ALTER TABLE JollyTheGreatStat DROP COLUMN $item ");
+$sth_drop->execute();
+}
+}
+
+#my $col_name = "ID" ;
+check_header_exist($col_name);
+
+print "INFO-KNLBSE-CSV_2_SQL : 002 : reading $CSV_FILE with delimiter as $delimit\n";
+my $ref = ReadData($CSV_FILE, $delimit);
+my $maxrow = $ref->[1]{maxrow};
+my $maxcol = $ref->[1]{maxcol};
+print "INFO-KNLBSE-CSV_2_SQL : 003 : no of rows are $maxrow\n";
+print "INFO-KNLBSE-CSV_2_SQL : 004 : no of columns are $maxcol\n";
+
+for (my $i=1 ; $i<=$maxcol ;$i++) {
+my @colB = @{$ref->[1]{cell}[$i]};
+print "MSG--KNLBSE-CSV_2_SQL : 005 : printing column array\n";
+shift@colB ;
+my $len = @colB;
+if($len != 0 ) {
+  #print join " " ,  @colB;
+  #print "\n";
+}
+$col_name =  shift@colB ;
+if(check_header_exist($col_name) == 0) {
+   addCustomFields($col_name, "FLOAT") ;
+}
+                             }    
+my @rowB ;
+my $col_heading ;
+my $curr_row ;
+my @col_heading_array;
+if($maxrow > 0){
+    @rowB = map{$ref->[1]{cell}[$_][1]}1..$ref->[1]{maxcol};
+    @col_heading_array = @rowB;
+    my $temp_no = @col_heading_array ;
+    #print "No of element in heading row\n";
+    #print $temp_no;
+    #print "\n";
+    $col_heading =  join "," ,  @rowB;
+    #print "printing heading row \n";
+    #print $col_heading;
+    foreach $headers (@rowB){
+    #print "$headers";
+    #print "\n";
+                            } 
+  # print "\n";
+}
+for (my $j=2 ; $j<=$maxrow ;$j++) {
+    @rowB = map{$ref->[1]{cell}[$_][$j]}1..$ref->[1]{maxcol};
+    $curr_row =  join "," ,  @rowB;
+    #print "No of element in current row\n";
+    my $temp_no = @rowB ;
+    #print $temp_no;
+    #print "\n";
+    #print "printing row array\n";
+    foreach $headers_elements (@rowB){
+    #print "$headers_elements";
+    #print "\n";
+                                     } 
+    #print $curr_row;
+    # print "\n";
+    my $query = "insert into JollyTheGreatStat (" . $col_heading . ") values (" . $curr_row . ")" ;
+    my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","qaadmin","qaadmin" ) || die "Cannot connect: $DBI::errstr";
+    my $sth = $dbh->prepare( "$query");
+    #print "printing query array\n";
+    #print $query;
+    #print "\n";
+    $sth->execute();
+}
+$sth = $dbh->prepare("select * from JollyTheGreatStat");
+$sth->execute();
+while ( @rows = $sth->fetchrow_array() ){
+  print join " " ,  @rows;
+  print "\n";
+}
+
+        }# if correct arguments
+}# sub csv2sql
+
+sub addCustomFields {
+my $column_name = $_[0];
+my $column_def = $_[1];
+print "INFO-KNLBSE : 001 : Going to add column of name $column_name  and type $column_def\n";
+#$KB_DATABASE = "DB;aditya.lnx4.com";
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","qaadmin","qaadmin" ) || die "Cannot connect: $DBI::errstr";
+my $sth = $dbh->prepare( "ALTER TABLE JollyTheGreatStat ADD $column_name $column_def");
+$sth->execute();
+
+}#sub addCustomFields
+
+sub reset_status_all {
+print "INFO-KNLBSE-RST_ST_ALL : 001 : resetting the status of all testcases ...\n";
+#$KB_DATABASE = "DB;aditya.lnx4.com";
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","qaadmin","qaadmin" ) || die "Cannot connect: $DBI::errstr";
+
+my $sth = $dbh->prepare( "SELECT TestPath, TestName  FROM JollyTheGreatStat");
+$sth->execute();
+#$rows = $sth->dump_results();
+while (($tp,$t) = $sth->fetchrow_array) { push(@tests,$t); }
+while ( defined ($test = shift @tests )) {
+                    print "INFO-KNLBSE-RST_ST_ALL : 002 : resetting the status for $test\n";
+                    $sth = $dbh->prepare( "UPDATE JollyTheGreatStat SET Status = '0' WHERE TestName='$test'" );
+                    $sth->execute;
+#                    sleep(2);
+                                         }# while
+
+print "INFO-KNLBSE-RST_ST_ALL : 003 : done\n";
+&dbfRefreshKBView($hlist);
+
+}#sub reset_status_all
+
+
+sub check_header_exist {
+my $column_name = $_[0];
+#$KB_DATABASE = "DB;aditya.lnx4.com";
+
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","qaadmin","qaadmin" ) || die "Cannot connect: $DBI::errstr";
+
+$sth = $dbh->prepare("select column_name, data_type, ordinal_position from information_schema.columns where table_name='JollyTheGreatStat'");
+$sth->execute();
+print "INFO-KNLBSE : 001 : Printing column name from the table\n";
+while ( @rows = $sth->fetchrow_array() ){
+ foreach $item (@rows){
+  print " $item ";
+ }
+  print "\n" ;
+}
+
+$sth = $dbh->prepare("select column_name, data_type, ordinal_position from information_schema.columns where table_name='JollyTheGreatStat' and column_name = '$column_name'");
+$sth->execute();
+my $len = 0;
+if ( @rows = $sth->fetchrow_array() ){
+ $len = 1;
+}
+if(! $len) {
+  print "ERR-KNLBSE : 002 : column not found $column_name\n";
+  return 0 ;
+} else {
+  print "INFO-KNLBSE : 003 : column found $column_name\n";
+  return 1 ;
+}
+}#sub check_header_exist 
+1;
+
+
+

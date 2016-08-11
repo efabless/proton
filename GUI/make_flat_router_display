@@ -1,0 +1,37 @@
+
+sub flat_route_display{
+my $canvas = $design_worldcanvas;
+my $dbu = $GLOBAL->dbfGlobalGetDBU;
+my $MICRONFACTOR = $GLOBAL->dbGlobalGetMicronFactor;
+#------------ making array of Routing layers in ascending order of their number---------# 
+foreach my $layer(keys %PTDB){
+     my $layerType = $PTDB{$layer}->dbTechGetLayerType; 
+     my $layerNum = $PTDB{$layer}->dbTechGetLayerNum; 
+     if($layerType eq "ROUTING"){
+        $RML_TEMP{$layer} = $layerNum;
+     }#if layer is routing
+}#foreach layer
+my @layers = sort RoutingLayerHashValueAscendingNum(keys (%RML_TEMP));
+#---------------------------------------------------------------------------------------#
+foreach my $net (keys %NETS_ROUTING_ALREADY) {
+        my @netCoords = ();
+        my @data = $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBGetRegularRoute;
+        foreach $segment ( @data ) {
+             my @routeBox = xformHierNetSegToRouteBox($segment,\@layers);
+             
+             push(@netCoords, [@routeBox]);
+             my $llx = 20 + ($routeBox[0]/$dbu)*$MICRONFACTOR;
+             my $lly = 20 + ($routeBox[1]/$dbu)*$MICRONFACTOR;
+             my $urx = 20 + ($routeBox[2]/$dbu)*$MICRONFACTOR;
+             my $ury = 20 + ($routeBox[3]/$dbu)*$MICRONFACTOR;
+             my $layer = $routeBox[4];
+             if(exists $PTDB{$layer} ) {
+                my $color = $PTDB{$layer}->dbTechGetLayerColor;
+                $canvas->createRectangle($llx,$lly,$urx,$ury, -outline=>$color, -tags=>"HNETTAG", -state =>"normal", -fill =>$color, -stipple => "gray12");
+             }#if the metal layer exists in the technology
+        }#foreach segment of routing
+ }# if routing data is present
+}#sub flat_route_display
+
+
+1;

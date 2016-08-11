@@ -1,0 +1,238 @@
+#use Getopt::Long qw(GetOptionsFromString);
+#use Graph::Directed;
+
+
+package Combo;
+## rename this to proton::RTL::Combo
+
+sub new {
+  ###############################################################
+  # Configuration is stored in the following variables = defaults
+  my $inst = {
+	      name            => "combo",
+	      in              => "combo_in",
+	      out             => "combo_out",
+	      conn            => 50,
+	      maxNodePerPath  => 2,
+	      maxOpdPerNode   => 3,
+	      h               => 0,
+	      help            => 0,
+	      debug           => 0,
+	      verbose         => 0,
+	      LogicGraph      => "UND",
+	      rtlUtils        => "UND",
+	      inList          => [],
+	      outList         => [],
+	     };
+  ###############################################################
+  bless $inst, 'Combo';
+  return $inst;
+}
+
+sub makeCombo() {
+  my ($self,@args) = @_;
+
+  &init($self,@args);
+  if ($help) {
+    &usage();
+  } else {
+    &genCode($self);
+    &genLogic($self);
+  } #if...else
+}
+
+
+sub init() {
+  my ($self, $args) =  @_;
+  if (!defined($args)) {
+    $args = "";
+  }
+  my $parseResult = Getopt::Long::GetOptionsFromString($args , 
+						       "name=s"           => \$self->{'name'},
+						       "in=s"             => \$self->{'in'},
+						       "out=s"            => \$self->{'out'},
+						       "conn=i"           => \$self->{'conn'},
+						       "maxNodePerPath=i" => \$self->{'maxNodePerPath'},
+						       "maxOpdPerNode=i"  => \$self->{'maxOpdPerNode'},
+						       "h"                => \$self->{'help'},
+						       "help"             => \$self->{'help'},
+						       "debug"            => \$self->{'debug'},
+						       "verbose"          => \$self->{'verbose'},
+						      );
+  $self->{'LogicGraph'} = Graph::Directed->new;
+  $self->{'rtlUtils'}   = RtlUtils->new;
+} #sub init
+
+sub genCode {
+  my ($self) = @_;
+
+  genGraph($self);
+  my $name    = $self->{'name'};
+  my $data_in = $self->{'data_in'};
+  my $data_out= $self->{'data_out'};
+
+
+} #sub genCode
+
+########################################################################
+sub genGraph {
+  my ($self) = @_;
+
+  my ($numIn, $numOut, $numCombo) = (0,0,0);
+  my $rtlUtils   = $self->{'rtlUtils'};
+  my $LogicGraph = $self->{'LogicGraph'};
+
+  #### populate graph with input and output
+  my @inList  = $rtlUtils->expandRange($self->{'in'});
+  my @outList = $rtlUtils->expandRange($self->{'out'});
+  $numIn  = $#inList;
+  $numOut = $#outList;
+  foreach $in (@inList) {
+    $LogicGraph->add_vertex($in);
+    $LogicGraph->set_vertex_attribute($in,"type","in");
+  }
+  foreach $out (@outList) {
+    $LogicGraph->add_vertex($out);
+    $LogicGraph->set_vertex_attribute($out,"type","out");
+  }
+  #### in->out graph
+  foreach my $in (@inList) {
+    foreach my $out (@outList) {
+      my $rand = int(rand(100));
+      if ($rand < $self->{'conn'}) {
+	$LogicGraph->add_edge($in, $out);
+	print "adding edge from $in to $out\n" if ($self->{'verbose'});
+      } #if
+    } #foreach
+  } #foreach
+  #make sure all in and out ports have at least one connection
+  foreach my $in (@inList) {
+    if ($LogicGraph->is_isolated_vertex($in)) {
+	$LogicGraph->add_edge($in, $outList[0]);
+	print "adding extra edge from $in to $outList[0]\n" if ($self->{'verbose'});
+    } #if
+  } #foreach
+  foreach my $out (@outList) {
+    if ($LogicGraph->is_isolated_vertex($out)) {
+	$LogicGraph->add_edge($inList[0], $out);
+	print "adding extra edge from $inList[0] to $out\n" if ($self->{'verbose'});
+    } #if
+  } #foreach
+
+
+  #### add intermediate vertices of type combo - these are the operands 
+  my @edges = $LogicGraph->edges();
+  my $edgeCount = 0;
+  foreach $edge (@edges) {
+    my $num_comb = int rand ($self->{"maxNodePerPath"});
+    my $startVtx = $edge->[0];
+    my $endVtx   = $edge->[1];
+    $LogicGraph->delete_edge($startVtx,$endVtx);
+    for (my $i=0; $i<$num_comb; $i++) {
+      my $comb = "comb_".$edgeCount."_".$i;
+      print "adding comb $comb betwen $startVtx & $endVtx \n" if ($verbose);
+      $LogicGraph->add_vertex($comb);
+      $LogicGraph->set_vertex_attribute($comb,"type","comb");
+      $numCombo++;
+      $LogicGraph->add_edge($startVtx,$comb);
+      $startVtx = $comb;
+    } #for
+    $LogicGraph->add_edge($startVtx,$endVtx);
+    $edgeCount++;
+  } #foreach
+
+  my @nodes = $LogicGraph->vertices();
+  foreach $node (@nodes) {
+    if (($LogicGraph->get_vertex_attribute($node,"type") eq "comb") ||
+	($LogicGraph->get_vertex_attribute($node,"type") eq "out")) {
+      ###add more edges coming into comb
+      my $num_opd = int rand ($self->{"maxOpdPerNode"});
+      my $maxAttempt = $numIn + $numCombo;
+      my ($i, $attempt) = (1,1);
+      while (($i <= $num_opd) && ($attempt < $maxAttempt)) {
+	$i++; $attemp++;
+	## add a random edge
+	my $startVtx = $LogicGraph->random_vertex;
+	$LogicGraph->add_edge($startVtx,$node);
+	print "adding more edge from $startVtx to $node\n" if ($self->{'verbose'});
+	
+	## find a new operand w/o creating cyclicality
+	my $cycle = $LogicGraph->has_a_cycle;
+	if (defined($cycle)) {
+	  #remove the last added edge
+	  $LogicGraph->delete_edge($startVtx,$node);
+	  print "deleting more edge from $startVtx to $node\n" if ($self->{'verbose'});
+	} #if
+      } #while
+    } #for
+  } #foreach
+
+} #sub genGraph
+
+########################################################################
+sub genLogic {
+  my ($self) = @_;
+  my $rtlUtils   = $self->{'rtlUtils'};
+  my $LogicGraph = $self->{'LogicGraph'};
+  my @outList = $rtlUtils->expandRange($self->{'out'});
+
+  my $node;
+  my (@combs);
+  my @nodes = $LogicGraph->vertices;
+
+  foreach $node (@nodes) {
+    if ($LogicGraph->get_vertex_attribute($node,"type") eq "comb") {
+      print "genLogic found a comb $node\n" if ($verbose);
+      push(@combs,$node);
+    }
+  }
+
+  genCombs($self,@combs) if ($#combs>=0);
+  genCombs($self,@outList) if ($#outList>=0);
+}
+
+########################################################################
+sub genCombs() {
+  my ($self,@combs) = @_;
+  my $rtlUtils   = $self->{'rtlUtils'};
+  my $LogicGraph = $self->{'LogicGraph'};
+
+  my $comb;
+  my $combStr;
+  my $pred;
+  my $combStr_tmp;
+
+  foreach $comb (@combs) {
+    $combStr .= "wire $comb;\n";
+  }
+  foreach $comb (@combs) {
+    my @pred = $LogicGraph->predecessors($comb);		
+    die "genFlops encountered a comb with 0 predessor" if ($#pred <0); 
+    if ($#pred == 0) {# use a unary operator
+      $combStr_tmp .= "assign ".$comb." = !".$pred[0].";\n";
+    } else {
+      $combStr_tmp .= "assign ".$comb." = ".pop(@pred);
+      foreach $pred (@pred) {
+	$combStr_tmp .= " && ".$pred;
+      }
+      $combStr_tmp .= ";\n";
+    }
+  }
+  $combStr .= $combStr_tmp;
+}
+
+########################################################################
+sub usage {
+ 	print"Usage: $0 \n";	
+        print "                       -help\n";
+	print "                       -name=<combo_module_name>\n";
+        print "                       -in=<data_in>\n";
+        print "                       -out=<data_out>\n";
+        print "                       -debug\n";
+	return;
+}
+
+
+
+
+1;

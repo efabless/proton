@@ -1,0 +1,848 @@
+
+
+sub read_graph {
+$DEBUG = 31;
+my $INPUT_GRAPH = "xy.out";
+if ( -e $INPUT_GRAPH) {
+open(READ,"$INPUT_GRAPH");
+print "INFO-PL_DATAPRP-RD_GRPH : 001 : Reading the placement info from file $INPUT_GRAPH\n";
+#print "Existing Die size are : @{$DIE_ALREADY{dieArea}} \n";
+
+##########Scaling to values to the die size##########
+$line1 = <READ>;
+($llx,$lly) = (split(/\s+/, $line1))[0,1];
+$absllx = abs($llx);
+$abslly = abs($lly);
+
+$line2 = <READ>;
+($urx,$ury) = (split(/\s+/, $line2))[0,1];
+#print "$line1 : $llx and $lly and $absllx and $abslly\n";
+$newurx = $urx + $absllx;
+$newury = $ury + $abslly;
+#print "$line2 : $urx and $ury and $newurx and $newury\n";
+
+$scalex = $DIE_ALREADY{dieArea}[2]/($newurx);
+$scaley = $DIE_ALREADY{dieArea}[3]/($newury);
+#print "Scalex : $scalex and Scaley : $scaley \n";
+
+while(<READ>) {
+chomp();
+($node,$x,$y) = (split(/\s+/, $_))[0,1,2];
+if(($x =~ (m/-((\d+)\.(\d+))|-(\d+)|((\d+)\.(\d+))|(\d+)/)) && ($y =~ (m/-((\d+)\.(\d+))|-(\d+)|((\d+)\.(\d+))|(\d+)/))){
+#$x = ($x+$absllx)*2000*$scalex;
+#$y = ($y+$abslly)*2000*$scaley;
+$x = ($x+$absllx)*$scalex;
+$y = ($y+$abslly)*$scaley;
+#$x = int($x);
+#$y = int($y);
+
+#print "$x and $y\n";
+$found = 0;
+#foreach $inst ( keys %TEMP ) { if ( $node == $TEMP{$inst} ) { $found = 1; $instance = $inst } }
+if ( exists $TEMPR{$node} ) { $found = 1; $instance = $TEMPR{$node}; } else { $found = 0;}
+if($found == 1 ) { 
+                if ( exists $CADB{$instance} ) {
+     if($CADB{$instance}->dbCadbGetStatus() eq "FIXED"){next;}; 
+     $CADB{$instance}->dbCadbSetLoc($x,$y);
+     $CADB{$instance}->dbCadbSetStatus(PLACED);
+     $CADB{$instance}->dbCadbSetOrient(N);
+                                               } 
+                elsif ( exists $PORTS_ALREADY{$TOP_MODULE}{$instance} ) {
+     if($PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortGetStatus() ==3){next;};
+     $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetLoc($x,$y);
+     $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetSide($side);
+     $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetStatus(PLACED);
+                                               }
+                else { print "ERR-PL_DATAPRP-RD_GRPH : 002 : $instance is neither a port nor a component\n"; }
+
+                 }
+else { print "DBG-PL_DATAPRP-RD_GRPH : 003 : pseudo node $node not found\n" if($debug); }
+                 }else {print "ERR-PL_DATAPRP-RD_GRPH : 004 : locations are not getting for this node $node\n";}
+              }#while
+
+}#end if
+else {
+print "ERR-PL_DATAPRP-RD_GRPH : 004 :No xy.out file found \n";
+}
+close($INPUT_GRAPH);
+&set_inst_box;
+}#sub read_graph
+
+
+sub read_graph_detail {
+$DEBUG = 31;
+my $INPUT_GRAPH = "detailed_xy.out";
+if ( -e $INPUT_GRAPH) {
+open(READ,"$INPUT_GRAPH");
+print "INFO-PL_DATAPRP-RD_GRPH_DTL : 001 : Reading the graph for $INPUT_GRAPH\n";
+#print "Existing Die size are : @{$DIE_ALREADY{dieArea}} \n";
+
+##########Scaling to values to the die size##########
+$line1 = <READ>;
+($llx,$lly) = (split(/\s+/, $line1))[0,1];
+$absllx = abs($llx);
+$abslly = abs($lly);
+
+$line2 = <READ>;
+($urx,$ury) = (split(/\s+/, $line2))[0,1];
+#print "$line1 : $llx and $lly and $absllx and $abslly\n";
+$newurx = $urx + $absllx;
+$newury = $ury + $abslly;
+#print "$line2 : $urx and $ury and $newurx and $newury\n";
+
+#$scalex = $DIE_ALREADY{dieArea}[2]/(2000*$newurx);
+$scalex = $DIE_ALREADY{dieArea}[2]/($newurx);
+#$scaley = $DIE_ALREADY{dieArea}[3]/(2000*$newury);
+$scaley = $DIE_ALREADY{dieArea}[3]/($newury);
+#print "Scalex : $scalex and Scaley : $scaley \n";
+
+while(<READ>) {
+chomp();
+($node,$x,$y) = (split(/\s+/, $_))[0,1,2];
+if(($x =~ (m/-((\d+)\.(\d+))|-(\d+)|((\d+)\.(\d+))|(\d+)/)) && ($y =~ (m/-((\d+)\.(\d+))|-(\d+)|((\d+)\.(\d+))|(\d+)/))){
+#$x = ($x+$absllx)*2000*$scalex;
+#$y = ($y+$abslly)*2000*$scaley;
+$x = ($x+$absllx)*$scalex;
+$y = ($y+$abslly)*$scaley;
+#$x = int($x);
+#$y = int($y);
+
+#print "$x and $y\n";
+$found = 0;
+#foreach $inst ( keys %TEMP ) { if ( $node == $TEMP{$inst} ) { $found = 1; $instance = $inst } }
+if ( exists $TEMPR{$node} ) { $found = 1; $instance = $TEMPR{$node}; } else { $found = 0;}
+if($found == 1 ) { 
+                if ( exists $CADB{$instance} ) {
+     if($CADB{$instance}->dbCadbGetStatus() eq "FIXED"){next;}; 
+     $CADB{$instance}->dbCadbSetLoc($x,$y);
+     $CADB{$instance}->dbCadbSetStatus(PLACED);
+     $CADB{$instance}->dbCadbSetOrient(N);
+                                               } 
+                elsif ( exists $PORTS_ALREADY{$TOP_MODULE}{$instance} ) {
+     if($PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortGetStatus() ==3){next;};
+     $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetLoc($x,$y);
+     $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetSide($side);
+     $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetStatus(PLACED);
+                                               }
+                else { print "ERR-PL_DATAPRP-RD_GRPH_DTL : 002 : $instance is neither a port nor a component\n"; }
+
+                 }
+else { print "DBG-PL_DATAPRP-RD_GRPH_DTL : 003 : pseudo node $node not found\n" if($debug); }
+                 }else {print "ERR-PL_DATAPRP-RD_GRPH : 004 : locations are not getting for this node $node\n";}
+              }#while
+
+}#end if
+else {
+print "ERR-PL_DATAPRP-RD_GRPH_DTL : 004 :No detailed_xy.out file found \n";
+}
+close($INPUT_GRAPH);
+&set_inst_box;
+}#sub read_graph_detail
+
+sub read_graph_store_map{
+$DEBUG = 31;
+my $INPUT_GRAPH = "xy.out";
+if ( -e $INPUT_GRAPH){
+open(READ,"$INPUT_GRAPH");
+print "INFO-PL_DATAPRP-RD_GRPH_STR_MAP : 001 : Reading the graph for $INPUT_GRAPH\n";
+#print "Existing Die size are : @{$DIE_ALREADY{dieArea}} \n";
+
+##########Scaling to values to the die size##########
+$line1 = <READ>;
+($llx,$lly) = (split(/\s+/, $line1))[0,1];
+$absllx = abs($llx);
+$abslly = abs($lly);
+
+$line2 = <READ>;
+($urx,$ury) = (split(/\s+/, $line2))[0,1];
+#print "$line1 : $llx and $lly and $absllx and $abslly\n";
+$newurx = $urx + $absllx;
+$newury = $ury + $abslly;
+#print "$line2 : $urx and $ury and $newurx and $newury\n";
+
+$scalex = $DIE_ALREADY{dieArea}[2]/(2000*$newurx);
+$scaley = $DIE_ALREADY{dieArea}[3]/(2000*$newury);
+#print "Scalex : $scalex and Scaley : $scaley \n";
+
+while(<READ>) {
+chomp();
+($node,$x,$y) = (split(/\s+/, $_))[0,1,2];
+if(($x =~ (m/-((\d+)\.(\d+))|-(\d+)|((\d+)\.(\d+))|(\d+)/)) && ($y =~ (m/-((\d+)\.(\d+))|-(\d+)|((\d+)\.(\d+))|(\d+)/))){
+$x = ($x+$absllx)*2000*$scalex;
+$y = ($y+$abslly)*2000*$scaley;
+$x = int($x);
+$y = int($y);
+
+#print "$x and $y \n";
+$Sfound = 0;
+$Tfound = 0;
+if (exists $STEMPR{$node} ){ $Sfound = 1; $instance = $STEMPR{$node}; }
+if($Sfound == 1) {
+                if ( exists $CADB{$instance} ) {
+      if($CADB{$instance}->dbCadbGetStatus() eq "FIXED"){next;}; 
+      $CADB{$instance}->dbCadbSetLoc($x,$y);
+      $CADB{$instance}->dbCadbSetStatus(PLACED);
+      $CADB{$instance}->dbCadbSetOrient(N);
+                                                }
+                elsif ( exists $PORTS_ALREADY{$TOP_MODULE}{$instance} ) {
+      if($PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortGetStatus() ==3){next;};
+      $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetLoc($x,$y);
+      $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetSide($side);
+      $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetStatus(PLACED);
+                                                }
+                else { print "ERR-PL_DATAPRP-RD_GRPH_STR_MAP : 002 : $instance is neither a port nor a component\n"; }
+                                            }#if stempr
+if(exists $TEMPR{$node} ) { $Tfound = 1; $instance = $TEMPR{$node};}
+if($Tfound == 1) {
+                if (exists $CADB{$instance} ) {
+      if($CADB{$instance}->dbCadbGetStatus() eq "FIXED"){next;}; 
+      $CADB{$instance}->dbCadbSetLoc($x,$y);
+      $CADB{$instance}->dbCadbSetStatus(PLACED);
+      $CADB{$instance}->dbCadbSetOrient(N);
+                                               }
+                elsif ( exists $PORTS_ALREADY{$TOP_MODULE}{$instance} ) {
+      if($PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortGetStatus() ==3){next;};
+      $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetLoc($x,$y);
+      $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetSide($side);
+      $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetStatus(PLACED);
+                                               }
+                else { print "ERR-PL_DATAPRP-RD_GRPH_STR_MAP : 003 : $instance is neither a port nor a component\n"; }
+                                            }# if tempr
+else { print "DBG-PL_DATAPRP-RD_GRPH_STR_MAP : 004 : pseudo node $node not found\n" if($debug); }
+                 }else {print "ERR-PL_DATAPRP-RD_GRPH : 004 : locations are not getting for this node $node\n";}
+                     }#while       
+}#end if
+else {
+print "ERR-PL_DATAPRP-RD_GRPH_STR_MAP : 005 :No xy.out file found\n";
+}
+close($INPUT_GRAPH);
+&set_inst_box;
+}#sub read_graph_store_map
+#-------------------------------------------------------------------------------------------------------------#
+
+sub read_graph_detail_store_map {
+$DEBUG = 31;
+my $INPUT_GRAPH = "detailed_xy.out";
+if ( -e $INPUT_GRAPH) {
+open(READ,"$INPUT_GRAPH");
+print "INFO-PL_DATAPRP : 001 : Reading the graph for $INPUT_GRAPH\n";
+#print "Existing Die size are : @{$DIE_ALREADY{dieArea}} \n";
+
+##########Scaling to values to the die size##########
+$line1 = <READ>;
+($llx,$lly) = (split(/\s+/,$line1))[0,1];
+$absllx = abs($llx);
+$abslly = abs($lly);
+
+$line2 = <READ>;
+($urx,$ury) = (split(/\s+/,$line2))[0,1];
+#print "$line1 : $llx and $lly and $absllx and $abslly\n";
+$newurx = $urx + $absllx;
+$newury = $ury + $abslly;
+#print "$line2 : $urx and $ury and $newurx and $newury\n";
+
+$scalex = $DIE_ALREADY{dieArea}[2]/(2000*$newurx);
+$scaley = $DIE_ALREADY{dieArea}[3]/(2000*$newury);
+#print "Scalex : $scalex and Scaley : $scaley \n"
+
+while(<READ>) {
+chomp();
+($node,$x,$y) = (split(/\s+/, $_))[0,1,2];
+if(($x =~ (m/-((\d+)\.(\d+))|-(\d+)|((\d+)\.(\d+))|(\d+)/)) && ($y =~ (m/-((\d+)\.(\d+))|-(\d+)|((\d+)\.(\d+))|(\d+)/))){
+$x = ($x+$absllx)*2000*$scalex;
+$y = ($y+$abslly)*2000*$scaley;
+$x = int($x);
+$y = int($y);
+
+#print "$x and $y\n";
+$Sfound = 0;
+$Tfound = 0;
+if(exists $STEMPR{$node} ){$Sfound = 1; $instance = $STEMPR{$node};}
+if($Sfound == 1){
+                if ( exists $CADB{$instance} ) {
+        if($CADB{$instance}->dbCadbGetStatus() eq "FIXED"){next;}; 
+        $CADB{$instance}->dbCadbSetLoc($x,$y);
+        $CADB{$instance}->dbCadbSetStatus(PLACED);
+        $CADB{$instance}->dbCadbSetOrient(N);
+                                                }
+                elsif ( exists $PORTS_ALREADY{$TOP_MODULE}{$instance} ){
+        if($PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortGetStatus() ==3){next;};
+        $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetLoc($x,$y);
+        $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetSide($side);
+        $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetStatus(PLACED);
+                                                }
+                else { print "ERR-PL_DATAPRP : 002 : $instance is neither a port nor a component\n";}
+                                               }#if stempr
+if(exists $TEMPR{$node} ) {$Tfound = 1; $instance = $TEMPR{$node};}
+if($Tfound == 1){
+                if (exists $CADB{$instance}){
+       if($CADB{$instance}->dbCadbGetStatus() eq "FIXED"){next;}; 
+       $CADB{$instance}->dbCadbSetLoc($x,$y);
+       $CADB{$instance}->dbCadbSetStatus(PLACED);
+       $CADB{$instance}->dbCadbSetOrient(N);
+                                            }
+                elsif ( exists $PORTS_ALREADY{$TOP_MODULE}{$instance}){
+       if($PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortGetStatus() ==3){next;};
+       $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetLoc($x,$y);
+       $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetSide($side);
+       $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetStatus(PLACED);
+                                            }
+                else { print "ERR-PL_DATAPRP : 003 : $instance is neither a port nor a component\n";}
+                                            }#if tempr
+else {print "DBG-PL_DATAPRP : 004 : pseudo node $node not found\n" if($debug);}
+                 }else {print "ERR-PL_DATAPRP-RD_GRPH : 004 : locations are not getting for this node $node\n";}
+                             }#while
+}#end if
+else {
+print "ERR-PL_DATAPRP : 005 :No detailed_xy.out file found\n";
+}
+close($INPUT_GRAPH);
+&set_inst_box;
+}#sub read_graph_detail_store_map
+#---------------------------------------------------------------------------------------------------------------------------------#
+
+
+sub read_graph_node {
+my %INST_MAPR = ();
+$DEBUG = 31;
+my $INPUT_GRAPH = "xy.out";
+my $cnt = 0;
+foreach $port (keys %{$PORTS_ALREADY{$TOP_MODULE}} ){
+        $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortSetNodeNum($cnt);
+        $port_node = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetNodeNum;
+        $INST_MAPR{$port_node} = $port;
+        $cnt++;
+                                                    }#foreach port
+foreach $inst (keys %{COMP_ALREADY}){
+        $CADB{$inst}->dbCadbSetNodeNum($cnt);
+        $inst_node = $CADB{$inst}->dbCadbGetNodeNum;
+        $INST_MAPR{$inst_node} = $inst;
+        $cnt++;
+                                    }#foreach inst
+if ( -e $INPUT_GRAPH){
+open(READ,"$INPUT_GRAPH");
+print "INFO-PL_DATAPRP-RD_GRPH_NODE : 001 : Reading the graph for $INPUT_GRAPH\n";
+#print "Existing Die size are : @{$DIE_ALREADY{dieArea}} \n";
+
+##########Scaling to values to the die size##########
+$line1 = <READ>;
+($llx,$lly)  = (split(/\s+/,$line1))[0,1];
+$absllx = abs($llx);
+$abslly = abs($lly);
+
+$line2 = <READ>;
+($urx,$ury) = (split(/\s+/,$line2))[0,1];
+#print "$line1 : $llx and $lly and $absllx and $abslly\n";
+$newurx = $urx + $absllx;
+$newury = $ury + $abslly;
+#print "$line2 : $urx and $ury and $newurx and $newury\n";
+
+$scalex = $DIE_ALREADY{dieArea}[2]/(2000*$newurx);
+$scaley = $DIE_ALREADY{dieArea}[3]/(2000*$newury);
+#print "Scalex : $scalex and Scaley : $scaley \n";
+
+while(<READ>){
+chomp();
+($node,$x,$y) = (split(/\s+/,$_))[0,1,2];
+if(($x =~ (m/-((\d+)\.(\d+))|-(\d+)|((\d+)\.(\d+))|(\d+)/)) && ($y =~ (m/-((\d+)\.(\d+))|-(\d+)|((\d+)\.(\d+))|(\d+)/))){
+$x = ($x+$absllx)*2000*$scalex;
+$y = ($y+$abslly)*2000*$scaley;
+$x = int($x);
+$y = int($y);
+
+#print "$x and $y \n";
+$Ifound = 0;
+if(exists $INST_MAPR{$node}){ $Ifound = 1; $instance = $INST_MAPR{$node};print "$instance $node\n";}
+if($Ifound == 1){
+                if ( exists $CADB{$instance}){
+       if($CADB{$instance}->dbCadbGetStatus() eq "FIXED"){next;}; 
+       $CADB{$instance}->dbCadbSetLoc($x,$y);
+       $CADB{$instance}->dbCadbSetStatus(PLACED);
+       $CADB{$instance}->dbCadbSetOrient(N);
+                                             }
+                elsif ( exists $PORTS_ALREADY{$TOP_MODULE}{$instance}){
+       if($PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortGetStatus() ==3){next;};
+       $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetLoc($x,$y);
+       $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetSide($side);
+       $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetStatus(PLACED);
+                                              }
+                else { print "ERR-PL_DATAPRP-RD_GRPH_NODE : 002 : $instance is neither a port nor a component\n";}
+                                               }#if found
+else { print "DBG-PL_DATAPRP-RD_GRPH_NODE : 003 : pseudo node $node not found\n" if($debug); }
+                 }else {print "ERR-PL_DATAPRP-RD_GRPH : 004 : locations are not getting for this node $node\n";}
+                     }#while
+}#end if
+else{
+print "ERR-PL_DATAPRP-RD_GRPH_NODE : 004 : No xy.out file found\n";
+}
+close($INPUT_GRAPH);
+&set_inst_box;
+}#sub read_graph_node
+
+
+sub read_graph_detail_node {
+my %INST_MAPR = ();
+$DEBUG = 31;
+my $INPUT_GRAPH = "detailed_xy.out";
+my $cnt = 0;
+foreach $port (keys %{$PORTS_ALREADY{$TOP_MODULE}}){
+        $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortSetNodeNum($cnt);
+        $port_node = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetNodeNum;
+        $INST_MAPR{$port_node} = $port;
+        $cnt++;
+                                                    }#foreach port
+foreach $inst (keys %{COMP_ALREADY}){
+        $CADB{$inst}->dbCadbSetNodeNum($cnt);
+        $inst_node = $CADB{$inst}->dbCadbGetNodeNum;
+        $INST_MAPR{$inst_node} = $inst;
+        $cnt++;
+                                    }#foreach inst
+if ( -e $INPUT_GRAPH){
+open(READ,"$INPUT_GRAPH");
+print "INFO-PL_DATAPRP-RD_GRPH_DTL_NODE : 001 : Reading the graph for $INPUT_GRAPH\n";
+#print "Existing Die size are : @{$DIE_ALREADY{dieArea}} \n";
+
+#############Scaling to values to the die size###########
+$line1 = <READ>;
+($llx,$lly) = (split(/\s+/,$line1))[0,1];
+$absllx = abs($llx);
+$abslly = abs($lly);
+
+$line2 = <READ>;
+($urx,$ury) = (split(/\s+/,$line2))[0,1];
+#print "$line1 : $llx and $lly and $absllx and $abslly\n";
+$newurx = $urx + $absllx;
+$newury = $ury + $abslly;
+#print "$line2 : $urx and $ury and $newurx and $newury\n";
+
+$scalex = $DIE_ALREADY{dieArea}[2]/(2000*$newurx);
+$scaley = $DIE_ALREADY{dieArea}[3]/(2000*$newury);
+#print "Scalex : $scalex and Scaley : $scaley \n";
+
+while(<READ>){
+chomp();
+($node,$x,$y) = (split(/\s+/,$_))[0,1,2];
+if(($x =~ (m/-((\d+)\.(\d+))|-(\d+)|((\d+)\.(\d+))|(\d+)/)) && ($y =~ (m/-((\d+)\.(\d+))|-(\d+)|((\d+)\.(\d+))|(\d+)/))){
+$x = ($x+$absllx)*2000*$scalex;
+$y = ($y+$abslly)*2000*$scaley;
+$x = int($x);
+$y = int($y);
+
+#print "$x and $y \n";
+$Ifound = 0;
+if(exists $INST_MAPR{$node}){$Ifound = 1; $instance = $INST_MAPR{$node};}
+if($Ifound == 1){
+                if ( exists $CADB{$instance}){
+         if($CADB{$instance}->dbCadbGetStatus() eq "FIXED"){next;}; 
+         $CADB{$instance}->dbCadbSetLoc($x,$y);
+         $CADB{$instance}->dbCadbSetStatus(PLACED);
+         $CADB{$instance}->dbCadbSetOrient(N);
+                                             }
+                elsif ( exists $PORTS_ALREADY{$TOP_MODULE}{$instance}){
+         if($PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortGetStatus() ==3){next;};
+         $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetLoc($x,$y); 
+         $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetSide($side);
+         $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetStatus(PLACED);
+                                                                       }
+                else { print "ERR-PL_DATAPRP-RD_GRPH_DTL_NODE : 002 : $instance is neither a port nor a component\n";}
+                                                                }#if found
+else { print "DBG-PL_DATAPRP-RD_GRPH_DTL_NODE : 003 : pseudo node $node not found\n" if($debug);}
+                 }else {print "ERR-PL_DATAPRP-RD_GRPH : 004 : locations are not getting for this node $node\n";}
+                              }#while
+}#end if
+else{
+print "ERR-PL_DATAPRP-RD_GRPH_DTL_NODE : 004 : No detailed_xy.out file found\n";
+}
+close($INPUT_GRAPH);
+&set_inst_box;
+}#sub read_graph_detail_node
+
+#------------------------------------------------------------------------------------------------------------------------#
+# Added this code to read the xy.out from plan_1 and perform row identification as well as match it with the design rows #
+#------------------------------------------------------------------------------------------------------------------------#
+
+sub read_plan1_results {
+$DEBUG = 31;
+my $INPUT_GRAPH = "xy.out";
+if ( -e $INPUT_GRAPH) {
+open(READ,"$INPUT_GRAPH");
+print "INFO-PL_DATAPRP : 001 : Reading the graph for $INPUT_GRAPH\n";
+#print "Existing Die size are : @{$DIE_ALREADY{dieArea}} \n";
+
+##########Scaling to values to the die size##########
+$line1 = <READ>;
+($llx,$lly) = (split(/\s+/, $line1))[0,1];
+$absllx = abs($llx);
+$abslly = abs($lly);
+
+$line2 = <READ>;
+($urx,$ury) = (split(/\s+/, $line2))[0,1];
+#print "$line1 : $llx and $lly and $absllx and $abslly\n";
+$newurx = $urx + $absllx;
+$newury = $ury + $abslly;
+#print "$line2 : $urx and $ury and $newurx and $newury\n";
+
+$scalex = $DIE_ALREADY{dieArea}[2]/($newurx);
+$scaley = $DIE_ALREADY{dieArea}[3]/($newury);
+#print "Scalex : $scalex and Scaley : $scaley \n";
+#------------------- setting the defaults ------------------#
+$unmatchnode = 0;
+my %uniqRowsAndNodes = ();
+
+while(<READ>) {
+chomp();
+($node,$x,$y) = (split(/\s+/, $_))[0,1,2];
+if(($x =~ (m/-((\d+)\.(\d+))|-(\d+)|((\d+)\.(\d+))|(\d+)/)) && ($y =~ (m/-((\d+)\.(\d+))|-(\d+)|((\d+)\.(\d+))|(\d+)/))){
+$x = ($x+$absllx)*$scalex;
+$y = ($y+$abslly)*$scaley;
+
+#print "$x and $y\n";
+if ( exists $uniqRowsAndNodes{$y} ) { $uniqRowsAndNodes{$y}++ ; } else { $uniqRowsAndNodes{$y} = 1};
+$found = 0;
+#foreach $inst ( keys %TEMP ) { if ( $node == $TEMP{$inst} ) { $found = 1; $instance = $inst } }
+if ( exists $TEMPR{$node} ) { $found = 1; $instance = $TEMPR{$node}; } else { $found = 0;}
+if($found == 1 ) { 
+                if ( exists $CADB{$instance} ) {
+     if($CADB{$instance}->dbCadbGetStatus() eq "FIXED"){next;}; 
+     $CADB{$instance}->dbCadbSetLoc($x,$y);
+     $CADB{$instance}->dbCadbSetStatus(PLACED);
+     $CADB{$instance}->dbCadbSetOrient(N);
+                                               } 
+                elsif ( exists $PORTS_ALREADY{$TOP_MODULE}{$instance} ) {
+     if($PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortGetStatus() ==3){next;};
+     $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetLoc($x,$y);
+     $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetSide($side);
+     $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetStatus(PLACED);
+                                               }
+                else { print "ERR-PL_DATAPRP : 002 : $instance is neither a port nor a component\n"; }
+
+                 }
+else { print "DBG-PL_DATAPRP : 003 : pseudo node $node not found\n" if($debug); $unmatchnode++; }
+                 }else {print "ERR-PL_DATAPRP-RD_GRPH : 004 : locations are not getting for this node $node\n";}
+              }#while
+
+print "ERR-PL_DATAPRP : 004 : There were $unmatchnode nodes in the results that did not match with database\n" if ($unmatchnode > 0);
+print "INFO-PL_DATAPRP : 005 : finished reading the global placement results ...\n";
+my $len = keys %uniqRowsAndNodes; 
+print "INFO-PL_DATAPRP : 006 : identified $len rows from the results file\n";
+#------------------------------------------------ row identification ----------------------------#
+# if row number matches 
+my @plan1_rows = ();
+foreach my $l ( keys %uniqRowsAndNodes ) { 
+                                         #print "$l : $uniqRowsAndNodes{$l}\n"; 
+                                         push(@plan1_rows,$l);
+                                         }
+@plan1_rows = sort {$a <=> $b} @plan1_rows;
+my %newRows = ();
+my @defRows = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetRows;
+my @realRows = ();
+foreach my $l ( @defRows ) {
+              my $ycord = (split(/\s+/,$l))[3];
+              push(@realRows,$ycord);
+                           }
+my $cnt = 0;
+foreach my $l ( @plan1_rows ) { 
+                        print "$l : $uniqRowsAndNodes{$l} : $realRows[$cnt]\n"; 
+                        $newRows{$l} = $realRows[$cnt];
+                        $cnt++;
+                        }
+#--------------------------------- updating Y location of each instance to match the row ---------------------#
+foreach $instance ( keys %{CADB} ) {
+     my @loc = $CADB{$instance}->dbCadbGetLoc;
+        my $X = $loc[0];
+        my $Y = $loc[1];
+        if ( exists $newRows{$loc[1]}) { $Y = $newRows{$loc[1]}; }
+        if($CADB{$instance}->dbCadbGetStatus() eq "FIXED"){next;}; 
+        $CADB{$instance}->dbCadbSetLoc($X,$Y);
+                               }
+
+}#end if the xy.out file exists
+else {
+print "WARN-PL_DATAPRP : 007 : No xy.out file found \n";
+}
+print "INFO-PL_DATAPRP : 008 : updating the instance with instance-box\n";
+close($INPUT_GRAPH);
+&set_inst_box;
+}#sub read_plan1_results
+#------------------------------------------------------------------------------------------------------------------------------------------#
+
+sub read_graph_detail_plan_3 {
+$DEBUG = 31;
+%INST_FLIP = ();
+my $INPUT_GRAPH = "detailed_plan_3_xy.out";
+if ( -e $INPUT_GRAPH) {
+open(READ,"$INPUT_GRAPH");
+print "INFO-PL_DATAPRP-RD_GRPH_DTL_PLN_3 : 001 : Reading the graph for $INPUT_GRAPH\n";
+#print "Existing Die size are : @{$DIE_ALREADY{dieArea}} \n";
+
+##########Scaling to values to the die size##########
+$line1 = <READ>;
+($llx,$lly) = (split(/\s+/, $line1))[0,1];
+$absllx = abs($llx);
+$abslly = abs($lly);
+
+$line2 = <READ>;
+($urx,$ury) = (split(/\s+/, $line2))[0,1];
+#print "$line1 : $llx and $lly and $absllx and $abslly\n";
+$newurx = $urx + $absllx;
+$newury = $ury + $abslly;
+#print "$line2 : $urx and $ury and $newurx and $newury\n";
+
+#$scalex = $DIE_ALREADY{dieArea}[2]/(2000*$newurx);
+$scalex = $DIE_ALREADY{dieArea}[2]/($newurx);
+#$scaley = $DIE_ALREADY{dieArea}[3]/(2000*$newury);
+$scaley = $DIE_ALREADY{dieArea}[3]/($newury);
+#print "Scalex : $scalex and Scaley : $scaley \n";
+
+while(<READ>) {
+chomp();
+($node,$x,$y,$flip) = (split(/\s+/, $_))[0,1,2,3];
+if(($x =~ (m/-((\d+)\.(\d+))|-(\d+)|((\d+)\.(\d+))|(\d+)/)) && ($y =~ (m/-((\d+)\.(\d+))|-(\d+)|((\d+)\.(\d+))|(\d+)/))){
+#$x = ($x+$absllx)*2000*$scalex;
+#$y = ($y+$abslly)*2000*$scaley;
+$x = ($x+$absllx)*$scalex;
+$y = ($y+$abslly)*$scaley;
+#$x = int($x);
+#$y = int($y);
+
+#print "$x and $y\n";
+$found = 0;
+$INST_FLIP{$node} = $flip;
+#foreach $inst ( keys %TEMP ) { if ( $node == $TEMP{$inst} ) { $found = 1; $instance = $inst } }
+if ( exists $TEMPR{$node} ) { $found = 1; $instance = $TEMPR{$node}; } else { $found = 0;}
+if($found == 1 ) { 
+                if ( exists $CADB{$instance} ) {
+     if($CADB{$instance}->dbCadbGetStatus() eq "FIXED"){next;}; 
+     $CADB{$instance}->dbCadbSetLoc($x,$y);
+     $CADB{$instance}->dbCadbSetStatus(PLACED);
+     $CADB{$instance}->dbCadbSetOrient(N);
+                                               } 
+                elsif ( exists $PORTS_ALREADY{$TOP_MODULE}{$instance} ) {
+     if($PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortGetStatus() ==3){next;};
+     $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetLoc($x,$y);
+     $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetSide($side);
+     $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetStatus(PLACED);
+                                               }
+                else { print "ERR-PL_DATAPRP-RD_GRPH_DTL_PLN_3 : 002 : $instance is neither a port nor a component\n"; }
+
+                 }
+else { print "DBG-PL_DATAPRP-RD_GRPH_DTL_PLN_3 : 003 : pseudo node $node not found\n" if($debug); }
+                 }else {print "ERR-PL_DATAPRP-RD_GRPH : 004 : locations are not getting for this node $node\n";}
+              }#while
+
+}#end if
+else {
+print "ERR-PL_DATAPRP-RD_GRPH_DTL_PLN_3 : 004 : No detailed_plan_3_xy.out file found \n";
+}
+close($INPUT_GRAPH);
+&set_inst_box;
+}#sub read_graph_detail_plan_3
+
+sub read_graph_mpl {
+$DEBUG = 31;
+my $INPUT_GRAPH = "xy.out";
+if ( -e $INPUT_GRAPH) {
+open(READ,"$INPUT_GRAPH");
+print "INFO-PL_DATAPRP : 001 : Reading the graph for $INPUT_GRAPH\n";
+#print "Existing Die size are : @{$DIE_ALREADY{dieArea}} \n";
+
+##########Scaling to values to the die size##########
+$line1 = <READ>;
+($llx,$lly) = (split(/\s+/, $line1))[0,1];
+$absllx = abs($llx);
+$abslly = abs($lly);
+
+$line2 = <READ>;
+($urx,$ury) = (split(/\s+/, $line2))[0,1];
+#print "$line1 : $llx and $lly and $absllx and $abslly\n";
+$newurx = $urx + $absllx;
+$newury = $ury + $abslly;
+#print "$line2 : $urx and $ury and $newurx and $newury\n";
+
+$scalex = $DIE_ALREADY{dieArea}[2]/($newurx);
+$scaley = $DIE_ALREADY{dieArea}[3]/($newury);
+#print "Scalex : $scalex and Scaley : $scaley \n";
+
+while(<READ>) {
+chomp();
+($node,$x,$y) = (split(/\s+/, $_))[0,1,2];
+if(($x =~ (m/-((\d+)\.(\d+))|-(\d+)|((\d+)\.(\d+))|(\d+)/)) && ($y =~ (m/-((\d+)\.(\d+))|-(\d+)|((\d+)\.(\d+))|(\d+)/))){
+#$x = ($x+$absllx)*2000*$scalex;
+#$y = ($y+$abslly)*2000*$scaley;
+$x = ($x+$absllx)*$scalex;
+$y = ($y+$abslly)*$scaley;
+#$x = int($x);
+#$y = int($y);
+
+#print "$x and $y\n";
+$found = 0;
+#foreach $inst ( keys %TEMP ) { if ( $node == $TEMP{$inst} ) { $found = 1; $instance = $inst } }
+if ( exists $TEMPR{$node} ) { $found = 1; $instance = $TEMPR{$node}; } else { $found = 0;}
+if($found == 1 ) { 
+                if ( exists $CADB{$instance} ) {
+     my $temp_mov_X = &return_shift_x_val_for_instance_location_for_mpl_flatDB($instance); 
+     my $temp_mov_Y = &return_shift_y_val_for_instance_location_for_mpl_flatDB($instance); 
+     $temp_mov_X *= $dbu;
+     $temp_mov_Y *= $dbu;
+     $x -= $temp_mov_X;
+     $y -= $temp_mov_Y;
+     if($CADB{$instance}->dbCadbGetStatus() eq "FIXED"){next;}; 
+     $CADB{$instance}->dbCadbSetLoc($x,$y);
+     $CADB{$instance}->dbCadbSetStatus(PLACED);
+     $CADB{$instance}->dbCadbSetOrient(N);
+                                               } 
+                elsif ( exists $PORTS_ALREADY{$TOP_MODULE}{$instance} ) {
+     if($PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortGetStatus() ==3){next;};
+     $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetLoc($x,$y);
+     $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetSide($side);
+     $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetStatus(PLACED);
+                                               }
+                else { print "ERR-PL_DATAPRP : 002 : $instance is neither a port nor a component\n"; } 
+                 }
+else { print "DBG-PL_DATAPRP : 003 : pseudo node $node not found\n"if($debug); }
+                 }else {print "ERR-PL_DATAPRP-RD_GRPH : 004 : locations are not getting for this node $node\n";}
+              }#while
+
+}#end if
+else {
+print "ERR-PL_DATAPRP : 004 : No xy.out file found \n";
+}
+close($INPUT_GRAPH);
+&set_inst_box;
+}#sub read_graph_mpl
+
+sub read_graph_plan_4 {
+$DEBUG = 31;
+my $INPUT_GRAPH = "xy.out";
+if ( -e $INPUT_GRAPH) {
+open(READ,"$INPUT_GRAPH");
+print "INFO-PL_DATAPRP-RD_GRPH_PLN_4 : 001 : Reading the graph for $INPUT_GRAPH\n";
+#print "Existing Die size are : @{$DIE_ALREADY{dieArea}} \n";
+
+##########Scaling to values to the die size##########
+$line1 = <READ>;
+($llx,$lly) = (split(/\s+/, $line1))[0,1];
+$absllx = abs($llx);
+$abslly = abs($lly);
+
+$line2 = <READ>;
+($urx,$ury) = (split(/\s+/, $line2))[0,1];
+#print "$line1 : $llx and $lly and $absllx and $abslly\n";
+$newurx = $urx + $absllx;
+$newury = $ury + $abslly;
+#print "$line2 : $urx and $ury and $newurx and $newury\n";
+
+$scalex = $DIE_ALREADY{dieArea}[2]/($newurx);
+$scaley = $DIE_ALREADY{dieArea}[3]/($newury);
+#print "Scalex : $scalex and Scaley : $scaley \n";
+
+while(<READ>) {
+chomp();
+($node,$x,$y) = (split(/\s+/, $_))[0,1,2];
+if(($x =~ (m/-((\d+)\.(\d+))|-(\d+)|((\d+)\.(\d+))|(\d+)/)) && ($y =~ (m/-((\d+)\.(\d+))|-(\d+)|((\d+)\.(\d+))|(\d+)/))){
+#$x = ($x+$absllx)*2000*$scalex;
+#$y = ($y+$abslly)*2000*$scaley;
+$x = ($x+$absllx)*$scalex;
+$y = ($y+$abslly)*$scaley;
+#$x = int($x);
+#$y = int($y);
+
+#print "$x and $y\n";
+$found = 0;
+#foreach $inst ( keys %TEMP ) { if ( $node == $TEMP{$inst} ) { $found = 1; $instance = $inst } }
+if ( exists $TEMPR{$node} ) { $found = 1; $instance = $TEMPR{$node}; } else { $found = 0;}
+if($found == 1 ) { 
+                if ( exists $CADB{$instance} ) {
+     my $cellref = $CADB{$instance}->dbCadbGetCellref;
+     my $inst_class = $PLDB{$cellref}->dbMdbGetClass;
+     if($inst_class ne "BLOCK") { next; }
+     if($CADB{$instance}->dbCadbGetStatus() eq "FIXED"){next;}; 
+     $CADB{$instance}->dbCadbSetLoc($x,$y);
+     $CADB{$instance}->dbCadbSetStatus(PLACED);
+     $CADB{$instance}->dbCadbSetOrient(N);
+                                               } 
+                else { print "ERR-PL_DATAPRP-RD_GRPH_PLN_4 : 002 : $instance is not a BLOCK\n"; }
+
+                 }
+else { print "DBG-PL_DATAPRP-RD_GRPH_PLN_4 : 003 : pseudo node $node not found\n" if($debug); }
+                 }else {print "ERR-PL_DATAPRP-RD_GRPH : 004 : locations are not getting for this node $node\n";}
+              }#while
+
+}#end if
+else {
+print "ERR-PL_DATAPRP-RD_GRPH_PLN_4 : 004 : No xy.out file found \n";
+}
+close($INPUT_GRAPH);
+&set_inst_box;
+}#sub read_graph_plan_4
+#-------------------------------------------------------------------------------#
+sub read_graph_for_spice {
+my $INPUT_GRAPH = "xy.out";
+my %INST_LOC = ();
+if ( -e $INPUT_GRAPH) {
+open(READ,"$INPUT_GRAPH");
+$line1 = <READ>;
+my ($llx,$lly) = (split(/\s+/, $line1))[0,1];
+my $absllx = abs($llx); 
+my $abslly = abs($lly); 
+
+$line2 = <READ>;
+my ($urx,$ury) = (split(/\s+/, $line2))[0,1];
+my $newurx = $urx + $absllx;
+my $newury = $ury + $abslly;
+
+my $scalex = 800/($newurx);
+my $scaley = 500/($newury);
+while(<READ>) {
+chomp();
+my ($node,$x,$y) = (split(/\s+/, $_))[0,1,2];
+$x = ($x+$absllx)*$scalex;
+$y = ($y+$abslly)*$scaley;
+
+if(exists $SPICE_TEMPR{$node}){
+  my $instance =  $SPICE_TEMPR{$node}; 
+  my $inst_loc = $x." ".$y;
+  $INST_LOC{$instance} = $inst_loc; 
+}else{
+  print "ERR-PL_DATAPRP-RD_GRPH_FOR_SPICE : 001 : $node not found\n";
+}
+}#while
+}else {
+  print "ERR-PL_DATAPRP-RD_GRPH_FOR_SPICE : 002 :No xy.out file found \n";
+}
+  my @conns = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetConn;
+  $MODULE_ALREADY{$TOP_MODULE}->dbVNOMWipeConn;
+  foreach  my $connLine (@conns){
+    my($inst,$x_pin,$x_val,$y_pin,$y_val) = &data_get_from_connLine($connLine);
+    if(exists $INST_LOC{$inst}){
+      my $loc = $INST_LOC{$inst};
+      my ($x,$y) = (split(/\s+/,$loc))[0,1];
+      if(($x_val != "") && ($y_val != "")){
+        $connLine =~ s/$x_val/$x/;
+        $connLine =~ s/$y_val/$y/;
+        $MODULE_ALREADY{$TOP_MODULE}->dbVNOMAddConn($connLine);
+      }else {
+        my $get_number = "";
+        $connLine =~ s/\s*\)\s*\)\s*\;?.*$/\)/; 
+        my @temp_data = (split(/\s+/,$connLine));
+        $get_number = pop (@temp_data);
+        $get_number =~ s/_tmpslvr_param.*//;
+        $get_number =~ s/\.//;
+        $get_number++;
+        $X = "$get_number"."_tmpslvr_param_\$X".""."("."".$x."".")";
+        $get_number++;
+        $Y = "$get_number"."_tmpslvr_param_\$Y".""."("."".$y."".")";
+        #$connLine =~ s/\(/\)\,/;
+        $connLine = $connLine.", "."".$X;
+        $connLine = $connLine.", "."".$Y;
+        $connLine = $connLine.")".";";
+        $MODULE_ALREADY{$TOP_MODULE}->dbVNOMAddConn($connLine);
+      }
+    }else{
+      print "ERR-PL_DATAPRP-RD_GRPH_FOR_SPICE : 003 : $inst not found \n";
+    }
+  }#foreach 
+}#sub read_graph_for_spice 
+#-------------------------------------------------------------------------------#
+
+1;

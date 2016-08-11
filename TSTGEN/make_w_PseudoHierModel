@@ -1,0 +1,755 @@
+#****f* /write_hpv
+#  write_hpv
+# FUNCTION
+# 	This finction writes the Hierarchical Pseudo Verilog 
+#
+#
+#
+# SYNOPSIS
+#  write_hpv
+#
+#
+#
+#
+# INPUTS
+#
+#
+#
+#
+#	options :
+#
+#
+#
+#
+#	switches :
+#
+#
+#
+#
+# OUTPUTS
+#
+#
+#
+#
+#****
+sub write_hpv {
+
+my $noOfArguments = @_;
+#----------------- Defaults --------------------#
+my $outputFile = "hpv.sv";
+
+if ($_[0] eq '-h') { print "Usage : write_hpv \n";
+                           print "                   -output <file name>\n";
+}
+else {
+  for ( my $i = 0; $i < $noOfArguments; $i++ ) {
+    if ($_[$i] eq "-output") { $outputFile = $_[$i+1]; }
+  } # for
+
+print "INFO-TST-WR_HPV : 001 : Exporting HPV to file $outputFile\n";
+
+# ################ temporary piggybacking for testing only
+#&dbfTstgenSetupPseudoConn($TOP_MODULE);
+#&dump_PSEUDO_ALREADY();
+#&dbfTstgenUpdateVNOMFromPseudo($TOP_MODULE);
+#&dbg_VNOM_module("hpv_dbg.sv");
+# ################
+
+open(WRITE,">$outputFile");
+
+foreach $moduleInst (keys %{PSEUDO_MODULE_ALREADY} ) {
+  my $dirty = $PSEUDO_MODULE_ALREADY{$moduleInst}->dbaTstgenGetDirty;
+  if ( $dirty == 0 ) { next; }
+print WRITE "module $moduleInst\;\n";
+#my @hInstList = $PSEUDO_MODULE_ALREADY{$moduleInst}->dbaTstgenGetPseudoModuleHlist;
+my $seqCellCount = $PSEUDO_MODULE_ALREADY{$moduleInst}->dbaTstgenGetSeqComps;
+print WRITE "//seq \= $seqCellCount\n";
+my @moduleSize =  $PSEUDO_MODULE_ALREADY{$moduleInst}->dbaTstgenGetSize;
+print WRITE "//size \= \{$moduleSize[0],$moduleSize[1],$moduleSize[2],$moduleSize[3]\}\n";
+
+my ($pin, $type, $bits);
+my @pins = $PSEUDO_MODULE_ALREADY{$moduleInst}->dbaTstgenGetInput;
+foreach $pin ( @pins ) {
+  print WRITE "input ";
+  $type = $PSEUDO_MODULE_ALREADY{$moduleInst}->dbaTstgenGetInputType($pin);
+  if ( $type == 1 ) {
+    $bits = $PSEUDO_MODULE_ALREADY{$moduleInst}->dbaTstgenGetInputBits($pin);
+    print WRITE "$bits";
+  }
+  print WRITE " $pin ;\n";
+}
+
+@pins = $PSEUDO_MODULE_ALREADY{$moduleInst}->dbaTstgenGetOutput;
+foreach $pin ( @pins ) {
+  print WRITE "output ";
+  $type = $PSEUDO_MODULE_ALREADY{$moduleInst}->dbaTstgenGetOutputType($pin);
+  if ( $type == 1 ) {
+    $bits = $PSEUDO_MODULE_ALREADY{$moduleInst}->dbaTstgenGetOutputBits($pin);
+    print WRITE "$bits";
+  }
+  print WRITE " $pin ;\n";
+}
+
+@pins = $PSEUDO_MODULE_ALREADY{$moduleInst}->dbaTstgenGetBidi;
+foreach $pin ( @pins ) {
+  print WRITE "inout ";
+  $type = $PSEUDO_MODULE_ALREADY{$moduleInst}->dbaTstgenGetBidiType($pin);
+  if ( $type == 1 ) {
+    $bits = $PSEUDO_MODULE_ALREADY{$moduleInst}->dbaTstgenGetBidiBits($pin);
+    print WRITE "$bits";
+  }
+  print WRITE " $pin ;\n";
+}
+
+#----------------------------Instances -----------------------------------------------------------#
+#foreach my $inst ( keys %{$PSEUDO_VINST_ALREADY{$moduleInst}} )  {
+#   my $cellref = $PSEUDO_VINST_ALREADY{$moduleInst}{$inst}->dbPimDBGetInstCellref;
+#   my $name = $PSEUDO_VINST_ALREADY{$moduleInst}{$inst}->dbPimDBGetInstName;
+#   my $iname = $PSEUDO_VINST_ALREADY{$moduleInst}{$inst}->dbPimDBGetInstIName;
+#   my $file = $PSEUDO_VINST_ALREADY{$moduleInst}{$inst}->dbPimDBGetInstFile;
+#   my $clk = $PSEUDO_VINST_ALREADY{$moduleInst}{$inst}->dbPimDBGetInstClk;
+#   my $rst = $PSEUDO_VINST_ALREADY{$moduleInst}{$inst}->dbPimDBGetInstRst;
+#   my $width = $PSEUDO_VINST_ALREADY{$moduleInst}{$inst}->dbPimDBGetInstWidth;
+#   my $depth = $PSEUDO_VINST_ALREADY{$moduleInst}{$inst}->dbPimDBGetInstDepth;
+#   my $input = $PSEUDO_VINST_ALREADY{$moduleInst}{$inst}->dbPimDBGetInstInput;
+#   my $output = $PSEUDO_VINST_ALREADY{$moduleInst}{$inst}->dbPimDBGetInstOutput;
+#   my $rd_en = $PSEUDO_VINST_ALREADY{$moduleInst}{$inst}->dbPimDBGetInstRd_en;
+#   my $wr_en = $PSEUDO_VINST_ALREADY{$moduleInst}{$inst}->dbPimDBGetInstWr_en;
+#   my $operand = $PSEUDO_VINST_ALREADY{$moduleInst}{$inst}->dbPimDBGetInstOperand;
+# if($cellref eq "::fifo"){
+# print WRITE "$cellref\(.name=$name .iname=$iname .file=$file .clk=$clk .rst=$rst .width=$width .depth=$depth .data_in=$input .data_out=$output .rd_en=$rd_en .wr_en=$wr_en\)\;\n";
+# }elsif($cellref eq "::datapath"){
+# print WRITE "$cellref\(.name=$name .op=$operand .in=\"$input\" .out=$output .clk=$clk\)\;\n";
+# }elsif($cellref eq "::combo"){
+# print WRITE "$cellref\(.name=$name .in=$input .out=$output\)\;\n";
+# }elsif($cellref eq "::flop"){
+# print WRITE "$cellref\(.name=$name .in=$input .out=$output .clk=$clk .rst=$rst\)\;\n";
+#}
+
+#----------------------------------------------------------------#
+#-----------------------------------------------------------------#
+#                                                                 }
+
+#----------------------------Connections -----------------------------------------------------------#
+foreach my $net ( keys %{$PSEUDO_VNET_ALREADY{$moduleInst}} ) {
+my $parentModule = $PSEUDO_VNET_ALREADY{$moduleInst}->{$net}->dbaTstgenGetPseudoNetParentModule;   
+   if ($parentModule eq $moduleInst ) {
+my ($sourceVInst,$fanInPins) = $PSEUDO_VNET_ALREADY{$moduleInst}->{$net}->dbaTstgenGetPseudoNetSourceFanInList;
+my @sinkFanOutList = $PSEUDO_VNET_ALREADY{$moduleInst}->{$net}->dbaTstgenGetPseudoNetSinkFanOutList;
+my $sinkFanOutLen = @sinkFanOutList;
+my $type = $PSEUDO_VNET_ALREADY{$moduleInst}->{$net}->dbaTstgenGetPseudoNetType;
+print WRITE  "//net \- $net ";
+print WRITE  "\+ $type ";
+print WRITE "\t$sourceVInst($fanInPins)";
+for (my $i = 0; $i < $sinkFanOutLen; $i += 2) {
+  my ($sinkVInst,$fanOutPins) = ($sinkFanOutList[$i], $sinkFanOutList[$i + 1]);
+  print WRITE " $sinkVInst($fanOutPins)";
+}
+print WRITE "\;\n";
+                                       } else { }
+
+}#foreach net
+
+my @conns = dbfTstgenGetPseudoModuleConn($moduleInst);
+foreach my $conn ( @conns ) {
+  print WRITE "\t$conn \;\n";
+}#foreach
+
+print WRITE "endmodule\n";
+}#foreach 
+
+close(WRITE);
+}#if correct arguments
+
+}# sub write_hpv
+
+
+sub write_ega {
+
+#****f* / write_ega
+# NAME
+#   write_ega
+# FUNCTION
+#  write verilog file 
+# SYNOPSIS
+#   write_ega -ext <file extension (default ext is .ega)>
+# INPUTS
+#   options:
+#   -ext <file extension (default ext is .ega)>
+# OUTPUTS
+#    topModule.ega file generate
+# ****
+
+
+my $noOfArg = @_;
+my $fileName;
+my $ext;
+for(my $i = 0; $i< $noOfArg; $i++){
+    if($_[$i] eq "-ext"){$ext = $_[$i+1];}
+    if($_[$i] eq "-h" || $_[$i] eq "-help" || $_[$i] eq "-HELP"){
+       print "Usage: write_ega -ext <file ext. like .ega>\n";
+       return;
+    }
+ }   
+
+my $top_modName = $PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenGetModuleName;
+   if($ext eq ""){$fileName = $top_modName.".ega"}
+   else          {$fileName = $top_modName.$ext;}
+
+open(WRITE,">$fileName");
+foreach $moduleInst (keys %{PSEUDO_MODULE_ALREADY} ) {
+print WRITE "module $top_modName\;\n";
+   my $clk_signals = $PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenGetClkSignal;
+   my $rst_signals = $PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenGetRstSignal;
+if($clk_signals ne ""){
+print WRITE "::clock $clk_signals\;\n";}
+if($rst_signals ne ""){
+print WRITE "::reset $rst_signals\;\n";}
+print WRITE "\n";
+#----------------------------Instances -----------------------------------------------------------#
+foreach my $inst ( keys %{$PSEUDO_VINST_ALREADY{$moduleInst}} )  {
+   my $cellref = $PSEUDO_VINST_ALREADY{$moduleInst}{$inst}->dbPimDBGetInstCellref;
+   my $name = $PSEUDO_VINST_ALREADY{$moduleInst}{$inst}->dbPimDBGetInstName;
+   my $iname = $PSEUDO_VINST_ALREADY{$moduleInst}{$inst}->dbPimDBGetInstIName;
+   my $file = $PSEUDO_VINST_ALREADY{$moduleInst}{$inst}->dbPimDBGetInstFile;
+   my $clk = $PSEUDO_VINST_ALREADY{$moduleInst}{$inst}->dbPimDBGetInstClk;
+   my $rst = $PSEUDO_VINST_ALREADY{$moduleInst}{$inst}->dbPimDBGetInstRst;
+   my $width = $PSEUDO_VINST_ALREADY{$moduleInst}{$inst}->dbPimDBGetInstWidth;
+   my $depth = $PSEUDO_VINST_ALREADY{$moduleInst}{$inst}->dbPimDBGetInstDepth;
+   my $input = $PSEUDO_VINST_ALREADY{$moduleInst}{$inst}->dbPimDBGetInstInput;
+   my $output = $PSEUDO_VINST_ALREADY{$moduleInst}{$inst}->dbPimDBGetInstOutput;
+   my $rd_en = $PSEUDO_VINST_ALREADY{$moduleInst}{$inst}->dbPimDBGetInstRd_en;
+   my $wr_en = $PSEUDO_VINST_ALREADY{$moduleInst}{$inst}->dbPimDBGetInstWr_en;
+   my $operand = $PSEUDO_VINST_ALREADY{$moduleInst}{$inst}->dbPimDBGetInstOperand;
+ if($cellref eq "::fifo"){
+ print WRITE "$cellref\(.name=$name .iname=$iname .file=$file .clk=$clk .rst=$rst .width=$width .depth=$depth .in=$input .out=$output .rd_en=$rd_en .wr_en=$wr_en\)\;\n";
+ }elsif($cellref eq "::datapath"){
+ print WRITE "$cellref\(.name=$name .op=$operand .in=\"$input\" .out=$output .clk=$clk\)\;\n";
+ }elsif($cellref eq "::combo"){
+ print WRITE "$cellref\(.name=$name .in=$input .out=$output\)\;\n";
+ }elsif($cellref eq "::flop"){
+ print WRITE "$cellref\(.name=$name .in=$input .out=$output .clk=$clk .rst=$rst\)\;\n";
+}
+}#foreach instance
+print WRITE "\n";
+print WRITE "endmodule\n";
+}#foreach 
+
+close(WRITE);
+}# sub write_ega
+
+
+
+#****f* /create_netlist
+#  create_netlist
+# FUNCTION
+#
+#
+#
+#
+# SYNOPSIS
+#  create_netlist
+#
+#
+#
+#
+# INPUTS
+#
+#
+#
+#
+#	options :
+#
+#
+#
+#
+#	switches :
+#
+#
+#
+#
+# OUTPUTS
+#
+#
+#
+#
+#****
+sub create_netlist {
+&dbfTstgenFindOverlapModule2Wire;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+}# sub create_netlist
+
+sub create_writeRTL_Popup {
+my $popupgui = MainWindow->new();
+$popupgui->title ("Write Verilog");
+$verilogFile = "";
+        my $Frame1=$popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $ButtonFrame=$popupgui->Frame(-relief=>"raised")->pack(-side => 'bottom');
+$Frame1->Label(-text => "VerilogFile")->pack(-side =>'left', -anchor => 'w');
+$Frame1->Entry(-textvariable =>\$verilogFile )->pack(-side =>'left', -anchor => 'w',-fill => 'x', -expand=> '1' );
+
+my $image = $popupgui->Getimage('folder');
+my $Browsebutton = $Frame1->Button(-image=> $image,-command =>sub {&browse_VerilogFile;})->pack(-side => 'right');
+my $OkButton = $ButtonFrame->Button(-text=>'Ok',-command =>sub {&write_RTL($verilogFile);$popupgui->destroy();})->pack(-side => 'left');
+my $CancelButton = $ButtonFrame->Button(-text=>'Cancel', -command =>sub {$popupgui->destroy();})->pack(-side => 'left');
+}#sub create_writeRTL_Popup
+
+sub browse_VerilogFile{
+   #$verilogFile =$_[0];
+my @types = (["Config Files", '.v'],
+             ["All Files", "*"]);
+
+$verilogFile = $top->getSaveFile(-filetypes =>\@types,
+                                 -defaultextension => '.v'); 
+
+}#sub browse_VerilogFile
+
+sub write_RTL {
+my $verilogOutputFile = $_[0];
+&write_ega;
+&p2v("-p", "hpv.sv", "-v", $verilogOutputFile);
+}#sub write_RTL
+
+
+
+
+sub dump_PSEUDO_ALREADY {
+
+my $outputFile = $_[0];
+my $onlyModule = $_[1];
+
+unless ( defined $outputFile ) {
+  $outputFile = "hpv_dump.sv";
+}
+
+print "MSG-TST : 001 : Writing pseudo module(s) to file $outputFile ...\n";
+open(WRITE, ">$outputFile");
+
+my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$dst) = localtime(time);
+$mon++;
+$year += 1900;
+print WRITE "Dumped on $mon/$mday/$year $hour:$min:$sec\n";
+
+print WRITE "PSEUDO_MODULE_ALREADY:\n";
+foreach my $moduleName ( keys %{PSEUDO_MODULE_ALREADY} ) {
+  if ( defined $onlyModule && $moduleName ne $onlyModule ) {
+    my $isAChildModule = 0;
+    foreach my $instName ( keys %{$PSEUDO_VINST_ALREADY{$onlyModule}} ) {
+      my $cellref = $PSEUDO_VINST_ALREADY{$onlyModule}->{$instName}->dbPimDBGetInstCellref;
+      if ( $cellref eq $moduleName ) {
+        $isAChildModule = 1;
+        last;
+      }
+    }#foreach 
+    if ( $isAChildModule == 0 ) {
+      next;
+    }
+  }
+  my $name = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetModuleName;
+  my $isTop;
+  if ( $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetIsModuleTop ) {
+    $isTop = "top=>";
+  }
+  my $type = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetClass;
+  my $dirtyL = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetLogicalDirty;
+  my $dirtyP = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetPhysicalDirty;
+  my @bbox = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetSize;
+  print WRITE "{$isTop$name type=$type dirty=$dirtyL$dirtyP \[@bbox\]\n    in  pins:";
+  my @ins = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetInput;
+
+  foreach $pin ( @ins ) {
+    print WRITE " $pin";
+    $type = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetInputType($pin);
+    if ( $type == 1 ) {
+      $bits = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetInputBits($pin);
+      print WRITE "$bits";
+    }
+  }
+
+  print WRITE "\n    out pins:";
+  my @outs = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetOutput;
+  foreach $pin ( @outs ) {
+    print WRITE " $pin";
+    $type = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetOutputType($pin);
+    if ( $type == 1 ) {
+      $bits = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetOutputBits($pin);
+      print WRITE "$bits";
+    }
+  }
+
+  print WRITE "\n    inout pins:";
+  my @bidis = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetBidi;
+  foreach $pin ( @bidis ) {
+    print WRITE " $pin";
+    $type = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetBidiType($pin);
+    if ( $type == 1 ) {
+      $bits = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetBidiBits($pin);
+      print WRITE "$bits";
+    }
+  }
+  print WRITE "\n}\n";
+}#foreach 
+print WRITE "\;\n";
+
+print WRITE "PSEUDO_VINST_ALREADY:\n";
+foreach my $moduleName ( keys %{PSEUDO_VINST_ALREADY} ) {
+  if ( defined $onlyModule && $moduleName ne $onlyModule ) {
+    next;
+  }
+  foreach my $instName ( keys %{$PSEUDO_VINST_ALREADY{$moduleName}} ) {
+    my $parent = $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBGetParentModule;
+    my $name = $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBGetInstName;
+    my $cellref = $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBGetInstCellref;
+    my @bbox = $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBGetInstRelBbox;
+    my $place = ( $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBGetInstStatus eq
+                 "PLACED" ) ? "\[@bbox\]" : "UNPLACED";
+    print WRITE "{$parent/$name $cellref $place";
+    my @list = $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBGetInstInputWirePinList;
+    my $len = @list;
+    if ( $len > 0 ) {
+      print WRITE "\n    in wire: @list";
+    }
+    @list = $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBGetInstOutputWirePinList;
+    $len = @list;
+    if ( $len > 0 ) {
+      print WRITE "\n    out wire: @list";
+    }
+    @list = $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBGetInstInputBusPinList;
+    $len = @list;
+    if ( $len > 0 ) {
+      print WRITE "\n    in bus: @list";
+    }
+    @list = $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBGetInstOutputBusPinList;
+    $len = @list;
+    if ( $len > 0 ) {
+      print WRITE "\n    out bus: @list";
+    }
+    print WRITE "}\n";
+  }#foreach 
+}#foreach 
+print WRITE "\;\n";
+
+print WRITE "PSEUDO_VNET_ALREADY:\n";
+foreach my $moduleName ( keys %{PSEUDO_VNET_ALREADY} ) {
+  if ( defined $onlyModule && $moduleName ne $onlyModule ) {
+    next;
+  }
+  foreach my $net ( keys %{$PSEUDO_VNET_ALREADY{$moduleName}} ) {
+    my ($sourceVInst, $fanInPins) = $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenGetPseudoNetSourceFanInList;
+    my @fanOutList = $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenGetPseudoNetSinkFanOutList;
+    my @fanOuts = ();
+    for (my $k = 0; $k < @fanOutList; $k += 2) {
+      push(@fanOuts, "($fanOutList[$k] $fanOutList[$k + 1])");
+    }
+
+    my $type = $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenGetPseudoNetType;
+    if ( $type eq "bus" ) {
+      my $width = $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenGetPseudoNetWidth;
+      $type .= "\[$width\]";
+    }
+    my $isTop = "";
+    if ( $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenGetPseudoNetIsTopConn ) {
+      my $topConnPin = $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenGetPseudoNetTopConnPin;
+      $isTop = " top_conn\($topConnPin\)";
+    }
+    print WRITE "{$moduleName/$net {$sourceVInst $fanInPins} {@fanOuts} $type$isTop}\n";
+    my @coords = $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenGetPseudoNetCoords;
+    if ( @coords > 3 ) {
+      my $last = @coords - 1;
+      my $p1 = $coords[0] . " " . $coords[1];
+      my $p2 = $coords[$last - 1] . " " . $coords[$last];
+      print WRITE "  + \($p1\) \($p2\)\n";
+    }
+  }#foreach
+}#foreach
+print WRITE "\;\n";
+
+close(WRITE);
+}# sub dump_PSEUDO_ALREADY
+
+
+sub dbg_VNOM_module {
+
+my $outputFile = $_[0];
+my $moduleName = $_[1];
+
+unless ( defined $outputFile ) {
+  $outputFile = STDOUT;
+}
+
+print "MSG-TST : 001 : Writing VNOM module(s) to file $outputFile ...\n";
+open(WRITE, ">$outputFile");
+
+my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$dst) = localtime(time);
+$mon++;
+$year += 1900;
+print WRITE "// Output on $mon/$mday/$year $hour:$min:$sec\n";
+
+print WRITE "// MODULE_ALREADY:\n";
+
+my ($module, $pin, $type, $bits, $conn, $inst, $cellref);
+foreach $module ( keys %{MODULE_ALREADY} ) {
+  if ( defined $moduleName && $moduleName ne $module ) {
+    next;
+  }
+  print WRITE "module $module\;\n";
+  my $area = $MODULE_ALREADY{$module}->dbVNOMGetArea;
+  print WRITE "// AREA $area\;\n";
+  my @pins = $MODULE_ALREADY{$module}->dbVNOMGetInput;
+  foreach $pin ( @pins ) {
+    print WRITE "    input ";
+    $type = $MODULE_ALREADY{$module}->dbVNOMGetInputType($pin);
+    if ( $type == 1 ) {
+      $bits = $MODULE_ALREADY{$module}->dbVNOMGetInputBits($pin);
+      print WRITE "$bits ";
+    }
+    print WRITE "$pin\;\n";
+  }
+  @pins = $MODULE_ALREADY{$module}->dbVNOMGetOutput;
+  foreach $pin ( @pins ) {
+    print WRITE "    output ";
+    $type = $MODULE_ALREADY{$module}->dbVNOMGetOutputType($pin);
+    if ( $type == 1 ) {
+      $bits = $MODULE_ALREADY{$module}->dbVNOMGetOutputBits($pin);
+      print WRITE "$bits ";
+    }
+    print WRITE "$pin\;\n";
+  }
+  @pins = $MODULE_ALREADY{$module}->dbVNOMGetBidi;
+  foreach $pin ( @pins ) {
+    print WRITE "    inout ";
+    $type = $MODULE_ALREADY{$module}->dbVNOMGetBidiType($pin);
+    if ( $type == 1 ) {
+      $bits = $MODULE_ALREADY{$module}->dbVNOMGetBidiBits($pin);
+      print WRITE "$bits ";
+    }
+    print WRITE "$pin\;\n";
+  }
+
+#  @pins = $MODULE_ALREADY{$module}->dbVNOMGetPins;
+#  print WRITE "FLAT PINS \( @pins \)\n";
+
+  my @conns = $MODULE_ALREADY{$module}->dbVNOMGetConn;
+  foreach $conn ( @conns ) {
+    my ($cellName_and_instName) = ( split(/\(/, $conn ))[0];
+    $cellName_and_instName =~ s/^\s+//;
+    $cellName_and_instName =~ s/\s+$//;
+    my $instName = ( split(/\s+/, $cellName_and_instName ))[1];
+    if (( $MODULE_ALREADY{$module}->dbVNOMHasHierInst($instName) ) 
+       || ( $MODULE_ALREADY{$module}->dbVNOMHasLeafInst($instName) )) {
+      print WRITE "$conn\;\n";
+    }
+  }
+
+  my $flplanID = dbfTstgenGetInstFlplanID($module, "_self_");
+  my @insts = $MODULE_ALREADY{$module}->dbVNOMGetHierInst;
+  foreach $inst ( @insts ) {
+    $cellref = $MODULE_ALREADY{$module}->dbVNOMGetHierInstCell($inst);
+    my $place = "";
+    if ( defined $flplanID && exists $FLOORPLAN_ALREADY{$flplanID} ) {
+      my @bbox = $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetHierInstBbox($inst);
+      $place = ( @bbox == 4 ) ?  " \[@bbox\]" : " UNPLACED";
+    }
+    print WRITE "// HIER $inst : $cellref$place\;\n";
+  }
+  @insts = $MODULE_ALREADY{$module}->dbVNOMGetLeafInst;
+  foreach $inst ( @insts ) {
+    $cellref = $MODULE_ALREADY{$module}->dbVNOMGetLeafInstCell($inst);
+    my $place = "";
+    if ( defined $flplanID && exists $FLOORPLAN_ALREADY{$flplanID} ) {
+      my @bbox = $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetLeafInstBbox(inst);
+      $place = ( @bbox == 4 ) ?  " \[@bbox\]" : " UNPLACED";
+    }
+    print WRITE "// LEAF $inst : $cellref$place\;\n";
+  }
+  my @pars = $MODULE_ALREADY{$module}->dbVNOMGetParent;
+  print WRITE "// PARENTS @pars\;\n";
+  print WRITE "endmodule\n";
+}#foreach 
+
+close(WRITE);
+}# sub dbg_VNOM_module
+
+
+sub dump_FLOORPLAN_ALREADY {
+
+my $outputFile = $_[0];
+my $moduleName = $_[1];
+
+unless ( defined $outputFile ) {
+  $outputFile = STDOUT;
+}
+
+print "MSG-TST : 001 : Writing floorplans to file $outputFile ...\n";
+open(WRITE, ">$outputFile");
+
+my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$dst) = localtime(time);
+$mon++;
+$year += 1900;
+print WRITE "// Output on $mon/$mday/$year $hour:$min:$sec\n";
+
+print WRITE "// FLOORPLAN_ALREADY:\n";
+
+my %flplanRevLookup = reverse %FLOORPLAN_LOOKUP;
+
+foreach my $flplanID ( keys %{FLOORPLAN_ALREADY} ) {
+  my $cellref = $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetCellref;
+  if ( defined $moduleName && $moduleName ne $cellref ) {
+    next;
+  }
+  my $key = $flplanRevLookup{$flplanID};
+  my $dbu = $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetDBUnit;
+  my @size = $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetSize;
+  my $place = ( @size == 4 && $size[0] ne $size[2] && $size[1] ne $size[3] ) ?
+              "\[@size\]" : "UNPLACED";
+  print WRITE "{$flplanID}{$cellref $key unit=$dbu $place\n";
+  foreach my $inst ( $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetHierInstList ) {
+    my @bbox = $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetHierInstBbox($inst);
+    my $place = ( @bbox == 4 && $bbox[0] ne $bbox[2] && $bbox[1] ne $bbox[3] ) ?
+                "\[@bbox\]" : "UNPLACED";
+    print WRITE "    $inst $place\n";
+  }
+  foreach my $inst ( $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetLeafInstList ) {
+    my ($locx, $locy, $orient) = $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetLeafInstLoc($inst);
+    print WRITE "    $inst ($locx, $locy) $orient\n";
+  }
+
+  foreach my $inst ( $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetHaloList ) {
+    my $delta = $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetHaloDelta($inst);
+    print WRITE "    HALO $inst \[$delta\]\n";
+  }
+
+  foreach my $pin ( $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetPinList ) {
+    my $status = $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetPinStatus($pin);
+    print WRITE "    PIN $pin st=$status :";
+    my @shapes = $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetPinRect($pin);
+    if ( @shapes == 0 ) {
+      print WRITE " (no shapes)\;\n";
+    }
+    else {
+      foreach my $shape ( @shapes ) {
+        print WRITE " \($shape\)";
+      }
+      print WRITE "\;\n";
+    }
+  }
+
+  foreach my $guide ( $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetPinGuideList) {
+    my $layer = $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetPinGuideLayer($guide);
+    unless ( defined $layer && $layer ne "" ) {
+      $layer = "(no layer)"
+    }
+    my @bbox = $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetPinGuideBbox($guide);
+    if ( $FLOORPLAN_ALREADY{$flplanID}->dbFlplanPinGuideIsKeepOut($guide) ) {
+      print WRITE "    KEEPOUT $guide : $layer \[@bbox\]\;\n";
+    }
+    else {
+      print WRITE "    GUIDE $guide : $layer \[@bbox\]";
+      my @pins = $FLOORPLAN_ALREADY{$flplanID}->dbFlplanPinGuideGetPinList($guide);
+      if ( @pins > 0 ) {
+        print WRITE "\n    + (@pins)";
+      }
+      print WRITE "\;\n";
+    }
+  }# foreach guide
+
+  print WRITE "}\n";
+}#foreach flplanID
+print WRITE "\;\n";
+
+close(WRITE);
+}# sub dump_FLOORPLAN_ALREADY
+
+
+sub dump_PseudoModulePins {
+
+my $outputFile = $_[0];
+my $moduleName = $_[1];
+
+unless ( defined $outputFile ) {
+  $outputFile = STDOUT;
+}
+
+print "MSG-TST : 001 : Writing pseudo module pins to file $outputFile ...\n";
+open(WRITE, ">$outputFile");
+
+my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$dst) = localtime(time);
+$mon++;
+$year += 1900;
+print WRITE "// Output on $mon/$mday/$year $hour:$min:$sec\n";
+
+print WRITE "// PseudoModule PINS:\n";
+
+my ($module, $pin, $shape, $guide);
+foreach $module ( keys %{PSEUDO_MODULE_ALREADY} ) {
+  if ( defined $moduleName && $moduleName ne $module ) {
+    next;
+  }
+ my $origFP = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetFloorplan;
+ my @flplans = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenListFloorplan;
+ foreach my $fp ( @flplans ) {
+  $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenSetFloorplan($fp);
+  print WRITE "\{module $module\;\n";
+  my @size = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetSize;
+  print WRITE "  floorplan $fp \[@size\]\;\n";
+  my @pins = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetPins;
+  foreach $pin ( @pins ) {
+    my $status = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetPinStatus($pin);
+    print WRITE "  $pin st=$status :";
+    my @shapes = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetPinRect($pin);
+    if ( @shapes == 0 ) {
+      print WRITE " (no shapes)\n";
+    }
+    else {
+      foreach $shape ( @shapes ) {
+        print WRITE "\t$shape\;\n";
+      }
+    }
+  }# foreach pin
+
+  my @guides = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetPinGuideList;
+  foreach $guide ( @guides ) {
+    my $layer = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetPinGuideLayer($guide);
+    unless ( defined $layer && $layer ne "" ) {
+      $layer = "(no layer)"
+    }
+    my @bbox = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetPinGuideBbox($guide);
+    if ( $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenPinGuideIsKeepOut($guide) ) {
+      print WRITE "  - KEEPOUT $guide : $layer \[@bbox\]\;\n";
+    }
+    else {
+      print WRITE "  - GUIDE $guide : $layer \[@bbox\]";
+      my @pins = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenPinGuideGetPinList($guide);
+      if ( @pins > 0 ) {
+        print WRITE "\n    + (@pins)";
+      }
+      print WRITE "\;\n";
+    }
+  }# foreach guide
+  print WRITE "\}\;\n";
+ }# foreach fp
+ $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenSetFloorplan($origFP);
+}# foreach module
+}# sub dump_PseudoModulePins
+
+
+1;

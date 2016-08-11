@@ -1,0 +1,74 @@
+#!/usr/bin/perl
+use Benchmark;
+my $t0 = new Benchmark;
+
+
+use XML::Simple;
+use Data::Dumper;
+
+my ($svgFile, $cloud_share_path);
+
+if(@ARGV < 2 || $ARGV[0] eq "-help" || $ARGV[0] eq "-h" || $ARGV[0] eq "-HELP"){
+   print "Usage: ./svg2tcl -svg <svg file name>\n";
+}else{
+   for(my $i=0; $i<=$#ARGV; $i++){
+       if($ARGV[$i] eq "-svg"){$svgFile = $ARGV[$i+1];}
+       if($ARGV[$i] eq "-cloud_share_path"){$cloud_share_path = $ARGV[$i+1];}
+   }
+   
+   my @path =split(/\//,$svgFile);
+   $fileName = $path[-1];
+   $fileName =~ s/\.svg//; 
+
+   my $data = XMLin($svgFile);
+   
+   open (WRITE, ">script") || die("Cannot open file for writing");
+   
+   my $canW = $data->{svg}->{width};
+   my $canH = $data->{svg}->{height};
+   my @polyline = ();
+   my @text = ();
+   my $inst_cnt_pin =0;
+   
+   if(ref($data->{svg}->{g}->{polyline}) eq 'ARRAY'){
+      @polyline = @{$data->{svg}->{g}->{polyline}};
+   }elsif($data->{svg}->{g}->{polyline}){
+      push(@polyline, $data->{svg}->{g}->{polyline});
+   }
+   if(ref($data->{svg}->{g}->{text}) eq 'ARRAY'){
+      @text = @{$data->{svg}->{g}->{text}};
+   }elsif($data->{svg}->{g}->{text}){
+      push(@text, $data->{svg}->{g}->{text});
+   }
+
+
+   print WRITE "createPseudoTopModule -top mychip -H $canH -W $canW\n";
+   
+   foreach my $instId (keys %{$data->{svg}->{g}->{g}}){ 
+     my $fig_type = $data->{svg}->{g}->{g}->{$instId}->{type};
+     my $orient = $data->{svg}->{g}->{g}->{$instId}->{modelPmos};
+     my $poly_coords = $data->{svg}->{g}->{g}->{$instId}->{polygon}->{points};
+     my $poly_text = $data->{svg}->{g}->{g}->{$instId}->{text}->{tspan}->{content};
+      
+     my @coords = split(/\s+|\,/,$poly_coords);
+     my $sizeW =$coords[4]-$coords[0];
+     my $sizeH =$coords[5]-$coords[1];
+     print WRITE "createPseudoInstance -parent mychip -cell $fig_type  -inst $poly_text -loc {$coords[0],$coords[1]} -orient $orient\n";
+   }
+
+   print WRITE "commit_module -module mychip\n";
+   print WRITE "hier2flat\n";
+   print WRITE "write_def -output $fileName.def --overwrite --write_unconnected_instances\n";
+   print WRITE "def2gds -output $fileName --inst  --include_cell --cell_pin_text\n";
+   print WRITE "create_gds_image -gds $fileName.gds -width 500 -height 500 -out $fileName.png\n";
+
+   print WRITE "exit\n";
+   close WRITE;
+#   system("$cloud_share_path/apps/content/drupal_app/proton -f script --nolog");
+
+}
+
+
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "padTemplate took: ",timestr($td),"\n";

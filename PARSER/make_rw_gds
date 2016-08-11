@@ -1,0 +1,241 @@
+sub read_gds_layer {
+
+#****f* /read_gds_layer
+# NAME
+#    read_gds_layer
+#FUNCTION
+#    read layer rectangles  
+#Assumptions
+#    
+#SYNOPSIS
+#    read_gds_layer -file <gds file>
+#                   -layer <layerName>.
+#INPUTS
+#    options:
+#     -file <gds file>,-layer <layerNumber>
+#OUTPUTS
+#    read layer rectangles 
+#****
+my $noOfArg = @_;
+my $compact = 0;
+my $boundary_found = 0;
+my $layerName = "";
+my $fileNameIn = "";
+my $layer_str = "";
+my $filename = "gds_layer_file";
+my $overwrite = 0;
+
+if($noOfArg < 2 || $_[0] eq '-h' || $_[0] eq '-help' || $_[0] eq '-HELP') {
+   print "usage : read_gds_layer -file < gds file >\n";
+   print "                       -layer < layer Number>\n";
+   print "                       -output < output file name>\n";
+   print "                       --overwrite [to overwrite existing output file]\n";
+}else {
+   for(my $i = 0 ; $i < $noOfArg ;  $i++){
+       if($_[$i] eq "-file"){$fileNameIn = $_[$i+1];} 
+       if($_[$i] eq "-layer"){$layer_str = $_[$i+1];} 
+       if($_[$i] eq "-output"){$filename = $_[$i+1];} 
+       if($_[$i] eq "--overwrite"){$overwrite = 1;}
+   }# for correct no.of Arguments
+
+print "\nINFO-PAR-GDS : 001 : reading gds file $fileNameIn\n";
+my $gds2File = new GDS2(-fileName=>"$fileNameIn");
+
+if ((-e $filename) && ($overwrite == 0)){
+print "\nWARN-PAR-GDS : 002 : file $filename exists please give --overwrite option to overwrite the existing file\n";
+return;
+}else{
+
+open (WRITE, ">$filename");
+print "\nINFO-PAR-GDS  : 003 : writing data $filename\n";
+  while ($gds2File -> readGds2Record) {
+    my $string = $gds2File -> returnRecordAsString(-compact=>$compact);
+    if($string =~ m/^\s*BOUNDARY/){
+       $boundary_found = 1; 
+    }elsif($string =~ m/^\s*ENDEL/){
+       $boundary_found = 0;
+       next;
+    }
+      if ($boundary_found == 1){
+        if ($string =~ m/^\s*LAYER/){
+            $layerName = $gds2File->returnLayer;
+        }  
+        if($layerName eq $layer_str){
+           if ($string =~ m/^\s*XY/){
+               my @xy = $gds2File -> returnXyAsArray;
+               print "INFO-PAR-GDS : 004 :$layerName @xy\n";
+               print WRITE "$layerName @xy\n";
+           }else{next;}
+        }
+      }#if boundary found 
+
+  }#while
+close(WRITE);
+}#if file does not exsists or overwrite option is given
+}#end else
+}#sub read_gds_layer
+
+############################################################################################
+##################### writing pinName and its coordinates from GDS #########################
+############################################################################################
+
+sub write_gds_pin_coords {
+
+#****f* /write_gds_pin_coords
+# NAME
+#    write_gds_pin_coords
+#FUNCTION
+#    read gds file and write pin name and its coords in output file.  
+#Assumptions
+#    
+#SYNOPSIS
+#    write_gds_pin_coords -in <gds file>
+#                         -out <output file>.
+#INPUTS
+#    options:
+#     -in <gds file>,-out <output file>
+#OUTPUTS
+#    generate an output file
+#****
+my $noOfArg = @_;
+my ($fileNameIn, $fileNameOut) = ("", "");
+if($noOfArg < 4 || $_[0] eq '-h' || $_[0] eq '-help' || $_[0] eq '-HELP') {
+   print "usage : write_gds_pin_coords -in < gds file >\n";
+   print "                             -out <output file name>\n";
+}else {
+   for(my $i=0 ; $i<=$noOfArg; $i++){
+       if($_[$i] eq "-in"){$fileNameIn = $_[$i+1];} 
+       if($_[$i] eq "-out"){$fileNameOut = $_[$i+1];} 
+   }#for correct no.of Arguments
+   my $compact = 0;
+   my $text_found = 0;
+   my $boundary_found = 0;
+   my $pinName = "";
+   my @pinxy = ();
+   my $gds2File = new GDS2(-fileName=>"$fileNameIn");
+   open (WRITE, ">$fileNameOut");
+   while ($gds2File -> readGds2Record) {
+      my $string = $gds2File-> returnRecordAsString(-compact=>$compact);
+      if ($string =~ m/^\s*TEXT/){
+          $text_found = 1;
+          $boundary_found = 0;
+      }elsif($string =~ m/^\s*BOUNDARY/){
+           $boundary_found = 1;
+           $text_found = 0;
+      }elsif(($string =~ m/^\s*ENDEL/) && $text_found == 1){
+          print WRITE "$pinName @pinxy\n";
+          $text_found = 0;
+          $boundary_found = 0;
+          next;
+      }elsif(($string =~ m/^\s*ENDEL/) && $boundary_found == 1){
+          $text_found = 0;
+          $boundary_found = 0;
+          next;
+      }
+      if ($text_found == 1){ 
+          if($gds2File -> isXy){
+             @pinxy = $gds2File -> returnXyAsArray;
+          }elsif($string =~ m/^\s*STRING/){
+            ($pinName)=(split(/\s*\'/,$string))[1];
+          }else{next;}
+      }#if text found 
+   }#while
+   close WRITE;
+}
+}#sub write_gds_pin_coords
+
+############################################################################################
+############################### writing DEF from GDS #######################################
+############################################################################################
+
+sub write_def_from_gds{
+#****f* /write_def_from_gds
+# NAME
+#    def_from_gds
+#FUNCTION
+#    read gds file and write def for given Cell.  
+#Assumptions
+#    
+#SYNOPSIS
+#    write_def_from_gds -gds <gds file>
+#                       -module <module name>
+#                       -def <output def file>.
+#INPUTS
+#    options:
+#     -gds <gds file>,-def <output def file>
+#OUTPUTS
+#    generate an def file
+#****
+my $noOfArg = @_;
+my ($gdsFile, $defFile,$moduleName) = ("", "test.def", "");
+if($noOfArg < 4 || $_[0] eq '-h' || $_[0] eq '-help' || $_[0] eq '-HELP') {
+   print "usage : write_def_from_gds -gds < gds file >\n";
+   print "                           -def <output def file name(default is test.def)>\n";
+   print "                           -module <module name>\n";
+}else {
+   for(my $i=0 ; $i<=$noOfArg; $i++){
+       if($_[$i] eq "-gds"){$gdsFile = $_[$i+1];} 
+       if($_[$i] eq "-def"){$defFile = $_[$i+1];} 
+       if($_[$i] eq "-module"){$moduleName = $_[$i+1];} 
+   }#for correct no.of Arguments
+   my $compact = 0;
+   my $read_section = 0;
+   my $reading_pin_section = 0;
+   my $cell_found = 0;
+
+   my $gds2File = new GDS2(-fileName=>"$gdsFile");
+   open (WRITE, ">$defFile");
+   while ($gds2File -> readGds2Record) {
+      my $string = $gds2File-> returnRecordAsString(-compact=>$compact);
+      if (($string =~ m/^BGNSTR/) && $cell_found == 0){
+          $read_section = 1;
+          next;
+      }elsif(($string =~ m/^ENDSTR/) && $cell_found == 1){
+          $read_section = 0;
+          my $pin_count = keys %temp_gds_pin_hash;
+          print WRITE "\nPINS $pin_count \;\n" if($cell_found == 1);
+          foreach my $pin (keys %temp_gds_pin_hash){
+             my @pin_coords = @{$temp_gds_pin_hash{$pin}};
+             my $orient = "N";
+             my $dir = "input";
+             print WRITE "\- $pin \+ NET $pin \+ DIRECTION $dir \+ USE SIGNAL\n";
+             print WRITE " \+ PLACED \( $pin_coords[0] $pin_coords[1] \) $orient \;\n";
+          }
+          print WRITE "END PINS\n";
+          print WRITE "END DESIGN\n";  
+          next;
+      }elsif($read_section == 1){
+          if($string =~ m/^\s*STRNAME/){
+            my ($cellName) = (split(/\s+/,$string))[2];
+                $cellName =~ s/\'//g; 
+            if($cellName eq $moduleName){
+              $cell_found = 1;
+              print WRITE "DESIGN $moduleName \;\n";
+              next;
+            }
+          }elsif($cell_found == 1){
+            if($string =~ m/^\s*TEXT/){
+              @pinxy = ();
+              $reading_pin_section = 1;
+              next;
+            }elsif($string =~ m/^\s*ENDEL/){
+              $reading_pin_section = 0;
+              next;
+            }elsif($reading_pin_section == 1){
+              if($gds2File -> isXy){
+                 @pinxy = $gds2File -> returnXyAsArray;
+              }elsif($string =~ m/^\s*STRING/){
+                 my ($pinName)=(split(/\s*\'/,$string))[1];
+                 $temp_gds_pin_hash{$pinName} = \@pinxy
+              }else{next;}
+            }else{next;}
+          }else{next;}
+      }else{next;}
+   }#while
+   close WRITE;
+}
+
+}#sub write_def_from_gds
+############################################################################################
+
+1;

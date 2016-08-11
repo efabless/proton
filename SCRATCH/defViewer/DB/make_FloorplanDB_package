@@ -1,0 +1,628 @@
+#!/bin/perl
+                                                                                                                       
+package Floorplan;
+                                                                                                                       
+## explanation of the packages
+## ID : floorplan ID used in lookup table, same as hash key
+## CR : cell ref for instance associated with this floorplan
+## R is an array of Rows of the partition
+## S is the size of partition.
+## AR is the Aspect Ratio of partition.
+## T is the track definition of the partition.
+## IO array contains the IO to core distances
+## O defines the origin of the floorplan 0 means lower left cornet ( default ) 
+## U defines the utilization of the partition
+## SCH defines the Std cell row height of the partition
+## PShp : Pin shapes, ($layer @bbox), bit blasted
+## PGde : Pin guides
+## Halo : Block halos, delta is "L B R T"
+
+
+sub new {
+my $partition = {
+                    ID => "",
+                    CR => "",
+                    DBU => 1,
+                    R => [],
+                    S => [],
+                    T => [],
+                    IO => [],
+                    AR => 0,
+                    O => 0,
+                    U => 0,
+                    SCH => 0,
+                    HChild => (),
+                    LChild => (),
+                    PShp => MacroPinDB::createEmpty(),
+                    PGde => PinGuideDB::createEmpty(),
+                    PSEUDO_VNET_ROUTING_ALREADY => (),
+                    Halo => (),
+                    PB => [],
+                    RB => [],
+                    BUMP => [],
+                    BUMP_LOC => (),
+                    };
+bless $partition, 'Floorplan';
+return $partition;
+}#sub new
+
+#--------------------------------------------#
+sub dbFlplanAddPblkg {
+my ($self,$pData) = @_;
+    push(@{$self->{PB}}, $pData);
+}#sub dbFlplanAddPblkg 
+
+sub dbFlplanGetPblkg {
+my ($self) = @_;
+my @pData = @{$self->{PB}};
+return(@pData);
+}#sub dbFlplanGetPblkg 
+#--------------------------------------------#
+sub dbFlplanAddRblkg {
+my ($self,$pData) = @_;
+    push(@{$self->{RB}}, $pData);
+}#sub dbFlplanAddRblkg 
+
+sub dbFlplanGetRblkg {
+my ($self) = @_;
+my @pData = @{$self->{RB}};
+return(@pData);
+}#sub dbFlplanGetRblkg 
+#--------------------------------------------#
+
+sub dbFlplanAddRows {
+my ($self,$rowData) = @_;
+   push(@{$self->{R}}, $rowData);
+}# sub dbFlplanAddRows
+
+sub dbFlplanSetSize {
+my ($self,$llx,$lly,$urx, $ury) = @_;
+   ${$self->{S}}[0] = $llx;
+   ${$self->{S}}[1] = $lly;
+   ${$self->{S}}[2] = $urx;
+   ${$self->{S}}[3] = $ury;
+#print "Set partition to $llx $lly $urx $ury\n";
+}#sub dbFlplanSetSize
+
+sub dbFlplanGetRows {
+my ($self) = @_;
+  my @rowData = @{$self->{R}};
+return(@rowData);
+}# sub dbFlplanGetRows
+
+
+sub dbFlplanGetSize {
+my ($self) = @_;
+my @die = @{$self->{S}};
+return(@die);
+}#sub dbFlplanGetSize
+
+sub dbFlplanSetOrigin {
+my ($self,$origin) = @_;
+$self->{O} = $origin;
+}#sub dbFlplanSetOrigin
+
+sub dbgFlplanGetSize {
+my ($self) = @_;
+my @die = @{$self->{S}};
+print "partition size is $die[0], $die[1] -- $die[2], $die[3]\n";
+}#sub dbgFlplanGetSize
+
+sub dbFlplanGetOrigin {
+my ($self) = @_;
+my $origin = $self->{O};
+return($origin);
+}#sub dbFlplanGetOrigin
+
+sub dbFlplanSetUtilization {
+my ($self,$util) = @_;
+$self->{U} = $util;
+}#sub dbFlplanSetUtilization
+
+sub dbFlplanGetUtilization {
+my ($self) = @_;
+my $util = $self->{U};
+return($util);
+}#sub dbFlplanGetUtilization
+
+sub dbFlplanSetAspectRatio {
+my ($self,$ar) = @_;
+$self->{AR} = $ar;
+}#sub dbFlplanSetAspectRatio
+
+sub dbFlplanGetAspectRatio {
+my ($self) = @_;
+my $ar = $self->{AR};
+return($ar);
+}#sub dbFlplanGetAspectRatio
+
+sub dbFlplanSetID {
+my ($self, $name) = @_;
+$self->{ID} = $name;
+}#sub dbFlplanSetID
+
+sub dbFlplanGetID {
+my ($self) = @_;
+my $name = $self->{ID};
+return($name);
+}#sub dbFlplanGetID
+
+sub dbFlplanSetCellref {
+my ($self, $cellref) = @_;
+$self->{CR} = $cellref;
+}#sub dbFlplanSetCellref
+
+sub dbFlplanGetCellref {
+my ($self) = @_;
+my $cellref = $self->{CR};
+return($cellref);
+}#sub dbFlplanGetCellref
+
+sub dbFlplanSetDBUnit {
+my ($self, $dbu) = @_;
+$self->{DBU} = $dbu;
+}#sub dbFlplanSetDBUnit
+
+sub dbFlplanGetDBUnit {
+my ($self) = @_;
+my $dbu = $self->{DBU};
+return($dbu);
+}#sub dbFlplanGetDBUnit
+
+sub dbFlplanAddHierInst {
+my ($self, $name, $llx, $lly, $urx, $ury, $orient) = @_;
+$self->{HChild}{$name}{BBOX} = [ $llx, $lly, $urx, $ury ];
+$self->{HChild}{$name}{O} = ( defined $orient ) ? $orient : "N";
+}# sub dbFlplanAddHierInst
+
+sub dbFlplanGetHierInstList {
+my ($self) = @_;
+return ( keys %{$self->{HChild}} );
+}# sub dbFlplanGetHierInstList
+
+sub dbFlplanGetHierInstBbox {
+my ($self, $name) = @_;
+unless ( exists $self->{HChild}{$name} ) {
+  # this is OK, e.g., after reading Verilog netlist, physical info is
+  # absent, no need for false alarm
+  #print "DB-ERR : $name hinst does not exist in the database\n";
+  return ();
+}
+return @{$self->{HChild}{$name}{BBOX}};
+}# sub dbFlplanGetHierInstBbox
+
+sub dbFlplanGetHierInstOrient {
+my ($self, $name) = @_;
+unless ( exists $self->{HChild}{$name} ) {
+  return "";
+}
+return $self->{HChild}{$name}{O};
+}# sub dbFlplanGetHierInstOrient
+
+sub dbFlplanWipeHierInsts {
+my ($self) = @_;
+$self->{HChild} = ();
+}# sub dbFlplanWipeHierInsts
+
+sub dbFlplanAddLeafInst {
+my ($self, $name, $locx, $locy, $orient) = @_;
+$self->{LChild}{$name}{BBOX} = [ $locx, $locy, $locx, $locy ];
+$self->{LChild}{$name}{O} = $orient;
+}# sub dbFlplanAddLeafInst
+
+sub dbFlplanGetLeafInstList {
+my ($self) = @_;
+return ( keys %{$self->{LChild}} );
+}# sub dbFlplanGetLeafInstList
+
+sub dbFlplanGetLeafInstLoc {
+my ($self, $name) = @_;
+unless ( exists $self->{LChild}{$name} ) {
+  return ();
+}
+my $locx = $self->{LChild}{$name}{BBOX}->[0];
+my $locy = $self->{LChild}{$name}{BBOX}->[1];
+my $orient = $self->{LChild}{$name}{O};
+return ($locx, $locy, $orient);
+}# sub dbFlplanGetLeafInstLoc
+
+sub dbFlplanUpdateLeafInstBbox {
+my ($self, $name, $width, $height) = @_;
+my $xorigin = $self->{LChild}{$name}{BBOX}->[0];
+my $yorigin = $self->{LChild}{$name}{BBOX}->[1];
+my $orient = $self->{LChild}{$name}{O};
+my ($llx, $lly, $urx, $ury) =
+        main::utilLocToBbox($xorigin, $yorigin, $orient, $width, $height);
+$self->{LChild}{$name}{BBOX}->[2] = $urx;
+$self->{LChild}{$name}{BBOX}->[3] = $ury;
+my @box = @{$self->{LChild}{$name}{BBOX}};
+}# sub dbFlplanUpdateLeafInstBbox
+
+sub dbFlplanGetLeafInstBbox {
+my ($self, $name) = @_;
+unless ( exists $self->{LChild}{$name} ) {
+  return ();
+}
+return @{$self->{LChild}{$name}{BBOX}};
+}# sub dbFlplanGetLeafInstBbox
+
+sub dbFlplanWipeLeafInsts {
+my ($self) = @_;
+$self->{LChild} = ();
+}# sub dbFlplanWipeLeafInsts
+
+#-----------------------------------------#
+
+sub dbFlplanAddPin {
+my ($self, $pinName) = @_;
+${$self->{PShp}}{$pinName} = MacroPinDB::new();
+${$self->{PShp}}{$pinName}->{D} = 0;
+}#sub dbFlplanAddPin
+
+sub dbFlplanGetPinList {
+my ($self) = @_;
+return ( keys %{$self->{PShp}} );
+}#sub dbFlplanGetPinList
+
+sub dbFlplanHasPin {
+my ($self, $pinName) = @_;
+if ( exists ${$self->{PShp}}{$pinName} ) {
+  return 1;
+}
+return 0;
+}#sub dbFlplanHasPin
+
+sub dbFlplanWipePins {
+my ($self) = @_;
+$self->{PShp} = ();
+}# sub dbFlplanWipePins
+
+sub dbFlplanAddPinRect {
+my ($self, $pinName, $shape) = @_;
+push( @{${$self->{PShp}}{$pinName}->{RECTS}}, $shape );
+}#sub dbFlplanAddPinRect
+
+sub dbFlplanGetPinRect {
+my ($self, $pinName) = @_;
+my @shapes = ();
+if ( exists ${$self->{PShp}}{$pinName} ) {
+  @shapes = @{${$self->{PShp}}{$pinName}->{RECTS}};
+}
+return (@shapes);
+}#sub dbFlplanGetPinRect
+
+sub dbFlplanWipePinRect {
+my ($self, $pinName) = @_;
+if ( exists ${$self->{PShp}}{$pinName} ) {
+  ${$self->{PShp}}{$pinName}->{RECTS} = [];
+}
+}#sub dbFlplanWipePinRect
+
+sub dbFlplanSetPinStatus {
+my ($self, $pinName, $status) = @_;
+my $dflag = 0;
+if ( $status =~ m/^\d$/ ) { $dflag = $status; }
+elsif ( $status eq "GUIDED" ) { $dflag = 1; }
+elsif ( $status eq "PLACED" ) { $dflag = 2; }
+elsif ( $status eq "FIXED" ) { $dflag = 3; }
+elsif ( $status eq "FIRM" ) { $dflag = 4; }
+elsif ( $status ne "UNPLACED" ) {
+  print "DB-ERR : pin:$pinName status:$status not valid\n";
+  return;
+}
+${$self->{PShp}}{$pinName}->{D} = $dflag;
+}#sub dbFlplanSetPinStatus
+
+sub dbFlplanGetPinStatus {
+my ($self, $pinName) = @_;
+my $dflag;
+if ( exists ${$self->{PShp}}{$pinName} ) {
+  $dflag = ${$self->{PShp}}{$pinName}->{D};
+}
+return ($dflag);
+}#sub dbFlplanGetPinStatus
+
+#-----------------------------------------#
+
+sub dbFlplanAddPinGuide {
+my ($self, $guide) = @_;
+${$self->{PGde}}{$guide} = PinGuideDB::new();
+}#sub dbFlplanAddPinGuide
+
+sub dbFlplanGetPinGuideList {
+my ($self) = @_;
+return ( keys %{$self->{PGde}} );
+}#sub dbFlplanGetPinGuideList
+
+sub dbFlplanHasPinGuide {
+my ($self, $guide) = @_;
+if ( exists ${$self->{PGde}}{$guide} ) {
+  return 1;
+}
+return 0;
+}#sub dbFlplanHasPinGuide
+
+sub dbFlplanWipePinGuides {
+my ($self) = @_;
+$self->{PGde} = ();
+}# sub dbFlplanWipePinGuides
+
+sub dbFlplanSetPinGuideType {
+my ($self, $guide, $type) = @_;
+my $tflag = 1;
+if ( $type =~ m/^\d$/ ) { $tflag = $type; }
+elsif ( $type eq "keepout" ) { $tflag = 0; }
+elsif ( $type ne "soft" ) {
+  print "unknown pin guide type $type\n";
+  return;
+}
+${$self->{PGde}}{$guide}->{T} = $tflag;
+}#sub dbFlplanSetPinGuideType
+
+sub dbFlplanGetPinGuideType {
+my ($self, $guide) = @_;
+return ${$self->{PGde}}{$guide}->{T};
+}#sub dbFlplanGetPinGuideType
+
+sub dbFlplanPinGuideIsKeepOut {
+my ($self, $guide) = @_;
+if ( ${$self->{PGde}}{$guide}->{T} == 0 ) {
+  return 1;
+}
+return 0;
+}#sub dbFlplanPinGuideIsKeepOut
+
+sub dbFlplanSetPinGuideLayer {
+my ($self, $guide, $layer) = @_;
+${$self->{PGde}}{$guide}->{LY} = $layer;
+}#sub dbFlplanSetPinGuideLayer
+
+sub dbFlplanGetPinGuideLayer {
+my ($self, $guide) = @_;
+return ${$self->{PGde}}{$guide}->{LY};
+}#sub dbFlplanGetPinGuideLayer
+
+sub dbFlplanSetPinGuideBbox {
+my ($self, $guide, $llx, $lly, $urx, $ury) = @_;
+@{${$self->{PGde}}{$guide}->{BX}} = ($llx, $lly, $urx, $ury);
+}#sub dbFlplanSetPinGuideBbox
+
+sub dbFlplanGetPinGuideBbox {
+my ($self, $guide) = @_;
+return @{${$self->{PGde}}{$guide}->{BX}};
+}#sub dbFlplanGetPinGuideBbox
+
+sub dbFlplanPinGuideAddPin {
+my ($self, $guide, $pin) = @_;
+if ( exists ${$self->{PGde}}{$guide} && ${$self->{PGde}}{$guide}->{T} > 0 ) {
+  ${$self->{PGde}}{$guide}->{P}->{$pin} = 1;
+}
+}#sub dbFlplanPinGuideAddPin
+
+sub dbFlplanPinGuideRemovePin {
+my ($self, $guide, $pin) = @_;
+if ( exists ${$self->{PGde}}{$guide} &&
+     exists ${$self->{PGde}}{$guide}->{P}->{$pin}) {
+  delete ${$self->{PGde}}{$guide}->{P}->{$pin};
+}
+}#sub dbFlplanPinGuideRemovePin
+
+sub dbFlplanPinGuideHasPin {
+my ($self, $guide, $pin) = @_;
+if ( exists ${$self->{PGde}}{$guide} &&
+     exists ${$self->{PGde}}{$guide}->{P}->{$pin}) {
+  return 1;
+}
+return 0;
+}#sub dbFlplanPinGuideHasPin
+
+sub dbFlplanPinGuideGetPinList {
+my ($self, $guide) = @_;
+return ( keys %{${$self->{PGde}}{$guide}->{P}} );
+}#sub dbFlplanPinGuideGetPinList
+
+#-----------------------------------------#
+
+sub dbFlplanAddHalo {
+my ($self, $block, $delta) = @_;
+${$self->{Halo}}{$block} = $delta;
+}#sub dbFlplanAddHalo
+
+sub dbFlplanGetHaloList {
+my ($self) = @_;
+return ( keys %{$self->{Halo}} );
+}#sub dbFlplanGetHaloList
+
+sub dbFlplanHasHalo {
+my ($self, $block) = @_;
+if ( exists ${$self->{Halo}}{$block} ) {
+  return 1;
+}
+return 0;
+}#sub dbFlplanHasHalo
+
+sub dbFlplanWipeHalos {
+my ($self) = @_;
+$self->{Halo} = ();
+}# sub dbFlplanWipeHalos
+
+sub dbFlplanGetHaloDelta {
+my ($self, $block) = @_;
+if ( exists ${$self->{Halo}}{$block} ) {
+  return ${$self->{Halo}}{$block};
+}
+return "";
+}#sub dbFlplanGetHaloDelta
+
+sub dbFlplanDeleteHalo {
+my ($self, $block) = @_;
+delete ${$self->{Halo}}{$block};
+}#sub dbFlplanDeleteHalo
+
+#-----------------------------------------#
+
+sub dbFlplanCopyBoundary {
+my ($self, $other) = @_;
+#$self->{CR} = $other->{CR};  # cell ref
+$self->{DBU} = $other->{DBU};  # DB unit
+$self->{AR} = $other->{AR};  # aspect ratio
+$self->{U} = $other->{U};  # utilization
+$self->{O} = $other->{O};  # origin
+$self->{S} = [ @{$other->{S}} ];  # size (bbox)
+
+$self->{PShp} = {};
+foreach my $pin ( $other->dbFlplanGetPinList ) {
+  $self->dbFlplanAddPin($pin);
+  $self->dbFlplanSetPinStatus($pin, $other->dbFlplanGetPinStatus($pin));
+  foreach my $shape ( $other->dbFlplanGetPinRect($pin) ) {
+    $self->dbFlplanAddPinRect($pin, $shape);
+  }
+}
+
+$self->{PGde} = {};
+foreach my $guide ( $other->dbFlplanGetPinGuideList ) {
+  $self->dbFlplanAddPinGuide($guide);
+  $self->dbFlplanSetPinGuideType($guide, $other->dbFlplanGetPinGuideType($guide));
+  $self->dbFlplanSetPinGuideLayer($guide, $other->dbFlplanGetPinGuideLayer($guide));
+  $self->dbFlplanSetPinGuideBbox($guide, $other->dbFlplanGetPinGuideBbox($guide));
+  foreach my $pin ( $other->dbFlplanPinGuideGetPinList($guide) ) {
+    $self->dbFlplanPinGuideAddPin($guide, $pin);
+  }
+}
+
+}#sub dbFlplanCopyBoundary
+
+sub dbFlplanCopy {
+my ($self, $other) = @_;
+
+$self->dbFlplanCopyBoundary($other);
+
+$self->{R} = [ @{$other->{R}} ];  # rows
+$self->{PB} = [ @{$other->{PB}} ];
+$self->{RB} = [ @{$other->{RB}} ];
+
+$self->{HChild} = ();
+foreach my $i ( $other->dbFlplanGetHierInstList ) {
+  my @bbox = $other->dbFlplanGetHierInstBbox($i);
+  my $orient = $other->dbFlplanGetHierInstOrient($i);
+  $self->dbFlplanAddHierInst($i, @bbox, $orient);
+}
+
+$self->{LChild} = ();
+foreach my $i ( $other->dbFlplanGetLeafInstList ) {
+  my ($locx, $locy, $orient) = $other->dbFlplanGetLeafInstLoc($i);
+  $self->dbFlplanAddLeafInst($i, $locx, $locy, $orient);
+  my @bbox = $other->dbFlplanGetLeafInstBbox($i);
+  $self->{LChild}{$i}{BBOX}->[2] = $bbox[2];
+  $self->{LChild}{$i}{BBOX}->[3] = $bbox[3];
+}
+
+$self->{Halo} = ();
+foreach my $i ( $other->dbFlplanGetHaloList ) {
+  my $delta = $other->dbFlplanGetHaloDelta($i);
+  $self->dbFlplanAddHalo($i, $delta);
+}
+
+}#sub dbFlplanCopy
+sub dbFlplanAddNets {
+my ($self,$net) = @_;
+    push(@{$self->{NETS}}, $net);
+}#sub dbFlplanAddNets
+
+sub dbFlplanGetNets {
+my ($self) = @_;
+my @nets = @{$self->{NETS}};
+return(@nets);
+}#sub dbFlplanGetNets 
+#--------------------------------------------#
+
+sub dbFlplanSetNetId {
+my($self, $netName, $netId) = @_;
+  if (exists $self->{PSEUDO_VNET_ROUTING_ALREADY}{$netName}) {}
+  else {
+    $self->{PSEUDO_VNET_ROUTING_ALREADY}{$netName} = NetRoutingDB::new();
+  }
+    $self->{PSEUDO_VNET_ROUTING_ALREADY}{$netName}->dbNetSetId($netId);
+}#sub dbFlplanSetNetId
+
+sub dbFlplanGetNetId {
+my($self, $netName) = @_;
+my $netId = $self->{PSEUDO_VNET_ROUTING_ALREADY}{$netName}->dbNetGetId;
+return($netId);
+}#sub dbFlplanGetNetId
+#--------------------------------------------#
+
+sub dbFlplanAddNetRoutingData {
+my($self, $netName, $data) = @_;
+  if ( exists $self->{PSEUDO_VNET_ROUTING_ALREADY}{$netName} ) {}
+else {
+    $self->{PSEUDO_VNET_ROUTING_ALREADY}{$netName} = NetRoutingDB::new();
+  }
+    $self->{PSEUDO_VNET_ROUTING_ALREADY}{$netName}->dbNetRoutingDBSetRegularRoute($data);
+}#sub dbFlplanAddNetRoutingData
+
+sub dbFlplanGetNetRoutingData {
+my($self, $netName) = @_;
+my @data = $self->{PSEUDO_VNET_ROUTING_ALREADY}{$netName}->dbNetRoutingDBGetRegularRoute;
+return(@data);
+}#sub dbFlplanGetNetRoutingData
+#--------------------------------------------#
+
+sub dbFlplanSetNetType {
+my($self, $netName, $type) = @_;
+  if ( exists $self->{PSEUDO_VNET_ROUTING_ALREADY}{$netName} ) {}
+else {
+    $self->{PSEUDO_VNET_ROUTING_ALREADY}{$netName} = NetRoutingDB::new();
+ }
+$self->{PSEUDO_VNET_ROUTING_ALREADY}{$netName}->dbRegularNetSetType($type);
+}#sub dbFlplanSetNetType    
+
+sub dbFlplanGetNetType {
+my($self, $netName) = @_;
+my $type = $self->{PSEUDO_VNET_ROUTING_ALREADY}{$netName}->dbRegularNetGetType;
+return($type);
+}#sub dbFlplanGetNetType
+#--------------------------------------------#
+
+sub dbFlplanAddBumps {
+my ($self,$bump) = @_;
+    push(@{$self->{BUMP}}, $bump);
+}#sub dbFlplanAddBumps
+
+sub dbFlplanGetBumps {
+my ($self) = @_;
+my @bump = @{$self->{BUMP}};
+return(@bump);
+}#sub dbFlplanGetBumps 
+#--------------------------------------------#
+
+sub dbFlplanSetBumpLoc {
+my ($self,$bump,$x,$y) = @_;
+    @{$self->{BUMP_LOC}{$bump}} = ($x,$y);
+}#sub dbFlplanSetBumpLoc
+
+sub dbFlplanGetBumpLoc {
+my ($self,$bump) = @_;
+my $loc = $self->{BUMP_LOC}{$bump};
+return(@$loc);
+}#sub dbFlplanGetBumpLoc 
+#--------------------------------------------#
+
+sub dbFlplanHasHierInst {
+my ($self, $temp_inst_name) = @_;
+if ( exists ${$self->{HChild}}{$temp_inst_name} ) {
+  return 1;
+}
+return 0;
+}#sub dbFlplanHasHierInst
+#--------------------------------------------#
+
+sub dbFlplanHasLeafInst {
+my ($self, $temp_inst_name) = @_;
+if ( exists ${$self->{LChild}}{$temp_inst_name} ) {
+  return 1;
+}
+return 0;
+}#sub dbFlplanHasLeafInst
+
+1;

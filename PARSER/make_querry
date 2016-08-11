@@ -1,0 +1,362 @@
+
+###################### REPORT COMMANDS ####################
+sub report_design {
+#Defaults 
+my $printSummary =  0;
+my $QUERY_INSTS = 0;
+
+#-------------------------------------------------------------------#
+if($_[0] eq "-h" )  {
+        print "Usage :  report_design\n";
+        print "                       --summary \n";
+        print "                                 note : by default short summary of instances is given out\n";
+
+  }
+my $noOfArguments = @_;
+for(my $i = 0 ; $i < $noOfArguments; $i++) {
+        if ($_[$i] eq "--summary"){$printSummary = 1;}
+        if ($_[$i] eq "--inst"){$QUERY_INSTS = 1;}
+                                           }# for
+my $numInstances = keys %COMP_ALREADY;
+my $numNets = keys %NETS_ALREADY;
+print "INFO-PAR-RPT_DES : 001 : Instance count : $numInstances\n";
+print "INFO-PAR-RPT_DES : 002 : Net count : $numNets\n";
+
+if ($QUERY_INSTS == 1 ) {
+    my $placedInsts = 0;
+    my $fixedInsts = 0;
+    my $unplacedInsts = 0;
+    my $noRefInsts = 0;
+    foreach my $inst ( keys %COMP_ALREADY ) {
+            my $status = $CADB{$inst}->dbCadbGetStatus;
+            my $cellref = $CADB{$inst}->dbCadbGetCellref;
+      if (exists $PLDB{$cellref} ) { } else { 
+                                  print "WARN-PAR-RPT_DES : 003 : the cell $cellref for instance $inst does not exit in the LEF files read in\n"; 
+                                  $noRefInsts++;
+                                            }
+#            print "Status : $status\n";
+            if($status eq "PLACED" ) {$placedInsts++; }
+            elsif($status eq "FIXED" ) {$fixedInsts++; }
+            else {$unplacedInsts++;}
+                                            }#foreach instances
+    if( $printSummary == 1) {
+                            print "INFO-PAR-RPT_DES : 004 : Instance Summary\n";
+                            print "INFO-PAR-RPT_DES : 005 : Total instances    : $numInstances\n";
+                            print "INFO-PAR-RPT_DES : 006 : Fixed instances    : $fixedInsts\n";
+                            print "INFO-PAR-RPT_DES : 007 : Placed instances   : $placedInsts\n";
+                            print "INFO-PAR-RPT_DES : 008 : Unplaced instances : $unplacedInsts\n";
+                            print "WARN-PAR-RPT_DES : 009 : missing master instances : $noRefInsts\n";
+                            }
+                        }# query all instances
+
+}# sub report_design
+
+
+
+
+
+
+sub get_instance {
+my $noOfArguments = @_;
+my $instance = "";
+my $cellref = "";
+my @loc = ();
+my $show_attribute = "false";
+my @returnList = ();
+
+if($noOfArguments < 2 || $_[0] eq '-h'){ print "Usage : get_instance  -inst < instance pattern name >\n";
+                      } else {
+for(my $i = 0 ; $i < $noOfArguments; $i++) {
+        if ($_[$i] eq "-inst"){$instPattern = $_[$i+1];}
+                                           }# for
+print "DBG-PAR-GET_INST : 001 : $instPattern\n" if($DEBUG > 10);
+if ( $instPattern =~ /\*/ ) { $instPattern =~ s/\*/\.\*/; }
+$instPattern =~ s/^/\^/;
+print "DBG-PAR-GET_INST : 002 : $instPattern\n" if ($DEBUG > 10);
+foreach $instName ( keys %COMP_ALREADY ) {
+        print "DBG-PAR-GET_INST : 003 : $instName\n" if ($DEBUG > 5);
+        if ( $instName =~ /$instPattern/ ) { print "DBG-PAR-GET_INST : 004 : $instName\n" if ($DEBUG > 10);
+                                             push (@returnList,$instName);
+                                            }
+                                         }# forach instance in the component DB
+my $instList = "";
+foreach my $inst ( @returnList ) { $instList = $instList." ".$inst; }
+$instList =~ s/^\s*//;
+return($instList);
+}# if correct arguments
+return();
+}#sub get_instance
+
+sub find_inst {
+
+my $noOfArguments = @_;
+my $instance = "";
+my $cellref = "";
+my @loc = ();
+my $show_attribute = "false";
+
+if($noOfArguments < 2 || $_[0] eq '-h'){ print "Usage : find_inst  -inst < instance name >\n";
+                        print "                   -attribute < true / false > \n";
+                      } else {
+for(my $i = 0 ; $i < $noOfArguments; $i++) {
+        if ($_[$i] eq "-inst"){$instance = $_[$i+1];}
+        if ($_[$i] eq "-attribute"){$show_attribute = $_[$i+1];}
+                                           }# for
+
+if ( exists $COMPONENTS[0]{$instance}){
+     $cellref = $CADB{$instance}->dbCadbGetCellref;
+     @loc = $CADB{$instance}->dbCadbGetLoc;
+     print "INFO-PAR-FIND_INST : 001 : inst:$instance";
+     print "DBG-PAR-FIND_INST : 002 : cell:$cellref" if($DEBUG >3 || $show_attribute eq "true");
+     print "DBG-PAR-FIND_INST : 003 :  location:$loc[0]\,$loc[1]" if($DEBUG >3 || $show_attribute eq "true");
+     print " \n";
+                             }
+                             }#if correct no of arguments
+
+
+}#sub find_inst
+
+
+sub find_net {
+
+
+my $noOfArguments = @_;
+my $pinName = "";
+my $instance = "";
+
+if($noOfArguments < 2 || $_[0] eq '-h'){ print "Usage : find_net -pin < pin name > \n";
+                        print "                 -inst < instance name >\n"; 
+                      } else {
+for(my $i = 0 ; $i < $noOfArguments; $i++) { 
+	if ($_[$i] eq "-pin"){$pinName = $_[$i+1];}
+	if ($_[$i] eq "-inst"){$instance = $_[$i+1];}
+					   }
+if(exists $COMPONENTS[0]{$instance}){ $qr = $COMPONENTS[0]{$instance}{$pinName};print "INFO-PAR-FIND_NET : 001 : $qr\n";}
+elsif(exists $HIER_COMPONENTS[0]{$instance}){ $qr = $COMPONENTS[0]{$instance}{$pinName}; print "INFO-PAR-FIND_NET : 002 : $qr\n";}
+else {print "ERR-PAR-FIND_NET : 003 : Net not found\n";}
+                             }# if correct no of arguments
+
+
+
+
+} # sub find_net
+
+
+
+sub find_port {
+
+my $noOfArguments = @_;
+my $portName = "";
+my $module = $TOP_MODULE;
+
+if($noOfArguments < 1 || $_[0] eq '-h'){ print "Usage find_port -port <portName>\n";
+                        print "               -module <module name>\n";
+                        print "               -all < true / false >\n";
+                        print "               -inputs_only < true / false >\n";
+                        print "               -outputs_only < true / false >\n";
+                      } else {
+
+for(my $i = 0 ; $i < $noOfArguments ; $i++){
+    if($_[$i] eq "-port"){$portName = $_[$i+1];}
+    if($_[$i] eq "-module"){$module = $_[$i+1];}
+    if($_[$i] eq "-all"){$ALL_PORTS = $_[$i+1];}
+    if($_[$i] eq "-inputs_only"){$INPUTS_ONLY = $_[$i+1];}
+    if($_[$i] eq "-outputs_only"){$OUTPUTS_ONLY = $_[$i+1];}
+                                           }#for
+if(exists $MODULE_ALREADY{$module}{ports}){
+              foreach $pinName (@{$MODULE_ALREADY{$module}{ports}}){
+              if($$pinName{name} eq $portName){
+        print "INFO-PAR-FIND_PORT : 001 : Port $portName is found in $module\n";
+                                              }
+                                                                }# foreach
+                                          }
+        else { print "ERR-PAR-FIND_PORT : 002 : Port $portName is not found in $module\n";}
+                            }#if correct no of arguments
+}#sub find_port
+
+
+sub find_conn {
+
+my $noOfArguments = @_;
+my $netName = "";
+if($noOfArguments < 1 || $_[0] eq '-h'){ print "Usage find_conn -net <netName>\n";
+                      } else {
+
+for(my $i = 0 ; $i < $noOfArguments ; $i++){
+    if($_[$i] eq "-net"){$netName = $_[$i+1];}
+                                           }#for
+
+foreach $instance ( keys %{$NETS_ALREADY{$netName}} ){
+                print "INFO-PAR-FIND_CONN : 003 : $instance $NETS_ALREADY{$netName}{$instance}\n";
+                                        }
+
+
+                }# if correct no of arguments
+
+}#sub find_conn
+sub find_conn_no_reg {
+
+my $noOfArguments = @_;
+my $netName = "";
+if($noOfArguments < 1 || $_[0] eq '-h'){ print "Usage find_port -net <netName>\n";
+                      } else {
+
+for(my $i = 0 ; $i < $noOfArguments ; $i++){
+    if($_[$i] eq "-net"){$netName = $_[$i+1];}
+                                           }#for
+
+foreach ( keys %{$NETS_ALREADY{$netName}} ){
+                if($COMP_ALREADY{$_}{type} eq "REGISTER"){
+                                                         }else{
+                print "INFO-PAR-FIND_CONN : 004 : $_\/$NETS_ALREADY{$netName}{$_}\n";
+                                                       }# if the component/pin is not a reg
+                                        }
+
+
+                }# if correct no of arguments
+
+}#sub find_conn_no_reg
+
+
+
+
+sub defCompChange {
+
+my $noOfArguments = @_;
+
+for (my $x = 0; $x < $noOfArguments ; $x++){
+
+if($_[$x] eq "-output"){ $OUTPUT_FILE = $_[$x+1];}
+                                          }# for correct no of arguments
+open (WRITE, ">$OUTPUT_FILE");
+
+foreach (keys %COMP_ALREADY){
+
+
+        ($new_location_X,$new_location_Y)=(split(/\s+/, $COMP_ALREADY{$_}{newlocation}))[0,1];
+
+        ($orig_location_X,$orig_location_Y)=(split(/\s+/, $COMP_ALREADY{$_}{location}))[0,1];
+
+         $X_move = $orig_location_X - $new_location_X;
+         $Y_move = $orig_location_Y - $new_location_Y;
+
+if( $COMP_ALREADY{$_}{cellref} =~ /^CLK|^TLAT|^DFF/){
+         print WRITE "$_\t\t$X_move\t$Y_move\n";
+                                   }
+                  }
+
+close(WRITE);
+}#sub defCompChange
+
+#------------------------------------------------------------------------------------------------------------------#
+sub get_inst {
+
+#****f* /get_inst
+# NAME
+#    get_inst
+# FUNCTION
+#    return an array placed,unplaced and fixed inst 
+# Assumptions
+#    working only placed,unplaced and fixed inst
+# SYNOPSIS
+#    get_inst [--placed --fixed --unplaced] 
+# INPUTS
+#    options:
+#    [--placed] or [--fixed] or [--unplaced]
+# OUTPUTS
+#    return an array of array
+#****      
+
+    my $noOfArguments = @_;
+    if ($noOfArguments < 0 || $_[0] eq "-h"){print "Usage : get_inst\n";
+                                             print "        --fixed\n";
+                                             print "        --placed\n";
+                                             print "        --unplaced\n";
+                                             print "        note : by default all status \n";
+                                             }#if
+    else {
+          my $Placed = 0;
+          my $Fixed = 0;
+          my $Unplaced = 0;
+          my $DEFAULT = 1;
+          my @inst_return = ();
+          my @placed = ();
+          my @fixed = ();
+          my @unplaced = ();
+       for (my $i =0; $i < $noOfArguments; $i++){
+                  if ($_[$i] eq "--fixed"){$Fixed= 1;$DEFAULT = 0;}
+                  if ($_[$i] eq "--placed"){$Placed = 1;$DEFAULT = 0;}
+                  if ($_[$i] eq "--unplaced"){$Unplaced = 1;$DEFAULT = 0;}
+                                              }#for
+if ($Fixed == 1 || $DEFAULT == 1 ){
+  foreach my $inst (keys %COMP_ALREADY){
+                   my $status = $CADB{$inst}->dbCadbGetStatus;
+                   if ($status eq "FIXED"){push(@fixed,$inst);}
+                                        }#foreach
+  push (@inst_return,[@fixed]);
+                               }#if fixed
+if ($Placed == 1 || $DEFAULT == 1){
+  foreach my $inst (keys %COMP_ALREADY){
+                   my $status = $CADB{$inst}->dbCadbGetStatus;
+                   if ($status eq "PLACED"){push (@placed,$inst);}
+                                       }#foreach 
+  push (@inst_return,[@placed]);
+                                }#if placed
+
+if ($Unplaced == 1 || $DEFAULT == 1){
+  foreach my $inst (keys %COMP_ALREADY){
+                   my $status = $CADB{$inst}->dbCadbGetStatus;
+                   if ($status eq "UNPLACED"){push(@unplaced,$inst);}
+                                       }#foreach
+  push (@inst_return,[@unplaced]);
+                              }#if unplaced
+return (@inst_return);
+}#else
+}#sub get_inst
+#---------------------------------------------------------------------------------------------------------------------------------#
+
+sub dbIsInstBlock {
+$inst = $_[0];
+if (exists$COMP_ALREADY {$inst}){
+    my $cellref = $CADB{$inst}->dbCadbGetCellref;
+    my $class = $PLDB{$cellref}->dbMdbGetClass; 
+    if ($class eq "BLOCK"){return ("HardMacro");}
+    else {return ("UND");}
+                               }#if exists
+}#sub dbIsInstBlock
+
+#-----------------------------------------------------------------------------------------#
+sub dbIsInstStdCell {
+$inst = $_[0];
+if (exists$COMP_ALREADY {$inst}){
+    my $cellref = $CADB{$inst}->dbCadbGetCellref;
+    my $class = $PLDB{$cellref}->dbMdbGetClass; 
+    if ($class eq "CORE"){return ("StdCell");}
+    else {return ("UND");}
+                               }#if exists
+}#sub dbIsInstStdCell
+#######################################################################################################################
+#######################################################################################################################
+sub report_verilog_design {
+my $printSummary = 0;
+if($noOfArguments < 0 ||$_[0] eq "-h" )  {
+        print "Usage :  report_verilog_design\n";
+        print "                       --summary \n";
+  }
+my $noOfArguments = @_;
+for(my $i = 0 ; $i < $noOfArguments; $i++) {
+        if ($_[$i] eq "--summary"){$printSummary = 1;}
+                                            }#for
+my $numInstances = keys %COMP_ALREADY;
+my $numNets = keys %NETS_ALREADY;
+my $noOfmod = keys %MODULE_ALREADY;
+my $start_module =  $GLOBAL->dbfGlobalGetTOP();
+foreach my $mod (keys %MODULE_ALREADY){
+&find_verilog_area($mod);
+}
+print "INFO-PAR-RPT_VERI_DES : 001 : TOP MODULE = $start_module \n";
+print "INFO-PAR-RPT_VERI_DES : 002 : no of mod $noOfmod\n";
+print "INFO-PAR-RPT_VERI_DES : 003 : Instance count : $numInstances\n";
+print "INFO-PAR-RPT_VERI_dES : 004 : Net count : $numNets\n";
+}#sub report_verilog_design
+1;

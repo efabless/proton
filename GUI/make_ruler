@@ -1,0 +1,871 @@
+
+sub create_ruler_popup{
+my $popWin = MainWindow->new();
+$popWin->title("Create Ruler");
+
+my $active_canvas = $GLOBAL->dbGlobalGetActiveCanvas;
+
+my ($mode, $type) = ("Snap", "manhattan") if($active_canvas ne "gds_view");
+my ($mode, $type) = ("Nosnap", "manhattan") if($active_canvas eq "gds_view");
+
+my $Frame1 = $popWin->Frame()->pack(-side=>'top', -fill=>'x', -expand=>1);
+my $Frame2 = $popWin->Frame()->pack(-side=>'top', -fill=>'x', -expand=>1);
+my $buttonFrame = $popWin->Frame()->pack(-side=>'top', -fill=>'x', -expand=>1);
+$Frame1->Label(-text=>"Ruler Mode")->pack(-side=>'left');
+$Frame1->Radiobutton(-text=>'No Snapping', -variable => \$mode, -value=>"Nosnap", -command=>sub{&create_ruler("-mode",$mode,"-type",$type)})->pack(-side => 'right');
+$Frame1->Radiobutton(-text=>'Snapping', -variable => \$mode, -value=>"Snap", -state=>"active",-command=>sub{&create_ruler("-mode",$mode,"-type",$type)})->pack(-side => 'right') if($active_canvas ne "gds_view");
+$Frame1->Radiobutton(-text=>'Snapping', -variable => \$mode, -value=>"Snap", -state=>"disabled",-command=>sub{&create_ruler("-mode",$mode,"-type",$type)})->pack(-side => 'right') if($active_canvas eq "gds_view");
+
+$Frame2->Label(-text=>"Ruler Type")->pack(-side=>'left');
+$Frame2->Radiobutton(-text=>'Euclidean', -variable => \$type, -value=>"euclidean", -command=>sub{&create_ruler("-mode",$mode,"-type",$type);})->pack(-side => 'right');
+$Frame2->Radiobutton(-text=>'Manhattan', -variable => \$type, -value=>"manhattan", -command=>sub{&create_ruler("-mode",$mode,"-type",$type);})->pack(-side => 'right');
+
+$buttonFrame->Button(-text=>"Exit", -command=>sub{$popWin->destroy;})->pack();
+&create_ruler("-mode",$mode,"-type",$type);
+}#sub create_ruler_popup
+
+############################################################################################
+sub create_ruler{
+
+#****f* / create_ruler
+# NAME
+#   create_ruler
+# FUNCTION
+#  to create ruler for distance measurement
+# SYNOPSIS
+#   create_ruler -mode <snapping/no snapping>
+#                -type <manhattan/euclidean>
+#
+# INPUTS
+#   options: -mode <snapping/no snapping>, -type <manhattan/euclidean>
+#   
+# OUTPUTS
+#    ruler created
+#****
+
+my $noOfArg = @_;
+my $rulerMode = "";
+my $rulerType = "";
+my $active_canvas = $GLOBAL->dbGlobalGetActiveCanvas;
+
+ if($noOfArg < 4 || $_[0] eq "-h" || $_[0] eq "-help" || $_[0] eq "-HELP"){
+    print "Usage:  create_ruler -mode <Snap/Nosnap>\n";
+    print "                     -type <manhattan/euclidean>\n";
+ }else{  
+    for(my $i=0; $i<$noOfArg; $i++){
+        if ($_[$i] eq "-mode"){$rulerMode = $_[$i+1];}
+        if ($_[$i] eq "-type"){$rulerType = $_[$i+1];}
+    }
+    if($rulerMode eq "Snap"){
+       if($rulerType eq "manhattan"){
+          &create_manhattanRulerWithSnapping if($active_canvas ne "gds_view");
+          &create_manhattanGdsRulerWithSnapping if($active_canvas eq "gds_view");
+       }else{
+          &create_euclideanRulerWithSnapping if($active_canvas ne "gds_view");
+          &create_euclideanGdsRulerWithSnapping if($active_canvas eq "gds_view");
+       }
+    }elsif($rulerMode eq "Nosnap"){
+       if($rulerType eq "manhattan"){
+          &create_manhattanRulerWithoutSnapping if($active_canvas ne "gds_view");
+          &create_manhattanGdsRulerWithoutSnapping if($active_canvas eq "gds_view");
+       }else{
+          &create_euclideanRulerWithoutSnapping if($active_canvas ne "gds_view");
+          &create_euclideanGdsRulerWithoutSnapping if($active_canvas eq "gds_view");
+       }
+    }
+ }#if correct Arg
+
+}#sub create_ruler
+
+############################################################################################
+sub create_manhattanRulerWithSnapping{
+my $canvas = "";
+my $active_canvas = $GLOBAL->dbGlobalGetActiveCanvas; 
+if($active_canvas eq "design_canvas"){print "WARN: click the mouse on canvas tabs\n";return;}
+elsif($active_canvas eq "hier_view"){$canvas = $hier_canvas;}
+elsif($active_canvas eq "flat_view"){$canvas = $design_worldcanvas;}
+
+my ($srcMod, $sinkMod) = ("","");
+my $ruler_activate = 0;
+my ($srcX, $srcY) = ("", "");
+
+$canvas->CanvasBind('<k><1>' => sub {
+        $ruler_activate = 0;         
+        $srcMod = "";
+        my @xy = $canvas->eventLocation();
+        my $x = $xy[0];
+        my $y = $xy[1];
+        $srcX = $xy[0];
+        $srcY = $xy[1];
+        my @id = $canvas->find(qw/withtag current/);
+        my @tagList = $canvas->gettags($id[0]);
+        my @topCoords = $canvas->coords($TOP_MODULE);
+      if($x<=$topCoords[0] || $x>=$topCoords[2] || $y<=$topCoords[1] || $y>=$topCoords[3]){    
+         $srcMod = $TOP_MODULE;
+         $ruler_activate = 1; 
+      }else{
+         $srcMod = $tagList[1];
+         $ruler_activate = 1; 
+      }
+});
+$canvas->CanvasBind('<1>' => sub{
+   if($ruler_activate == 1){   
+        my @xy = $canvas->eventLocation();
+        my $x = $xy[0];
+        my $y = $xy[1];
+        my @id = $canvas->find(qw/withtag current/);
+        my @tagList = $canvas->gettags($id[0]);
+        my @topCoords = $canvas->coords($TOP_MODULE);
+        my @src_coords = $canvas->coords($srcMod);
+        my @ruler_coords = ();
+        $sinkMod = ""; 
+         
+      if($x <= $topCoords[0] && $srcMod ne $TOP_MODULE){
+         $sinkMod = $TOP_MODULE;
+         my $randY = rand($src_coords[3]-$src_coords[1]) + $src_coords[1]; 
+         @ruler_coords = ($src_coords[0],$randY,$topCoords[0],$randY);
+      }elsif($x >= $topCoords[2] && $srcMod ne $TOP_MODULE){
+         $sinkMod = $TOP_MODULE;
+         my $randY = rand($src_coords[3]-$src_coords[1]) + $src_coords[1]; 
+         @ruler_coords = ($src_coords[2],$randY,$topCoords[2],$randY);
+      }elsif($y <= $topCoords[1] && $srcMod ne $TOP_MODULE){
+         $sinkMod = $TOP_MODULE;
+         my $randX = rand($src_coords[2]-$src_coords[0]) + $src_coords[0]; 
+         @ruler_coords = ($randX,$src_coords[1],$randX, $topCoords[1]);
+      }elsif($y >= $topCoords[3] && $srcMod ne $TOP_MODULE){
+         $sinkMod = $TOP_MODULE;
+         my $randX = rand($src_coords[2]-$src_coords[0]) + $src_coords[0]; 
+         @ruler_coords = ($randX,$src_coords[3],$randX, $topCoords[3]);
+      }
+##------------------------------------------------------------------------------------------------------------##
+      else {
+        $sinkMod = $tagList[1];
+        my @sink_coords = $canvas->coords($sinkMod);
+        if($srcMod eq $TOP_MODULE) {
+           if($srcX <= $topCoords[0]){
+              my $randY = rand($sink_coords[3]-$sink_coords[1]) + $sink_coords[1]; 
+              @ruler_coords = ($sink_coords[0],$randY,$topCoords[0],$randY);
+           }elsif($srcX >= $topCoords[2]){
+              my $randY = rand($sink_coords[3]-$sink_coords[1]) + $sink_coords[1]; 
+              @ruler_coords = ($sink_coords[2],$randY,$topCoords[2],$randY);
+           }elsif($srcY <= $topCoords[1]){
+              my $randX = rand($sink_coords[2]-$sink_coords[0]) + $sink_coords[0]; 
+              @ruler_coords = ($randX,$sink_coords[1],$randX, $topCoords[1]);
+           }elsif($srcY >= $topCoords[3]){
+              my $randX = rand($sink_coords[2]-$sink_coords[0]) + $sink_coords[0]; 
+              @ruler_coords = ($randX,$sink_coords[3],$randX, $topCoords[3]);
+           }
+           
+        }else{
+           if($src_coords[0]>$sink_coords[2] && (($src_coords[1]>=$sink_coords[1] && $src_coords[1]<=$sink_coords[3]) || ($src_coords[3]>=$sink_coords[1] && $src_coords[3]<=$sink_coords[3]))){
+              my $randY = "";   
+              $randY = rand($sink_coords[3]-$src_coords[1]) + $src_coords[1] if($src_coords[1]>=$sink_coords[1]) ;
+              $randY = rand($src_coords[3]-$sink_coords[1]) + $sink_coords[1] if($src_coords[1]<$sink_coords[1]);
+              @ruler_coords = ($src_coords[0], $randY, $sink_coords[2], $randY); 
+           }elsif($src_coords[2]<$sink_coords[0] && (($src_coords[1]>=$sink_coords[1] && $src_coords[1]<=$sink_coords[3]) || ($src_coords[3]>=$sink_coords[1] && $src_coords[3]<=$sink_coords[3]))){
+              my $randY = "";   
+              $randY = rand($sink_coords[3]-$src_coords[1]) + $src_coords[1] if($src_coords[1]>=$sink_coords[1]) ;
+              $randY = rand($src_coords[3]-$sink_coords[1]) + $sink_coords[1] if($src_coords[1]<$sink_coords[1]);
+              @ruler_coords = ($src_coords[2], $randY, $sink_coords[0], $randY); 
+           }elsif($src_coords[3]<$sink_coords[1] && (($src_coords[0]>=$sink_coords[0] && $src_coords[0]<=$sink_coords[2]) || ($src_coords[2]>=$sink_coords[0] && $src_coords[2]<=$sink_coords[2]))){
+              my $randX = "";   
+              $randX = rand($sink_coords[2]-$src_coords[0]) + $src_coords[0] if($src_coords[0]>=$sink_coords[0]) ;
+              $randX = rand($src_coords[2]-$sink_coords[0]) + $sink_coords[0] if($src_coords[0]<$sink_coords[0]);
+              @ruler_coords = ($randX, $src_coords[3], $randX, $sink_coords[1]); 
+           }elsif($src_coords[1]>$sink_coords[3] && (($src_coords[0]>=$sink_coords[0] && $src_coords[0]<=$sink_coords[2]) || ($src_coords[2]>=$sink_coords[0] && $src_coords[2]<=$sink_coords[2]))){
+              my $randX = "";   
+              $randX = rand($sink_coords[2]-$src_coords[0]) + $src_coords[0] if($src_coords[0]>=$sink_coords[0]) ;
+              $randX = rand($src_coords[2]-$sink_coords[0]) + $sink_coords[0] if($src_coords[0]<$sink_coords[0]);
+              @ruler_coords = ($randX, $src_coords[1], $randX, $sink_coords[3]); 
+           }elsif($src_coords[0]>$sink_coords[2] && $src_coords[3] < $sink_coords[1]){
+              @ruler_coords = ($src_coords[0], $src_coords[3], $sink_coords[2], $src_coords[3], $sink_coords[2], $sink_coords[1]); 
+           }elsif($src_coords[2]<$sink_coords[0] && $src_coords[3] < $sink_coords[1]){
+              @ruler_coords = ($src_coords[2], $src_coords[3], $sink_coords[0], $src_coords[3], $sink_coords[0], $sink_coords[1]); 
+          }elsif($src_coords[0]>$sink_coords[2] && $src_coords[1] > $sink_coords[3]){
+              @ruler_coords = ($src_coords[0], $src_coords[1], $src_coords[0], $sink_coords[3], $sink_coords[2], $sink_coords[3]); 
+          }elsif($src_coords[2]<$sink_coords[0] && $src_coords[1] > $sink_coords[3]){
+              @ruler_coords = ($src_coords[2], $src_coords[1], $src_coords[2], $sink_coords[3], $sink_coords[0], $sink_coords[3]); 
+          }
+        }
+      }
+      $canvas->createLine(@ruler_coords, -fill=>"yellow", -arrow=>"both") if($srcMod ne $sinkMod);
+      if(@ruler_coords == 4){
+        if ($ruler_coords[0] == $ruler_coords[2]) {
+            my $distance = int(abs($ruler_coords[3] - $ruler_coords[1]));
+               $distance = &convert_gui2micron($distance); 
+             $canvas->createText($ruler_coords[0]+1,($ruler_coords[1]+$ruler_coords[3])/2, -text=>$distance, -fill=>"white") if($srcMod ne $sinkMod);
+        } else {
+            my $distance = int(abs($ruler_coords[2] - $ruler_coords[0]));
+               $distance = &convert_gui2micron($distance); 
+            $canvas->createText(($ruler_coords[0]+$ruler_coords[2])/2,$ruler_coords[1]+1, -text=>$distance, -fill=>"white") if($srcMod ne $sinkMod);
+        }
+      }else{
+        if ($ruler_coords[1] == $ruler_coords[3]) {
+            my $dis1 = int(abs($ruler_coords[2] - $ruler_coords[0])); 
+            my $dis2 = int(abs($ruler_coords[5] - $ruler_coords[3])); 
+               $dis1 = &convert_gui2micron($dis1); 
+               $dis2 = &convert_gui2micron($dis2); 
+            $canvas->createText(($ruler_coords[0]+$ruler_coords[2])/2,$ruler_coords[1]+1, -text=>$dis1, -fill=>"white") if($srcMod ne $sinkMod);
+            $canvas->createText($ruler_coords[2]+1,($ruler_coords[3]+$ruler_coords[5])/2, -text=>$dis2, -fill=>"white") if($srcMod ne $sinkMod);
+        }else{
+            my $dis1 = int(abs($ruler_coords[3] - $ruler_coords[1])); 
+            my $dis2 = int(abs($ruler_coords[4] - $ruler_coords[2])); 
+               $dis1 = &convert_gui2micron($dis1); 
+               $dis2 = &convert_gui2micron($dis2); 
+            $canvas->createText($ruler_coords[0]+1,($ruler_coords[3]+$ruler_coords[1])/2, -text=>$dis1, -fill=>"white") if($srcMod ne $sinkMod);
+            $canvas->createText(($ruler_coords[2]+$ruler_coords[4])/2,$ruler_coords[3]+1, -text=>$dis2, -fill=>"white") if($srcMod ne $sinkMod);
+        }
+      }
+      
+      $ruler_activate = 0;
+   }
+});
+}#sub create_manhattanRulerWithSnapping
+
+############################################################################################
+sub create_euclideanRulerWithSnapping{
+my $canvas = "";
+my $active_canvas = $GLOBAL->dbGlobalGetActiveCanvas; 
+if($active_canvas eq "design_canvas"){print "WARN: click the mouse on canvas tabs\n";return;}
+elsif($active_canvas eq "hier_view"){$canvas = $hier_canvas;}
+elsif($active_canvas eq "flat_view"){$canvas = $design_worldcanvas;}
+
+my ($srcMod, $sinkMod) = ("","");
+my $ruler_activate = 0;
+my ($srcX, $srcY) = ("", "");
+
+$canvas->CanvasBind('<k><1>' => sub {
+        $ruler_activate = 0;         
+        $srcMod = "";
+        my @xy = $canvas->eventLocation();
+        my $x = $xy[0];
+        my $y = $xy[1];
+        $srcX = $xy[0];
+        $srcY = $xy[1];
+        my @id = $canvas->find(qw/withtag current/);
+        my @tagList = $canvas->gettags($id[0]);
+        my @topCoords = $canvas->coords($TOP_MODULE);
+      if($x<=$topCoords[0] || $x>=$topCoords[2] || $y<=$topCoords[1] || $y>=$topCoords[3]){    
+         $srcMod = $TOP_MODULE;
+         $ruler_activate = 1; 
+      }else{
+         $srcMod = $tagList[1];
+         $ruler_activate = 1; 
+      }
+});
+$canvas->CanvasBind('<1>' => sub{
+   if($ruler_activate == 1){   
+        my @xy = $canvas->eventLocation();
+        my $x = $xy[0];
+        my $y = $xy[1];
+        my @id = $canvas->find(qw/withtag current/);
+        my @tagList = $canvas->gettags($id[0]);
+        my @topCoords = $canvas->coords($TOP_MODULE);
+        my @src_coords = $canvas->coords($srcMod);
+        my @ruler_coords = ();
+        $sinkMod = ""; 
+         
+      if($x <= $topCoords[0] && $srcMod ne $TOP_MODULE){
+         $sinkMod = $TOP_MODULE;
+         my $randY = rand($src_coords[3]-$src_coords[1]) + $src_coords[1]; 
+         @ruler_coords = ($src_coords[0],$randY,$topCoords[0],$randY);
+      }elsif($x >= $topCoords[2] && $srcMod ne $TOP_MODULE){
+         $sinkMod = $TOP_MODULE;
+         my $randY = rand($src_coords[3]-$src_coords[1]) + $src_coords[1]; 
+         @ruler_coords = ($src_coords[2],$randY,$topCoords[2],$randY);
+      }elsif($y <= $topCoords[1] && $srcMod ne $TOP_MODULE){
+         $sinkMod = $TOP_MODULE;
+         my $randX = rand($src_coords[2]-$src_coords[0]) + $src_coords[0]; 
+         @ruler_coords = ($randX,$src_coords[1],$randX, $topCoords[1]);
+      }elsif($y >= $topCoords[3] && $srcMod ne $TOP_MODULE){
+         $sinkMod = $TOP_MODULE;
+         my $randX = rand($src_coords[2]-$src_coords[0]) + $src_coords[0]; 
+         @ruler_coords = ($randX,$src_coords[3],$randX, $topCoords[3]);
+      }
+##------------------------------------------------------------------------------------------------------------##
+      else {
+        $sinkMod = $tagList[1];
+        my @sink_coords = $canvas->coords($sinkMod);
+        if($srcMod eq $TOP_MODULE) {
+           if($srcX <= $topCoords[0]){
+              my $randY = rand($sink_coords[3]-$sink_coords[1]) + $sink_coords[1]; 
+              @ruler_coords = ($sink_coords[0],$randY,$topCoords[0],$randY);
+           }elsif($srcX >= $topCoords[2]){
+              my $randY = rand($sink_coords[3]-$sink_coords[1]) + $sink_coords[1]; 
+              @ruler_coords = ($sink_coords[2],$randY,$topCoords[2],$randY);
+           }elsif($srcY <= $topCoords[1]){
+              my $randX = rand($sink_coords[2]-$sink_coords[0]) + $sink_coords[0]; 
+              @ruler_coords = ($randX,$sink_coords[1],$randX, $topCoords[1]);
+           }elsif($srcY >= $topCoords[3]){
+              my $randX = rand($sink_coords[2]-$sink_coords[0]) + $sink_coords[0]; 
+              @ruler_coords = ($randX,$sink_coords[3],$randX, $topCoords[3]);
+           }
+           
+        }else{
+           if($src_coords[0]>$sink_coords[2] && (($src_coords[1]>=$sink_coords[1] && $src_coords[1]<=$sink_coords[3]) || ($src_coords[3]>=$sink_coords[1] && $src_coords[3]<=$sink_coords[3]))){
+              my $randY = "";   
+              $randY = rand($sink_coords[3]-$src_coords[1]) + $src_coords[1] if($src_coords[1]>=$sink_coords[1]) ;
+              $randY = rand($src_coords[3]-$sink_coords[1]) + $sink_coords[1] if($src_coords[1]<$sink_coords[1]);
+              @ruler_coords = ($src_coords[0], $randY, $sink_coords[2], $randY); 
+           }elsif($src_coords[2]<$sink_coords[0] && (($src_coords[1]>=$sink_coords[1] && $src_coords[1]<=$sink_coords[3]) || ($src_coords[3]>=$sink_coords[1] && $src_coords[3]<=$sink_coords[3]))){
+              my $randY = "";   
+              $randY = rand($sink_coords[3]-$src_coords[1]) + $src_coords[1] if($src_coords[1]>=$sink_coords[1]) ;
+              $randY = rand($src_coords[3]-$sink_coords[1]) + $sink_coords[1] if($src_coords[1]<$sink_coords[1]);
+              @ruler_coords = ($src_coords[2], $randY, $sink_coords[0], $randY); 
+           }elsif($src_coords[3]<$sink_coords[1] && (($src_coords[0]>=$sink_coords[0] && $src_coords[0]<=$sink_coords[2]) || ($src_coords[2]>=$sink_coords[0] && $src_coords[2]<=$sink_coords[2]))){
+              my $randX = "";   
+              $randX = rand($sink_coords[2]-$src_coords[0]) + $src_coords[0] if($src_coords[0]>=$sink_coords[0]) ;
+              $randX = rand($src_coords[2]-$sink_coords[0]) + $sink_coords[0] if($src_coords[0]<$sink_coords[0]);
+              @ruler_coords = ($randX, $src_coords[3], $randX, $sink_coords[1]); 
+           }elsif($src_coords[1]>$sink_coords[3] && (($src_coords[0]>=$sink_coords[0] && $src_coords[0]<=$sink_coords[2]) || ($src_coords[2]>=$sink_coords[0] && $src_coords[2]<=$sink_coords[2]))){
+              my $randX = "";   
+              $randX = rand($sink_coords[2]-$src_coords[0]) + $src_coords[0] if($src_coords[0]>=$sink_coords[0]) ;
+              $randX = rand($src_coords[2]-$sink_coords[0]) + $sink_coords[0] if($src_coords[0]<$sink_coords[0]);
+              @ruler_coords = ($randX, $src_coords[1], $randX, $sink_coords[3]); 
+           }elsif($src_coords[0]>$sink_coords[2] && $src_coords[3] < $sink_coords[1]){
+              @ruler_coords = ($src_coords[0], $src_coords[3], $sink_coords[2], $sink_coords[1]); 
+           }elsif($src_coords[2]<$sink_coords[0] && $src_coords[3] < $sink_coords[1]){
+              @ruler_coords = ($src_coords[2], $src_coords[3], $sink_coords[0], $sink_coords[1]); 
+           }elsif($src_coords[0]>$sink_coords[2] && $src_coords[1] > $sink_coords[3]){
+              @ruler_coords = ($src_coords[0], $src_coords[1], $sink_coords[2], $sink_coords[3]); 
+           }elsif($src_coords[2]<$sink_coords[0] && $src_coords[1] > $sink_coords[3]){
+              @ruler_coords = ($src_coords[2], $src_coords[1], $sink_coords[0], $sink_coords[3]); 
+           }
+        }
+      }
+      $canvas->createLine(@ruler_coords, -fill=>"yellow", -arrow=>"both") if($srcMod ne $sinkMod);
+        if ($ruler_coords[0] == $ruler_coords[2]) {
+            my $distance = int(abs($ruler_coords[3] - $ruler_coords[1]));
+               $distance = &convert_gui2micron($distance); 
+             $canvas->createText($ruler_coords[0]+1,($ruler_coords[1]+$ruler_coords[3])/2, -text=>$distance, -fill=>"white") if($srcMod ne $sinkMod);
+        }elsif($ruler_coords[1] == $ruler_coords[3]){
+            my $distance = int(abs($ruler_coords[2] - $ruler_coords[0]));
+               $distance = &convert_gui2micron($distance); 
+            $canvas->createText(($ruler_coords[0]+$ruler_coords[2])/2,$ruler_coords[1]+1, -text=>$distance, -fill=>"white") if($srcMod ne $sinkMod);
+        }else{
+            my $distance = int(sqrt(($ruler_coords[2] - $ruler_coords[0])*($ruler_coords[2] - $ruler_coords[0]) + ($ruler_coords[3] - $ruler_coords[1])*($ruler_coords[3] - $ruler_coords[1])));
+               $distance = &convert_gui2micron($distance); 
+            $canvas->createText(($ruler_coords[0]+$ruler_coords[2])/2,($ruler_coords[1]+$ruler_coords[3])/2+1, -text=>$distance, -fill=>"white") if($srcMod ne $sinkMod);
+        }
+      $ruler_activate = 0;
+   }
+});
+}#sub create_euclideanRulerWithSnapping
+
+############################################################################################
+sub create_manhattanRulerWithoutSnapping{
+my $canvas = "";
+my $active_canvas = $GLOBAL->dbGlobalGetActiveCanvas; 
+if($active_canvas eq "design_canvas"){print "WARN: click the mouse on canvas tabs\n";return;}
+elsif($active_canvas eq "hier_view"){$canvas = $hier_canvas;}
+elsif($active_canvas eq "flat_view"){$canvas = $design_worldcanvas;}
+
+my $ruler_activate = 0;
+my ($srcX, $srcY) = ("", "");
+
+$canvas->CanvasBind('<k><1>' => sub {
+        $ruler_activate = 0;         
+        my @xy = $canvas->eventLocation();
+        $srcX = $xy[0];
+        $srcY = $xy[1];
+        $ruler_activate = 1;         
+});
+$canvas->CanvasBind('<1>' => sub{
+   if($ruler_activate == 1){   
+        my @xy = $canvas->eventLocation();
+        my $x = $xy[0];
+        my $y = $xy[1];
+        if ($srcX == $x || $srcY == $y){
+            my @ruler_coords = ($srcX, $srcY, $x, $y);
+            $canvas->createLine(@ruler_coords, -fill=>"yellow", -arrow=>"both");
+            if($srcY == $y){
+               my $distance = int(abs($ruler_coords[2] - $ruler_coords[0]));
+               $distance = &convert_gui2micron($distance); 
+               $canvas->createText(($ruler_coords[0]+$ruler_coords[2])/2,$ruler_coords[1]+1, -text=>$distance, -fill=>"white");
+            }else{
+               my $distance = int(abs($ruler_coords[3] - $ruler_coords[1]));
+               $distance = &convert_gui2micron($distance); 
+               $canvas->createText($ruler_coords[0]+1,($ruler_coords[1]+$ruler_coords[3])/2, -text=>$distance, -fill=>"white");
+            }
+        }else{
+            my @ruler_coords = ($srcX, $srcY, $x, $srcY, $x, $y); 
+            my $dis1 = int(abs($ruler_coords[2] - $ruler_coords[0]));
+            my $dis2 = int(abs($ruler_coords[5] - $ruler_coords[3]));
+               $dis1 = &convert_gui2micron($dis1); 
+               $dis2 = &convert_gui2micron($dis2); 
+            $canvas->createLine(@ruler_coords, -fill=>"yellow", -arrow=>"both");
+            $canvas->createText(($ruler_coords[0]+$ruler_coords[2])/2,$ruler_coords[1]+1, -text=>$dis1, -fill=>"white");
+            $canvas->createText($ruler_coords[2]+1,($ruler_coords[3]+$ruler_coords[5])/2, -text=>$dis2, -fill=>"white");
+        }
+   }
+   $ruler_activate = 0; 
+ });
+}#sub create_manhattanRulerWithoutSnapping
+
+############################################################################################
+sub create_euclideanRulerWithoutSnapping{
+my $canvas = "";
+my $active_canvas = $GLOBAL->dbGlobalGetActiveCanvas; 
+if($active_canvas eq "design_canvas"){print "WARN: click the mouse on canvas tabs\n";return;}
+elsif($active_canvas eq "hier_view"){$canvas = $hier_canvas;}
+elsif($active_canvas eq "flat_view"){$canvas = $design_worldcanvas;}
+
+my $ruler_activate = 0;
+my ($srcX, $srcY) = ("", "");
+
+$canvas->CanvasBind('<k><1>' => sub {
+        $ruler_activate = 0;         
+        my @xy = $canvas->eventLocation();
+        $srcX = $xy[0];
+        $srcY = $xy[1];
+        $ruler_activate = 1;         
+});
+$canvas->CanvasBind('<1>' => sub{
+   if($ruler_activate == 1){   
+        my @xy = $canvas->eventLocation();
+        my $x = $xy[0];
+        my $y = $xy[1];
+        my @ruler_coords = ($srcX, $srcY, $x, $y);
+        $canvas->createLine(@ruler_coords, -fill=>"yellow", -arrow=>"both");
+        if ($srcX == $x || $srcY == $y){
+            if($srcY == $y){
+               my $distance = int(abs($ruler_coords[2] - $ruler_coords[0]));
+               $distance = &convert_gui2micron($distance); 
+               $canvas->createText(($ruler_coords[0]+$ruler_coords[2])/2,$ruler_coords[1]+1, -text=>$distance, -fill=>"white");
+            }else{
+               my $distance = int(abs($ruler_coords[3] - $ruler_coords[1]));
+               $distance = &convert_gui2micron($distance); 
+               $canvas->createText($ruler_coords[0]+1,($ruler_coords[1]+$ruler_coords[3])/2, -text=>$distance, -fill=>"white");
+            }
+        }else{
+            my $distance = int(sqrt(($ruler_coords[2] - $ruler_coords[0])*($ruler_coords[2] - $ruler_coords[0]) + ($ruler_coords[3] - $ruler_coords[1])*($ruler_coords[3] - $ruler_coords[1])));
+               $distance = &convert_gui2micron($distance); 
+            $canvas->createText(($ruler_coords[0]+$ruler_coords[2])/2,($ruler_coords[1]+$ruler_coords[3])/2+1, -text=>$distance, -fill=>"white");
+        }
+   }
+   $ruler_activate = 0; 
+ });
+
+}#sub create_euclideanRulerWithoutSnapping
+
+############################################################################################
+sub convert_gui2micron {
+my $dbP = $_[0];
+my $mufp = $GLOBAL->dbGlobalGetMicronFactor;
+my $micP = sprintf("%.1f",$dbP/$mufp) ;
+return $micP;
+}#sub convert_gui2micron
+
+###########################################################################################################################
+########################################### Ruler for GDS view ############################################################
+###########################################################################################################################
+#sub create_manhattanGdsRulerWithSnapping{
+#my $canvas = $gdsCanvas;
+#
+#my $ruler_activate = 0;
+#my ($srcX, $srcY,$srcID) = (0,0,"");
+#
+#$canvas->CanvasBind('<k><1>' => sub {
+#        $ruler_activate = 0;         
+#        my @xy = $canvas->eventLocation();
+#        $srcX = $xy[0];
+#        $srcY = $xy[1];
+#        my @id = $canvas->find(qw/withtag current/);
+#        $srcID = $id[0]; 
+#        $ruler_activate = 1; 
+#});
+#$canvas->CanvasBind('<1>' => sub{
+#   if($ruler_activate == 1){   
+#        my @xy = $canvas->eventLocation();
+#        my $x = $xy[0];
+#        my $y = $xy[1];
+#        my @id = $canvas->find(qw/withtag current/);
+#        my @src_coords = $canvas->coords($srcID);
+#        my @sink_coords = $canvas->coords($id[0]);
+#        my @ruler_coords = ();
+#
+#        my ($min_x,$min_y,$max_x,$max_y) = (0,0,0,0);
+#        my ($sink_min_x, $sink_min_y,$sink_max_x,$sink_max_y) = (0,0,0,0);
+#
+#        my ($srcMinX,$srcMinX_Y,$srcMinY_X,$srcMinY) = (0,0,0,0); 
+#        my ($srcMaxX,$srcMaxX_Y,$srcMaxY_X,$srcMaxY) = (0,0,0,0); 
+#
+#        my ($sinkMinX,$sinkMinX_Y,$sinkMinY_X,$sinkMinY) = (0,0,0,0); 
+#        my ($sinkMaxX,$sinkMaxX_Y,$sinkMaxY_X,$sinkMaxY) = (0,0,0,0); 
+#
+#        if($srcID != $id[0]){
+#         for (my $i = 0; $i < $#src_coords; $i = ($i+ 2)){ 
+#              $min_x =  $src_coords[$i] if($i == 0); 
+#              $min_y =  $src_coords[$i+1] if($i == 0); 
+# 
+#              if($min_x < $src_coords[$i]){
+#              }else{
+#                 $min_x = $src_coords[$i];
+#                 $srcMinX = $min_x;
+#                 $srcMinX_Y = $src_coords[$i+1];
+#              }
+#              if($min_y < $src_coords[$i+1]){
+#              }else{
+#                 $min_y = $src_coords[$i+1];
+#                 $srcMinY_X = $src_coords[$i];
+#                 $srcMinY = $min_y;
+#              }
+#              if($max_x > $src_coords[$i]){
+#              }else{
+#                 $max_x = $src_coords[$i];
+#                 $srcMaxX = $max_x;
+#                 $srcMaxX_Y = $src_coords[$i+1];
+#              }
+#              if($max_y > $src_coords[$i+1]){
+#              }else{
+#                 $max_y = $src_coords[$i+1];
+#                 $srcMaxY_X = $src_coords[$i];
+#                 $srcMaxY = $max_y;
+#              }
+#         }#for source
+#
+#         for (my $i = 0; $i < $#sink_coords; $i = ($i+ 2)){ 
+#              $sink_min_x =  $sink_coords[$i] if($i == 0); 
+#              $sink_min_y =  $sink_coords[$i+1] if($i == 0); 
+# 
+#              if($sink_min_x < $sink_coords[$i]){
+#              }else{
+#                 $sink_min_x = $sink_coords[$i];
+#                 $sinkMaxX = $sink_min_x;
+#                 $sinkY = $sink_coords[$i+1];
+#              }
+#              if($sink_min_y < $sink_coords[$i+1]){
+#              }else{
+#                 $sink_min_y = $sink_coords[$i+1];
+#                 $sinkX = $sink_coords[$i];
+#                 $sinkY = $sink_min_y;
+#              }
+#              if($sink_max_x > $sink_coords[$i]){
+#              }else{
+#                 $sink_max_x = $sink_coords[$i];
+#                 $sinkMaxX = $sink_max_x;
+#                 $sinkY = $sink_coords[$i+1];
+#              }
+#              if($sink_max_y > $sink_coords[$i+1]){
+#              }else{
+#                 $sink_max_y = $sink_coords[$i+1];
+#                 $sinkX = $sink_coords[$i];
+#                 $sinkY = $sink_max_y;
+#              }
+#         }#for sink
+##----------------------------------------------------------------------------------#
+#           if($srcMinX>$sinkMaxX && (($srcMinY>=$sinkMinY && $srcMinY<=$sinkMaxY) || ($srcMinY<=$sinkMinY[1] && $srcMaxY>=$sinkMinY))){
+#              my $randY = "";   
+#              $randY = rand($sinkMaxY-$srcMinY) + $srcMinY if($srcMinY>=$sinkMinY && $srcMinY<=$sinkMaxY) ;
+#              $randY = rand($srcMaxY-$sinkMinY) + $sinkMinY if($srcMaxY>=$sinkMinY && $srcMaxY <= $sinkMaxY);
+#              @ruler_coords = ($srcMinX, $randY, $sinkMaxX, $randY); 
+#
+#           }elsif($srcMaxX<$sinkMinX && (($srcMinY>=$sinkMinY && $srcMinY<=$sinkMaxY) || ($srcMinY<=$sinkMinY[1] && $srcMaxY>=$sinkMinY))){
+#              my $randY = "";   
+#              $randY = rand($sinkMaxY-$srcMinY) + $srcMinY if($srcMinY>=$sinkMinY && $srcMinY<=$sinkMaxY) ;
+#              $randY = rand($srcMaxY-$sinkMinY) + $sinkMinY if($srcMaxY>=$sinkMinY && $srcMaxY <= $sinkMaxY);
+#              @ruler_coords = ($srcMaxX, $randY, $sinkMinX, $randY); 
+#
+#           }elsif($srcMaxY<$sinkMinY && (($srcMinX>=$sinkMinX && $srcMinX<=$sinkMaxX) || ($srcMinX<=$sinkMinX && $srcMaxX>=$sinkMinX))){
+#              my $randX = "";   
+#              $randX = rand($sinkMaxX-$srcMinX) + $srcMinX if($srcMinX>=$sinkMinX && $srcMinX<=$sinkMaxX) ;
+#              $randX = rand($srcMaxX-$sinkMinX) + $sinkMinX if($srcMaxX>=$sinkMinX && $srcMaxX <= $sinkMaxX);
+#              @ruler_coords = ($randX, $srcMaxY, $randX, $sinkMinY); 
+#           }elsif($srcMinY>$sinkMaxY && (($srcMinX>=$sinkMinX && $srcMinX<=$sinkMaxX) || ($srcMinX<=$sinkMinX && $srcMaxX>=$sinkMinX))){
+#              my $randX = "";   
+#              $randX = rand($sinkMaxX-$srcMinX) + $srcMinX if($srcMinX>=$sinkMinX && $srcMinX<=$sinkMaxX) ;
+#              $randX = rand($srcMaxX-$sinkMinX) + $sinkMinX if($srcMaxX>=$sinkMinX && $srcMaxX <= $sinkMaxX);
+#              @ruler_coords = ($randX, $srcMinY, $randX, $sinkMaxY); 
+#           }elsif($srcMinX>$sinkMaxX && $srcMaxY < $sinkMinY){
+#              @ruler_coords = ($srcMaxY_X, $srcMaxY, $sinkMaxX, $srcMaxY, $sinkMaxX, $sinkMaxX_Y); 
+#           }elsif($srcMaxX<$sinkMinX && $srcMaxY < $sinkMinY){
+#              @ruler_coords = ($srcMaxY_X, $srcMaxY, $sinkMinX, $srcMaxY, $sinkMinX, $sinkMinX_Y); 
+#          }elsif($srcMinX>$sinkMaxX && $srcMinY > $sinkMaxY){
+#              @ruler_coords = ($srcMinX, $srcMinX_Y, $srcMinX, $sinkMaxY, $sinkMaxY_X, $sinkMaxY); 
+#          }elsif($src_coords[2]<$sink_coords[0] && $src_coords[1] > $sink_coords[3]){
+#              @ruler_coords = ($srcMaxX, $srcMaxX_Y, $srcMaxX, $sinkMaxY, $sinkMaxY_X, $sinkMaxY); 
+#          }
+#
+#      $canvas->createLine(@ruler_coords, -fill=>"yellow", -arrow=>"both");
+#      if(@ruler_coords == 4){
+#        if ($ruler_coords[0] == $ruler_coords[2]) {
+#            my $distance = int(abs($ruler_coords[3] - $ruler_coords[1]));
+#               $distance = &convert_gds_gui2micron($distance); 
+#             $canvas->createText($ruler_coords[0]+1,($ruler_coords[1]+$ruler_coords[3])/2, -text=>$distance, -fill=>"white");
+#        } else {
+#            my $distance = int(abs($ruler_coords[2] - $ruler_coords[0]));
+#               $distance = &convert_gds_gui2micron($distance); 
+#            $canvas->createText(($ruler_coords[0]+$ruler_coords[2])/2,$ruler_coords[1]+1, -text=>$distance, -fill=>"white");
+#        }
+#      }else{
+#        if ($ruler_coords[1] == $ruler_coords[3]) {
+#            my $dis1 = int(abs($ruler_coords[2] - $ruler_coords[0])); 
+#            my $dis2 = int(abs($ruler_coords[5] - $ruler_coords[3])); 
+#               $dis1 = &convert_gds_gui2micron($dis1); 
+#               $dis2 = &convert_gds_gui2micron($dis2); 
+#            $canvas->createText(($ruler_coords[0]+$ruler_coords[2])/2,$ruler_coords[1]+1, -text=>$dis1, -fill=>"white");
+#            $canvas->createText($ruler_coords[2]+1,($ruler_coords[3]+$ruler_coords[5])/2, -text=>$dis2, -fill=>"white");
+#        }else{
+#            my $dis1 = int(abs($ruler_coords[3] - $ruler_coords[1])); 
+#            my $dis2 = int(abs($ruler_coords[4] - $ruler_coords[2])); 
+#               $dis1 = &convert_gds_gui2micron($dis1); 
+#               $dis2 = &convert_gds_gui2micron($dis2); 
+#            $canvas->createText($ruler_coords[0]+1,($ruler_coords[3]+$ruler_coords[1])/2, -text=>$dis1, -fill=>"white");
+#            $canvas->createText(($ruler_coords[2]+$ruler_coords[4])/2,$ruler_coords[3]+1, -text=>$dis2, -fill=>"white");
+#        }
+#      }
+#      $ruler_activate = 0;
+#       }#if ruler var set
+#   }
+#});
+#}#sub create_manhattanGdsRulerWithSnapping
+#
+#############################################################################################
+#sub create_euclideanGdsRulerWithSnapping{
+#my $canvas = $gdsCanvas;
+#
+#my $ruler_activate = 0;
+#my ($srcX, $srcY,$srcID) = (0,0,"");
+#
+#$canvas->CanvasBind('<k><1>' => sub {
+#        $ruler_activate = 0;         
+#        my @xy = $canvas->eventLocation();
+#        $srcX = $xy[0];
+#        $srcY = $xy[1];
+#        my @id = $canvas->find(qw/withtag current/);
+#        $srcID = $id[0]; 
+#        $ruler_activate = 1; 
+#});
+#$canvas->CanvasBind('<1>' => sub{
+#   if($ruler_activate == 1){   
+#        my @xy = $canvas->eventLocation();
+#        my $x = $xy[0];
+#        my $y = $xy[1];
+#        my @id = $canvas->find(qw/withtag current/);
+#        my @src_coords = $canvas->coords($srcID);
+#        my @sink_coords = $canvas->coords($id[0]);
+#        my @ruler_coords = ();
+#
+#        my ($min_x,$min_y,$max_x,$max_y) = (0,0,0,0);
+#        my ($sink_min_x, $sink_min_y,$sink_max_x,$sink_max_y) = (0,0,0,0);
+#
+#        my ($srcMinX,$srcMinX_Y,$srcMinY_X,$srcMinY) = (0,0,0,0); 
+#        my ($srcMaxX,$srcMaxX_Y,$srcMaxY_X,$srcMaxY) = (0,0,0,0); 
+#
+#        my ($sinkMinX,$sinkMinX_Y,$sinkMinY_X,$sinkMinY) = (0,0,0,0); 
+#        my ($sinkMaxX,$sinkMaxX_Y,$sinkMaxY_X,$sinkMaxY) = (0,0,0,0); 
+#
+#        if($srcID != $id[0]){
+#         for (my $i = 0; $i < $#src_coords; $i = ($i+ 2)){ 
+#              $min_x =  $src_coords[$i] if($i == 0); 
+#              $min_y =  $src_coords[$i+1] if($i == 0); 
+# 
+#              if($min_x < $src_coords[$i]){
+#              }else{
+#                 $min_x = $src_coords[$i];
+#                 $srcMinX = $min_x;
+#                 $srcMinX_Y = $src_coords[$i+1];
+#              }
+#              if($min_y < $src_coords[$i+1]){
+#              }else{
+#                 $min_y = $src_coords[$i+1];
+#                 $srcMinY_X = $src_coords[$i];
+#                 $srcMinY = $min_y;
+#              }
+#              if($max_x > $src_coords[$i]){
+#              }else{
+#                 $max_x = $src_coords[$i];
+#                 $srcMaxX = $max_x;
+#                 $srcMaxX_Y = $src_coords[$i+1];
+#              }
+#              if($max_y > $src_coords[$i+1]){
+#              }else{
+#                 $max_y = $src_coords[$i+1];
+#                 $srcMaxY_X = $src_coords[$i];
+#                 $srcMaxY = $max_y;
+#              }
+#         }#for source
+#
+#         for (my $i = 0; $i < $#sink_coords; $i = ($i+ 2)){ 
+#              $sink_min_x =  $sink_coords[$i] if($i == 0); 
+#              $sink_min_y =  $sink_coords[$i+1] if($i == 0); 
+# 
+#              if($sink_min_x < $sink_coords[$i]){
+#              }else{
+#                 $sink_min_x = $sink_coords[$i];
+#                 $sinkMaxX = $sink_min_x;
+#                 $sinkY = $sink_coords[$i+1];
+#              }
+#              if($sink_min_y < $sink_coords[$i+1]){
+#              }else{
+#                 $sink_min_y = $sink_coords[$i+1];
+#                 $sinkX = $sink_coords[$i];
+#                 $sinkY = $sink_min_y;
+#              }
+#              if($sink_max_x > $sink_coords[$i]){
+#              }else{
+#                 $sink_max_x = $sink_coords[$i];
+#                 $sinkMaxX = $sink_max_x;
+#                 $sinkY = $sink_coords[$i+1];
+#              }
+#              if($sink_max_y > $sink_coords[$i+1]){
+#              }else{
+#                 $sink_max_y = $sink_coords[$i+1];
+#                 $sinkX = $sink_coords[$i];
+#                 $sinkY = $sink_max_y;
+#              }
+#         }#for sink
+##----------------------------------------------------------------------------------#
+#           if($srcMinX>$sinkMaxX && (($srcMinY>=$sinkMinY && $srcMinY<=$sinkMaxY) || ($srcMinY<=$sinkMinY[1] && $srcMaxY>=$sinkMinY))){
+#              my $randY = "";   
+#              $randY = rand($sinkMaxY-$srcMinY) + $srcMinY if($srcMinY>=$sinkMinY && $srcMinY<=$sinkMaxY) ;
+#              $randY = rand($srcMaxY-$sinkMinY) + $sinkMinY if($srcMaxY>=$sinkMinY && $srcMaxY <= $sinkMaxY);
+#              @ruler_coords = ($srcMinX, $randY, $sinkMaxX, $randY); 
+#
+#           }elsif($srcMaxX<$sinkMinX && (($srcMinY>=$sinkMinY && $srcMinY<=$sinkMaxY) || ($srcMinY<=$sinkMinY[1] && $srcMaxY>=$sinkMinY))){
+#              my $randY = "";   
+#              $randY = rand($sinkMaxY-$srcMinY) + $srcMinY if($srcMinY>=$sinkMinY && $srcMinY<=$sinkMaxY) ;
+#              $randY = rand($srcMaxY-$sinkMinY) + $sinkMinY if($srcMaxY>=$sinkMinY && $srcMaxY <= $sinkMaxY);
+#              @ruler_coords = ($srcMaxX, $randY, $sinkMinX, $randY); 
+#
+#           }elsif($srcMaxY<$sinkMinY && (($srcMinX>=$sinkMinX && $srcMinX<=$sinkMaxX) || ($srcMinX<=$sinkMinX && $srcMaxX>=$sinkMinX))){
+#              my $randX = "";   
+#              $randX = rand($sinkMaxX-$srcMinX) + $srcMinX if($srcMinX>=$sinkMinX && $srcMinX<=$sinkMaxX) ;
+#              $randX = rand($srcMaxX-$sinkMinX) + $sinkMinX if($srcMaxX>=$sinkMinX && $srcMaxX <= $sinkMaxX);
+#              @ruler_coords = ($randX, $srcMaxY, $randX, $sinkMinY); 
+#           }elsif($srcMinY>$sinkMaxY && (($srcMinX>=$sinkMinX && $srcMinX<=$sinkMaxX) || ($srcMinX<=$sinkMinX && $srcMaxX>=$sinkMinX))){
+#              my $randX = "";   
+#              $randX = rand($sinkMaxX-$srcMinX) + $srcMinX if($srcMinX>=$sinkMinX && $srcMinX<=$sinkMaxX) ;
+#              $randX = rand($srcMaxX-$sinkMinX) + $sinkMinX if($srcMaxX>=$sinkMinX && $srcMaxX <= $sinkMaxX);
+#              @ruler_coords = ($randX, $srcMinY, $randX, $sinkMaxY); 
+#           }elsif($srcMinX>$sinkMaxX && $srcMaxY < $sinkMinY){
+#              @ruler_coords = ($srcMaxY_X, $srcMaxY, $sinkMaxX, $sinkMaxX_Y); 
+#           }elsif($srcMaxX<$sinkMinX && $srcMaxY < $sinkMinY){
+#              @ruler_coords = ($srcMaxY_X, $srcMaxY, $sinkMinX, $sinkMinX_Y); 
+#          }elsif($srcMinX>$sinkMaxX && $srcMinY > $sinkMaxY){
+#              @ruler_coords = ($srcMinX, $srcMinX_Y, $sinkMaxY_X, $sinkMaxY); 
+#          }elsif($src_coords[2]<$sink_coords[0] && $src_coords[1] > $sink_coords[3]){
+#              @ruler_coords = ($srcMaxX, $srcMaxX_Y, $sinkMaxY_X, $sinkMaxY); 
+#          }
+#
+#      $canvas->createLine(@ruler_coords, -fill=>"yellow", -arrow=>"both");
+#
+#        if ($ruler_coords[0] == $ruler_coords[2]) {
+#            my $distance = int(abs($ruler_coords[3] - $ruler_coords[1]));
+#               $distance = &convert_gds_gui2micron($distance); 
+#             $canvas->createText($ruler_coords[0]+1,($ruler_coords[1]+$ruler_coords[3])/2, -text=>$distance, -fill=>"white");
+#        }elsif($ruler_coords[1] == $ruler_coords[3]){
+#            my $distance = int(abs($ruler_coords[2] - $ruler_coords[0]));
+#               $distance = &convert_gds_gui2micron($distance); 
+#            $canvas->createText(($ruler_coords[0]+$ruler_coords[2])/2,$ruler_coords[1]+1, -text=>$distance, -fill=>"white");
+#        }else{
+#            my $distance = int(sqrt(($ruler_coords[2] - $ruler_coords[0])*($ruler_coords[2] - $ruler_coords[0]) + ($ruler_coords[3] - $ruler_coords[1])*($ruler_coords[3] - $ruler_coords[1])));
+#               $distance = &convert_gds_gui2micron($distance); 
+#            $canvas->createText(($ruler_coords[0]+$ruler_coords[2])/2,($ruler_coords[1]+$ruler_coords[3])/2+1, -text=>$distance, -fill=>"white");
+#        }
+#      $ruler_activate = 0;
+#       }#if ruler var set
+#   }
+#});
+#}#sub create_euclideanGdsRulerWithSnapping
+
+############################################################################################
+sub create_manhattanGdsRulerWithoutSnapping{
+my $canvas = $gdsCanvas;
+
+my $ruler_activate = 0;
+my ($srcX, $srcY) = ("", "");
+
+$canvas->CanvasBind('<k><1>' => sub {
+        $ruler_activate = 0;         
+        my @xy = $canvas->eventLocation();
+        $srcX = $xy[0];
+        $srcY = $xy[1];
+        $ruler_activate = 1;         
+});
+$canvas->CanvasBind('<1>' => sub{
+   if($ruler_activate == 1){   
+        my @xy = $canvas->eventLocation();
+        my $x = $xy[0];
+        my $y = $xy[1];
+        if ($srcX == $x || $srcY == $y){
+            my @ruler_coords = ($srcX, $srcY, $x, $y);
+            $canvas->createLine(@ruler_coords, -fill=>"yellow", -arrow=>"both");
+            if($srcY == $y){
+               my $distance = abs($ruler_coords[2] - $ruler_coords[0]);
+               $distance = &convert_gds_gui2micron($distance); 
+               $canvas->createText(($ruler_coords[0]+$ruler_coords[2])/2,$ruler_coords[1], -text=>$distance, -fill=>"white");
+            }else{
+               my $distance = abs($ruler_coords[3] - $ruler_coords[1]);
+               $distance = &convert_gds_gui2micron($distance); 
+               $canvas->createText($ruler_coords[0],($ruler_coords[1]+$ruler_coords[3])/2, -text=>$distance, -fill=>"white");
+            }
+        }else{
+            my @ruler_coords = ($srcX, $srcY, $x, $srcY, $x, $y); 
+            my $dis1 = abs($ruler_coords[2] - $ruler_coords[0]);
+            my $dis2 = abs($ruler_coords[5] - $ruler_coords[3]);
+               $dis1 = &convert_gds_gui2micron($dis1); 
+               $dis2 = &convert_gds_gui2micron($dis2); 
+            $canvas->createLine(@ruler_coords, -fill=>"yellow", -arrow=>"both");
+            $canvas->createText(($ruler_coords[0]+$ruler_coords[2])/2,$ruler_coords[1], -text=>$dis1, -fill=>"white");
+            $canvas->createText($ruler_coords[2],($ruler_coords[3]+$ruler_coords[5])/2, -text=>$dis2, -fill=>"white");
+        }
+   }
+   $ruler_activate = 0; 
+ });
+}#sub create_manhattanGdsRulerWithoutSnapping
+
+############################################################################################
+sub create_euclideanGdsRulerWithoutSnapping{
+my $canvas = $gdsCanvas;
+
+my $ruler_activate = 0;
+my ($srcX, $srcY) = ("", "");
+
+$canvas->CanvasBind('<k><1>' => sub {
+        $ruler_activate = 0;         
+        my @xy = $canvas->eventLocation();
+        $srcX = $xy[0];
+        $srcY = $xy[1];
+        $ruler_activate = 1;         
+});
+$canvas->CanvasBind('<1>' => sub{
+   if($ruler_activate == 1){   
+        my @xy = $canvas->eventLocation();
+        my $x = $xy[0];
+        my $y = $xy[1];
+        my @ruler_coords = ($srcX, $srcY, $x, $y);
+        $canvas->createLine(@ruler_coords, -fill=>"yellow", -arrow=>"both");
+        if ($srcX == $x || $srcY == $y){
+            if($srcY == $y){
+               my $distance = abs($ruler_coords[2] - $ruler_coords[0]);
+               $distance = &convert_gds_gui2micron($distance); 
+               $canvas->createText(($ruler_coords[0]+$ruler_coords[2])/2,$ruler_coords[1]+1, -text=>$distance, -fill=>"white");
+            }else{
+               my $distance = abs($ruler_coords[3] - $ruler_coords[1]);
+               $distance = &convert_gds_gui2micron($distance); 
+               $canvas->createText($ruler_coords[0]+1,($ruler_coords[1]+$ruler_coords[3])/2, -text=>$distance, -fill=>"white");
+            }
+        }else{
+            my $distance = sqrt(($ruler_coords[2] - $ruler_coords[0])*($ruler_coords[2] - $ruler_coords[0]) + ($ruler_coords[3] - $ruler_coords[1])*($ruler_coords[3] - $ruler_coords[1]));
+               $distance = &convert_gds_gui2micron($distance); 
+            $canvas->createText(($ruler_coords[0]+$ruler_coords[2])/2,($ruler_coords[1]+$ruler_coords[3])/2, -text=>$distance, -fill=>"white");
+        }
+   }
+   $ruler_activate = 0; 
+ });
+
+}#sub create_euclideanGdsRulerWithoutSnapping
+
+sub convert_gds_gui2micron {
+my $dbP = $_[0];
+my $mufp = $GLOBAL->dbGlobalGetGdsDisplayFactor;
+my $micP = sprintf("%.1f",$dbP/$mufp) ;
+return $micP;
+}#sub convert_gds_gui2micron
+
+############################################################################################
+
+
+
+1;

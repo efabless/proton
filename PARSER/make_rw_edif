@@ -1,0 +1,367 @@
+sub read_edif {
+my $noOfArguments = @_; 
+if($noOfArguments < 1 || $_[0] eq "-h"){print "Usage : read_edif\n";
+                                        print "      : -edif <input fileName>\n"; 
+                                        print "      : --verilog_names\n";
+                                        }
+else {
+my $INPUT_EDIF_FILE = "";
+%MODULE_ALREADY = ();
+my $library_start = 0;
+my %TEMP_DATA_OF_MODULE = ();
+my %EXTERNAL_CELL_HASH = ();
+my %TEMPDATA_OF_MODULE = ();
+my %TEMP_VIEWREF_OF_MODULE = ();
+my %TEMP_VIEW_OF_MODULE = ();
+my %TEMP_PORT_OF_MODULE = ();
+my %TEMP_INST_OF_MODULE = ();
+my %TEMP_NET_OF_MODULE = ();
+my %CHECK_HIER_MODULE = ();
+my %CHECK_PORT = ();
+my %CHECK_HIER_LIBRARY = ();
+my @cell_list = ();
+my %CHECK_TEMP_INST =();
+my $library = "";
+my %TEMP_VIEWNAME_OF_MODULE = ();
+my %EXTERNAL_CELL_PORT_DIR_HASH = ();
+my $external_start = 0;
+my $MODULE_WITHOUT_LIBRARY_AND_VIEW = 0;
+for (my $i=0;$i<$noOfArguments; $i++){
+  if($_[$i] eq "-edif"){ $INPUT_EDIF_FILE = $_[$i+1];}
+  if($_[$i] eq "--verilog_names"){$MODULE_WITHOUT_LIBRARY_AND_VIEW = 1;}
+}#for
+if(( -e $INPUT_EDIF_FILE) && (-r $INPUT_EDIF_FILE)){
+open (READ_INPUT_EDIF,"$INPUT_EDIF_FILE");
+while (<READ_INPUT_EDIF>){
+chomp ();
+$_ =~ s/\s+//;
+$_=~ s/\s+$//;
+if($_ =~ /^\(\bexternal\b/){
+  my $cell_of_external = "";
+  my $extr_view ="";
+  $external_start = 1;
+  $external = (split(/\s+/,$_))[1];
+}
+if($external_start == 1){
+  if($_ =~ /^\(\bcell\b/){
+    $cell_of_external = (split(/\s+/,$_))[1];
+    $EXTERNAL_CELL_HASH{$cell_of_external} = $external;
+  }if($_ =~ /^\(\bview\b/){
+     $extr_view = (split(/\s+/,$_))[1];
+#     push(@{$EXTERNAL_CELL_VIEW_HASH{$cell_of_external}{$extr_view}},$extr_view);
+  }if($_ =~ /^\(\bport\b/){
+    my $port_Name = (split(/\s+/,$_))[1];$port_Name =~ s/\)//;
+    push (@{$EXTERNAL_CELL_PORT_DIR_HASH{$cell_of_external}{$extr_view}},"ext_port"." ".$port_Name);
+  }if($_ =~ /^\(\bdirection\b/){
+    my $port_dir = (split(/\s+/,$_))[1];$port_dir =~ s/\)//;
+    push (@{$EXTERNAL_CELL_PORT_DIR_HASH{$cell_of_external}{$extr_view}},"ext_dir"." ".$port_dir);
+  }
+}
+if($_ =~ /^\(\blibrary\b/){
+  $library = (split(/\s+/,$_))[1];
+  $library_start = 1;
+  $external_start = 0;
+  my $cell = "";
+  my $view = "";
+}
+if(($library_start == 1) && ($external_start == 0)){
+  if($_ =~ /\(\bcell\b/){
+    $cell = (split(/\s+/,$_))[1]; 
+    push(@{$TEMP_DATA_OF_MODULE{$library}{$cell}},$cell);
+    push(@cell_list,$cell);
+  }if($_ =~ /\(\bview\b/){
+    $view = (split(/\s+/,$_))[1];
+    push(@{$TEMP_VIEW_OF_MODULE{$library}{$cell}},$view);
+  }if($_ =~ /\(\bport\b/){
+    my $portName = (split(/\s+/,$_))[1];$portName =~ s/\)//;
+    push (@{$TEMP_PORT_OF_MODULE{$library}{$cell}{$view}},$portName);
+    $CHECK_PORT{$library}{$cell}{$view}{$portName} = 1;
+  }if($_ =~ /\(\bdirection\b/){
+     my $direction = (split(/\s+/,$_))[1];$direction =~ s/\)//;
+     push (@{$TEMP_PORT_OF_MODULE{$library}{$cell}{$view}},$direction);
+  }if($_ =~ /\(\binstance\b/){
+    my $inst = (split(/\s+/,$_))[1];
+    push(@{$TEMP_INST_OF_MODULE{$library}{$cell}{$view}},$inst);
+  }if($_ =~ /\(\bviewRef\b/){
+    my $viewref = (split(/\s+/,$_))[1];
+    push (@{$TEMP_INST_OF_MODULE{$library}{$cell}{$view}},$viewref); 
+  }if($_ =~ /\(\bcellRef\b/){
+    my $cellref = (split(/\s+/,$_))[1];$cellref =~ s/\)//;
+    push(@{$TEMP_INST_OF_MODULE{$library}{$cell}{$view}},$cellref);
+    $CHECK_HIER_MODULE{$cellref} = 1;
+    push(@{$CHECK_HIER_LIBRARY{$library}{$cell}{$view}},"cell"." ".$cellref);
+  }if($_ =~ /\(\blibraryRef\b/){
+    my $libraryref = (split(/\s+/,$_))[1];$libraryref =~ s/\)//;$libraryref =~ s/\&//;
+    push(@{$CHECK_HIER_LIBRARY{$library}{$cell}{$view}},"lib"." ".$libraryref);
+  }if($_ =~ /\(\bnet\b/){
+    my $net = (split(/\s+/,$_))[1];
+    push(@{$TEMP_NET_OF_MODULE{$library}{$cell}{$view}},"net"." ".$net);
+  }if($_ =~ /\(\brename\b/){
+    my $rename = (split(/\s+/,$_))[2];$rename =~ s/"//;$rename =~ s/"//;$rename =~ s/\)//;
+    push(@{$TEMP_NET_OF_MODULE{$library}{$cell}{$view}},"net"." ".$rename);
+  }if($_ =~ /\(\bportRef\b/){
+    my $portref = (split(/\s+/,$_))[1];$portref =~ s/\)//;
+    push(@{$TEMP_NET_OF_MODULE{$library}{$cell}{$view}},"pin"." ".$portref);
+   }if($_ =~ /\(\binstanceRef\b/){
+    my $instref = (split(/\s+/,$_))[1];$instref =~ s/\)//;
+    push(@{$TEMP_NET_OF_MODULE{$library}{$cell}{$view}},"inst"." ".$instref);
+    $CHECK_TEMP_INST{$library}{$cell}{$view}{$instref} = 1;
+   }
+}
+}#while
+close(READ_INPUT_EDIF);
+#--------------------------------------------------------------------------------------------------------#
+my $adding_character = "";
+foreach my $lib (keys %TEMP_DATA_OF_MODULE){ 
+  foreach my $module (@cell_list){ 
+    my @view_list = @{$TEMP_VIEW_OF_MODULE{$lib}{$module}};
+    for(my $i=0;$i<=$#view_list;$i++){
+      my $view_Name = $view_list[$i];
+      my $moduleName = "";
+      $moduleName = $lib."_".$module."_".$view_Name if($MODULE_WITHOUT_LIBRARY_AND_VIEW == 0);
+      $moduleName = $module if($MODULE_WITHOUT_LIBRARY_AND_VIEW == 1);
+#      print "$module_with_view\n";
+      if(exists $MODULE_ALREADY{$moduleName}){
+      }else {
+      $MODULE_ALREADY{$moduleName} = VNOM::new();
+     }
+      $TEMPDATA_OF_MODULE{$module} = 1;
+      my %INST_CELL_HASH = ();
+      my %NET_DATA = ();
+      my $netName = "";
+      my $cell_name = "";
+      my %TEMP_DATA_FOR_LIB = ();
+      my %INST_CONN = ();
+
+      my @cell_data = @{$CHECK_HIER_LIBRARY{$lib}{$module}{$view_Name}};
+      foreach my $celldata (@cell_data){
+        if($celldata =~ /cell/){
+          $cell_name = (split(/\s+/,$celldata))[1];
+        }elsif($celldata =~ /lib/){
+          my $lib_name = (split(/\s+/,$celldata))[1];
+          $TEMP_DATA_FOR_LIB{$cell_name} = $lib_name;
+        }   
+      }
+      my @port = @{$TEMP_PORT_OF_MODULE{$lib}{$module}{$view_Name}};
+      for (my $j =0; $j<=$#port;$j=$j+2){
+        my $port_Name = $port[$j];
+        my $port_dir = $port[$j+1];
+        if($port_dir eq "INPUT"){
+          $MODULE_ALREADY{$moduleName}->dbVNOMAddInput($port_Name);
+          $MODULE_ALREADY{$moduleName}->dbVNOMSetInputType($port_Name,0);
+          $INST_CELL_HASH{$port_Name} = $port_Name;
+        }elsif($port_dir eq "OUTPUT"){
+          $MODULE_ALREADY{$moduleName}->dbVNOMAddOutput($port_Name);
+          $MODULE_ALREADY{$moduleName}->dbVNOMSetOutputType($port_Name,0);
+          $INST_CELL_HASH{$port_Name} = $port_Name;
+        }elsif($port_dir eq "INOUT"){
+          $MODULE_ALREADY{$moduleName}->dbVNOMAddBidi($port_Name);
+          $MODULE_ALREADY{$moduleName}->dbVNOMSetBidiType($port_Name,0);
+          $INST_CELL_HASH{$port_Name} = $port_Name;
+        }else {
+          if(exists $CHECK_PORT{$lib}{$module}{$view_Name}{$port_dir}){
+            $MODULE_ALREADY{$moduleName}->dbVNOMAddBidi($port_dir);
+            $MODULE_ALREADY{$moduleName}->dbVNOMSetBidiType($port_dir,0);
+            $INST_CELL_HASH{$port_Name} = $port_Name;
+          }
+          $MODULE_ALREADY{$moduleName}->dbVNOMAddBidi($port_Name);
+          $MODULE_ALREADY{$moduleName}->dbVNOMSetBidiType($port_Name,0);
+          $INST_CELL_HASH{$port_Name} = $port_Name;
+        }
+      }#for
+      my @inst_cell_data = @{$TEMP_INST_OF_MODULE{$lib}{$module}{$view_Name}};
+      for(my $l=0;$l<=$#inst_cell_data;$l=$l+3){
+        my $instName = $inst_cell_data[$l];
+        my $viewref = $inst_cell_data[$l+1];
+        my $cellName = $inst_cell_data[$l+2];
+        if((!exists $EXTERNAL_CELL_HASH{$cellName}) && (!exists $TEMPDATA_OF_MODULE{$cellName})){
+          $MODULE_ALREADY{$moduleName}->dbVNOMAddLeafInst($instName);
+          $MODULE_ALREADY{$moduleName}->dbVNOMSetLeafInstCell($instName,$cellName);
+          $INST_CELL_HASH{$instName} = $cellName;
+   #        print "$module_with_view => $instName => $cellName\n";
+        }
+        elsif((exists $TEMPDATA_OF_MODULE{$cellName})&&(exists $CHECK_HIER_MODULE{$cellName})){
+           my $cell_new = "";
+           $cell_new = $lib."_".$cellName."_".$viewref if($MODULE_WITHOUT_LIBRARY_AND_VIEW == 0);
+           $cell_new = $cellName if($MODULE_WITHOUT_LIBRARY_AND_VIEW == 1);
+           $MODULE_ALREADY{$cell_new}->dbVNOMAddParent($moduleName);
+           $MODULE_ALREADY{$moduleName}->dbVNOMAddHierInst($instName);
+           $MODULE_ALREADY{$moduleName}->dbVNOMSetHierInstCell($instName,$cell_new);
+           $INST_CELL_HASH{$instName} = $cell_new;
+         #  print "$module_with_view => $instName => $cell_new => $cellName\n";
+        }elsif((exists $EXTERNAL_CELL_HASH{$cellName}) && (!exists $TEMPDATA_OF_MODULE{$cellName})){
+           my $libName = $TEMP_DATA_FOR_LIB{$cellName};
+           my $cell_new = "";
+           $cell_new = $libName."_".$cellName."_".$viewref if($MODULE_WITHOUT_LIBRARY_AND_VIEW == 0); 
+           $cell_new = $cellName if($MODULE_WITHOUT_LIBRARY_AND_VIEW == 1); 
+           $MODULE_ALREADY{$cell_new} = VNOM::new();
+           $MODULE_ALREADY{$cell_new}->dbVNOMAddParent($libName);
+           $MODULE_ALREADY{$moduleName}->dbVNOMAddHierInst($instName);
+           $MODULE_ALREADY{$moduleName}->dbVNOMSetHierInstCell($instName,$cell_new);
+           $INST_CELL_HASH{$instName} = $cell_new;
+           if(exists $EXTERNAL_CELL_PORT_DIR_HASH{$cellName}{$viewref}){
+             my @port_of_external_cell = @{$EXTERNAL_CELL_PORT_DIR_HASH{$cellName}{$viewref}}; 
+             my $ext_port = "";
+             my %TEMP_EXTER_PORT_DIR = ();
+             my %CHECK_EACH_PORT_OF_EXTERNAL_CELL = ();
+               foreach my $port (@port_of_external_cell){
+                 if($port =~ /ext_port/){
+                   $ext_port = (split(/\s+/,$port))[1];
+                   $CHECK_EACH_PORT_OF_EXTERNAL_CELL{$ext_port} = 1;
+                 }elsif($port =~ /ext_dir/){
+                   my $ext_dir = (split(/\s+/,$port))[1];
+                   $TEMP_EXTER_PORT_DIR{$ext_port} = $ext_dir;
+                 }
+               }
+                 foreach my $port_name(keys %CHECK_EACH_PORT_OF_EXTERNAL_CELL){
+                   if(exists $TEMP_EXTER_PORT_DIR{$port_name}){
+                     my $portdir = $TEMP_EXTER_PORT_DIR{$port_name}; 
+                     if($portdir eq "INPUT"){
+                       $MODULE_ALREADY{$cell_new}->dbVNOMAddInput($port_name);
+                       $MODULE_ALREADY{$cell_new}->dbVNOMSetInputType($port_name,0);
+                       $INST_CELL_HASH{$port_name} = $port_name;
+                     }elsif($portdir eq "OUTPUT"){
+                       $MODULE_ALREADY{$cell_new}->dbVNOMAddOutput($port_name);
+                       $MODULE_ALREADY{$cell_new}->dbVNOMSetOutputType($port_name,0);
+                       $INST_CELL_HASH{$port_name} = $port_name;
+                     }elsif($portdir eq "INOUT"){
+                       $MODULE_ALREADY{$cell_new}->dbVNOMAddBidi($port_name);
+                       $MODULE_ALREADY{$cell_new}->dbVNOMSetBidiType($port_name,0);
+                       $INST_CELL_HASH{$port_name} = $port_name;
+                     }
+                   }else {
+                      $MODULE_ALREADY{$cell_new}->dbVNOMAddBidi($port_name);
+                      $MODULE_ALREADY{$cell_new}->dbVNOMSetBidiType($port_name,0);
+                  }  
+               }
+             }
+         }
+      }#for
+      my @net_data = @{$TEMP_NET_OF_MODULE{$lib}{$module}{$view_Name}};
+      foreach my $data (@net_data){
+        if($data =~ /\bnet\b/){
+          $netName = (split(/\s+/,$data))[1];
+        }elsif($data =~ /\bpin\b/){
+          my $pinName = (split(/\s+/,$data))[1];
+          push(@{$NET_DATA{$netName}},$pinName);
+        }elsif($data =~ /\binst\b/){
+          my $instName = (split(/\s+/,$data))[1];
+          push(@{$NET_DATA{$netName}},$instName);
+        }
+      }
+      my $no_of_added_inst = 0;
+      foreach my $net (keys %NET_DATA){
+        my @netdata_list =  @{$NET_DATA{$net}};
+#        print "$net => @netdata_list\n";
+        for(my $i=0;$i<=$#netdata_list;$i=$i+2){
+            #my $portName = $netdata_list[$i];
+            my $portName = $netdata_list[$i];
+            my $instName = $netdata_list[$i+1];
+#            print "$net => $portName\n";
+            if((exists $CHECK_PORT{$lib}{$module}{$view_Name}{$portName}) && (exists $CHECK_PORT{$lib}{$module}{$view_Name}{$instName})){
+              if($net ne $portName){
+#                print "$net $portName => $instName\n";
+                &set_buffer_for_assign("-cell_name","buf_cell","-buf_in","buf_in","-buf_out","buf_out","-power","buf_Vdd","-gnd","buf_Vss");
+                my $assignBufName = $GLOBAL->dbfGlobalGetBufForAssign;
+                if ( $assignBufName ne "" ) {
+                  my $assignIn  = $GLOBAL->dbfGlobalGetBufForAssignIn();
+                  my $assignOut = $GLOBAL->dbfGlobalGetBufForAssignOut();
+                  my $power  = $GLOBAL->dbfGlobalGetBufForAssignPower();
+                  my $gnd = $GLOBAL->dbfGlobalGetBufForAssignGnd();
+                  my $left_expr = "";
+                  my $right_expr = "";
+                  if(exists $MODULE_ALREADY{$moduleName}->{outs}{$portName}){
+                    $left_expr = $portName;
+                  }elsif(exists $MODULE_ALREADY{$moduleName}->{outs}{$instName}){
+                    $left_expr = $instName;
+                  }
+                  if(exists $MODULE_ALREADY{$moduleName}->{ins}{$portName}){
+                    $right_expr = $portName;
+                  }elsif(exists $MODULE_ALREADY{$moduleName}->{ins}{$instName}){
+                    $right_expr = $instName;
+                  }
+                  $left_expr =~ s/\s+//;
+                  $right_expr =~ s/\s+//;
+                  my @left_pins_or_nets_array = &array_of_blasted_expr($left_expr,$moduleName);
+                  my @right_pins_or_nets_array = &array_of_blasted_expr($right_expr,$moduleName);
+                  if($#left_pins_or_nets_array == $#right_pins_or_nets_array) {
+                    foreach my $temp_left_bit (@left_pins_or_nets_array){ 
+                      my $temp_right_bit = shift(@right_pins_or_nets_array);
+                      if(($temp_right_bit !~ /'b/) && ( $temp_left_bit !~ /'b/)) {
+                        my $temp_assign_component_name = "bt_assign_buf"."_".$no_of_added_inst;
+                        $no_of_added_inst++;
+                        my $temp_assign_component_port_expr = "("."\.".$assignOut."(".$temp_left_bit.")".","."\.".$assignIn."(".$temp_right_bit.")".","."\.".$power."(1'b1".")".","."\.".$gnd."(1'b0".")".")" ;
+                        $GLOBAL->dbfGlobalAddBufForAssignInstance($temp_assign_component_name);
+#                        print "$temp_assign_component_name\n";
+#                        print "$temp_assign_component_port_expr\n";
+                        my $temp_conn_line = $assignBufName." ".$temp_assign_component_name." ".$temp_assign_component_port_expr;
+                        $MODULE_ALREADY{$moduleName}->dbVNOMAddConn($temp_conn_line);
+                        $MODULE_ALREADY{$moduleName}->dbVNOMAddLeafInst($temp_assign_component_name);
+                        $MODULE_ALREADY{$moduleName}->dbVNOMSetLeafInstCell($temp_assign_component_name,$assignBufName);
+#                        push(@{$INST_CONN{$temp_assign_component_name}},$temp_assign_component_port_expr);
+#                        $INST_CELL_HASH{$temp_assign_component_name} = $assignBufName;
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            if(exists $CHECK_TEMP_INST{$lib}{$module}{$view_Name}{$portName}){
+               my $new_port = $netdata_list[$i-1];  
+               my $new_inst = $portName;
+               my $inst_data_new = ".".$new_port."(".$net.")"; 
+#               print "$new_inst => $inst_data_new\n";
+               push(@{$INST_CONN{$new_inst}},$inst_data_new);
+            }else{
+               my $port_Name = $portName;
+               my $inst_Name = $instName;
+               my $inst_data_new = ".".$port_Name."(".$net.")"; 
+ #              print "$inst_Name  => $inst_data_new\n";
+               push(@{$INST_CONN{$inst_Name}},$inst_data_new);
+            }
+          #my $inst_data_new = ".".$portName."(".$net.")"; 
+          #push(@{$INST_CONN{$instName}},$inst_data_new);
+        }#for
+      }
+      foreach my $inst (keys %INST_CONN){
+         my @conn = @{$INST_CONN{$inst}};
+         my $temp_conn= join ", ",@conn;
+        if(exists $INST_CELL_HASH{$inst}){
+          my $cell_Name = $INST_CELL_HASH{$inst};
+          my $connLine = $cell_Name." ".$inst." (".$temp_conn.");"; 
+          #my $connLine = "IsoDrv6 IsoDrv6_1 (.OutB(N_9), .In(N_7), .EnblDrv(Vdd), .OutA(N_8), .Clk(N_11));"; 
+          $MODULE_ALREADY{$moduleName}->dbVNOMAddConn($connLine);
+        }
+      }
+    }#for
+}
+}
+#------------------------------------------------------------------------------------------------------#
+}else{
+  print "WARN : $INPUT_EDIF_FILE FILE DOES NOT EXISTS OR IS NOT READABLE.\n"; 
+}
+
+}#else
+my @TOP = ();
+foreach my $mod (keys %MODULE_ALREADY) { 
+       my @parents =  $MODULE_ALREADY{$mod}->dbVNOMGetParent;
+       my $np = @parents;
+       if ( $np == 0 ) { push(@TOP,$mod); }
+       elsif ( $np > 1 ) { print "INFO-PAR-VERI : 014 : $mod has $np parents @parents\n";}
+                              }
+my $nT = @TOP;
+if ( $nT == 1 ) { print "INFO-PAR-VERI : 015 : Setting top module as $TOP[0]\n"; 
+                  $CURRENT_MODULE = $TOP[0];
+                  $TOP_MODULE = $TOP[0];
+		  $GLOBAL->dbfGlobalSetTOP($TOP_MODULE);
+                }
+elsif ( $nT > 1 ) { print "WARN-PAR-VERI : 016 : there are more than 1 possible top modules, please pick the correct one from the list below\n";
+               #     print join ",", @TOP; #print "\n";
+                     foreach my $o (@TOP){
+                       print "$o\n";
+                     }
+                  }
+else { print "ERROR-PAR-VERI : 017 : something is wrong with the verilog file\n"; }
+}#sub read_edif
+#-------------------------------------------------------------------------------------------------------------------------------------------------#
+1;

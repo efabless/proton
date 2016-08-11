@@ -1,0 +1,60 @@
+$COOKIE_NAME = "Cookie1";
+
+sub write_verilog_cookie {
+my $noOfArguments = @_;
+
+if( $noOfArguments < 2 || $_[0] eq '-h') { 
+	print "Usage : write_verilog_cookie \n";
+	print "                             -output <output verilog file> \n";
+	print "                             <-debug>\n";
+}
+else { # if correct no. of inputs
+	print "INFO-TST_GEOM-WR_VERI_COOKE : 001 : writing the Verilog !\n";
+	for(my $i = 0; $i < $noOfArguments; $i++){
+	if($_[$i] eq "-output"){$OUTPUT_VERILOG_FILE = $_[$i+1];}
+	} #for
+}
+
+open (WRITE_OUTPUT_VERILOG, ">$OUTPUT_VERILOG_FILE");
+
+
+print WRITE_OUTPUT_VERILOG "module $COOKIE_NAME\( ";
+my @temp = ();
+foreach $portName ( keys %{$portsCookie{$COOKIE_NAME}} ) { push(@temp,$portName); }
+print WRITE_OUTPUT_VERILOG join ",",@temp;
+print WRITE_OUTPUT_VERILOG "\)\;\n\n";
+foreach $portName ( keys %{$portsCookie{$COOKIE_NAME}} ) { 
+	$dir = $portsCookie{$COOKIE_NAME}{$portName}{direction};
+        if ($dir == 0 ) { $direction  = "input" ; }
+	elsif ($dir == 1 ) { $direction  = "output" ; }
+	elsif ($dir == 2 ) { $direction  = "inout" ; }
+	print WRITE_OUTPUT_VERILOG "$direction $portName\;\n"; 
+}    
+print WRITE_OUTPUT_VERILOG "\n\n";
+
+foreach $instance ( keys %compsCookie ) {
+	my $cellref = $CADB{$instance}->dbCadbGetCellref;
+	my $temp = $instance;
+	$temp =~ s/\//_/g ;
+        print WRITE_OUTPUT_VERILOG "$cellref $temp\( ";
+        @temp = ();
+        foreach $pinName (  keys %{$compsCookie{$instance}{pins}} ) { 
+        	my $flag = $PLDB{$cellref}->dbMdbGetPinType($pinName);
+		if ( $flag == 1 || $flag == 2 ) { } else {
+                   	if ( exists $compsCookie{$instance}{pins}{$pinName} ) {
+                		push(@temp, "\.$pinName\($compsCookie{$instance}{pins}{$pinName}\)"); 
+                        } else {
+                		push(@temp, "\.$pinName\(\)"); 
+                        }
+                }
+        }
+        print WRITE_OUTPUT_VERILOG join ", ", @temp;
+        print WRITE_OUTPUT_VERILOG " \)\;\n";
+}
+
+print WRITE_OUTPUT_VERILOG "\nendmodule\n";
+
+close (WRITE_OUTPUT_VERILOG) ;
+}# sub write_verilog
+
+1;

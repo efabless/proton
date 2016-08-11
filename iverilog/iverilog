@@ -1,0 +1,33 @@
+#!/usr/bin/perl 
+use Benchmark;
+my $t0 = new Benchmark;
+my @inVlogFileList = ();
+my $iverilogOutVVPFile = "iverilog_output.vvp";
+my $out_file = "simulator_out.txt";
+my $log_file = "log_out.txt";
+my $cloud_share_path = "";
+
+for(my $i =0; $i<=$#ARGV;$i++){
+  if($ARGV[$i] eq "-out_file"){
+    $out_file = $ARGV[$i+1];
+    $i++;
+  }elsif($ARGV[$i] eq "-log_file"){
+    $log_file = $ARGV[$i+1];
+    $i++;
+  }elsif($ARGV[$i] eq "-cloud_share_path"){
+    $cloud_share_path = $ARGV[$i+1];
+    $i++;
+  }else{
+    my $inVlogFileStr = $ARGV[$i];
+    $inVlogFileStr =~ s/\{|\}//g;
+    push(@inVlogFileList, split(/\,/, $inVlogFileStr));
+  }
+}
+
+my $spaceSeparatedVlogFileList = join " ", @inVlogFileList;
+system("export LD_LIBRARY_PATH=$cloud_share_path/apps/content/drupal_app/ivl;$cloud_share_path/apps/content/drupal_app/iverilog -B $cloud_share_path/apps/content/drupal_app/ivl/ -o $iverilogOutVVPFile $spaceSeparatedVlogFileList > $log_file" );
+system("$cloud_share_path/apps/content/drupal_app/vvp -n -M $cloud_share_path/apps/content/drupal_app/ivl/ -l$out_file $iverilogOutVVPFile >> $log_file");
+system("rm -rf $iverilogOutVVPFile");
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "script iverilog took: ",timestr($td),"\n";

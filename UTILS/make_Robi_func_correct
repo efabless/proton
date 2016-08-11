@@ -1,0 +1,4037 @@
+
+
+sub set_map_seed_placement{
+  if( $_[0] eq '-h') {
+    print "\nUsage : set_map_seed_placement [<number for seed place option>] ";
+    print "\n         note   : By default,the option is 2";
+    print "\n         If -1  : It will add legal location for unplaced cells and IO";
+    print "\n         If  0  : It will map the seed placement to legal rows.Row may go beyond the CHIP boundary.Overlap between cells will be removed";
+    print "\n         If  1  : It will map the seed placement to legal rows.Row may go beyond the CHIP boundary";
+    print "\n                : Cell will be moved to nearest x-sites and overlap will be removed";
+    print "\n         If  2  : It will move cells only for those rows which are going beyond the CHIP boundary. It will move cells only to nearest rows";
+    print "\n                : Cell will be moved to nearest x-sites and overlap will be removed";
+    print "\n         If  3  : It will move cells so that utilization of all the rows is almost same ";
+    print "\n         If  4  : It will map the seed placement to legal rows and x-sites. Checks are added if any rows are going beyond CHIP boundary";
+    print "\n         If  5  : It will map the seed placement to legal rows and x-sites. Rows may going beyond CHIP boundary";
+    print "\n         If  6  : It will move cells so that utilization of all the rows is almost same. This will happen only if any row is going beyond the CHIP boundary ";
+    print "\n         If  7  : It will move cells only for those rows which are going beyond the CHIP boundary. It will move cells only to nearest rows";
+    print "\n         If  8  : It will map the seed placement to legal rows.Row may go beyond the CHIP boundary";
+    print "\n                : Cell will be moved to nearest x-sites and overlap will be removed";
+    print "\n                : Number of rows may not match with the number of rows in the CHIP";
+    print "\n         If  9  : It will map the seed placement to legal rows.Row may go beyond the CHIP boundary.Overlap between cells will be removed";
+    print "\n                : Number of rows may not match with the number of rows in the CHIP\n";
+    return ;
+  }
+  my $map_seed_option = -2; 
+  my $noOfArguments = @_;
+  if($noOfArguments >= 1){
+     $map_seed_option = $_[0]; 
+  }
+  if($map_seed_option eq "-1"){
+    print "\nIt will add legal location for unplaced cells and IO\n";
+  } elsif($map_seed_option eq "0"){
+    print "\nIt will map the seed placement to legal rows.Row may go beyond the CHIP boundary.Overlap between cells will be removed\n";
+  } elsif($map_seed_option eq "1"){
+    print "\nIt will map the seed placement to legal rows.Row may go beyond the CHIP boundary";
+    print "\nCell will be moved to nearest x-sites and overlap will be removed\n";
+  } elsif($map_seed_option eq "2"){
+    print "\nIt will move cells only for those rows which are going beyond the CHIP boundary. It will move cells only to nearest rows";
+    print "\nCell will be moved to nearest x-sites and overlap will be removed\n";
+  } elsif($map_seed_option eq "3"){
+    print "\nIt will move cells so that utilization of all the rows is almost same\n";
+  } elsif($map_seed_option eq "4"){
+    print "\nIt will map the seed placement to legal rows and x-sites. Checks are added if any rows are going beyond CHIP boundary\n";
+  } elsif($map_seed_option eq "5"){
+    print "\nIt will map the seed placement to legal rows and x-sites. Rows may going beyond CHIP boundary\n";
+  } elsif($map_seed_option eq "6"){
+    print "\nIt will move cells so that utilization of all the rows is almost same. This will happen only if any row is going beyond the CHIP boundary\n";
+  } elsif($map_seed_option eq "7"){
+    print "\nIt will move cells only for those rows which are going beyond the CHIP boundary. It will move cells only to nearest rows\n";
+  } elsif($map_seed_option eq "8"){
+    print "\nIt will map the seed placement to legal rows.Row may go beyond the CHIP boundary";
+    print "\nCell will be moved to nearest x-sites and overlap will be removed";
+    print "\nNumber of rows may not match with the number of rows in the CHIP\n";
+  } elsif($map_seed_option eq "9"){
+    print "\nIt will map the seed placement to legal rows.Row may go beyond the CHIP boundary.Overlap between cells will be removed";
+    print "\nNumber of rows may not match with the number of rows in the CHIP\n";
+  } elsif($map_seed_option eq "100"){
+    print "\nTesting mode\n";
+  }else {
+    $map_seed_option = 2; 
+    print "\nNo options or invalid option selected. Default behaviour is option 2";
+    print "\nIt will move cells only for those rows which are going beyond the CHIP boundary. It will move cells only to nearest rows";
+    print "\nCell will be moved to nearest x-sites and overlap will be removed\n";
+  }
+  $GLOBAL->dbfGlobalSetMapSeed($map_seed_option) ;
+} #sub set_map_seed_placement
+
+
+
+
+
+sub write_node_file {
+
+
+}#sub write_node_file
+
+
+
+sub place_graph {
+        &delete_all_tmp_placer_files;
+	&write_graph_modified ;
+        &write_design_info_file ;
+	&run_placer;
+	&read_graph;
+        &delete_tmp_placer_files;
+}# sub place_graph
+
+sub place_graph_detail {
+
+my $INPUT_NET_FILE = "$TOP_MODULE.txt";
+my $NODE_FILE = "nodefile";
+my $LIB_FILE = "libfile";
+my $DES_INFO_FILE = "desinfofile";
+my $INPUT_NET_FILE_PIN_OFFSET = "${TOP_MODULE}_pin_offset.txt";
+my $LIB_FILE_PIN_OFFSET = "libfile_pin_offset";
+if( $_[0] eq '-h') { 
+  print "Usage : place_graph_detail [ <graph file> <node file> <library file> <design info file> <graph file pin offset> <library file pin offset>] \n";
+  print "                  note : by default <graph file> will be $INPUT_NET_FILE\n";
+  print "                  note : by default <node file> will be $NODE_FILE\n";
+  print "                  note : by default <design info file> will be $DES_INFO_FILE\n";
+  print "                  note : by default <graph file pin offset> will be $INPUT_NET_FILE_PIN_OFFSET\n";
+  print "                  note : by default <library file pin offset> will be $LIB_FILE_PIN_OFFSET\n";
+  return ;
+}
+my $noOfArguments = @_;
+if($noOfArguments >= 1){
+   $INPUT_NET_FILE = $_[0]; 
+}
+if($noOfArguments >= 2){
+   $NODE_FILE = $_[1]; 
+}
+if($noOfArguments >= 3){
+   $LIB_FILE = $_[2]; 
+}
+if($noOfArguments >= 4){
+   $DES_INFO_FILE = $_[3]; 
+}
+if($noOfArguments >= 5){
+   $INPUT_NET_FILE_PIN_OFFSET = $_[4]; 
+}
+if($noOfArguments >= 6){
+   $LIB_FILE_PIN_OFFSET = $_[5]; 
+}
+if($noOfArguments > 6){
+  print "Usage : place_graph_detail [ <graph file> <node file> <library file> <design info file> <graph file pinoffset> <library file pin offset>] \n";
+  print "Info : ignoring argument after $_[4]\n";
+}
+        &delete_all_tmp_placer_files;
+	&write_graph_modified ;
+	&write_graph_modified ("--pinOffset");
+        &write_design_info_file ;
+	&run_placer;
+        &read_graph ;
+	#&run_placer_detail ($INPUT_NET, $NODE_FILE, $LIB_FILE, $DES_INFO_FILE);
+	&run_placer_detail ($INPUT_NET_FILE_PIN_OFFSET, $NODE_FILE, $LIB_FILE_PIN_OFFSET, $DES_INFO_FILE);
+	&read_graph_detail;
+        &delete_tmp_placer_files ;
+}#sub place_graph_detail
+
+sub read_graph {
+$DEBUG = 31;
+my $INPUT_GRAPH = "xy.out";
+if ( -e $INPUT_GRAPH) {
+open(READ,"$INPUT_GRAPH");
+print "INFO-UTS-RD_GRPH : 001 : Reading the graph for $INPUT_GRAPH\n";
+#print "Existing Die size are : @{$DIE_ALREADY{dieArea}} \n";
+
+##########Scaling to values to the die size##########
+$line1 = <READ>;
+($llx,$lly) = (split(/\s+/, $line1))[0,1];
+$absllx = abs($llx);
+$abslly = abs($lly);
+
+$line2 = <READ>;
+($urx,$ury) = (split(/\s+/, $line2))[0,1];
+#print "$line1 : $llx and $lly and $absllx and $abslly\n";
+$newurx = $urx + $absllx;
+$newury = $ury + $abslly;
+#print "$line2 : $urx and $ury and $newurx and $newury\n";
+
+$scalex = $DIE_ALREADY{dieArea}[2]/($newurx);
+$scaley = $DIE_ALREADY{dieArea}[3]/($newury);
+#print "Scalex : $scalex and Scaley : $scaley \n";
+
+while(<READ>) {
+chomp();
+($node,$x,$y) = (split(/\s+/, $_))[0,1,2];
+#$x = ($x+$absllx)*2000*$scalex;
+#$y = ($y+$abslly)*2000*$scaley;
+$x = ($x+$absllx)*$scalex;
+$y = ($y+$abslly)*$scaley;
+#$x = int($x);
+#$y = int($y);
+
+#print "$x and $y\n";
+$found = 0;
+#foreach $inst ( keys %TEMP ) { if ( $node == $TEMP{$inst} ) { $found = 1; $instance = $inst } }
+if ( exists $TEMPR{$node} ) { $found = 1; $instance = $TEMPR{$node}; } else { $found = 0;}
+if($found == 1 ) { 
+                if ( exists $CADB{$instance} ) {
+     $CADB{$instance}->dbCadbSetLoc($x,$y);
+     $CADB{$instance}->dbCadbSetStatus(PLACED);
+     $CADB{$instance}->dbCadbSetOrient(N);
+                                               } 
+                elsif ( exists $PORTS_ALREADY{$TOP_MODULE}{$instance} ) {
+     $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetLoc($x,$y);
+     $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetSide($side);
+     $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetStatus(PLACED);
+                                               }
+                else { print "ERR-UTS-RD_GRPH : 002 : $instance is neither a port nor a component\n"; }
+
+                 }
+else { print "ERR-UTS-RD_GRPH : 003 : node $node not found\n"; }
+              }#while
+
+}#end if
+else {
+print "WARN-UTS-RD_GRPH : 004 : No xy.out file found \n";
+}
+close($INPUT_GRAPH);
+&set_inst_box;
+}#sub read_graph
+
+sub read_graph_detail {
+$DEBUG = 31;
+my $INPUT_GRAPH = "detailed_xy.out";
+if ( -e $INPUT_GRAPH) {
+open(READ,"$INPUT_GRAPH");
+print "INFO-UTS-RD_GRPH_DTL : 001 : Reading the graph for $INPUT_GRAPH\n";
+#print "Existing Die size are : @{$DIE_ALREADY{dieArea}} \n";
+
+##########Scaling to values to the die size##########
+my $line1 = <READ>;
+($llx,$lly) = (split(/\s+/, $line1))[0,1];
+my $absllx = abs($llx);
+my $abslly = abs($lly);
+
+my $line2 = <READ>;
+my ($urx,$ury) = (split(/\s+/, $line2))[0,1];
+#print "$line1 : $llx and $lly and $absllx and $abslly\n";
+my $newurx = $urx + $absllx;
+my $newury = $ury + $abslly;
+#print "$line2 : $urx and $ury and $newurx and $newury\n";
+
+#$scalex = $DIE_ALREADY{dieArea}[2]/(2000*$newurx);
+my $scalex = $DIE_ALREADY{dieArea}[2]/($newurx);
+#$scaley = $DIE_ALREADY{dieArea}[3]/(2000*$newury);
+my $scaley = $DIE_ALREADY{dieArea}[3]/($newury);
+#print "Scalex : $scalex and Scaley : $scaley \n";
+
+while(<READ>) {
+chomp();
+my ($node,$x,$y) = (split(/\s+/, $_))[0,1,2];
+#$x = ($x+$absllx)*2000*$scalex;
+#$y = ($y+$abslly)*2000*$scaley;
+$x = ($x+$absllx)*$scalex;
+$y = ($y+$abslly)*$scaley;
+#$x = int($x);
+#$y = int($y);
+
+#print "$x and $y\n";
+$found = 0;
+#foreach $inst ( keys %TEMP ) { if ( $node == $TEMP{$inst} ) { $found = 1; $instance = $inst } }
+if ( exists $TEMPR{$node} ) { $found = 1; $instance = $TEMPR{$node}; } else { $found = 0;}
+if($found == 1 ) { 
+                if ( exists $CADB{$instance} ) {
+     $CADB{$instance}->dbCadbSetLoc($x,$y);
+     $CADB{$instance}->dbCadbSetStatus(PLACED);
+     $CADB{$instance}->dbCadbSetOrient(N);
+                                               } 
+                elsif ( exists $PORTS_ALREADY{$TOP_MODULE}{$instance} ) {
+     $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetLoc($x,$y);
+     $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetSide($side);
+     $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetStatus(PLACED);
+                                               }
+                else { print "ERR-UTS-RD_GRPH_DTL : 002 : $instance is neither a port nor a component\n"; }
+
+                 }
+else { print "ERR-UTS-RD_GRPH_DTL : 003 : node $node not found\n"; }
+              }#while
+
+}#end if
+else {
+print "WARN-UTS-RD_GRPH_DTL : 004 : No detailed_xy.out file found \n";
+}
+close($INPUT_GRAPH);
+&set_inst_box;
+}#sub read_graph_detail
+
+sub run_placer {
+$INPUT_NET_FILE = "$TOP_MODULE.txt";
+$NODE_FILE = "nodefile";
+my $env_proton_home = $GLOBAL->dbfGlobalGetProtonHome;
+my $placeLogFileName = "place.log";
+if( $NOLOG != 1 ) {
+closeTee(*STDOUT);
+open (TEST, ">>$logFileName");
+my $ofh = select TEST;
+$| = 1;
+select $ofh;
+openTee(*STDOUT, *STDOUT, *TEST);
+}
+print "INFO-UTS-RUN_PLCR : 001 : Placing the design $TOP_MODULE \n";
+if ( -e $INPUT_NET_FILE) {
+#system( "$env_eqator_home/3RDBIN/plan_1 $INPUT_NET_FILE $NODE_FILE\| tee $placeLogFileName >> $logFileName");
+system( "$env_proton_home/3RDBIN/plan_1 $INPUT_NET_FILE $NODE_FILE\| tee $placeLogFileName >> $logFileName");
+#system( "$env_eqator_home/plan_1 $INPUT_NET_FILE $NODE_FILE controlfile\| tee  $placeLogFileName >> $logFileName");
+      }
+}#sub run_placer
+
+sub run_placer_detail {
+$INPUT_NET_FILE = "$TOP_MODULE.txt";
+$NODE_FILE = "nodefile";
+$LIB_FILE = "libfile";
+$DES_INFO_FILE = "desinfofile";
+
+  if( $_[0] eq '-h') { 
+    print "Usage : run_placer_detail [ <graph file> <node file> <library file> <design info file>] \n";
+    print "                  note : by default <graph file> will be $INPUT_NET_FILE\n";
+    print "                  note : by default <node file> will be $NODE_FILE\n";
+    print "                  note : by default <design info file> will be $DES_INFO_FILE\n";
+    return ;
+  }
+  my $noOfArguments = @_;
+  if($noOfArguments >= 1){
+     $INPUT_NET_FILE = $_[0]; 
+  }
+  if($noOfArguments >= 2){
+     $NODE_FILE = $_[1]; 
+  }
+  if($noOfArguments >= 3){
+     $LIB_FILE = $_[2]; 
+  }
+  if($noOfArguments >= 4){
+     $DES_INFO_FILE = $_[3]; 
+  }
+  if($noOfArguments > 4){
+    print "Usage : run_placer_detail [ <graph file> <node file> <library file> <design info file>] \n";
+    print "Info : ignoring argument after $_[4]\n";
+  }
+
+my $env_proton_home = $GLOBAL->dbfGlobalGetProtonHome;
+my $placeDetailLogFileName = "place_detail.log";
+if( $NOLOG != 1 ) {
+closeTee(*STDOUT);
+open (TEST, ">>$logFileName");
+my $ofh = select TEST;
+$| = 1;
+select $ofh;
+openTee(*STDOUT, *STDOUT, *TEST);
+}
+print "INFO-UTS-RUN_PLCR_DTL : 001 : Detail Placing the design $TOP_MODULE \n";
+if ( -e $INPUT_NET_FILE) {
+#system( "$env_eqator_home/3RDBIN/plan_2 $INPUT_NET_FILE $NODE_FILE \| tee  $placeDetailLogFileName >> $logFileName");
+#system( "$env_eqator_home/3RDBIN/plan_2 $INPUT_NET_FILE $NODE_FILE $LIB_FILE $DES_INFO_FILE \| tee  $placeDetailLogFileName >> $logFileName");
+system( "$env_proton_home/3RDBIN/plan_2 $INPUT_NET_FILE $NODE_FILE $LIB_FILE $DES_INFO_FILE \| tee  $placeDetailLogFileName >> $logFileName");
+}
+}#sub run_placer_detail
+
+
+sub set_node_no {
+
+  my %TEMP_LOC = ();
+  my $cnt = 0;
+print "INFO-UTS-SET_ND_NO : 001 : Setting node no of Ports\n";
+  foreach my $port ( keys %{$PORTS_ALREADY{$TOP_MODULE}} ) {
+    $TEMP_LOC{$port} = $cnt;
+    $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortSetNodeNum($cnt);
+    $cnt++;
+  }
+print "INFO-UTS-SET_ND_NO : 002 : Setting node no of Instance\n";
+  foreach my $inst (keys %{COMP_ALREADY} ) {
+    $TEMP_LOC{$inst} = $cnt; 
+    $CADB{$inst}->dbCadbSetNodeNum($cnt);
+    $cnt++;
+  }
+
+  foreach my $port ( keys %{$PORTS_ALREADY{$TOP_MODULE}} ) {
+    my $po = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetNodeNum;
+    #print "PORT $port : $po\n";
+  }
+  foreach my $inst (keys %{COMP_ALREADY} ) {
+    my $node = $CADB{$inst}->dbCadbGetNodeNum;
+    #print "NODE $inst : $node\n";
+  }
+}#sub Set_node_no
+
+
+
+sub set_cur_loc_to_orig_loc {
+
+  my %TEMP_LOC = ();
+  my $cnt = 0;
+print "INFO-UTS-SET_CUR_LOC_TO_ORG_LOC : 001 : setting current location of ports to original location\n";
+  foreach my $port ( keys %{$PORTS_ALREADY{$TOP_MODULE}} ) {
+    $TEMP_LOC{$port} = $cnt;
+    my @port_loc = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetLoc;
+    $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortSetorigLoc($port_loc[0], $port_loc[1]);
+    $cnt++;
+  }
+print "INFO-UTS-SET_CUR_LOC_TO_ORG_LOC : 002 : setting current location of instance to original location\n";
+  foreach my $inst (keys %{COMP_ALREADY} ) {
+    $TEMP_LOC{$inst} = $cnt; 
+    my @node_loc = $CADB{$inst}->dbCadbGetLoc;
+    $CADB{$inst}->dbCadbSetorigLoc($node_loc[0],$node_loc[1]);
+    $cnt++;
+  }
+print "INFO-UTS-SET_CUR_LOC_TO_ORG_LOC : 003 : location set for ports and instance\n";
+
+  foreach my $port ( keys %{$PORTS_ALREADY{$TOP_MODULE}} ) {
+    my @p_loc = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetorigLoc;
+    #print "PORT $port : @p_loc\n";
+  }
+  foreach my $inst (keys %{COMP_ALREADY} ) {
+    my @n_loc = $CADB{$inst}->dbCadbGetorigLoc;
+    #print "NODE $inst : @n_loc\n";
+  }
+}#sub set_cur_loc_to_orig_loc
+
+sub node_displacement {
+
+  my %TEMP_LOC = ();
+  my $cnt = 0;
+  my @org_port_loc = ();
+  my @new_port_loc = ();
+  my @org_inst_loc = ();
+  my @new_inst_loc = ();
+  my $total_dis_portX;
+  my $total_dis_portY;
+  my $total_dis_instX;
+  my $total_dis_instY;
+  open(WRITE_DISP_INFO,">y_disp_file");
+  print "INFO-UTS-ND_DIS : 001 : Start finding displacement for ports and instances\n";
+  foreach my $port ( keys %{$PORTS_ALREADY{$TOP_MODULE}} ) {
+    $TEMP_LOC{$port} = $cnt;
+    @org_port_loc = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetorigLoc;
+    @new_port_loc = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetLoc;
+    my $dis_portX1 = $new_port_loc[0] - $org_port_loc[0];
+    my $dis_portY1 = $new_port_loc[1] - $org_port_loc[1];
+    $total_dis_portX += abs $dis_portX1;
+    $total_dis_portY += abs $dis_portY1;
+    $cnt++;
+  }
+  my $port_cnt = $cnt; 
+  my $imax = -1;
+  my $instance;
+  my $nodeNo;
+  foreach my $inst (keys %{COMP_ALREADY} ) {
+    #my $inst = u1669;
+    $TEMP_LOC{$inst} = $cnt; 
+    @org_inst_loc = $CADB{$inst}->dbCadbGetorigLoc;
+    @new_inst_loc = $CADB{$inst}->dbCadbGetLoc;
+    my $dis_instX1 = $new_inst_loc[0] - $org_inst_loc[0];
+    my $dis_instY1 = $new_inst_loc[1] - $org_inst_loc[1];
+    my $tempYDisp = abs($dis_instY1/2000) ;
+    print WRITE_DISP_INFO "Node=$cnt displacement=$tempYDisp \n";
+    my $total = abs ($dis_instX1 / (2000))  + abs ($dis_instY1 / (2000));
+    if ($total > $imax) {
+      $imax = $total;
+      $instance = $inst;
+      $nodeNo = $CADB{$inst}->dbCadbGetNodeNum; 
+    }
+    $total_dis_instX += abs ($dis_instX1 / (2000));
+    $total_dis_instY += abs ($dis_instY1 / (2000));
+    $cnt++;
+  }
+  my $max = $imax;
+  print "INFO-UTS-ND_DIS : 002 : max dis is $max : Instance is $instance : Node is $nodeNo\n";
+  my $total_cnt = $cnt;
+  my $inst_cnt = $total_cnt - $port_cnt;
+  my $a_i_x_d = $total_dis_instX;# / (2000);
+  my $a_i_y_d = $total_dis_instY;# / (2000);
+  my $avg = ($a_i_x_d + $a_i_y_d) / $inst_cnt;
+  my $tt = $a_i_x_d + $a_i_y_d;
+  print "INFO-UTS-ND_DIS : 003 : Total is for instances : $tt\n";
+  print "INFO-UTS-ND_DIS : 004 : avg displacement for instances is : $avg\n";
+ close(WRITE_DISP_INFO);
+}#sub node_displacement
+
+sub displacement_distribution {
+my $noOfArguments = @_;
+my $noOfSteps = 10;
+for(my $i=0; $i<$noOfArguments; $i++){
+    if($_[$i] eq "-steps"){$noOfSteps = $_[$i+1];}
+}
+  my @INST_DISPLACEMENT = ();
+  foreach my $inst (keys %{COMP_ALREADY} ) {
+#print "inst $inst\n";
+    my @org_inst_loc = $CADB{$inst}->dbCadbGetorigLoc;
+    my @new_inst_loc = $CADB{$inst}->dbCadbGetLoc;
+#print "org @org_inst_loc, new @new_inst_loc\n";
+    my $dis_instX = $new_inst_loc[0] - $org_inst_loc[0];
+    my $dis_instY = $new_inst_loc[1] - $org_inst_loc[1];
+    my $total = abs ($dis_instX / (2000))  + abs ($dis_instY / (2000));
+#print "total length is $total\n";
+    push(@INST_DISPLACEMENT, $total);
+  }
+@INST_DISPLACEMENT = sort{$a<=>$b}@INST_DISPLACEMENT;
+my $MinDis = $INST_DISPLACEMENT[0];
+my $MaxDis = $INST_DISPLACEMENT[-1];
+#print " $MinDis,$MaxDis,$noOfSteps\n";
+my $stepSize = ($MaxDis - $MinDis)/$noOfSteps;
+#print " step $stepSize\n";
+my @distributedDis = ();
+ foreach(@INST_DISPLACEMENT){
+        my $index = int (($_ - $MinDis)/$stepSize) ;
+           $distributedDis[$index] += 1 ;
+ }
+print "DISPLACEMENT RANGE:         NO OF INSTANCES:\n";
+ for(my $i=0; $i<$noOfSteps; $i++){
+     my $Lrange = $MinDis + $i*$stepSize;  
+     my $Urange = $MinDis + ($i+1)*$stepSize;  
+ print "$Lrange - $Urange            $distributedDis[$i]\n";
+ }
+
+}#sub displacement_distribution
+
+
+#---------------- write the design info file-------------------#
+sub write_design_info_file {
+  if( $_[0] eq '-h') { 
+    print "Usage : write_design_info_file [-output <output design info file>] [--overwrite] \n";
+    print "                  note : by default it will be written in \"desinfofile\" \n";
+    return ;
+  }
+  my $DES_INFO_FILE = "desinfofile";
+  my $OVERWRITE = 1 ;
+  my $noOfArguments = @_;
+  for(my $i = 0; $i < $noOfArguments; $i++){
+    if($_[$i] eq "-output"){$DES_INFO_FILE = $_[$i+1];}
+    if($_[$i] eq "--overwrite"){$OVERWRITE = 1;}
+  }
+  
+  if ( -e $DES_INFO_FILE ) {
+    if ( $OVERWRITE == 1 ) { 
+      if (!(-w $DES_INFO_FILE)) {
+        print "ERR-UTS-WR_DES_INFO_FILE : 001 : $DES_INFO_FILE is not writable. Please change the output/permission of the file and try again\n";
+        return;
+      }# if file is not writable
+      #print "WARN : $DES_INFO_FILE exists, overwriting existing file as instructed\n";
+      #?if (!(-w $DES_INFO_FILE)) {
+      #?  print "ERROR : $DES_INFO_FILE is not writable. Please change the output/permission of the file and try again\n";
+      #?  return;
+      #?}
+    } else {
+      print "ERR-UTS-WR_DES_INFO_FILE : 002 : $DES_INFO_FILE exists, Please change the output file name or remove the existing file and try again\n";
+      return;
+    }
+  }
+  
+  open(WRITE_DES_INFO,">$DES_INFO_FILE");
+  if(WRITE_DES_INFO) {
+  $spacing = 0.00;
+  #$spacing = $GLOBAL->dbfGlobalGetDesSpacing;
+  print WRITE_DES_INFO "SPACING $spacing\n";
+  $gridsize = 0 ;
+  #$gridsize = $GLOBAL->dbfGlobalGetGridSize;
+  print WRITE_DES_INFO "GRIDSIZE $gridsize\n";
+  $maxFilledPercent = 100 ;
+  #$maxFilledPercent = $GLOBAL->dbfGlobalGetMaxFilledPercent;
+  print WRITE_DES_INFO "MAXFP $maxFilledPercent\n";
+  my @size = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetSize ;
+  my $dbu = $GLOBAL->dbfGlobalGetDBU;
+  my $x = $size[0]/$dbu;
+  my $y = $size[1]/$dbu;
+  my $z = $size[2]/$dbu;
+  my $p = $size[3]/$dbu;
+  print WRITE_DES_INFO "BBOX $x $y $z $p\n";
+  my $rowHeight = $GLOBAL->dbGlobalGetRowHeight;
+  print WRITE_DES_INFO "ROWHEIGHT $rowHeight\n";
+  my @rows = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetRows;
+  my $row_count = @rows ;
+  print WRITE_DES_INFO "ROW  $row_count\n";
+  #?my $orient ;
+  foreach my $row ( @rows ) {
+    	my ($x,$y,$orient) = (split(/\s+/, $row))[2,3,4];
+        $x = $x/$dbu;
+        $y = $y/$dbu;
+        print WRITE_DES_INFO "$x $y $orient\n";
+  }
+  my $component_count = keys %COMP_ALREADY;
+  print WRITE_DES_INFO "COMPONENT $component_count \n";
+  foreach ( keys %COMP_ALREADY ) {
+    print WRITE_DES_INFO "$TEMP{$_} ";
+    my $orient = $CADB{$_}->dbCadbGetOrient;
+    print WRITE_DES_INFO "$orient\n";
+ }
+ my @new_rows = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetRows;
+ my $tag = $new_rows[0];
+ my $x_gridsize = (split(/\s+/, $tag))[7];
+ $x_gridsize = $x_gridsize/$dbu;
+ print WRITE_DES_INFO "X_GRIDSIZE $x_gridsize\n";
+ my $tempMapSeed = $GLOBAL->dbfGlobalGetMapSeed ;
+ print WRITE_DES_INFO "MAP_SEED $tempMapSeed\n";
+ my $x_align = $GLOBAL->dbfGlobalGetAlignX;
+ print WRITE_DES_INFO "ALIGN_X $x_align\n";
+ print
+ close(WRITE_DES_INFO);
+ }else{
+    print "ERR-UTS-WR_DES_INFO_FILE : 003 : Output file $DES_INFO_FILE cannot be written to\n";
+    return;
+ }
+}#sub write_design_info_file
+#---------------- end write the desig info file-------------------#
+#-------------------------------------------------------------------------------------------------------------------------------#
+#--------------------------------------------------------------------------------------------#
+sub read_graph_store_map{
+$DEBUG = 31;
+my $INPUT_GRAPH = "xy.out";
+if ( -e $INPUT_GRAPH){
+open(READ,"$INPUT_GRAPH");
+print "INFO-UTS-RD_GRPH_STR_MAP : 001 : Reading the graph for $INPUT_GRAPH\n";
+#print "Existing Die size are : @{$DIE_ALREADY{dieArea}} \n";
+
+##########Scaling to values to the die size##########
+$line1 = <READ>;
+($llx,$lly) = (split(/\s+/, $line1))[0,1];
+$absllx = abs($llx);
+$abslly = abs($lly);
+
+$line2 = <READ>;
+($urx,$ury) = (split(/\s+/, $line2))[0,1];
+#print "$line1 : $llx and $lly and $absllx and $abslly\n";
+$newurx = $urx + $absllx;
+$newury = $ury + $abslly;
+#print "$line2 : $urx and $ury and $newurx and $newury\n";
+
+$scalex = $DIE_ALREADY{dieArea}[2]/(2000*$newurx);
+$scaley = $DIE_ALREADY{dieArea}[3]/(2000*$newury);
+#print "Scalex : $scalex and Scaley : $scaley \n";
+
+while(<READ>) {
+chomp();
+($node,$x,$y) = (split(/\s+/, $_))[0,1,2];
+$x = ($x+$absllx)*2000*$scalex;
+$y = ($y+$abslly)*2000*$scaley;
+$x = int($x);
+$y = int($y);
+
+#print "$x and $y \n";
+$Sfound = 0;
+$Tfound = 0;
+if (exists $STEMPR{$node} ){ $Sfound = 1; $instance = $STEMPR{$node}; }
+if($Sfound == 1) {
+                if ( exists $CADB{$instance} ) {
+      $CADB{$instance}->dbCadbSetLoc($x,$y);
+      $CADB{$instance}->dbCadbSetStatus(PLACED);
+      $CADB{$instance}->dbCadbSetOrient(N);
+                                                }
+                elsif ( exists $PORTS_ALREADY{$TOP_MODULE}{$instance} ) {
+      $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetLoc($x,$y);
+      $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetSide($side);
+      $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetStatus(PLACED);
+                                                }
+                else { print "ERR-UTS-RD_GRPH_STR_MAP : 002 : $instance is neither a port nor a component\n"; }
+                                            }#if stempr
+if(exists $TEMPR{$node} ) { $Tfound = 1; $instance = $TEMPR{$node};}
+if($Tfound == 1) {
+                if (exists $CADB{$instance} ) {
+      $CADB{$instance}->dbCadbSetLoc($x,$y);
+      $CADB{$instance}->dbCadbSetStatus(PLACED);
+      $CADB{$instance}->dbCadbSetOrient(N);
+                                               }
+                elsif ( exists $PORTS_ALREADY{$TOP_MODULE}{$instance} ) {
+      $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetLoc($x,$y);
+      $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetSide($side);
+      $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetStatus(PLACED);
+                                               }
+                else { print "ERR-UTS-RD_GRPH_STR_MAP : 003 : $instance is neither a port nor a component\n"; }
+                                            }# if tempr
+else { print "ERR-UTS-RD_GRPH_STR_MAP : 004 : node $node not found\n"; }
+                     }#while       
+}#end if
+else {
+print "ERR-UTS-RD_GRPH_STR_MAP : 005 : No xy.out file found\n";
+}
+close($INPUT_GRAPH);
+&set_inst_box;
+}#sub read_graph_store_map
+#-------------------------------------------------------------------------------------------------------------#
+sub read_graph_detail_store_map {
+$DEBUG = 31;
+my $INPUT_GRAPH = "detailed_xy.out";
+if ( -e $INPUT_GRAPH) {
+open(READ,"$INPUT_GRAPH");
+print "INFO-UTS : 001 : Reading the graph for $INPUT_GRAPH\n";
+#print "Existing Die size are : @{$DIE_ALREADY{dieArea}} \n";
+
+##########Scaling to values to the die size##########
+$line1 = <READ>;
+($llx,$lly) = (split(/\s+/,$line1))[0,1];
+$absllx = abs($llx);
+$abslly = abs($lly);
+
+$line2 = <READ>;
+($urx,$ury) = (split(/\s+/,$line2))[0,1];
+#print "$line1 : $llx and $lly and $absllx and $abslly\n";
+$newurx = $urx + $absllx;
+$newury = $ury + $abslly;
+#print "$line2 : $urx and $ury and $newurx and $newury\n";
+
+$scalex = $DIE_ALREADY{dieArea}[2]/(2000*$newurx);
+$scaley = $DIE_ALREADY{dieArea}[3]/(2000*$newury);
+#print "Scalex : $scalex and Scaley : $scaley \n"
+
+while(<READ>) {
+chomp();
+($node,$x,$y) = (split(/\s+/, $_))[0,1,2];
+$x = ($x+$absllx)*2000*$scalex;
+$y = ($y+$abslly)*2000*$scaley;
+$x = int($x);
+$y = int($y);
+
+#print "$x and $y\n";
+$Sfound = 0;
+$Tfound = 0;
+if(exists $STEMPR{$node} ){$Sfound = 1; $instance = $STEMPR{$node};}
+if($Sfound == 1){
+                if ( exists $CADB{$instance} ) {
+        $CADB{$instance}->dbCadbSetLoc($x,$y);
+        $CADB{$instance}->dbCadbSetStatus(PLACED);
+        $CADB{$instance}->dbCadbSetOrient(N);
+                                                }
+                elsif ( exists $PORTS_ALREADY{$TOP_MODULE}{$instance} ){
+        $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetLoc($x,$y);
+        $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetSide($side);
+        $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetStatus(PLACED);
+                                                }
+                else { print "ERR-UTS : 002 : $instance is neither a port nor a component\n";}
+                                               }#if stempr
+if(exists $TEMPR{$node} ) {$Tfound = 1; $instance = $TEMPR{$node};}
+if($Tfound == 1){
+                if (exists $CADB{$instance}){
+       $CADB{$instance}->dbCadbSetLoc($x,$y);
+       $CADB{$instance}->dbCadbSetStatus(PLACED);
+       $CADB{$instance}->dbCadbSetOrient(N);
+                                            }
+                elsif ( exists $PORTS_ALREADY{$TOP_MODULE}{$instance}){
+       $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetLoc($x,$y);
+       $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetSide($side);
+       $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetStatus(PLACED);
+                                            }
+                else { print "ERR-UTS : 003 : $instance is neither a port nor a component\n";}
+                                            }#if tempr
+else {print "ERR-UTS : 004 : node $node not found\n";}
+                             }#while
+}#end if
+else {
+print "ERR-UTS : 005 : No detailed_xy.out file found\n";
+}
+close($INPUT_GRAPH);
+&set_inst_box;
+}#sub read_graph_detail_store_map
+#---------------------------------------------------------------------------------------------------------------------------------#
+#---------------------------------------------------------------------------------------------------------------------------#
+sub read_graph_node {
+my %INST_MAPR = ();
+$DEBUG = 31;
+my $INPUT_GRAPH = "xy.out";
+my $cnt = 0;
+foreach $port (keys %{$PORTS_ALREADY{$TOP_MODULE}} ){
+        $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortSetNodeNum($cnt);
+        $port_node = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetNodeNum;
+        $INST_MAPR{$port_node} = $port;
+        $cnt++;
+                                                    }#foreach port
+foreach $inst (keys %{COMP_ALREADY}){
+        $CADB{$inst}->dbCadbSetNodeNum($cnt);
+        $inst_node = $CADB{$inst}->dbCadbGetNodeNum;
+        $INST_MAPR{$inst_node} = $inst;
+        $cnt++;
+                                    }#foreach inst
+if ( -e $INPUT_GRAPH){
+open(READ,"$INPUT_GRAPH");
+print "INFO-UTS-RD_GRPH_ND : 001 : Reading the graph for $INPUT_GRAPH\n";
+#print "Existing Die size are : @{$DIE_ALREADY{dieArea}} \n";
+
+##########Scaling to values to the die size##########
+$line1 = <READ>;
+($llx,$lly)  = (split(/\s+/,$line1))[0,1];
+$absllx = abs($llx);
+$abslly = abs($lly);
+
+$line2 = <READ>;
+($urx,$ury) = (split(/\s+/,$line2))[0,1];
+#print "$line1 : $llx and $lly and $absllx and $abslly\n";
+$newurx = $urx + $absllx;
+$newury = $ury + $abslly;
+#print "$line2 : $urx and $ury and $newurx and $newury\n";
+
+$scalex = $DIE_ALREADY{dieArea}[2]/(2000*$newurx);
+$scaley = $DIE_ALREADY{dieArea}[3]/(2000*$newury);
+#print "Scalex : $scalex and Scaley : $scaley \n";
+
+while(<READ>){
+chomp();
+($node,$x,$y) = (split(/\s+/,$_))[0,1,2];
+$x = ($x+$absllx)*2000*$scalex;
+$y = ($y+$abslly)*2000*$scaley;
+$x = int($x);
+$y = int($y);
+
+#print "$x and $y \n";
+$Ifound = 0;
+if(exists $INST_MAPR{$node}){ $Ifound = 1; $instance = $INST_MAPR{$node};print "INFO-UTS-RD_GRPH_ND : 002 : $instance $node\n";}
+if($Ifound == 1){
+                if ( exists $CADB{$instance}){
+       $CADB{$instance}->dbCadbSetLoc($x,$y);
+       $CADB{$instance}->dbCadbSetStatus(PLACED);
+       $CADB{$instance}->dbCadbSetOrient(N);
+                                             }
+                elsif ( exists $PORTS_ALREADY{$TOP_MODULE}{$instance}){
+       $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetLoc($x,$y);
+       $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetSide($side);
+       $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetStatus(PLACED);
+                                              }
+                else { print "ERR-UTS-RD_GRPH_ND : 003 : $instance is neither a port nor a component\n";}
+                                               }#if found
+else { print "ERR-UTS-RD_GRPH_ND : 004 : node $node not found\n"; }
+                     }#while
+}#end if
+else{
+print "ERR-UTS-RD_GRPH_ND : 005 : No xy.out file found\n";
+}
+close($INPUT_GRAPH);
+&set_inst_box;
+}#sub read_graph_node
+#--------------------------------------------------------------------------------------------------------------#
+sub read_graph_detail_node {
+my %INST_MAPR = ();
+$DEBUG = 31;
+my $INPUT_GRAPH = "detailed_xy.out";
+my $cnt = 0;
+foreach $port (keys %{$PORTS_ALREADY{$TOP_MODULE}}){
+        $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortSetNodeNum($cnt);
+        $port_node = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetNodeNum;
+        $INST_MAPR{$port_node} = $port;
+        $cnt++;
+                                                    }#foreach port
+foreach $inst (keys %{COMP_ALREADY}){
+        $CADB{$inst}->dbCadbSetNodeNum($cnt);
+        $inst_node = $CADB{$inst}->dbCadbGetNodeNum;
+        $INST_MAPR{$inst_node} = $inst;
+        $cnt++;
+                                    }#foreach inst
+if ( -e $INPUT_GRAPH){
+open(READ,"$INPUT_GRAPH");
+print "INFO-UTS-RD_GRPH_DTL_ND : 001 : Reading the graph for $INPUT_GRAPH\n";
+#print "Existing Die size are : @{$DIE_ALREADY{dieArea}} \n";
+
+#############Scaling to values to the die size###########
+$line1 = <READ>;
+($llx,$lly) = (split(/\s+/,$line1))[0,1];
+$absllx = abs($llx);
+$abslly = abs($lly);
+
+$line2 = <READ>;
+($urx,$ury) = (split(/\s+/,$line2))[0,1];
+#print "$line1 : $llx and $lly and $absllx and $abslly\n";
+$newurx = $urx + $absllx;
+$newury = $ury + $abslly;
+#print "$line2 : $urx and $ury and $newurx and $newury\n";
+
+$scalex = $DIE_ALREADY{dieArea}[2]/(2000*$newurx);
+$scaley = $DIE_ALREADY{dieArea}[3]/(2000*$newury);
+#print "Scalex : $scalex and Scaley : $scaley \n";
+
+while(<READ>){
+chomp();
+($node,$x,$y) = (split(/\s+/,$_))[0,1,2];
+$x = ($x+$absllx)*2000*$scalex;
+$y = ($y+$abslly)*2000*$scaley;
+$x = int($x);
+$y = int($y);
+
+#print "$x and $y \n";
+$Ifound = 0;
+if(exists $INST_MAPR{$node}){$Ifound = 1; $instance = $INST_MAPR{$node};}
+if($Ifound == 1){
+                if ( exists $CADB{$instance}){
+         $CADB{$instance}->dbCadbSetLoc($x,$y);
+         $CADB{$instance}->dbCadbSetStatus(PLACED);
+         $CADB{$instance}->dbCadbSetOrient(N);
+                                             }
+                elsif ( exists $PORTS_ALREADY{$TOP_MODULE}{$instance}){
+         $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetLoc($x,$y); 
+         $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetSide($side);
+         $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetStatus(PLACED);
+                                                                       }
+                else { print "ERR-UTS-RD_GRPH_DTL_ND : 002 : $instance is neither a port nor a component\n";}
+                                                                }#if found
+else { print "ERR-UTS-RD_GRPH_DTL_ND : 003 : node $node not found\n";}
+                              }#while
+}#end if
+else{
+print "ERR-UTS-RD_GRPH_DTL_ND : 004 : No detailed_xy.out file found\n";
+}
+close($INPUT_GRAPH);
+&set_inst_box;
+}#sub read_graph_detail_node
+#------------------------------------------------------------------------------------------------------------------------#
+sub write_xy_out {
+  if( $_[0] eq '-h') { 
+    print "Usage : write_xy_out [ -output <output node location file> ] [--normalized] [--overwrite] \n";
+    print "                  note : by default <output node location file> will be new_xy.out\n";
+    return ;
+  }
+  my $OPLocationFile = "new_xy.out";
+  my $is_normalized = 0 ;
+  my $noOfArguments = @_;
+  for(my $i = 0; $i < $noOfArguments; $i++){
+    if($_[$i] eq "-output"){$OPLocationFile = $_[$i+1];}
+    if($_[$i] eq "--overwrite"){$OVERWRITE = 1;}
+    if($_[$i] eq "--normalized"){$is_normalized = 1;}
+  }
+  if ( -e $OPLocationFile ) {
+    if ( $OVERWRITE == 1 ) {
+      if (!(-w $OPLocationFile)) {
+        print "ERR-UTS-WR_XY_OUT : 001 : $OPLocationFile is not writable. Please change the output/permission of the file and try again\n";
+        return;
+      }
+      print "WARN-UTS-WR_XY_OUT : 002 : $OPLocationFile exists, overwriting existing file as instructed\n";
+    } else {
+      print "ERR-UTS-WR_XY_OUT : 003 : $OPLocationFile exists, Please change the output file name or remove the existing file and try again\n";
+      return;
+    }
+  }
+  print "MSG-UTS-WR_XY_OUT : 004 : Note : Writing locations of IO and components in the file $OPLocationFile\n";
+  open(WRITE,">$OPLocationFile");
+  my $dbu = $GLOBAL->dbfGlobalGetDBU;
+  if ( exists $DIE_ALREADY{dieArea} ) {
+  $guiDiellx = $DIE_ALREADY{dieArea}[0];
+  $guiDielly = $DIE_ALREADY{dieArea}[1];
+  $guiDieurx = $DIE_ALREADY{dieArea}[2];
+  $guiDieury = $DIE_ALREADY{dieArea}[3];
+  
+  $llx = "-10.000000";
+  $lly = "-10.000000";
+
+  if($is_normalized ==1) {
+  $llx = -1.000000;
+  $lly = -1.000000;
+  }
+  
+  $absllx = abs($llx);
+  $abslly = abs($lly);
+  
+  $urx = "10.000000";
+  $ury = "10.000000";
+
+  if($is_normalized ==1) {
+  $urx = 1.000000;
+  $ury = 1.000000;
+  }
+  
+  $newurx = $urx + $absllx;
+  $newury = $ury + $abslly;
+   
+  print WRITE "$llx $lly\n";
+  print WRITE "$urx  $ury\n";
+  
+  foreach $port (keys %{$PORTS_ALREADY{$TOP_MODULE}}){
+      my $port_node = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetNodeNum;
+      my @port_loc = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetLoc;
+      my $portloc_X = $port_loc[0];
+      my $portloc_Y = $port_loc[1];
+      my $port_loc_X = $portloc_X/$guiDieurx;
+      my $port_loc_Y = $portloc_Y/$guiDieury;
+      my $location_X = $port_loc_X*$newurx;
+      my $location_Y = $port_loc_Y*$newury;
+      my $new_loc_X =  sprintf("%.10f",$llx + $location_X);
+      my $new_loc_Y =  sprintf("%.10f",$lly + $location_Y);
+      print WRITE "$port_node $new_loc_X $new_loc_Y\n";
+                                     }#foreach port
+  foreach $inst (keys %COMP_ALREADY){
+      my $node = $CADB{$inst}->dbCadbGetNodeNum;
+      my @instloc = $CADB{$inst}->dbCadbGetLoc;
+      my $instloc_X = $instloc[0];
+      my $instloc_Y = $instloc[1];
+      my $inst_loc_X = $instloc_X/$guiDieurx;
+      my $inst_loc_Y = $instloc_Y/$guiDieury;
+      my $loc_X = $inst_loc_X * $newurx;
+      my $loc_Y = $inst_loc_Y * $newury;
+      my $new_inst_loc_X = sprintf("%.10f",$llx + $loc_X);
+      my $new_inst_loc_Y = sprintf("%.10f",$llx + $loc_Y);
+      print WRITE"$node $new_inst_loc_X $new_inst_loc_Y\n";
+                                     }#foreach inst
+  }#if exists die already
+}#sub write_xy_out        
+
+#------------------------------------------------------------------------------------------------------------------------#
+# Added this code to read the xy.out from plan_1 and perform row identification as well as match it with the design rows #
+#------------------------------------------------------------------------------------------------------------------------#
+
+sub read_plan1_results {
+$DEBUG = 31;
+my $INPUT_GRAPH = "xy.out";
+if ( -e $INPUT_GRAPH) {
+open(READ,"$INPUT_GRAPH");
+print "INFO-UTS : 001 : Reading the graph for $INPUT_GRAPH\n";
+#print "Existing Die size are : @{$DIE_ALREADY{dieArea}} \n";
+
+##########Scaling to values to the die size##########
+$line1 = <READ>;
+($llx,$lly) = (split(/\s+/, $line1))[0,1];
+$absllx = abs($llx);
+$abslly = abs($lly);
+
+$line2 = <READ>;
+($urx,$ury) = (split(/\s+/, $line2))[0,1];
+#print "$line1 : $llx and $lly and $absllx and $abslly\n";
+$newurx = $urx + $absllx;
+$newury = $ury + $abslly;
+#print "$line2 : $urx and $ury and $newurx and $newury\n";
+
+$scalex = $DIE_ALREADY{dieArea}[2]/($newurx);
+$scaley = $DIE_ALREADY{dieArea}[3]/($newury);
+#print "Scalex : $scalex and Scaley : $scaley \n";
+#------------------- setting the defaults ------------------#
+$unmatchnode = 0;
+my %uniqRowsAndNodes = ();
+
+while(<READ>) {
+chomp();
+($node,$x,$y) = (split(/\s+/, $_))[0,1,2];
+$x = ($x+$absllx)*$scalex;
+$y = ($y+$abslly)*$scaley;
+
+#print "$x and $y\n";
+if ( exists $uniqRowsAndNodes{$y} ) { $uniqRowsAndNodes{$y}++ ; } else { $uniqRowsAndNodes{$y} = 1};
+$found = 0;
+#foreach $inst ( keys %TEMP ) { if ( $node == $TEMP{$inst} ) { $found = 1; $instance = $inst } }
+if ( exists $TEMPR{$node} ) { $found = 1; $instance = $TEMPR{$node}; } else { $found = 0;}
+if($found == 1 ) { 
+                if ( exists $CADB{$instance} ) {
+     $CADB{$instance}->dbCadbSetLoc($x,$y);
+     $CADB{$instance}->dbCadbSetStatus(PLACED);
+     $CADB{$instance}->dbCadbSetOrient(N);
+                                               } 
+                elsif ( exists $PORTS_ALREADY{$TOP_MODULE}{$instance} ) {
+     $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetLoc($x,$y);
+     $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetSide($side);
+     $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetStatus(PLACED);
+                                               }
+                else { print "ERR-UTS : 002 : $instance is neither a port nor a component\n"; }
+
+                 }
+else { print "ERR-UTS : 003 : node $node not found\n"; $unmatchnode++; }
+              }#while
+
+print "ERR-UTS : 004 : There were $unmatchnode nodes in the results that did not match with database\n" if ($unmatchnode > 0);
+print "INFO-UTS : 005 : finished reading the global placement results ...\n";
+my $len = keys %uniqRowsAndNodes; 
+print "INFO-UTS : 006 : identified $len rows from the results file\n";
+#------------------------------------------------ row identification ----------------------------#
+# if row number matches 
+my @plan1_rows = ();
+foreach my $l ( keys %uniqRowsAndNodes ) { 
+                                         #print "$l : $uniqRowsAndNodes{$l}\n"; 
+                                         push(@plan1_rows,$l);
+                                         }
+@plan1_rows = sort {$a <=> $b} @plan1_rows;
+my %newRows = ();
+my @defRows = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetRows;
+my @realRows = ();
+foreach my $l ( @defRows ) {
+              my $ycord = (split(/\s+/,$l))[3];
+              push(@realRows,$ycord);
+                           }
+my $cnt = 0;
+foreach my $l ( @plan1_rows ) { 
+                        print "INFO-UTS : 007 : $l : $uniqRowsAndNodes{$l} : $realRows[$cnt]\n"; 
+                        $newRows{$l} = $realRows[$cnt];
+                        $cnt++;
+                        }
+#--------------------------------- updating Y location of each instance to match the row ---------------------#
+foreach $instance ( keys %{CADB} ) {
+     my @loc = $CADB{$instance}->dbCadbGetLoc;
+        my $X = $loc[0];
+        my $Y = $loc[1];
+        if ( exists $newRows{$loc[1]}) { $Y = $newRows{$loc[1]}; }
+        $CADB{$instance}->dbCadbSetLoc($X,$Y);
+                               }
+
+}#end if the xy.out file exists
+else {
+print "ERR-UTS : 008 : No xy.out file found \n";
+}
+print "INFO-UTS : 009 : updating the instance with instance-box\n";
+close($INPUT_GRAPH);
+&set_inst_box;
+}#sub read_plan1_results
+#------------------------------------------------------------------------------------------------------------------------------------------#
+sub write_graph_plan_3 {
+print "INFO-UTS-WR_GRPH_PLN_3 : 001 : Writing the graph file of the design in ${TOP_MODULE}_pin_offset\.txt\n";
+open(WRITE,">${TOP_MODULE}_pin_offset.txt");
+#print WRITE "#GRAPH FILE written from proton version-$TOOL_VERSION\n";
+%TEMP=();
+%PIN = ();
+#%PIN_NODE = ();
+my $cnt = 0;
+foreach my $port (keys %{$PORTS_ALREADY{$TOP_MODULE}}){
+        $TEMP{$port} = $cnt;
+        $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortSetNodeNum($cnt);
+        $cnt++;
+                                                      }
+my %cells = ();
+my $cellcnt = 1;
+open(WRITE_NODE,">nodefile");
+my @size = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetSize;
+my $dbu = $GLOBAL->dbfGlobalGetDBU;
+#print "$size[0] , $size[1], $size[2], $size[3]\n";
+my $x = $size[0]/$dbu;
+my $y = $size[1]/$dbu;
+my $z = $size[2]/$dbu;
+my $p = $size[3]/$dbu;
+## ---------- fix for issue  MANTIS 0000182 --------##
+## ---- identigy registers in the node file --------##
+
+my @rows = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetRows;
+my $row_count = @rows;
+my $net ;
+print WRITE_NODE "$row_count\n";
+print WRITE_NODE "$x $y\n";
+print WRITE_NODE "$z $p\n";
+foreach my $inst (keys %{COMP_ALREADY}){
+           $TEMP{$inst} = $cnt;
+           $CADB{$inst}->dbCadbSetNodeNum($cnt);
+#        print "NODE $inst : $node\n";
+        my $cellref = $CADB{$inst}->dbCadbGetCellref;
+           if( $cellref eq apdp_96wx96bwm){print "INFO-UTS-WR_GRPH_PLN_3 : 002 : macro ixc $cnt\n";}
+            #my $cellType = 0;
+           if ( exists $cells{$cellref} ){
+             my $num = $cells{$cellref};
+#------------ fix for issue  MANTIS 0000182 --------#
+             #if ( $cellType == 1){$num = $num + 1000;}
+                                       print WRITE_NODE "$cnt \ $num\n";
+                                        }
+             else {
+                    $cells{$cellref} = $cellcnt;
+#------------ fix for issue  MANTIS 0000182 --------#
+                  my $num = $cells{$cellref};
+                  #if( $cellType == 1){$num = $num + 1000;}
+                  print WRITE_NODE "$cnt \ $num\n";
+                  $cellcnt++;
+                  }
+             $cnt++;
+                                }#foreach instance in comp already
+close(WRITE_NODE);
+#---------------- write the library file-------------------#
+open(WRITE_LIB,">libfile_pin_offset");
+foreach my $cellName ( keys %cells ) {
+ my $pinc = 0;
+ my @pins = $PLDB{$cellName}->dbMdbGetPins;
+ foreach $pinName ( @pins ) {
+   my $type = $PLDB{$cellName}->dbMdbGetPinType($pinName);
+   #if ($type == 0) {
+     $pinc++;
+   #}
+ }
+     if ( exists $PLDB{$cellName} ) {
+       my @box = $PLDB{$cellName}->dbMdbGetSize;
+       print WRITE_LIB "$cells{$cellName} $box[0] $box[1] $pinc\n";
+       my $pincount = 0;
+       my @pins = $PLDB{$cellName}->dbMdbGetPins;
+       foreach $pinName ( @pins ) {
+         my $type = $PLDB{$cellName}->dbMdbGetPinType($pinName);
+         #if ($type == 0) {
+           $pincount++;
+           my @RECTS = $PLDB{$cellName}->dbMdbGetPinRect($pinName);
+           my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$RECTS[0]))[0,2,3,4,5];
+           my $mid_x = ($llx + $urx)/2;
+           my $mid_y = ($lly + $ury)/2;
+           print WRITE_LIB "\t$mid_x $mid_y\n";
+         #} 
+       }#foreach pin
+     }
+}#foreach cell
+close(WRITE_LIB);
+############################################################
+%TEMPR = ();
+foreach my $inst ( keys %TEMP ){
+        my $n = $TEMP{$inst};
+           $TEMPR{$n} = $inst;
+                               }#foreach inst
+############################################################
+foreach $net (keys %{NETS_ALREADY} ){
+    if (exists $NETS_ROUTING_ALREADY{$net}){
+        $use = $NETS_ROUTING_ALREADY{$net}->dbNetGetType;
+        if($use eq "POWER"){next;}
+        if($use eq "GROUND"){next;}
+        }#if routing exists already
+    print "DBG-UTS-WR_GRPH_PLN_3 : 003 : $net\n" if ( $DEBUG == 500 );
+    if ( $net eq "clk"){ #print "$net $TEMP{$net}\n"; 
+                        next ;
+                       }
+    my @instList = ();
+       print "DBG-UTS-WR_GRPH_PLN_3 : 004 : array flushed out $len\n" if ( $DEBUG == 500 );
+    my $driverInst = &GetNetDriver_graph($net);
+       print "DBG-UTS-WR_GRPH_PLN_3 : 005 : net $net : driver : $driverInst\n" if ( $DEBUG == 500 );
+#### comment the 1 lines below to get the new graph ####
+#        $driverInst = "UND";                 
+    if ($driverInst eq "UND" ){ }
+    else {
+############################################################
+           my $pinName = $NETS_ALREADY{$net}{$driverInst};
+              if(exists $CADB{$driverInst}){
+           my $cellName = $CADB{$driverInst}->dbCadbGetCellref;
+              $pin_num = &get_inst_pins_offset($cellName,$pinName);
+              #$PIN_NODE{$driverInst} = $pinName;
+              $PIN{$driverInst} = $pin_num;
+              push(@instList,$driverInst);
+                                           }#if exists comp already
+              elsif ( exists $PORTS_ALREADY{$TOP_MODULE}{$driverInst}){
+                      push(@instList,$driverInst);
+                                              }#elsif exists in ports already
+              else {print "ERR-UTS-WR_GRPH_PLN_3 : 006 : $driverInst not found\n";}
+                                          }#else
+    foreach $inst (keys %{$NETS_ALREADY{$net}} ){
+            my $pinName = $NETS_ALREADY{$net}{$inst};
+             if($inst eq "PIN"){
+         $inst = $NETS_ALREADY{$net}{$inst};
+                        }#if inst eq PIN
+            if($inst eq $driverInst){ }
+             else{
+               if(exists $CADB{$inst}){
+            my $cellName = $CADB{$inst}->dbCadbGetCellref;
+               #$PIN_NODE{$inst} = $pinName;
+               $pin_num = &get_inst_pins_offset($cellName,$pinName);
+               $PIN{$inst} = $pin_num;
+               push(@instList,$inst);
+                                     }#if exists comp already
+               elsif (exists $PORTS_ALREADY{$TOP_MODULE}{$inst}){
+                   push(@instList,$inst);
+                                             }#elsif instance exists in ports already
+               else {print "ERR-UTS-WR_GRPH_PLN_3 : 007 : $inst not found\n";}
+                                       }#else
+                                    }#foreach instance connected to the net
+      $len = @instList;
+      if ($len > 2){
+          print WRITE "$len -1\n";
+          foreach $inst (@instList){
+             my $pin1 = -1;
+             if(exists $PIN{$inst}){
+               $pin1 = $PIN{$inst};
+             }
+              print WRITE "\t$TEMP{$inst} $pin1\n";
+                                   }#foreach inst                                
+                                }#if len greater than 2
+      elsif ($len == 2){
+             $inst1 = $instList[0];
+             $inst2 = $instList[1];
+             my $pin1 = -1;
+             my $pin2 = -1;
+             if(exists $PIN{$inst1}){
+               $pin1 = $PIN{$inst1};
+             }
+             if(exists $PIN{$inst2}){
+               $pin2 = $PIN{$inst2};
+             }
+             print WRITE "$TEMP{$inst1} $TEMP{$inst2} $pin1 $pin2";
+             print WRITE"\n";
+                             }#elsif
+                           }#foreach net
+close(WRITE);
+}#sub write_graph_plan_3
+#----------------------------------------------------------------------------------------------------------------------------------------------------#
+sub get_inst_pins_offset {
+my $cellref = $_[0];
+my $pin = $_[1];
+my $pincnt = 0;
+  if(exists $PLDB{$cellref}){
+     @pins = $PLDB{$cellref}->dbMdbGetPins;        
+    foreach $p (@pins){
+        if($p eq $pin){
+          return($pincnt);
+                      }
+           $pincnt++;
+                      }#foreach pin
+                            }#if exists cell
+   return -1 ;
+}#sub get_inst_pins_offset
+#-------------------------------------------------------------------------------------------------------------------------------------------------#
+sub set_option_desinfofile {
+    my $noOfArguments = @_;
+    if ($noOfArguments < 1 || $_[0] eq "-h"){print "Usage : set_option_desinfofile \n";
+                                             print "      : -spacing\n";
+                                             print "      : -maxFilledPercent\n"; 
+                                             print "      : --alignX\n";
+                                             }#if
+else{
+     $ALIGN = 0;
+     for (my $i = 0; $i<$noOfArguments; $i++){
+          if($_[$i] eq "-spacing"){$spacing = $_[$i+1];}     
+          if($_[$i] eq "-maxFilledPercent"){$max_filled_percent = $_[$i+1];}
+          if($_[$i] eq "--alignX"){$alignX = $_[$i+1];$ALIGN =1;}
+                                              }#for 
+my $DEFAULT_MAX_FILLED_PERCENT = 100;
+$DBSCALEFACTOR = $DEF_DATABASE_UNIT;
+
+$sp = $spacing/$DBSCALEFACTOR;
+$GLOBAL->dbfGlobalSetDesSpacing($sp);
+
+if($ALIGN == 1){$GLOBAL->dbfGlobalSetAlignX(1);}
+else {$GLOBAL->dbfGlobalSetAlignX(0);}
+
+if (exists $DIE_ALREADY{dieArea}){
+$gui_Diellx = $DIE_ALREADY{dieArea}[0];
+$gui_Dielly = $DIE_ALREADY{dieArea}[1];
+$gui_Dieurx = $DIE_ALREADY{dieArea}[2];
+$gui_Dieury = $DIE_ALREADY{dieArea}[3];
+
+$guiMu_Diellx = $gui_Diellx/$DBSCALEFACTOR;
+$guiMu_Dielly = $gui_Dielly/$DBSCALEFACTOR;
+$guiMu_Dieurx = $gui_Dieurx/$DBSCALEFACTOR;
+$guiMu_Dieury = $gui_Dieury/$DBSCALEFACTOR;
+
+$gui_Width = abs ($guiMu_Dieurx - $guiMu_Diellx);
+$gui_Height = abs ($guiMu_Dieury - $guiMu_Dielly);
+
+if ($gui_Width < $gui_Height){$gridsize = $gui_Width;}
+else { $gridsize = $gui_Height;}
+$GLOBAL->dbfGlobalSetGridSize($gridsize);
+}#if exists die area
+if ( $max_filled_percent <= $DEFAULT_MAX_FILLED_PERCENT){$max = $max_filled_percent;}
+else{$max = $DEFAULT_MAX_FILLED_PERCENT;print "WARN-UTS-SET_OPT_DESINFO_FILE : 001 : maxfilledPercent is not more than 100\n";}
+$GLOBAL->dbfGlobalSetMaxFilledPercent($max);
+}#else
+}#sub set_option_desinfofile
+
+sub run_plan_3 {
+$INPUT_NET_FILE = "${TOP_MODULE}_pin_offset.txt";
+$NODE_FILE = "nodefile";
+$LIB_FILE = "libfile_pin_offset";
+$DES_INFO_FILE = "desinfofile";
+
+  if( $_[0] eq '-h') { 
+    print "Usage : run_plan_3 [ <graph file> <node file> <library file> <design info file>] \n";
+    print "                  note : by default <graph file> will be $INPUT_NET_FILE\n";
+    print "                  note : by default <node file> will be $NODE_FILE\n";
+    print "                  note : by default <design info file> will be $DES_INFO_FILE\n";
+    return ;
+  }
+  my $noOfArguments = @_;
+  if($noOfArguments >= 1){
+     $INPUT_NET_FILE = $_[0]; 
+  }
+  if($noOfArguments >= 2){
+     $NODE_FILE = $_[1]; 
+  }
+  if($noOfArguments >= 3){
+     $LIB_FILE = $_[2]; 
+  }
+  if($noOfArguments >= 4){
+     $DES_INFO_FILE = $_[3]; 
+  }
+  if($noOfArguments > 4){
+    print "Usage : run_plan_3 [ <graph file> <node file> <library file> <design info file>] \n";
+    print "Info : ignoring argument after $_[4]\n";
+  }
+
+my $env_proton_home = $GLOBAL->dbfGlobalGetProtonHome;
+my $placeDetailLogFileName = "plan_3.log";
+if( $NOLOG != 1 ) {
+closeTee(*STDOUT);
+open (TEST, ">>$logFileName");
+my $ofh = select TEST;
+$| = 1;
+select $ofh;
+openTee(*STDOUT, *STDOUT, *TEST);
+}
+print "INFO-UTS-RUN_PLN_3 : 001 : Detail Placing the design $TOP_MODULE \n";
+if ( -e $INPUT_NET_FILE) {
+#system( "$env_eqator_home/3RDBIN/plan_3 $INPUT_NET_FILE $NODE_FILE \| tee  $placeDetailLogFileName >> $logFileName");
+system( "$env_proton_home/3RDBIN/plan_3 $INPUT_NET_FILE $NODE_FILE $LIB_FILE $DES_INFO_FILE \| tee  $placeDetailLogFileName >> $logFileName");
+}
+}#sub run_plan_3
+
+sub read_graph_detail_plan_3 {
+$DEBUG = 31;
+%INST_FLIP = ();
+my $INPUT_GRAPH = "detailed_plan_3_xy.out";
+if ( -e $INPUT_GRAPH) {
+open(READ,"$INPUT_GRAPH");
+print "INFO-UTS-RD_GRPH_DTL_PLN_3 : 001 : Reading the graph for $INPUT_GRAPH\n";
+#print "Existing Die size are : @{$DIE_ALREADY{dieArea}} \n";
+
+##########Scaling to values to the die size##########
+$line1 = <READ>;
+($llx,$lly) = (split(/\s+/, $line1))[0,1];
+$absllx = abs($llx);
+$abslly = abs($lly);
+
+$line2 = <READ>;
+($urx,$ury) = (split(/\s+/, $line2))[0,1];
+#print "$line1 : $llx and $lly and $absllx and $abslly\n";
+$newurx = $urx + $absllx;
+$newury = $ury + $abslly;
+#print "$line2 : $urx and $ury and $newurx and $newury\n";
+
+#$scalex = $DIE_ALREADY{dieArea}[2]/(2000*$newurx);
+$scalex = $DIE_ALREADY{dieArea}[2]/($newurx);
+#$scaley = $DIE_ALREADY{dieArea}[3]/(2000*$newury);
+$scaley = $DIE_ALREADY{dieArea}[3]/($newury);
+#print "Scalex : $scalex and Scaley : $scaley \n";
+
+while(<READ>) {
+chomp();
+($node,$x,$y,$flip) = (split(/\s+/, $_))[0,1,2,3];
+#$x = ($x+$absllx)*2000*$scalex;
+#$y = ($y+$abslly)*2000*$scaley;
+$x = ($x+$absllx)*$scalex;
+$y = ($y+$abslly)*$scaley;
+#$x = int($x);
+#$y = int($y);
+
+#print "$x and $y\n";
+$found = 0;
+$INST_FLIP{$node} = $flip;
+#foreach $inst ( keys %TEMP ) { if ( $node == $TEMP{$inst} ) { $found = 1; $instance = $inst } }
+if ( exists $TEMPR{$node} ) { $found = 1; $instance = $TEMPR{$node}; } else { $found = 0;}
+if($found == 1 ) { 
+                if ( exists $CADB{$instance} ) {
+     $CADB{$instance}->dbCadbSetLoc($x,$y);
+     $CADB{$instance}->dbCadbSetStatus(PLACED);
+     $CADB{$instance}->dbCadbSetOrient(N);
+                                               } 
+                elsif ( exists $PORTS_ALREADY{$TOP_MODULE}{$instance} ) {
+     $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetLoc($x,$y);
+     $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetSide($side);
+     $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetStatus(PLACED);
+                                               }
+                else { print "ERR-UTS-RD_GRPH_DTL_PLN_3 : 002 : $instance is neither a port nor a component\n"; }
+
+                 }
+else { print "ERR-UTS-RD_GRPH_DTL_PLN_3 : 003 : node $node not found\n"; }
+              }#while
+
+}#end if
+else {
+print "ERR-UTS-RD_GRPH_DTL_PLN_3 : 004 : No detailed_plan_3_xy.out file found \n";
+}
+close($INPUT_GRAPH);
+&set_inst_box;
+}#sub read_graph_detail_plan_3
+
+sub place_graph_detail_plan_3 {
+
+$INPUT_NET_FILE = "$TOP_MODULE.txt";
+$NODE_FILE = "nodefile";
+$LIB_FILE = "libfile";
+$DES_INFO_FILE = "desinfofile";
+if( $_[0] eq '-h') { 
+  print "Usage : place_graph_detail_plan_3 [ <graph file> <node file> <library file> <design info file>] \n";
+  print "                  note : by default <graph file> will be $INPUT_NET_FILE\n";
+  print "                  note : by default <node file> will be $NODE_FILE\n";
+  print "                  note : by default <design info file> will be $DES_INFO_FILE\n";
+  return ;
+}
+my $noOfArguments = @_;
+if($noOfArguments >= 1){
+   $INPUT_NET_FILE = $_[0]; 
+}
+if($noOfArguments >= 2){
+   $NODE_FILE = $_[1]; 
+}
+if($noOfArguments >= 3){
+   $LIB_FILE = $_[2]; 
+}
+if($noOfArguments >= 4){
+   $DES_INFO_FILE = $_[3]; 
+}
+if($noOfArguments > 4){
+  print "Usage : place_graph_detail_plan_3 [ <graph file> <node file> <library file> <design info file>] \n";
+  print "Info : ignoring argument after $_[4]\n";
+}
+        &delete_all_tmp_placer_files;
+	&write_graph_modified ;
+        &write_design_info_file ;
+	&run_placer;
+        &read_graph ;
+	&run_placer_detail ($INPUT_NET_FILE, $NODE_FILE, $LIB_FILE, $DES_INFO_FILE);
+	&read_graph_detail;
+	&write_graph_plan_3 ;
+	&run_plan_3 ($INPUT_NET_FILE, $NODE_FILE, $LIB_FILE, $DES_INFO_FILE);
+	&read_graph_detail_plan_3;
+        &delete_tmp_placer_files ;
+}#sub place_graph_detail_plan_3
+
+sub write_controlFile {
+my $noOfArguments = @_;
+if( $noOfArguments > 6 || $_[0] eq '-h'){
+  if( $noOfArguments > 6 ){
+    print "\nError: wrong number of input for control file generation";
+  }
+  print "Usage : write_controlFile [-trim_float_only <0|1> ]\n";
+  print "                         [-AddLinkEdge <0|1> ]\n";
+  print "                         [-basic_mode <0|1> ]\n";
+  print "                         [-phase2_only <0|1> ]\n";
+  print "                         [-very_high_fanout <integer value> ]\n";
+  print "                         [-max_pins_on_cell <integer value> ]\n";
+  return ;
+}
+unlink("controlfile");
+my $trim_float_only = 0;
+my $AddLinkEdge = 1;
+my $basic_mode = 0;
+my $phase2_only = 0;
+#$GLOBAL->dbfGlobalSetFanoutLimit(300);
+my $very_high_fanout = $GLOBAL->dbfGlobalGetFanoutLimit;
+my $max_pins_on_cell = 100 ; 
+my $pin_floating_in_one_dir = 0 ; 
+my $do_cluster = 1 ; 
+
+for(my $i =0; $i<$noOfArguments; $i++){
+  if($_[$i] eq "-trim_float_only"){
+    $trim_float_only = $_[$i+1];
+  } elsif($_[$i] eq "-AddLinkEdge"){
+    $AddLinkEdge = $_[$i+1];
+  } elsif($_[$i] eq "-basic_mode"){
+    $basic_mode = $_[$i+1];
+  } elsif($_[$i] eq "-phase2_only"){
+    $phase2_only = $_[$i+1];
+  } elsif($_[$i] eq "-very_high_fanout"){
+    $very_high_fanout = $_[$i+1];
+  } elsif($_[$i] eq "-max_pins_on_cell"){
+    $max_pins_on_cell = $_[$i+1];
+  } elsif($_[$i] eq "-pin_floating_in_one_dir"){
+    $pin_floating_in_one_dir = $_[$i+1];
+  } elsif($_[$i] eq "-do_cluster"){
+    $do_cluster = $_[$i+1];
+  }
+}
+open(WRITE,">controlfile");
+print WRITE "-1 **if 1-st field is -1 then ignores line, i.e., a comment**\n";
+print WRITE "0 $trim_float_only trim_float_only\n";
+print WRITE "1 $AddLinkEdge AddLinkEdge\n";
+print WRITE "2 $basic_mode basic_mode\n";
+print WRITE "3 $phase2_only phase2_only\n";
+print WRITE "4 $very_high_fanout very_high_fanout\n";
+print WRITE "5 $max_pins_on_cell max_pins_on_cell\n";
+print WRITE "6 $pin_floating_in_one_dir pin_floating_in_one_dir\n";
+print WRITE "10 $do_cluster do_cluster\n";
+
+close(WRITE);
+
+
+}# sub write_controlFile
+
+sub set_buffer_for_assign {
+  my $noOfArguments = @_;
+  if( $noOfArguments > 10 || $_[0] eq '-h'){
+    if( $noOfArguments > 10 ){
+      print "\nError: wrong number of input for control file generation";
+    }
+    print "Usage : set_buffer_for_assign \n";
+    print "                         -cell_name <cell_name>\n";
+    print "                         -buf_in <input>\n";
+    print "                         -buf_out <output>\n";
+    print "                         -power <power>\n";
+    print "                         -gnd <gnd>\n";
+    return ;
+  }
+
+  my $cell_name = "";
+  my $buf_in = "";
+  my $buf_out = "";
+  my $power = "";
+  my $gnd = "";
+
+  for(my $i =0; $i<$noOfArguments; $i++){
+    if($_[$i] eq "-cell_name"){
+      $cell_name = $_[$i+1];
+    } elsif($_[$i] eq "-buf_in"){
+      $buf_in = $_[$i+1];
+    } elsif($_[$i] eq "-buf_out"){
+      $buf_out = $_[$i+1];
+    } elsif($_[$i] eq "-power"){
+      $power = $_[$i+1];
+    } elsif($_[$i] eq "-gnd"){
+      $gnd = $_[$i+1];
+    }
+  }
+  if(exists $PLDB{$cell_name}){
+    if(($buf_in eq "")
+    ||($buf_out eq "")
+    ||($power eq "")
+    ||($gnd eq "")) {
+      my @pins = $PLDB{$cell_name}->dbMdbGetPins;
+      foreach my $pinName ( @pins ) {
+        if ($PLDB{$cell_name}->dbMdbGetPinIsSignal($pinName)){
+          if($PLDB{$cell_name}->dbMdbGetPinDir($pinName) ==0) {
+            $buf_in = $pinName;
+          } elsif($PLDB{$cell_name}->dbMdbGetPinDir($pinName) ==1) {
+            $buf_out = $pinName;
+          }
+        } elsif ($PLDB{$cell_name}->dbMdbGetPinIsPower($pinName)){
+          $power = $pinName;
+        } elsif ($PLDB{$cell_name}->dbMdbGetPinIsGround($pinName)){
+          $gnd = $pinName;
+        }
+      }
+    }
+  }
+  if($cell_name ne "") {$GLOBAL->dbfGlobalSetBufForAssign($cell_name);}
+  if($buf_in ne "") {$GLOBAL->dbfGlobalSetBufForAssignIn($buf_in);}
+  if($buf_out ne "") {$GLOBAL->dbfGlobalSetBufForAssignOut($buf_out);}
+  if($power ne "") {$GLOBAL->dbfGlobalSetBufForAssignPower($power);}
+  if($gnd ne "") {$GLOBAL->dbfGlobalSetBufForAssignGnd($gnd);}
+}# sub set_buffer_for_assign
+
+sub write_graph_modified {
+
+#########################################################################
+# NAME
+#     write_graph_modified
+# Assumptions
+# 
+# SYNOPSIS
+# 
+# INPUTS
+#   options:
+#    --pinOffset :  generate a graph file with pinOffset starting from 0
+# OUTPUTS
+# generate a nodefile ,libfile, graph file 
+# Note: All the dimension will be in micron, so DEF data needs to be 
+#       divided by data base unit and lef data to be outputted as such
+#########################################################################
+
+  my $noOfArguments = @_;
+  if( $noOfArguments > 1 || $_[0] eq '-h'){
+    print "Usage : write_graph_modified [--pinOffset]\n";
+    return ;
+  }
+  my $pinOffset = 0;
+  for(my $i =0; $i<$noOfArguments; $i++){
+    if($_[$i] eq "--pinOffset"){
+      $pinOffset = 1;
+    }
+  }
+  %TEMP = ();
+  %TEMP_NODE_DEGREE = ();
+  my $cnt = 0;
+  my $portCellID = 2;
+  #---------------------------------------------------start nodefile------------------------------------------#
+  my %cells = (); 
+  my $cellcnt = 3;
+  open(WRITE_NODE,">nodefile");
+  my @size = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetSize ;
+  my $dbu = $GLOBAL->dbfGlobalGetDBU;
+  my $x = $size[0]/$dbu;
+  my $y = $size[1]/$dbu;
+  my $z = $size[2]/$dbu;
+  my $p = $size[3]/$dbu;
+  
+  my @rows = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetRows;
+  my $row_count = @rows ;
+  print WRITE_NODE "$row_count\n"; 
+  print WRITE_NODE "$x  $y\n"; 
+  print WRITE_NODE "$z  $p\n"; 
+  
+  foreach my $port ( keys %{$PORTS_ALREADY{$TOP_MODULE}} ) {
+    $TEMP{$port} = $cnt;
+    $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortSetNodeNum($cnt);
+    my $port_status = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetStatus() ;
+    if($port_status == 3) {
+      print WRITE_NODE "$cnt \ -$portCellID\n";
+      my @port_loc = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetLoc;
+      my $portloc_X = $port_loc[0]/$dbu;
+      my $portloc_Y = $port_loc[1]/$dbu;
+      print WRITE_NODE "$portloc_X \ $portloc_Y\n";
+    }else {
+      print WRITE_NODE "$cnt \ $portCellID\n";
+    }
+    $cnt++;
+  }
+
+  foreach my $inst (keys %{COMP_ALREADY} ) {
+    $TEMP{$inst} = $cnt; 
+    $CADB{$inst}->dbCadbSetNodeNum($cnt);
+    my $cellref = $CADB{$inst}->dbCadbGetCellref;
+    #my $cellType = 0;
+    if(exists $cells{$cellref}){
+      my $num = $cells{$cellref};
+      #if ( $cellType == 1 ) { 
+      #  $num = $num + 10000; 
+      #}
+      my $inst_status = $CADB{$inst}->dbCadbGetStatus() ;
+      if($inst_status eq "FIXED") {
+        print WRITE_NODE "$cnt \ -$num\n";
+        my @instLoc = $CADB{$inst}->dbCadbGetLoc;
+        my $instloc_X = $instLoc[0]/$dbu;
+        my $instloc_Y = $instLoc[1]/$dbu;
+        print WRITE_NODE "$instloc_X \ $instloc_Y\n";
+      }else {
+        print WRITE_NODE "$cnt \ $num\n";
+      }
+    }else{
+      $cells{$cellref} = $cellcnt;
+      my $num = $cells{$cellref};
+      #if ($cellType == 1) { 
+      #  $num = $num + 10000;
+      #}
+      my $inst_status = $CADB{$inst}->dbCadbGetStatus() ;
+      if($inst_status eq "FIXED") {
+        print WRITE_NODE "$cnt \ -$num\n";
+        my @instLoc = $CADB{$inst}->dbCadbGetLoc;
+        my $instloc_X = $instLoc[0]/$dbu;
+        my $instloc_Y = $instLoc[1]/$dbu;
+        print WRITE_NODE "$instloc_X \ $instloc_Y\n";
+      }else {
+        print WRITE_NODE "$cnt \ $num\n";
+      }
+      $cellcnt++;
+    }
+    $cnt++;
+  }
+  close(WRITE_NODE);
+  #---------------------------------------------------end nodefile------------------------------------------#
+  
+  #---------------------------------------------------start libfile------------------------------------------#
+  if ($pinOffset == 0) {
+    open(WRITE_LIB,">libfile");
+  }else {
+    open(WRITE_LIB,">libfile_pin_offset");
+  }
+  my $rowHeight = $GLOBAL->dbGlobalGetRowHeight;
+  my $giganticRowHeight = 1000;
+  unless ( defined $rowHeight && $rowHeight >= 0 && $rowHeight < $giganticRowHeight ) {
+    $rowHeight = 0;  # arbitrary non zero number
+  }
+  if($pinOffset == 0){
+  print WRITE_LIB "1 $rowHeight $rowHeight\n";  # representing site height
+  print WRITE_LIB "2 0 0\n";  # representing all ports
+  }else {
+    print WRITE_LIB "1 $rowHeight $rowHeight 1\n";  # representing site height
+    print WRITE_LIB "0.0 0.0 \n";  # representing site height
+    print WRITE_LIB "2 0 0 1\n";  # representing all ports
+    print WRITE_LIB "0.0 0.0 \n";  # representing site height
+  }
+  foreach my $cellName ( keys %cells ) {
+    if ( exists $PLDB{$cellName} ) {
+      my $pinc = 0;
+      my @pins = $PLDB{$cellName}->dbMdbGetPins;
+      $pinc = @pins;  ##--added by aditya----## 
+      #?foreach $pinName ( @pins ) {
+      #?  $pinc++;
+      #?}
+      my @box = $PLDB{$cellName}->dbMdbGetSize;
+      if($pinOffset == 0){
+        print WRITE_LIB "$cells{$cellName} $box[0] $box[1]\n";
+      } else{
+        print WRITE_LIB "$cells{$cellName} $box[0] $box[1] $pinc\n";
+       #?my $pincount = 0;
+       #?my @pins = $PLDB{$cellName}->dbMdbGetPins;
+        foreach $pinName ( @pins ) {
+       #?   $pincount++;
+          my @RECTS = $PLDB{$cellName}->dbMdbGetPinRect($pinName);
+          my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$RECTS[0]))[0,2,3,4,5];
+          my $mid_x = ($llx + $urx)/2;
+          my $mid_y = ($lly + $ury)/2;
+          print WRITE_LIB "\t$mid_x $mid_y\n";
+        }
+      }
+    }
+  }
+  close(WRITE_LIB);
+  #---------------------------------------------------end libfile------------------------------------------#
+  
+  #---------------------------------------------------start nodeMap.txt------------------------------------------#
+  open(WRITE1,">nodeMap.txt");
+  %TEMPR = ();
+  foreach my $inst (keys %TEMP){
+    my $n = $TEMP{$inst};
+    print WRITE1 "$n $inst\n";
+    $TEMPR{$n} = $inst;
+  }
+  close(WRITE1);
+  #---------------------------------------------------end nodeMap.txt------------------------------------------#
+  
+  #-------------------------------------------------start  graphfile------------------------------------------#
+  &set_number_nodes_connected_to_all_net;
+  if ($pinOffset == 0) {
+    print "INFO-UTS-WR_GRPH_MDFD : 001 : Writing the graph file of the design in $TOP_MODULE\.txt\n";
+    open(WRITE,">$TOP_MODULE.txt");
+  }else {
+    print "INFO-UTS-WR_GRPH_MDFD : 002 : Writing the graph file of the design in ${TOP_MODULE}_pin_offset\.txt\n";
+    open(WRITE,">${TOP_MODULE}_pin_offset.txt");
+  }
+  my $very_high_fanout = $GLOBAL->dbfGlobalGetFanoutLimit;
+  #?my $net ;
+  foreach my $net (keys %{NETS_ALREADY}){
+    if (exists $NETS_ROUTING_ALREADY{$net}){
+        my $power = $NETS_ROUTING_ALREADY{$net}->dbNetGetType;
+        if($power eq "POWER"){
+          next;
+        }
+        if($power eq "GROUND"){
+          next;
+        }
+     }#if routing exists already
+     if ( $net =~ /1\'b/ ){
+       next ;
+     }
+     if ( $net eq ""){
+       next ;
+     }
+     if (exists $TEMP_NET_CONN_NODE_NO{$net}) {
+       if ($TEMP_NET_CONN_NODE_NO{$net} > $very_high_fanout) {
+         next ;
+       }
+     }
+     my @driverInst = &getNetDriver($net);
+     print "\nDBG-UTS-WR_GRPH_MDFD : 002 : net Name $net driverInst : " if($debug);
+     print join ",",@driverInst if($debug);
+     print "\n" if($debug);
+     my @sinkInst = &getNetSink($net);
+     print "\nDBG-UTS-WR_GRPH_MDFD : 003 : net Name $net sinkInst : " if($debug);
+     print join ",",@sinkInst if($debug);
+     print "\n" if($debug);
+     my @instList = ();
+     my @instPinList = ();
+     if ( $driverInst[0] eq "UND"){
+       #do nothing
+     }elsif ( $driverInst[0] eq ""){
+       #do nothing
+     }else{
+           #$driver_pin_number = &get_nodenum_for_given_pin($driverInst[0],$driverInst[1]);
+           push(@instList,$driverInst[0]);
+           push(@instPinList,$driverInst[1]);
+     }#else driverInst
+  #-------------------------------------sinkInstance-------------------------------------------------------#
+    my $i = 0 ;
+    for($i = 0;$i<$#sinkInst;$i=$i+2){
+        #$sink_pin_number = &get_nodenum_for_given_pin($sinkInst[$i],$sinkInst[$i+1]);
+        push(@instList,$sinkInst[$i]);
+        push(@instPinList,$sinkInst[$i+1]);
+    }#for
+    my  $len = @instList;
+    if($len > 2){
+      print WRITE "$len -1\n";
+      foreach my $inst (@instList){
+        my $instPin = shift(@instPinList) ;
+        my $pin1 = &get_nodenum_for_given_pin($inst,$instPin);
+        my $inst_number = &get_nodenum_for_given_inst($inst); 
+        if($pinOffset == 0){
+          print WRITE "\t$inst_number\n";
+        } else{
+          print WRITE "\t$inst_number $pin1\n";
+        }
+      }#foreach inst
+    }#if len > 2
+    if($len == 2){
+      my $inst1 = $instList[0];
+      my $inst2 = $instList[1];
+      my $inst_number_1 = &get_nodenum_for_given_inst($inst1);
+      my $inst_number_2 = &get_nodenum_for_given_inst($inst2);
+      my $instPin_1 = shift(@instPinList) ;
+      my $pin1 = &get_nodenum_for_given_pin($inst1,$instPin_1);
+      my $instPin_2 = shift(@instPinList) ;
+      my $pin2 = &get_nodenum_for_given_pin($inst2,$instPin_2);
+      if($pinOffset == 0){
+        print WRITE "$inst_number_1 $inst_number_2\n";
+      } else{
+        print WRITE "$inst_number_1  $inst_number_2 $pin1 $pin2\n";
+      }#else
+    }#if $len eq 2
+  }#foreach net
+  close(WRITE);
+  #&gen_initial_degree_for_all_nodes ;
+  #&gen_final_degree_for_all_nodes ;
+}#sub write_graph_modified
+
+#--------------------------------------------------------------------------------------------------------#
+sub get_nodenum_for_given_inst{
+my $inst = $_[0];
+my $inst_num = -1;
+if(exists $CADB{$inst}){
+   my $instance_num = $CADB{$inst}->dbCadbGetNodeNum;
+   $inst_num = $instance_num;
+ }#if exists
+elsif (exists $PORTS_ALREADY{$TOP_MODULE}{$inst} ){
+   my $instance_num = $PORTS_ALREADY{$TOP_MODULE}{$inst}->dbPortGetNodeNum;
+   $inst_num = $instance_num;
+   }#elsif
+elsif ($inst eq "PIN"){
+ foreach my $port ( keys %{$PORTS_ALREADY{$TOP_MODULE}} ) {
+   my $instance_num = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetNodeNum;
+    $inst_num = $instance_num;
+                    }#foreach
+ }#elsif
+return($inst_num);
+}#sub get_nodenum_for_given_inst
+#------------------------------------------------------------------------------------------------------------#
+sub get_nodenum_for_given_pin{
+my $inst = $_[0];
+my $pin = $_[1]; 
+my $pin_num = -1;
+if(exists $CADB{$inst}){
+   my $cellref = $CADB{$inst}->dbCadbGetCellref;
+   $pin_Exist = $PLDB{$cellref}->dbMdbDoesPinExist($pin);
+   $pin_num = $PLDB{$cellref}->dbMdbGetPinNum($pin);
+ }#if exists
+if($pin_num == -1) {
+  if(!((exists $PORTS_ALREADY{$TOP_MODULE}{$inst}) && ($pin eq "PIN"))) {
+    print "\nINFO-UTS : 001 : Pin no for pin $pin and instance $inst not found\n";
+  }else{
+    $pin_num = 0;
+  }
+}
+return($pin_num);
+}#sub get_nodenum_for_given_pin
+
+sub place_graph_plan_4_pseudo 
+{
+  
+  if ( $_[0] eq '-h') { print "Usage : place_graph_plan_4_pseudo \n";
+  } else {
+    print "\n" ;
+    &delete_all_tmp_placer_files;
+    &write_hier_place_graph ("-module",$TOP_MODULE,"--incr");
+    rename("mp_xy.in" , "xy.out");
+    $INPUT_NET_FILE = $TOP_MODULE.".txt" ;
+    $NODE_FILE = "nodefile" ;
+    $LIB_FILE = "libfile" ;
+    my $env_proton_home = $GLOBAL->dbfGlobalGetProtonHome;
+    my $placeLogFileName = "plan_4_place.log";
+    
+    if( $NOLOG != 1 ) {
+      closeTee(*STDOUT);
+      open (TEST, ">>$logFileName");
+      my $ofh = select TEST;
+      $| = 1;
+      select $ofh;
+      openTee(*STDOUT, *STDOUT, *TEST);
+    }
+    if (-e $INPUT_NET_FILE) {
+      print "INFO-UTS-PL_GRPH_PLN_4_PSUDO : 001 : Placing the design $TOP_MODULE \n";
+      #system( "$env_eqator_home/3RDBIN/plan_4 $INPUT_NET_FILE $NODE_FILE $LIB_FILE $DES_INFO_FILE \| tee  $placeDetailLogFileName >> $logFileName");
+      #system( "$env_eqator_home/3RDBIN/plan_4 $INPUT_NET_FILE $NODE_FILE $LIB_FILE");
+      system( "$env_proton_home/3RDBIN/plan_4 $INPUT_NET_FILE $NODE_FILE $LIB_FILE");
+      #system( "$env_eqator_home/plan_1 $INPUT_NET_FILE $NODE_FILE \| tee  $placeLogFileName >> $logFileName");
+      print "INFO-UTS-PL_GRPH_PLN_4_PSUDO : 002 : Placing the design $TOP_MODULE \n";
+    }
+    
+    rename("detailed_xy.out" , "mp_xy.out");
+    &read_hier_place_graph();
+    &delete_tmp_placer_files;
+    }
+}#sub place_graph_plan_4_pseudo
+
+
+sub place_graph_mpl_pseudo 
+{
+  my $noOfArguments = @_;
+  my $incrMode = 0;
+  
+  if ( $_[0] eq '-h') { 
+    print "Usage : place_graph_mpl_pseudo \n";
+    print "                               --incr\n";
+  } else {
+    for (my $i = 0; $i < $noOfArguments; $i++) {
+      if ($_[$i] eq "--incr") {
+       $incrMode = 1;
+      }
+    }#for
+    $MPL_BINARY_IS_RUNNING = 1;
+    &delete_all_tmp_placer_files;
+    if ( $incrMode == 1 ) {
+      &write_hier_place_graph ("-module",$TOP_MODULE,"--incr");
+    } else {
+      &write_hier_place_graph ("-module",$TOP_MODULE);
+    }
+    $INPUT_NET_FILE = $TOP_MODULE.".txt" ;
+    $NODE_FILE = "nodefile" ;
+    $LIB_FILE = "libfile" ;
+    my $env_proton_home = $GLOBAL->dbfGlobalGetProtonHome;
+    my $placeLogFileName = "mpl_place.log";
+    if( $NOLOG != 1 ) {
+      closeTee(*STDOUT);
+      open (TEST, ">>$logFileName");
+      my $ofh = select TEST;
+      $| = 1;
+      select $ofh;
+      openTee(*STDOUT, *STDOUT, *TEST);
+    }
+    if ( -e $INPUT_NET_FILE) {
+      print "INFO-UTS-PL_GRPH_MPL_PSUDO : 001 : Begin placing the design $TOP_MODULE \n";
+      system( "$env_proton_home/3RDBIN/mpl $INPUT_NET_FILE $NODE_FILE");
+      print "INFO-UTS-PL_GRPH_MPL_PSUDO : 002 : End placing the design $TOP_MODULE \n";
+    }
+    &read_hier_place_graph();
+    &delete_tmp_placer_files;
+    $MPL_BINARY_IS_RUNNING = 0;
+  }#if correct arguments
+}#sub place_graph_mpl_pseudo
+
+sub update_hier_floorplan_loc {
+  my $env_proton_home = $GLOBAL->dbfGlobalGetProtonHome;
+  my $input_fpdef = $TOP_MODULE.".fpdef";
+  my $output_fpdef = $TOP_MODULE."_out".".fpdef";
+  my $ARG1 = "-fpdef";
+  my $ARG2 = "-output";
+
+    &write_hier_floorplan;
+    #system("$env_eqator_home/SCRATCH/blockPlacerGui.pl $ARG1 $input_fpdef $ARG2 $output_fpdef");
+    system("$env_proton_home/SCRATCH/blockPlacerGui.pl $ARG1 $input_fpdef $ARG2 $output_fpdef");
+    &read_hier_floorplan($output_fpdef);
+}#sub update_hier_floorplan_loc
+
+sub write_connection_in_tcl {
+
+  my $tcl_file = "new.tcl";
+  my @macro_name;
+  if ( (-e $tcl_file) && (-w $tcl_file) ) {
+    print "INFO-UTS-WR_CONN_TCL : 001 : $tcl_file FILE EXISTS AND IS WRITABLE !\n";
+#    open(READ_TCL, "$tcl_file");
+#    while(<READ_TCL>) {
+#      chomp();
+#      if($_ =~ /^\s*#/ ) {
+#        next;
+#      }
+#      if (($_ =~ /^\s*createPseudoHierModuleInst/) || ($_ =~ /^\s*createPseudoInstance/)) {
+#        my @line_element=(split(/\s+/, $_));
+#        my $len = @line_element;
+#        for ($i = 0; $i <= $len; $i++) {
+#          if ($line_element[$i] eq "-inst") {
+#            my $inst_name = $line_element[$i+1];
+#            push (@macro_name, $inst_name);
+#            print "inst $inst_name\n";
+#          }
+#        }
+#      }
+#    }#while read
+#    #print "Name is @macro_name\n";
+#    close(READ_TCL);
+my %duplicate_element = ();
+foreach $inst(keys %{$PSEUDO_VINST_ALREADY{$TOP_MODULE}}) {
+            push (@macro_name, $inst);
+}
+    print "INFO-UTS-WR_CONN_TCL : 002 : Name is @macro_name\n";
+    open(WRITE_TCL, ">>$tcl_file");
+print "INFO-UTS-WR_CONN_TCL : 003 : writing tcl\n";
+    for (my $i = 0; $i <= ($#macro_name * 5); $i++) {
+      my $macro0 = $macro_name[int(rand($#macro_name+1))];
+      my $macro1 = $macro_name[int(rand($#macro_name+1))];
+      if ($macro0 ne $macro1)  {
+        my $dup0 = $macro0.".".$macro1;
+        my $dup1 = $macro1.".".$macro0;
+        if ((!exists $duplicate_element{$dup0}) && (!exists $duplicate_element{$dup1})) {
+            $duplicate_element{$dup0} = 1;
+            $duplicate_element{$dup1} = 1;
+            print WRITE_TCL "createPseudoNet -parentModule mychip -type wire -source $macro0 -sink $macro1 -wireWidth 1 \n";  
+            #print WRITE_TCL "createPseudoNet -parentModule mychip -type bus -source $macro0 -sink $macro1 -wireWidth 32 \n";  
+        } else {
+          print "WARN-UTS-WR_CONN_TCL : 004 : Connection between instance exists\n";
+        }
+      } else {
+        print "WARN-UTS-WR_CONN_TCL : 005 : Connection between same instance does not exists\n";
+      }
+    }
+    close(WRITE_TCL);
+  } else {
+    print "WARN-UTS-WR_CONN_TCL : 006 : $tcl_file DOES NOT FILE EXISTS AND IS WRITABLE !\n";
+  }
+}#sub write_connection_in_tcl
+
+sub write_lvs_label {
+  
+  my $noOfArguments = @_;
+  my $outputfile = ""; 
+  my $debug = 0;
+
+  my $routed = 0;
+  my $unrouted = 0;
+  my $ports = 0;
+
+  if ( $_[0] eq '-h' || $_[0] eq '-help') {
+    print "Usage : write_lvs_label -output <output file name>\n";
+    print "                        --routed\n";
+    print "                        --unrouted\n";
+    print "                        --ports\n";
+  } else {
+    for (my $i = 0; $i < $noOfArguments; $i++) {
+      if ($_[$i] eq "-output") { $outputfile = $_[$i+1];}
+      if ($_[$i] eq "-debug") { $debug = 1;}
+      if ($_[$i] eq "--routed") { $routed = 1; }
+      if ($_[$i] eq "--unrouted") { $unrouted = 1; }
+      if ($_[$i] eq "--ports") { $ports = 1; }
+    }
+    unless ( $routed || $unrouted || $ports ) {
+      $routed = $unrouted = $ports = 1;
+    }
+
+    my $topFlplan = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}};
+    my $dbu = $topFlplan->dbFlplanGetDBUnit;
+
+    open (WRITE, ">$outputfile");
+    print WRITE "Report of net TEXT info\n"; 
+    print WRITE "-----------------------\n"; 
+foreach my $net ( keys %NETS_ALREADY ) {
+  print "DBG-UTS-WR_LVS_LABEL : 001 : for netl $net\n" if ($debug) ;
+  my $is_net_info_printed = 0 ;
+  if (exists $NETS_ROUTING_ALREADY{$net}) {
+    my @data = $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBGetRegularRoute;
+          for (my $temp_cnt = 0 ; $temp_cnt <= $#data; $temp_cnt) {
+          my @splitArray = (split(/\s+/,$data[0]));
+          if($#splitArray >= 4) {
+            my ($layer, $a, $b, $c, $d) = @splitArray[0,2,3,6,7];
+            $a /= $dbu;  $b /= $dbu;
+            print WRITE "LAYOUT TEXT \"$net\" $a $b $layer $TOP_MODULE\n" if ( $routed ) ;
+            $is_net_info_printed = 1 ;
+            print "DBG-UTS-WR_LVS_LABEL : 002 : $net is routed\n" if ( $debug );
+            last ;
+          }
+          }
+  }
+  if ($is_net_info_printed ==0) {
+    print "DBG-UTS-WR_LVS_LABEL : 003 : $net is not routed\n" if ( $debug );
+	foreach $inst ( keys %{$NETS_ALREADY{$net}})  {
+        print "DBG-UTS-WR_LVS_LABEL : 004 : for net $net processing connection $inst\n" if ( $debug );
+          if(exists $PORTS_ALREADY{$TOP_MODULE}{$inst}) {
+             print "DBG-UTS-WR_LVS_LABEL : 005 : $net is connected to PIN $inst\n" if ( $debug ); 
+             my ($xcoord, $ycoord) = $PORTS_ALREADY{$TOP_MODULE}{$inst}->dbPortGetLoc;
+             my $layer = $PORTS_ALREADY{$TOP_MODULE}{$inst}->dbPortGetLayer;
+             $xcoord /= $dbu;  $ycoord /= $dbu;
+             print WRITE "LAYOUT TEXT \"$net\" $xcoord $ycoord $layer $TOP_MODULE\n" if ( $unrouted );
+             $is_net_info_printed = 1 ;
+             last ;
+          }elsif($inst eq "PIN") {
+             my $CURR_TOP_PIN  = $NETS_ALREADY{$net}{$inst};
+             print "DBG-UTS-WR_LVS_LABEL : 006 : $net is connected to PIN $CURR_TOP_PIN\n" if ( $debug ); 
+             my ($xcoord, $ycoord) = $PORTS_ALREADY{$TOP_MODULE}{$CURR_TOP_PIN}->dbPortGetLoc;
+             my $layer = $PORTS_ALREADY{$TOP_MODULE}{$CURR_TOP_PIN}->dbPortGetLayer;
+             $xcoord /= $dbu;  $ycoord /= $dbu;
+             print WRITE "LAYOUT TEXT \"$net\" $xcoord $ycoord $layer $TOP_MODULE\n" if ( $unrouted );
+             $is_net_info_printed = 1 ;
+             last ;
+          }
+        }# foreach $inst
+        if ( $is_net_info_printed ) {
+          next;
+        }
+	foreach $inst ( keys %{$NETS_ALREADY{$net}})  {
+          if( exists $COMP_ALREADY{$inst} ) {
+              print "DBG-UTS-WR_LVS_LABEL : 007 : $net is connected to component $inst\n" if ( $debug ); 
+              my $cellref = $CADB{$inst}->dbCadbGetCellref;
+              my @instLoc = $CADB{$inst}->dbCadbGetLoc;
+              my $orient = $CADB{$inst}->dbCadbGetOrient;
+                 if ( exists $PLDB{$cellref} ){
+                    print "DBG-UTS-WR_LVS_LABEL : 008 : $net is connected to component $inst cell $cellref which is in PLDB\n" if ( $debug ); 
+                    #---- check if the connected pin exists ----#
+                      my @cellOrigin = $PLDB{$cellref}->dbMdbGetOrigin;
+                      my @cellSize = $PLDB{$cellref}->dbMdbGetSize;
+                      my $p =  $NETS_ALREADY{$net}{$inst};
+                      my @pinRects = $PLDB{$cellref}->dbMdbGetPinRect($p);
+                      my $firstrect = shift @pinRects;
+                      my ($layer, $llx2, $lly2, $urx2, $ury2)=(split(/\s+/,$firstrect))[0,2,3,4,5];
+                      my @pinCoords = &xformCellPinToInstPin($instLoc[0],$instLoc[1],$cellOrigin[0], $cellOrigin[1],$orient,$cellSize[0],$cellSize[1],$llx2,$lly2,$urx2,$ury2); 
+                      my $xcoord = int(($pinCoords[0] + $pinCoords[2])/2);
+                      my $ycoord = int(($pinCoords[1] + $pinCoords[3])/2);
+                      $xcoord /= $dbu;  $ycoord /= $dbu;
+                      print WRITE "LAYOUT TEXT \"$net\" $xcoord $ycoord $layer $TOP_MODULE\n" if ( $ports );
+                      last ;
+                 }#if exist cellref
+       }
+     }# foreach $inst
+  }
+}# foreach $net
+close WRITE;
+}#else
+}#sub write_lvs_label
+#write_lvs_label -input news5378.def
+
+#############################################################################################################################
+######################################### code to find centroid of Octagon ##################################################
+#############################################################################################################################
+
+sub get_centroid {
+my $noOfArg = @_;
+my $inputfile = "";
+
+if ( $_[0] eq '-h' || $_[0] eq '-help' || $_[0] eq '-HELP') { print "Usage :  get_centroid -inputfile <name of input file>  \n";
+}
+else {
+  for (my $i = 0; $i < $noOfArg; $i++) {
+    if ($_[$i] eq "-inputfile") {
+      $inputfile = $_[$i+1];
+    }
+  } # for
+open (READ, $inputfile);
+  while (<READ>) {
+    chomp;
+    if ($_ =~ m/^28/) {
+      s/^28\s*//;
+      my @polygonVertices = split(/\s+/,$_);
+      my $no = @polygonVertices;
+      if ($no == 18){ 
+my @cop = &getPolygonCentroid(@polygonVertices);
+      }
+    }
+  }
+  close READ;
+return(@temp_coordinates_of_bbox);
+}# else
+}#sub get_centroid
+
+sub getPolygonCentroid {
+  my @polygonVertices = @_;
+  my $totalX = 0;
+  my $totalY = 0;
+  my $centX  = 0;
+  my $centY  = 0;
+
+  my $polygonArea = 0;
+
+  if (isPolygonClosed(@polygonVertices) == 1)  {
+    print "WARN-UTS : 001 : Corrupt inputs, not a closed polygon\n";
+    return;
+  }
+  $polygonArea = getPolygonArea(@_);
+  for (my $i = 0; $i < ($#polygonVertices - 2); $i = $i + 2) {
+    $totalX += ($polygonVertices[$i] + $polygonVertices[$i+2]) * ($polygonVertices[$i+2] * $polygonVertices[$i+1] - $polygonVertices[$i] * $polygonVertices[$i+3]);
+    $totalY += ($polygonVertices[$i+1] + $polygonVertices[$i+3]) * ($polygonVertices[$i+2] * $polygonVertices[$i+1] - $polygonVertices[$i] * $polygonVertices[$i+3]);
+  }
+  $centX = $totalX / (6 * $polygonArea);
+  $centY = $totalY / (6 * $polygonArea);
+  print "INFO-UTS : 001 : $centX,$centY\n";
+  return "$centX,$centY";
+}#getPolygonCentroid
+
+sub getPolygonArea {
+  my $total = 0;
+  my @polygonVertices = @_;
+  for(my $i = 0; $i < (scalar(@polygonVertices) - 3); $i = $i + 2) {
+    $total += ( ($polygonVertices[$i] * $polygonVertices[$i + 3]) - ($polygonVertices[$i + 2] * $polygonVertices[$i + 1]));
+  }
+  $total *= -0.5;
+  return $total;
+}#getPolygonArea
+
+
+sub isPolygonClosed {
+  my @polygonVertices = @_;
+  if ( ($polygonVertices[0] != $polygonVertices[-2]) || ($polygonVertices[1] != $polygonVertices[-1])) {
+    return 1;
+  }
+  else {
+    return 0;
+  }
+}#isPolygonClosed
+
+#############################################################################################################################
+sub min_dis_x_y {
+my $noOfArgs = @_;
+if( $_[0] eq '-h' || $_[0] eq '-help' ) { 
+  print "Usage : ./min_dis_x_y \n";
+  print "                  -file1 <file name> \n";
+  print "                  -file2 <file name> \n";
+}else{
+  my $file1 = "";
+  my $file2 = ""; 
+  my @coordinates_of_bbox = ();
+  for(my $i = 0; $i <= $noOfArgs; $i++) {
+    if($_[$i] eq "-file1")  { $file1 = $_[$i+1]; }
+    if($_[$i] eq "-file2")  { $file2 = $_[$i+1]; }
+  }#for correct no of args
+  #@coordinates_of_file2 = get_centroid($file2);
+  @coordinates_of_file2 = read_file($file2);
+  open (WRITE, ">min_dis");
+  open (READ, $file1);
+  while (<READ>) {
+    my $minValue = 0;
+    my $count = 1;
+    my $X = "";
+    my $Y = "";
+    chomp;
+    my ($signalName,$x,$y) = (split(/\s+/,$_))[0,1,2];
+    foreach my $x_y (@coordinates_of_file2){
+      my $x_min = abs($x - @$x_y[0]);
+      my $y_min = abs($y - @$x_y[1]);
+      my $x_y_min = $x_min + $y_min;
+      if ($count == 1){
+         $minValue = $x_y_min;
+        $X = @$x_y[0];
+        $Y = @$x_y[1];
+         $count = 0;
+      }
+      if ($minValue < $x_y_min){
+      }else{
+        $minValue = $x_y_min;
+        $X = @$x_y[0];
+        $Y = @$x_y[1];
+      }
+    }
+    my $distance = sqrt(($x - $X)*($x - $X) + ($y - $Y)*($y - $Y));
+    print WRITE "$signalName $X $Y $distance\n";
+    #print "$signalName $minValue, $X, $Y\n";
+  }#while read
+#min_dis_x_y -file1 file1 -file2 file2
+  close READ;
+  close WRITE;
+}#else
+}#sub min_dis_x_y
+
+sub read_file {
+  my @temp_coordinates_of_file = (); 
+  my $file = $_[0] ;
+  open (READ, $file);
+  while (<READ>) {
+    chomp;
+    my @line = split(/\,/,$_);
+    my @my_line = ($line[0]/1000, $line[1]/1000);
+    push (@temp_coordinates_of_file , [@my_line]);
+  }
+  return @temp_coordinates_of_file;
+  close READ;
+ 
+}#sub read_file
+
+sub return_shift_x_val_for_instance_location_for_mpl_flatDB {
+my $instance = $_[0];
+my $shift = 0;
+     if(exists $CADB{$instance}) {
+     my $cellref = $CADB{$instance}->dbCadbGetCellref;
+     if(exists $PLDB{$cellref}) {
+     my @org_bbox = $PLDB{$cellref}->dbMdbGetSize;
+     my $width = $org_bbox[2] - $org_bbox[0];
+     my $height = $org_bbox[3] - $org_bbox[1];
+     if ($width < $height) {
+       $shift = $width/2;
+     } else {
+       $shift = $height/2;
+     } 
+     } 
+     } 
+     return($shift);
+
+}#sub return_shift_x_val_for_instance_location_for_mpl_flatDB
+
+sub return_shift_y_val_for_instance_location_for_mpl_flatDB {
+my $instance = $_[0];
+my $shift = 0;
+     if(exists $CADB{$instance}) {
+     my $cellref = $CADB{$instance}->dbCadbGetCellref;
+     if(exists $PLDB{$cellref}) {
+     my @org_bbox = $PLDB{$cellref}->dbMdbGetSize;
+     my $width = $org_bbox[2] - $org_bbox[0];
+     my $height = $org_bbox[3] - $org_bbox[1];
+     if ($width < $height) {
+       $shift = $width/2;
+     } else {
+       $shift = $height/2;
+     } 
+     } 
+     } 
+     return($shift);
+
+}#sub return_shift_y_val_for_instance_location_for_mpl_flatDB
+
+sub write_xy_out_mpl {
+  if( $_[0] eq '-h') { 
+    print "Usage : write_xy_out_mpl [ -output <output node location file> ] [--normalized] [--overwrite] \n";
+    print "                  note : by default <output node location file> will be new_xy.out\n";
+    return ;
+  }
+  my $OPLocationFile = "new_xy.out";
+  my $is_normalized = 0 ;
+  my $noOfArguments = @_;
+  for(my $i = 0; $i < $noOfArguments; $i++){
+    if($_[$i] eq "-output"){$OPLocationFile = $_[$i+1];}
+    if($_[$i] eq "--overwrite"){$OVERWRITE = 1;}
+    if($_[$i] eq "--normalized"){$is_normalized = 1;}
+  }
+  if ( -e $OPLocationFile ) {
+    if ( $OVERWRITE == 1 ) {
+      if (!(-w $OPLocationFile)) {
+        print "ERR-UTS-WR_XY_OUT_MPL : 001 : $OPLocationFile is not writable. Please change the output/permission of the file and try again\n";
+        return;
+      }
+      print "WARN-UTS-WR_XY_OUT_MPL : 002 : $OPLocationFile exists, overwriting existing file as instructed\n";
+    } else {
+      print "ERR-UTS-WR_XY_OUT_MPL : 003 : $OPLocationFile exists, Please change the output file name or remove the existing file and try again\n";
+      return;
+    }
+  }
+  print "MSG-UTS-WR_XY_OUT_MPL : 004 : Note : Writing locations of IO and components in the file $OPLocationFile\n";
+  open(WRITE,">$OPLocationFile");
+  my $dbu = $GLOBAL->dbfGlobalGetDBU;
+  if ( exists $DIE_ALREADY{dieArea} ) {
+  $guiDiellx = $DIE_ALREADY{dieArea}[0];
+  $guiDielly = $DIE_ALREADY{dieArea}[1];
+  $guiDieurx = $DIE_ALREADY{dieArea}[2];
+  $guiDieury = $DIE_ALREADY{dieArea}[3];
+  
+  $llx = "-10.000000";
+  $lly = "-10.000000";
+
+  if($is_normalized ==1) {
+  $llx = -1.000000;
+  $lly = -1.000000;
+  }
+  
+  $absllx = abs($llx);
+  $abslly = abs($lly);
+  
+  $urx = "10.000000";
+  $ury = "10.000000";
+  
+  if($is_normalized ==1) {
+  $urx = 1.000000;
+  $ury = 1.000000;
+  }
+
+  $newurx = $urx + $absllx;
+  $newury = $ury + $abslly;
+   
+  print WRITE "$llx $lly\n";
+  print WRITE "$urx  $ury\n";
+  
+  foreach $port (keys %{$PORTS_ALREADY{$TOP_MODULE}}){
+      my $port_node = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetNodeNum;
+      my @port_loc = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetLoc;
+      my $portloc_X = $port_loc[0];
+      my $portloc_Y = $port_loc[1];
+      my $port_loc_X = $portloc_X/$guiDieurx;
+      my $port_loc_Y = $portloc_Y/$guiDieury;
+      my $location_X = $port_loc_X*$newurx;
+      my $location_Y = $port_loc_Y*$newury;
+      my $new_loc_X =  sprintf("%.10f",$llx + $location_X);
+      my $new_loc_Y =  sprintf("%.10f",$lly + $location_Y);
+      print WRITE "$port_node $new_loc_X $new_loc_Y\n";
+                                     }#foreach port
+  foreach $inst (keys %COMP_ALREADY){
+      my $node = $CADB{$inst}->dbCadbGetNodeNum;
+      my @instloc = $CADB{$inst}->dbCadbGetLoc;
+      my $instloc_X = $instloc[0];
+      my $instloc_Y = $instloc[1];
+      my $temp_mov_X = &return_shift_x_val_for_instance_location_for_mpl_flatDB($inst); 
+      my $temp_mov_Y = &return_shift_y_val_for_instance_location_for_mpl_flatDB($inst); 
+      $temp_mov_X *= $dbu;
+      $temp_mov_Y *= $dbu;
+      $instloc_X += $temp_mov_X ;
+      $instloc_Y += $temp_mov_y ;
+      my $inst_loc_X = $instloc_X/$guiDieurx;
+      my $inst_loc_Y = $instloc_Y/$guiDieury;
+      my $loc_X = $inst_loc_X * $newurx;
+      my $loc_Y = $inst_loc_Y * $newury;
+      my $new_inst_loc_X = sprintf("%.10f",$llx + $loc_X);
+      my $new_inst_loc_Y = sprintf("%.10f",$llx + $loc_Y);
+      print WRITE"$node $new_inst_loc_X $new_inst_loc_Y\n";
+                                     }#foreach inst
+  }#if exists die already
+}#sub write_xy_out_mpl        
+
+sub write_graph_modified_plan_4 {
+
+#########################################################################
+# NAME
+#     write_graph_modified_plan_4
+# Assumptions
+# 
+# SYNOPSIS
+# 
+# INPUTS
+#   options:
+# OUTPUTS
+# generate a nodefile ,libfile, graph file for hard macro's only 
+# Note: All the dimension will be in micron, so DEF data needs to be 
+#       divided by data base unit and lef data to be outputted as such
+#########################################################################
+
+  my $noOfArguments = @_;
+  if( $noOfArguments > 1 || $_[0] eq '-h'){
+    print "Usage : write_graph_modified_plan_4 [--pinOffset]\n";
+    return ;
+  }
+  my $pinOffset = 0;
+  for(my $i =0; $i<$noOfArguments; $i++){
+    if($_[$i] eq "--pinOffset"){
+      $pinOffset = 1;
+    }
+  }
+  %TEMP = ();
+  %TEMP_NODE_DEGREE = ();
+  my $cnt = 0;
+  my $portCellID = 2;
+  #---------------------------------------------------start nodefile------------------------------------------#
+  my %cells = (); 
+  my $cellcnt = 3;
+  open(WRITE_NODE,">nodefile");
+  my @size = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetSize ;
+  my $dbu = $GLOBAL->dbfGlobalGetDBU;
+  my $x = $size[0]/$dbu;
+  my $y = $size[1]/$dbu;
+  my $z = $size[2]/$dbu;
+  my $p = $size[3]/$dbu;
+  my $plan_4_scale_x ; 
+  my $plan_4_scale_y ;
+  $plan_4_scale_x = (10 - (-10))/($z - $x);
+  $plan_4_scale_y = (10 - (-10))/($p - $y);
+  
+  my @rows = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetRows;
+  my $row_count = @rows ;
+  print WRITE_NODE "$row_count\n"; 
+  print WRITE_NODE "-10  -10\n"; 
+  print WRITE_NODE "10  10\n"; 
+  
+  foreach my $port ( keys %{$PORTS_ALREADY{$TOP_MODULE}} ) {
+    $TEMP{$port} = $cnt;
+    $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortSetNodeNum($cnt);
+    my $port_status = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetStatus() ;
+    if($port_status == 3) {
+      print WRITE_NODE "$cnt \ -$portCellID\n";
+      my @port_loc = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetLoc;
+      my $portloc_X = $port_loc[0]/$dbu;
+      my $portloc_Y = $port_loc[1]/$dbu;
+      my $new_portloc_X = ($portloc_X - $x)*$plan_4_scale_x ;
+      $new_portloc_X += -10;
+      my $new_portloc_Y = ($portloc_Y - $y)*$plan_4_scale_y ;
+      $new_portloc_Y += -10;
+      print WRITE_NODE "$new_portloc_X \ $new_portloc_Y\n";
+    }else {
+      print WRITE_NODE "$cnt \ $portCellID\n";
+    }
+    $cnt++;
+  }
+
+  foreach my $inst (keys %{COMP_ALREADY} ) {
+    my $cellref = $CADB{$inst}->dbCadbGetCellref;
+    my $inst_class = $PLDB{$cellref}->dbMdbGetClass;
+    if($inst_class ne "BLOCK") {
+      next;
+    }
+    $TEMP{$inst} = $cnt; 
+    $CADB{$inst}->dbCadbSetNodeNum($cnt);
+    #my $cellType = 0;
+    if(exists $cells{$cellref}){
+      my $num = $cells{$cellref};
+      #if ( $cellType == 1 ) { 
+      #  $num = $num + 10000; 
+      #}
+      my $inst_status = $CADB{$inst}->dbCadbGetStatus() ;
+      if($inst_status eq "FIXED") {
+        print WRITE_NODE "$cnt \ -$num\n";
+        my @instLoc = $CADB{$inst}->dbCadbGetLoc;
+        my $instloc_X = $instLoc[0]/$dbu;
+        my $instloc_Y = $instLoc[1]/$dbu;
+        my $new_instloc_X = ($instloc_X - $x)*$plan_4_scale_x ;
+        $new_instloc_X += -10;
+        my $new_instloc_Y = ($instloc_Y - $y)*$plan_4_scale_y ;
+        $new_instloc_Y += -10;
+        print WRITE_NODE "$new_instloc_X \ $new_instloc_Y\n";
+      }else {
+        print WRITE_NODE "$cnt \ $num\n";
+      }
+    }else{
+      $cells{$cellref} = $cellcnt;
+      my $num = $cells{$cellref};
+      #if ($cellType == 1) { 
+      #  $num = $num + 10000;
+      #}
+      my $inst_status = $CADB{$inst}->dbCadbGetStatus() ;
+      if($inst_status eq "FIXED") {
+        print WRITE_NODE "$cnt \ -$num\n";
+        my @instLoc = $CADB{$inst}->dbCadbGetLoc;
+        my $instloc_X = $instLoc[0]/$dbu;
+        my $instloc_Y = $instLoc[1]/$dbu;
+        my $new_instloc_X = ($instloc_X - $x)*$plan_4_scale_x ;
+        $new_instloc_X += -10;
+        my $new_instloc_Y = ($instloc_Y - $y)*$plan_4_scale_y ;
+        $new_instloc_Y += -10;
+        print WRITE_NODE "$new_instloc_X \ $new_instloc_Y\n";
+      }else {
+        print WRITE_NODE "$cnt \ $num\n";
+      }
+      $cellcnt++;
+    }
+    $cnt++;
+  }
+  close(WRITE_NODE);
+  #---------------------------------------------------end nodefile------------------------------------------#
+  
+  #---------------------------------------------------start libfile------------------------------------------#
+  if ($pinOffset == 0) {
+    open(WRITE_LIB,">libfile");
+  }else {
+    open(WRITE_LIB,">libfile_pin_offset");
+  }
+  my $rowHeight = $GLOBAL->dbGlobalGetRowHeight;
+  my $giganticRowHeight = 1000;
+  unless ( defined $rowHeight && $rowHeight >= 0 && $rowHeight < $giganticRowHeight ) {
+    $rowHeight = 0;  # arbitrary non zero number
+  }
+  my $new_rowHeight = $rowHeight * $plan_4_scale_y;
+  if($pinOffset == 0){
+  print WRITE_LIB "1 $new_rowHeight $new_rowHeight\n";  # representing site height
+  print WRITE_LIB "2 0 0\n";  # representing all ports
+  }else {
+    print WRITE_LIB "1 $new_rowHeight $new_rowHeight 1\n";  # representing site height
+    print WRITE_LIB "0.0 0.0 \n";  # representing site height
+    print WRITE_LIB "2 0 0 1\n";  # representing all ports
+    print WRITE_LIB "0.0 0.0 \n";  # representing site height
+  }
+  foreach my $cellName ( keys %cells ) {
+    if ( exists $PLDB{$cellName} ) {
+      my $pinc = 0;
+      my @pins = $PLDB{$cellName}->dbMdbGetPins;
+      foreach $pinName ( @pins ) {
+        $pinc++;
+      }
+      my @box = $PLDB{$cellName}->dbMdbGetSize;
+      my $new_x_dim = $box[0] * $plan_4_scale_x ;
+      my $new_y_dim = $box[1] * $plan_4_scale_y ;
+      if($pinOffset == 0){
+        print WRITE_LIB "$cells{$cellName} $new_x_dim $new_y_dim\n";
+      } else{
+        print WRITE_LIB "$cells{$cellName} $new_x_dim $new_y_dim $pinc\n";
+        my $pincount = 0;
+        my @pins = $PLDB{$cellName}->dbMdbGetPins;
+        foreach $pinName ( @pins ) {
+          $pincount++;
+          my @RECTS = $PLDB{$cellName}->dbMdbGetPinRect($pinName);
+          my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$RECTS[0]))[0,2,3,4,5];
+          my $mid_x = ($llx + $urx)/2;
+          my $mid_y = ($lly + $ury)/2;
+          my $new_mid_x = $mid_x * $plan_4_scale_x;
+          my $new_mid_y = $mid_y * $plan_4_scale_y;
+          print WRITE_LIB "\t$new_mid_x $new_mid_y\n";
+        }
+      }
+    }
+  }
+  close(WRITE_LIB);
+  #---------------------------------------------------end libfile------------------------------------------#
+  
+  #---------------------------------------------------start nodeMap.txt------------------------------------------#
+  open(WRITE1,">nodeMap.txt");
+  %TEMPR = ();
+  foreach my $inst (keys %TEMP){
+    my $n = $TEMP{$inst};
+    print WRITE1 "$n $inst\n";
+    $TEMPR{$n} = $inst;
+  }
+  close(WRITE1);
+  #---------------------------------------------------end nodeMap.txt------------------------------------------#
+  
+  #-------------------------------------------------start  graphfile------------------------------------------#
+  #&set_number_nodes_connected_to_all_net;
+  if ($pinOffset == 0) {
+    print "INFO-UTS-WR_GRPH_MDFD_PLN_4 : 001 : Writing the graph file of the design in $TOP_MODULE\.txt\n";
+    open(WRITE,">$TOP_MODULE.txt");
+  }else {
+    print "INFO-UTS-WR_GRPH_MDFD_PLN_4 : 002 : Writing the graph file of the design in ${TOP_MODULE}_pin_offset\.txt\n";
+    open(WRITE,">${TOP_MODULE}_pin_offset.txt");
+  }
+  #my $very_high_fanout = $GLOBAL->dbfGlobalGetFanoutLimit;
+  my $max_node_cnt = $cnt -1 ;
+  print WRITE "0  $max_node_cnt\n";
+  close(WRITE);
+  #&gen_initial_degree_for_all_nodes ;
+  #&gen_final_degree_for_all_nodes ;
+}#sub write_graph_modified_plan_4
+
+
+sub write_graph_modified_mpl {
+
+#########################################################################
+# NAME
+#     write_graph_modified_mpl
+# Assumptions
+# 
+# SYNOPSIS
+# 
+# INPUTS
+#   options:
+#    --pinOffset :  generate a graph file with pinOffset starting from 0
+# OUTPUTS
+# generate a nodefile ,libfile, graph file 
+# Note: All the dimension will be normalized and scaled for CHIP dimension from (-10,-10) to (10,10). So DEF data needs to be 
+#       divided by data base unit and then normalized/scaled. LEF data needs to be only normalized/scaled.
+#########################################################################
+
+  my $noOfArguments = @_;
+  if( $noOfArguments > 1 || $_[0] eq '-h'){
+    print "Usage : write_graph_modified_mpl [--pinOffset]\n";
+    return ;
+  }
+  my $pinOffset = 0;
+  for(my $i =0; $i<$noOfArguments; $i++){
+    if($_[$i] eq "--pinOffset"){
+      $pinOffset = 1;
+    }
+  }
+  %TEMP = ();
+  %TEMP_NODE_DEGREE = ();
+  my $cnt = 0;
+  my $portCellID = 2;
+  #---------------------------------------------------start nodefile------------------------------------------#
+  my %cells = (); 
+  my $cellcnt = 3;
+  open(WRITE_NODE,">nodefile");
+  my @size = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetSize ;
+  my $dbu = $GLOBAL->dbfGlobalGetDBU;
+  my $x = $size[0]/$dbu;
+  my $y = $size[1]/$dbu;
+  my $z = $size[2]/$dbu;
+  my $p = $size[3]/$dbu;
+  my $mpl_scale_x ; 
+  my $mpl_scale_y ;
+  $mpl_scale_x = (10 - (-10))/($z - $x);
+  $mpl_scale_y = (10 - (-10))/($p - $y);
+  
+  my @rows = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetRows;
+  my $row_count = @rows ;
+  print WRITE_NODE "$row_count\n"; 
+  print WRITE_NODE "-10  -10\n"; 
+  print WRITE_NODE "10  10\n"; 
+  
+  foreach my $port ( keys %{$PORTS_ALREADY{$TOP_MODULE}} ) {
+    $TEMP{$port} = $cnt;
+    $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortSetNodeNum($cnt);
+    my $port_status = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetStatus() ;
+    if($port_status == 3) {
+      print WRITE_NODE "$cnt \ -$portCellID\n";
+      my @port_loc = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetLoc;
+      my $portloc_X = $port_loc[0]/$dbu;
+      my $portloc_Y = $port_loc[1]/$dbu;
+      my $new_portloc_X = ($portloc_X - $x)*$mpl_scale_x ;
+      $new_portloc_X += -10;
+      my $new_portloc_Y = ($portloc_Y - $y)*$mpl_scale_y ;
+      $new_portloc_Y += -10;
+      print WRITE_NODE "$new_portloc_X \ $new_portloc_Y\n";
+    }else {
+      print WRITE_NODE "$cnt \ $portCellID\n";
+    }
+    $cnt++;
+  }
+
+  foreach my $inst (keys %{COMP_ALREADY} ) {
+    $TEMP{$inst} = $cnt; 
+    $CADB{$inst}->dbCadbSetNodeNum($cnt);
+    my $cellref = $CADB{$inst}->dbCadbGetCellref;
+    #my $cellType = 0;
+    if(exists $cells{$cellref}){
+      my $num = $cells{$cellref};
+      #if ( $cellType == 1 ) { 
+      #  $num = $num + 10000; 
+      #}
+      my $inst_status = $CADB{$inst}->dbCadbGetStatus() ;
+      if($inst_status eq "FIXED") {
+        print WRITE_NODE "$cnt \ -$num\n";
+        my @instLoc = $CADB{$inst}->dbCadbGetLoc;
+        my $instloc_X = $instLoc[0]/$dbu;
+        my $instloc_Y = $instLoc[1]/$dbu;
+        $instloc_X += &return_shift_x_val_for_instance_location_for_mpl_flatDB($inst); 
+        $instloc_Y += &return_shift_y_val_for_instance_location_for_mpl_flatDB($inst); 
+        my $new_instloc_X = ($instloc_X - $x)*$mpl_scale_x ;
+        $new_instloc_X += -10;
+        my $new_instloc_Y = ($instloc_Y - $y)*$mpl_scale_y ;
+        $new_instloc_Y += -10;
+        print WRITE_NODE "$new_instloc_X \ $new_instloc_Y\n";
+      }else {
+        print WRITE_NODE "$cnt \ $num\n";
+      }
+    }else{
+      $cells{$cellref} = $cellcnt;
+      my $num = $cells{$cellref};
+      #if ($cellType == 1) { 
+      #  $num = $num + 10000;
+      #}
+      my $inst_status = $CADB{$inst}->dbCadbGetStatus() ;
+      if($inst_status eq "FIXED") {
+        print WRITE_NODE "$cnt \ -$num\n";
+        my @instLoc = $CADB{$inst}->dbCadbGetLoc;
+        my $instloc_X = $instLoc[0]/$dbu;
+        my $instloc_Y = $instLoc[1]/$dbu;
+        $instloc_X += &return_shift_x_val_for_instance_location_for_mpl_flatDB($inst); 
+        $instloc_Y += &return_shift_y_val_for_instance_location_for_mpl_flatDB($inst); 
+        my $new_instloc_X = ($instloc_X - $x)*$mpl_scale_x ;
+        $new_instloc_X += -10;
+        my $new_instloc_Y = ($instloc_Y - $y)*$mpl_scale_y ;
+        $new_instloc_Y += -10;
+        print WRITE_NODE "$new_instloc_X \ $new_instloc_Y\n";
+      }else {
+        print WRITE_NODE "$cnt \ $num\n";
+      }
+      $cellcnt++;
+    }
+    $cnt++;
+  }
+  close(WRITE_NODE);
+  #---------------------------------------------------end nodefile------------------------------------------#
+  
+  #---------------------------------------------------start libfile------------------------------------------#
+  if ($pinOffset == 0) {
+    open(WRITE_LIB,">libfile");
+  }else {
+    open(WRITE_LIB,">libfile_pin_offset");
+  }
+  my $rowHeight = $GLOBAL->dbGlobalGetRowHeight;
+  my $giganticRowHeight = 1000;
+  unless ( defined $rowHeight && $rowHeight >= 0 && $rowHeight < $giganticRowHeight ) {
+    $rowHeight = 0;  # arbitrary non zero number
+  }
+  my $new_rowHeight = $rowHeight * $mpl_scale_y;
+  if($pinOffset == 0){
+  print WRITE_LIB "1 $new_rowHeight $new_rowHeight\n";  # representing site height
+  print WRITE_LIB "2 0 0\n";  # representing all ports
+  }else {
+    print WRITE_LIB "1 $new_rowHeight $new_rowHeight 1\n";  # representing site height
+    print WRITE_LIB "0.0 0.0 \n";  # representing site height
+    print WRITE_LIB "2 0 0 1\n";  # representing all ports
+    print WRITE_LIB "0.0 0.0 \n";  # representing site height
+  }
+  foreach my $cellName ( keys %cells ) {
+    if ( exists $PLDB{$cellName} ) {
+      my $pinc = 0;
+      my @pins = $PLDB{$cellName}->dbMdbGetPins;
+      foreach $pinName ( @pins ) {
+        $pinc++;
+      }
+      my @box = $PLDB{$cellName}->dbMdbGetSize;
+      my $new_x_dim = $box[0] * $mpl_scale_x ;
+      my $new_y_dim = $box[1] * $mpl_scale_y ;
+      if($pinOffset == 0){
+        print WRITE_LIB "$cells{$cellName} $new_x_dim $new_y_dim\n";
+      } else{
+        print WRITE_LIB "$cells{$cellName} $new_x_dim $new_y_dim $pinc\n";
+        my $pincount = 0;
+        my @pins = $PLDB{$cellName}->dbMdbGetPins;
+        foreach $pinName ( @pins ) {
+          $pincount++;
+          my @RECTS = $PLDB{$cellName}->dbMdbGetPinRect($pinName);
+          my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$RECTS[0]))[0,2,3,4,5];
+          my $mid_x = ($llx + $urx)/2;
+          my $mid_y = ($lly + $ury)/2;
+          my $new_mid_x = $mid_x * $mpl_scale_x;
+          my $new_mid_y = $mid_y * $mpl_scale_y;
+          print WRITE_LIB "\t$new_mid_x $new_mid_y\n";
+        }
+      }
+    }
+  }
+  close(WRITE_LIB);
+  #---------------------------------------------------end libfile------------------------------------------#
+  
+  #---------------------------------------------------start nodeMap.txt------------------------------------------#
+  open(WRITE1,">nodeMap.txt");
+  %TEMPR = ();
+  foreach my $inst (keys %TEMP){
+    my $n = $TEMP{$inst};
+    print WRITE1 "$n $inst\n";
+    $TEMPR{$n} = $inst;
+  }
+  close(WRITE1);
+  #---------------------------------------------------end nodeMap.txt------------------------------------------#
+  
+  #-------------------------------------------------start  graphfile------------------------------------------#
+  &set_number_nodes_connected_to_all_net;
+  if ($pinOffset == 0) {
+    print "INFO-UTS-WR_GRPH_MDFD_MPL : 001 : Writing the graph file of the design in $TOP_MODULE\.txt\n";
+    open(WRITE,">$TOP_MODULE.txt");
+  }else {
+    print "INFO-UTS-WR_GRPH_MDFD_MPL : 002 : Writing the graph file of the design in ${TOP_MODULE}_pin_offset\.txt\n";
+    open(WRITE,">${TOP_MODULE}_pin_offset.txt");
+  }
+  my $very_high_fanout = $GLOBAL->dbfGlobalGetFanoutLimit;
+  my $net ;
+  foreach $net (keys %{NETS_ALREADY}){
+    if (exists $NETS_ROUTING_ALREADY{$net}){
+        my $power = $NETS_ROUTING_ALREADY{$net}->dbNetGetType;
+        if($power eq "POWER"){
+          next;
+        }
+        if($power eq "GROUND"){
+          next;
+        }
+     }#if routing exists already
+     if ( $net =~ /1\'b/ ){
+       next ;
+     }
+     if ( $net eq ""){
+       next ;
+     }
+     if (exists $TEMP_NET_CONN_NODE_NO{$net}) {
+       if ($TEMP_NET_CONN_NODE_NO{$net} > $very_high_fanout) {
+         next ;
+       }
+     }
+     my @driverInst = &getNetDriver($net);
+     print "\n DBG-UTS-WR_GRPH_MDFD_MPL : 003 : net Name $net driverInst : " if($debug);
+     print join ",",@driverInst if($debug);
+     print "\n" if($debug);
+     my @sinkInst = &getNetSink($net);
+     print "\n DBG-UTS-WR_GRPH_MDFD_MPL : 004 : net Name $net sinkInst : " if($debug);
+     print join ",",@sinkInst if($debug);
+     print "\n" if($debug);
+     my @instList = ();
+     my @instPinList = ();
+     if ( $driverInst[0] eq "UND"){
+       #do nothing
+     }elsif ( $driverInst[0] eq ""){
+       #do nothing
+     }else{
+           #$driver_pin_number = &get_nodenum_for_given_pin($driverInst[0],$driverInst[1]);
+           push(@instList,$driverInst[0]);
+           push(@instPinList,$driverInst[1]);
+     }#else driverInst
+  #-------------------------------------sinkInstance-------------------------------------------------------#
+    my $i = 0 ;
+    for($i = 0;$i<$#sinkInst;$i=$i+2){
+        #$sink_pin_number = &get_nodenum_for_given_pin($sinkInst[$i],$sinkInst[$i+1]);
+        push(@instList,$sinkInst[$i]);
+        push(@instPinList,$sinkInst[$i+1]);
+    }#for
+    my  $len = @instList;
+    if($len > 2){
+      print WRITE "$len -1\n";
+      foreach $inst (@instList){
+        my $instPin = shift(@instPinList) ;
+        my $pin1 = &get_nodenum_for_given_pin($inst,$instPin);
+        my $inst_number = &get_nodenum_for_given_inst($inst); 
+        if($pinOffset == 0){
+          print WRITE "\t$inst_number\n";
+        } else{
+          print WRITE "\t$inst_number $pin1\n";
+        }
+      }#foreach inst
+    }#if len > 2
+    if($len == 2){
+      $inst1 = $instList[0];
+      $inst2 = $instList[1];
+      my $inst_number_1 = &get_nodenum_for_given_inst($inst1);
+      my $inst_number_2 = &get_nodenum_for_given_inst($inst2);
+      my $instPin_1 = shift(@instPinList) ;
+      my $pin1 = &get_nodenum_for_given_pin($inst1,$instPin_1);
+      my $instPin_2 = shift(@instPinList) ;
+      my $pin2 = &get_nodenum_for_given_pin($inst2,$instPin_2);
+      if($pinOffset == 0){
+        print WRITE "$inst_number_1 $inst_number_2\n";
+      } else{
+        print WRITE "$inst_number_1  $inst_number_2 $pin1 $pin2\n";
+      }#else
+    }#if $len eq 2
+  }#foreach net
+  close(WRITE);
+  #&gen_initial_degree_for_all_nodes ;
+  #&gen_final_degree_for_all_nodes ;
+}#sub write_graph_modified_mpl
+
+sub read_graph_mpl {
+$DEBUG = 31;
+my $INPUT_GRAPH = "xy.out";
+if ( -e $INPUT_GRAPH) {
+open(READ,"$INPUT_GRAPH");
+print "INFO-UTS : 001 : Reading the graph for $INPUT_GRAPH\n";
+#print "Existing Die size are : @{$DIE_ALREADY{dieArea}} \n";
+
+##########Scaling to values to the die size##########
+$line1 = <READ>;
+($llx,$lly) = (split(/\s+/, $line1))[0,1];
+$absllx = abs($llx);
+$abslly = abs($lly);
+
+$line2 = <READ>;
+($urx,$ury) = (split(/\s+/, $line2))[0,1];
+#print "$line1 : $llx and $lly and $absllx and $abslly\n";
+$newurx = $urx + $absllx;
+$newury = $ury + $abslly;
+#print "$line2 : $urx and $ury and $newurx and $newury\n";
+
+$scalex = $DIE_ALREADY{dieArea}[2]/($newurx);
+$scaley = $DIE_ALREADY{dieArea}[3]/($newury);
+#print "Scalex : $scalex and Scaley : $scaley \n";
+
+while(<READ>) {
+chomp();
+($node,$x,$y) = (split(/\s+/, $_))[0,1,2];
+#$x = ($x+$absllx)*2000*$scalex;
+#$y = ($y+$abslly)*2000*$scaley;
+$x = ($x+$absllx)*$scalex;
+$y = ($y+$abslly)*$scaley;
+#$x = int($x);
+#$y = int($y);
+
+#print "$x and $y\n";
+$found = 0;
+#foreach $inst ( keys %TEMP ) { if ( $node == $TEMP{$inst} ) { $found = 1; $instance = $inst } }
+if ( exists $TEMPR{$node} ) { $found = 1; $instance = $TEMPR{$node}; } else { $found = 0;}
+if($found == 1 ) { 
+                if ( exists $CADB{$instance} ) {
+     my $temp_mov_X = &return_shift_x_val_for_instance_location_for_mpl_flatDB($instance); 
+     my $temp_mov_Y = &return_shift_y_val_for_instance_location_for_mpl_flatDB($instance); 
+     $temp_mov_X *= $dbu;
+     $temp_mov_Y *= $dbu;
+     $x -= $temp_mov_X;
+     $y -= $temp_mov_Y;
+     $CADB{$instance}->dbCadbSetLoc($x,$y);
+     $CADB{$instance}->dbCadbSetStatus(PLACED);
+     $CADB{$instance}->dbCadbSetOrient(N);
+                                               } 
+                elsif ( exists $PORTS_ALREADY{$TOP_MODULE}{$instance} ) {
+     $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetLoc($x,$y);
+     $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetSide($side);
+     $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetStatus(PLACED);
+                                               }
+                else { print "ERR-UTS : 002 : $instance is neither a port nor a component\n"; } 
+                 }
+else { print "ERR-UTS : 003 : node $node not found\n"; }
+              }#while
+
+}#end if
+else {
+print "ERR-UTS : 004 : No xy.out file found \n";
+}
+close($INPUT_GRAPH);
+&set_inst_box;
+}#sub read_graph_mpl
+
+
+sub place_graph_plan_4
+{
+  if ( $_[0] eq '-h') { print "Usage : place_graph_plan_4 \n";
+  } else {
+    print "\n" ;
+    &delete_all_tmp_placer_files;
+    &write_graph_modified_plan_4 ;
+    unlink("new_xy.out");
+    unlink("xy.out");
+    unlink("detailed_xy.out");
+    &write_xy_out_plan_4 ;
+    rename("new_xy.out" , "xy.out");
+    $INPUT_NET_FILE = $TOP_MODULE.".txt" ;
+    $NODE_FILE = "nodefile" ;
+    $LIB_FILE = "libfile" ;
+    my $env_proton_home = $GLOBAL->dbfGlobalGetProtonHome;
+    my $placeLogFileName = "plan_4_place.log";
+    
+    if( $NOLOG != 1 ) {
+      closeTee(*STDOUT);
+      open (TEST, ">>$logFileName");
+      my $ofh = select TEST;
+      $| = 1;
+      select $ofh;
+      openTee(*STDOUT, *STDOUT, *TEST);
+    }
+    if (-e $INPUT_NET_FILE) {
+      print "INFO-UTS-PL_GRPH_PLN_4 : 001 : Placing the design $TOP_MODULE \n";
+      system( "$env_eqator_home/3RDBIN/plan_4 $INPUT_NET_FILE $NODE_FILE $LIB_FILE ");
+      #system( "$env_eqator_home/plan_1 $INPUT_NET_FILE $NODE_FILE \| tee  $placeLogFileName >> $logFileName");
+      print "INFO-UTS-PL_GRPH_PLN_4 : 002 : Placed the design $TOP_MODULE \n";
+    }
+
+    unlink("xy.out");
+    rename("detailed_xy.out" , "xy.out");
+    &read_graph_plan_4;
+    &delete_tmp_placer_files;
+    }
+}#sub place_graph_plan_4
+
+sub place_graph_mpl
+{
+  if ( $_[0] eq '-h') { print "Usage : place_graph_mpl \n";
+  } else {
+    print "\n" ;
+    &delete_all_tmp_placer_files;
+    &write_graph_modified_mpl ;
+    unlink("new_xy.out");
+    unlink("xy.out");
+    unlink("detailed_xy.out");
+    unlink("mp_xy.in");
+    &write_xy_out_mpl ;
+    rename("new_xy.out" , "mp_xy.in");
+    $INPUT_NET_FILE = $TOP_MODULE.".txt" ;
+    $NODE_FILE = "nodefile" ;
+    $LIB_FILE = "libfile" ;
+    my $env_proton_home = $GLOBAL->dbfGlobalGetProtonHome;
+    my $placeLogFileName = "mpl_place.log";
+    
+    if( $NOLOG != 1 ) {
+      closeTee(*STDOUT);
+      open (TEST, ">>$logFileName");
+      my $ofh = select TEST;
+      $| = 1;
+      select $ofh;
+      openTee(*STDOUT, *STDOUT, *TEST);
+    }
+    if (-e $INPUT_NET_FILE) {
+      print "INFO-UTS-PL_GRPH_MPL : 001 : Placing the design $TOP_MODULE \n";
+      #system( "$env_eqator_home/3RDBIN/plan_4 $INPUT_NET_FILE $NODE_FILE $LIB_FILE $DES_INFO_FILE \| tee  $placeDetailLogFileName >> $logFileName");
+      #system( "$env_eqator_home/3RDBIN/mpl $INPUT_NET_FILE $NODE_FILE \|tee $placeLogFileName >> $logFileName");
+      #system( "$env_eqator_home/3RDBIN/mpl $INPUT_NET_FILE $NODE_FILE");
+      system( "$env_proton_home/3RDBIN/mpl $INPUT_NET_FILE $NODE_FILE");
+      #system( "$env_eqator_home/plan_1 $INPUT_NET_FILE $NODE_FILE \| tee  $placeLogFileName >> $logFileName");
+      print "INFO-UTS-PL_GRPH_MPL : 002 : Placing the design $TOP_MODULE \n";
+    }
+
+    unlink("xy.out");
+    rename("mp_xy.out" , "xy.out");
+    &read_graph_mpl;
+    &delete_tmp_placer_files;
+    }
+}#sub place_graph_mpl
+
+sub place_graph_plan_1_pseudo 
+{
+  if ( $_[0] eq '-h') { print "Usage : place_graph_plan_1_pseudo \n";
+  } else {
+    $MPL_BINARY_IS_RUNNING = 1;
+    &delete_all_tmp_placer_files;
+    &write_hier_place_graph ("-module",$TOP_MODULE);
+    $INPUT_NET_FILE = $TOP_MODULE.".txt" ;
+    $NODE_FILE = "nodefile" ;
+    $LIB_FILE = "libfile" ;
+    my $env_proton_home = $GLOBAL->dbfGlobalGetProtonHome;
+    my $placeLogFileName = "plan_4_place.log";
+    
+    if( $NOLOG != 1 ) {
+      closeTee(*STDOUT);
+      open (TEST, ">>$logFileName");
+      my $ofh = select TEST;
+      $| = 1;
+      select $ofh;
+      openTee(*STDOUT, *STDOUT, *TEST);
+    }
+    if (-e $INPUT_NET_FILE) {
+      print "INFO-UTS-PL_GRPH_PLN_1_PSUDO : 001 : Placing the design $TOP_MODULE \n";
+      #system( "$env_eqator_home/3RDBIN/plan_1 $INPUT_NET_FILE $NODE_FILE $LIB_FILE $DES_INFO_FILE \| tee  $placeDetailLogFileName >> $logFileName");
+      #system( "$env_eqator_home/3RDBIN/plan_1 $INPUT_NET_FILE $NODE_FILE $LIB_FILE");
+      system( "$env_proton_home/3RDBIN/plan_1 $INPUT_NET_FILE $NODE_FILE $LIB_FILE");
+      #system( "$env_eqator_home/plan_1 $INPUT_NET_FILE $NODE_FILE \| tee  $placeLogFileName >> $logFileName");
+      print "INFO-UTS-PL_GRPH_PLN_1_PSUDO : 002 : Placing the design $TOP_MODULE \n";
+    }
+    
+    rename("xy.out" , "mp_xy.out");
+    &read_hier_place_graph();
+    &delete_tmp_placer_files;
+    $MPL_BINARY_IS_RUNNING = 0;
+    }
+}#sub place_graph_plan_1_pseudo
+
+sub write_xy_out_plan_4 {
+  if( $_[0] eq '-h') { 
+    print "Usage : write_xy_out_plan_4 [ -output <output node location file> ] [--overwrite] \n";
+    print "                  note : by default <output node location file> will be new_xy.out\n";
+    return ;
+  }
+  my $OPLocationFile = "new_xy.out";
+  my $noOfArguments = @_;
+  for(my $i = 0; $i < $noOfArguments; $i++){
+    if($_[$i] eq "-output"){$OPLocationFile = $_[$i+1];}
+    if($_[$i] eq "--overwrite"){$OVERWRITE = 1;}
+  }
+  if ( -e $OPLocationFile ) {
+    if ( $OVERWRITE == 1 ) {
+      if (!(-w $OPLocationFile)) {
+        print "ERR-UTS : 001 : $OPLocationFile is not writable. Please change the output/permission of the file and try again\n";
+        return;
+      }
+      print "WARN-UTS : 002 : $OPLocationFile exists, overwriting existing file as instructed\n";
+    } else {
+      print "ERR-UTS : 003 : $OPLocationFile exists, Please change the output file name or remove the existing file and try again\n";
+      return;
+    }
+  }
+  print "MSG-UTS : 004 : Note : Writing locations of IO and components in the file $OPLocationFile\n";
+  open(WRITE,">$OPLocationFile");
+  my $dbu = $GLOBAL->dbfGlobalGetDBU;
+  if ( exists $DIE_ALREADY{dieArea} ) {
+  $guiDiellx = $DIE_ALREADY{dieArea}[0];
+  $guiDielly = $DIE_ALREADY{dieArea}[1];
+  $guiDieurx = $DIE_ALREADY{dieArea}[2];
+  $guiDieury = $DIE_ALREADY{dieArea}[3];
+  
+  $llx = "-10.000000";
+  $lly = "-10.000000";
+  
+  $absllx = abs($llx);
+  $abslly = abs($lly);
+  
+  $urx = "10.000000";
+  $ury = "10.000000";
+  
+  $newurx = $urx + $absllx;
+  $newury = $ury + $abslly;
+   
+  print WRITE "$llx $lly\n";
+  print WRITE "$urx  $ury\n";
+  
+  foreach $port (keys %{$PORTS_ALREADY{$TOP_MODULE}}){
+      my $port_node = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetNodeNum;
+      my @port_loc = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetLoc;
+      my $portloc_X = $port_loc[0];
+      my $portloc_Y = $port_loc[1];
+      my $port_loc_X = $portloc_X/$guiDieurx;
+      my $port_loc_Y = $portloc_Y/$guiDieury;
+      my $location_X = $port_loc_X*$newurx;
+      my $location_Y = $port_loc_Y*$newury;
+      my $new_loc_X =  sprintf("%.10f",$llx + $location_X);
+      my $new_loc_Y =  sprintf("%.10f",$lly + $location_Y);
+      print WRITE "$port_node $new_loc_X $new_loc_Y\n";
+                                     }#foreach port
+  foreach $inst (keys %COMP_ALREADY){
+      my $cellref = $CADB{$inst}->dbCadbGetCellref;
+      my $inst_class = $PLDB{$cellref}->dbMdbGetClass;
+      if($inst_class ne "BLOCK") {
+        next;
+      }
+      my $node = $CADB{$inst}->dbCadbGetNodeNum;
+      my @instloc = $CADB{$inst}->dbCadbGetLoc;
+      my $instloc_X = $instloc[0];
+      my $instloc_Y = $instloc[1];
+      my $inst_loc_X = $instloc_X/$guiDieurx;
+      my $inst_loc_Y = $instloc_Y/$guiDieury;
+      my $loc_X = $inst_loc_X * $newurx;
+      my $loc_Y = $inst_loc_Y * $newury;
+      my $new_inst_loc_X = sprintf("%.10f",$llx + $loc_X);
+      my $new_inst_loc_Y = sprintf("%.10f",$llx + $loc_Y);
+      print WRITE"$node $new_inst_loc_X $new_inst_loc_Y\n";
+                                     }#foreach inst
+  }#if exists die already
+}#sub write_xy_out_plan_4        
+
+sub read_graph_plan_4 {
+$DEBUG = 31;
+my $INPUT_GRAPH = "xy.out";
+if ( -e $INPUT_GRAPH) {
+open(READ,"$INPUT_GRAPH");
+print "INFO-UTS-RD_GRPH_PLN_4 : 001 : Reading the graph for $INPUT_GRAPH\n";
+#print "Existing Die size are : @{$DIE_ALREADY{dieArea}} \n";
+
+##########Scaling to values to the die size##########
+$line1 = <READ>;
+($llx,$lly) = (split(/\s+/, $line1))[0,1];
+$absllx = abs($llx);
+$abslly = abs($lly);
+
+$line2 = <READ>;
+($urx,$ury) = (split(/\s+/, $line2))[0,1];
+#print "$line1 : $llx and $lly and $absllx and $abslly\n";
+$newurx = $urx + $absllx;
+$newury = $ury + $abslly;
+#print "$line2 : $urx and $ury and $newurx and $newury\n";
+
+$scalex = $DIE_ALREADY{dieArea}[2]/($newurx);
+$scaley = $DIE_ALREADY{dieArea}[3]/($newury);
+#print "Scalex : $scalex and Scaley : $scaley \n";
+
+while(<READ>) {
+chomp();
+($node,$x,$y) = (split(/\s+/, $_))[0,1,2];
+#$x = ($x+$absllx)*2000*$scalex;
+#$y = ($y+$abslly)*2000*$scaley;
+$x = ($x+$absllx)*$scalex;
+$y = ($y+$abslly)*$scaley;
+#$x = int($x);
+#$y = int($y);
+
+#print "$x and $y\n";
+$found = 0;
+#foreach $inst ( keys %TEMP ) { if ( $node == $TEMP{$inst} ) { $found = 1; $instance = $inst } }
+if ( exists $TEMPR{$node} ) { $found = 1; $instance = $TEMPR{$node}; } else { $found = 0;}
+if($found == 1 ) { 
+                if ( exists $CADB{$instance} ) {
+     my $cellref = $CADB{$instance}->dbCadbGetCellref;
+     my $inst_class = $PLDB{$cellref}->dbMdbGetClass;
+     if($inst_class ne "BLOCK") { next; }
+     $CADB{$instance}->dbCadbSetLoc($x,$y);
+     $CADB{$instance}->dbCadbSetStatus(PLACED);
+     $CADB{$instance}->dbCadbSetOrient(N);
+                                               } 
+                else { print "ERR-UTS-RD_GRPH_PLN_4 : 002 : $instance is not a BLOCK\n"; }
+
+                 }
+else { print "ERR-UTS-RD_GRPH_PLN_4 : 003 : node $node not found\n"; }
+              }#while
+
+}#end if
+else {
+print "ERR-UTS-RD_GRPH_PLN_4 : 004 : No xy.out file found \n";
+}
+close($INPUT_GRAPH);
+&set_inst_box;
+}#sub read_graph_plan_4
+
+sub set_blocks_as_fixed {
+print "INFO-UTS-SET_BLK_FXD : 001 : Marking all blocks as FIXED\n";
+
+  foreach my $inst (keys %{COMP_ALREADY} ) {
+    my $cellref = $CADB{$inst}->dbCadbGetCellref;
+    my $inst_class = $PLDB{$cellref}->dbMdbGetClass;
+    if($inst_class ne "BLOCK") {
+      next;
+    }
+    $CADB{$inst}->dbCadbSetStatus(FIXED);
+    print "INFO-UTS-SET_BLK_FXD : 002 : Marking $inst as FIXED\n";
+  }
+
+}#sub set_blocks_as_fixed
+
+sub place_graph_basic_mode {
+        &delete_all_tmp_placer_files;
+	&write_graph_modified ;
+        &write_design_info_file ;
+	&run_placer;
+	&read_graph_mpl;
+        &delete_tmp_placer_files;
+}# sub place_graph_basic_mode
+
+sub place_graph_basic_mode_with_pin_offset {
+        &delete_all_tmp_placer_files;
+	&write_graph_modified ("--pinOffset");
+        &write_design_info_file ;
+	&run_placer;
+	&read_graph_mpl;
+        &delete_tmp_placer_files;
+}# sub place_graph_basic_mode_with_pin_offset
+
+sub write_graph_modified_expand_fixed_hard_macro {
+
+#########################################################################
+# NAME
+#     write_graph_modified_expand_fixed_hard_macro
+# Assumptions
+# 
+# SYNOPSIS
+# 
+# INPUTS
+#   options:
+#    --pinOffset :  generate a graph file with pinOffset starting from 0
+# OUTPUTS
+# generate a nodefile ,libfile, graph file 
+# Note: All the dimension will be in micron, so DEF data needs to be 
+#       divided by data base unit and lef data to be outputted as such
+#########################################################################
+
+  my $noOfArguments = @_;
+  if( $noOfArguments > 1 || $_[0] eq '-h'){
+    print "Usage : write_graph_modified_expand_fixed_hard_macro [--pinOffset]\n";
+    return ;
+  }
+  my $pinOffset = 0;
+  for(my $i =0; $i<$noOfArguments; $i++){
+    if($_[$i] eq "--pinOffset"){
+      $pinOffset = 1;
+    }
+  }
+  use POSIX qw(ceil floor);
+  my @rows = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetRows;
+  %flat_new_tempRowHash = ();
+  foreach my $tag ( @rows ) {
+    my ($rowName,$y) = (split(/\s+/, $tag))[0,3];
+    $flat_new_tempRowHash{$y}=$rowName;
+  }
+  %TEMP = ();
+  %TEMP_NODE_DEGREE = ();
+  my $cnt = 0;
+  my $portCellID = 2;
+  #---------------------------------------------------start libfile------------------------------------------#
+  if ($pinOffset == 0) {
+    open(WRITE_LIB,">libfile");
+  }else {
+    open(WRITE_LIB,">libfile_pin_offset");
+  }
+  my $rowHeight = $GLOBAL->dbGlobalGetRowHeight;
+  my $giganticRowHeight = 1000;
+  unless ( defined $rowHeight && $rowHeight >= 0 && $rowHeight < $giganticRowHeight ) {
+    $rowHeight = 0;  # arbitrary non zero number
+  }
+  if($pinOffset == 0){
+  print WRITE_LIB "1 $rowHeight $rowHeight\n";  # representing site height
+  print WRITE_LIB "2 0 0\n";  # representing all ports
+  }else {
+    print WRITE_LIB "1 $rowHeight $rowHeight 1\n";  # representing site height
+    print WRITE_LIB "0.0 0.0 \n";  # representing site height
+    print WRITE_LIB "2 0 0 1\n";  # representing all ports
+    print WRITE_LIB "0.0 0.0 \n";  # representing site height
+  }
+  #---------------------------------------------------start nodefile------------------------------------------#
+  my $dbu = $GLOBAL->dbfGlobalGetDBU;
+  my $cellHeight = $GLOBAL->dbGlobalGetRowHeight;
+  $cellHeight = $cellHeight*$dbu;
+  my %cells = (); 
+  my $cellcnt = 3;
+  open(WRITE_NODE,">nodefile");
+  my @size = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetSize ;
+  my $x = $size[0]/$dbu;
+  my $y = $size[1]/$dbu;
+  my $z = $size[2]/$dbu;
+  my $p = $size[3]/$dbu;
+  
+  my @rows = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetRows;
+  my $row_count = @rows ;
+  print WRITE_NODE "$row_count\n"; 
+  print WRITE_NODE "$x  $y\n"; 
+  print WRITE_NODE "$z  $p\n"; 
+  
+  foreach my $port ( keys %{$PORTS_ALREADY{$TOP_MODULE}} ) {
+    $TEMP{$port} = $cnt;
+    $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortSetNodeNum($cnt);
+    my $port_status = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetStatus() ;
+    if($port_status == 3) {
+      print WRITE_NODE "$cnt \ -$portCellID\n";
+      my @port_loc = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetLoc;
+      my $portloc_X = $port_loc[0]/$dbu;
+      my $portloc_Y = $port_loc[1]/$dbu;
+      print WRITE_NODE "$portloc_X \ $portloc_Y\n";
+    }else {
+      print WRITE_NODE "$cnt \ $portCellID\n";
+    }
+    $cnt++;
+  }
+
+  foreach my $inst (keys %{COMP_ALREADY} ) {
+    my $cellref = $CADB{$inst}->dbCadbGetCellref;
+    my $inst_status = $CADB{$inst}->dbCadbGetStatus() ;
+    my $inst_class = $PLDB{$cellref}->dbMdbGetClass;
+    if(($inst_status eq "FIXED") && ($inst_class eq "BLOCK")) {
+        my @box = $PLDB{$cellref}->dbMdbGetSize;
+        my $cell_dim_X  =  $box[0]*$dbu;
+        my $cell_dim_Y  =  $box[1]*$dbu;
+        my @instLoc = $CADB{$inst}->dbCadbGetLoc;
+        my $instloc_llx = $instLoc[0];
+        my $instloc_lly = $instLoc[1];
+        my $instloc_urx = $instloc_llx + $cell_dim_X ;
+        my $instloc_ury = $instloc_lly + $cell_dim_Y ;
+        my $numBelow  = floor($instloc_lly/$cellHeight);
+        my $newRowYBelow = $numBelow*$cellHeight;
+        if(!exists $flat_new_tempRowHash{$newRowYBelow}){
+          $newRowYBelow = &get_nearest_previous_row($instloc_lly);
+        }
+        my $numAbove  = ceil($instloc_lly/$cellHeight);
+        my $newRowYAbove = $numAbove*$cellHeight;
+        if(!exists $flat_new_tempRowHash{$newRowYAbove}){
+          $newRowYAbove = &get_nearest_next_row($instloc_lly);
+        }
+        print WRITE_NODE "$cnt \ -$cellcnt\n";
+        my $temp_loc_x = $instloc_llx/$dbu;
+        my $temp_loc_y = $instloc_lly/$dbu;
+        print WRITE_NODE "$temp_loc_x \ $temp_loc_y\n";
+        my $temp_cell_x_dim = $cell_dim_X/$dbu;
+        my $temp_cell_y_dim = ($newRowYAbove - $instloc_lly);
+        if($newRowYAbove == $instloc_lly) {
+           $temp_cell_y_dim = $cellHeight;
+        }
+        $temp_cell_y_dim = $temp_cell_y_dim/$dbu;
+        print WRITE_LIB "$cellcnt $temp_cell_x_dim $temp_cell_y_dim\n";
+        $TEMP{$inst} = $cnt; 
+        $CADB{$inst}->dbCadbSetNodeNum($cnt);
+        $cnt++ ;
+        $cellcnt++ ;
+
+        $newRowYBelow += $cellHeight;
+
+        while($newRowYBelow < $instloc_ury) {
+          print WRITE_NODE "$cnt \ -$cellcnt\n";
+          my $temp_loc_x = $instloc_llx/$dbu;
+          my $temp_loc_y = $newRowYBelow/$dbu;
+          print WRITE_NODE "$temp_loc_x \ $temp_loc_y\n";
+          my $temp_cell_x_dim = $cell_dim_X/$dbu;
+          my $temp_cell_y_dim = $cellHeight/$dbu;
+          if(($newRowYBelow + $cellHeight) > $instloc_ury){
+            $temp_cell_y_dim = ($instloc_ury - $newRowYBelow)/$dbu; 
+          }
+          print WRITE_LIB "$cellcnt $temp_cell_x_dim $temp_cell_y_dim\n";
+          $newRowYBelow += $cellHeight;
+          $cnt++ ;
+          $cellcnt++ ;
+        }
+    }else{
+      $TEMP{$inst} = $cnt; 
+      $CADB{$inst}->dbCadbSetNodeNum($cnt);
+      #my $cellType = 0;
+      if(exists $cells{$cellref}){
+        my $num = $cells{$cellref};
+        #if ( $cellType == 1 ) { 
+        #  $num = $num + 10000; 
+        #}
+        my $inst_status = $CADB{$inst}->dbCadbGetStatus() ;
+        if($inst_status eq "FIXED") {
+          print WRITE_NODE "$cnt \ -$num\n";
+          my @instLoc = $CADB{$inst}->dbCadbGetLoc;
+          my $instloc_X = $instLoc[0]/$dbu;
+          my $instloc_Y = $instLoc[1]/$dbu;
+          print WRITE_NODE "$instloc_X \ $instloc_Y\n";
+        }else {
+          print WRITE_NODE "$cnt \ $num\n";
+        }
+      }else{
+        $cells{$cellref} = $cellcnt;
+        my $num = $cells{$cellref};
+        #if ($cellType == 1) { 
+        #  $num = $num + 10000;
+        #}
+        my $inst_status = $CADB{$inst}->dbCadbGetStatus() ;
+        if($inst_status eq "FIXED") {
+          print WRITE_NODE "$cnt \ -$num\n";
+          my @instLoc = $CADB{$inst}->dbCadbGetLoc;
+          my $instloc_X = $instLoc[0]/$dbu;
+          my $instloc_Y = $instLoc[1]/$dbu;
+          print WRITE_NODE "$instloc_X \ $instloc_Y\n";
+        }else {
+          print WRITE_NODE "$cnt \ $num\n";
+        }
+        $cellcnt++;
+      }
+      $cnt++;
+    }
+  }
+  close(WRITE_NODE);
+  #---------------------------------------------------end nodefile------------------------------------------#
+  
+  foreach my $cellName ( keys %cells ) {
+    if ( exists $PLDB{$cellName} ) {
+      my $pinc = 0;
+      my @pins = $PLDB{$cellName}->dbMdbGetPins;
+      foreach $pinName ( @pins ) {
+        $pinc++;
+      }
+      my @box = $PLDB{$cellName}->dbMdbGetSize;
+      if($pinOffset == 0){
+        print WRITE_LIB "$cells{$cellName} $box[0] $box[1]\n";
+      } else{
+        print WRITE_LIB "$cells{$cellName} $box[0] $box[1] $pinc\n";
+        my $pincount = 0;
+        my @pins = $PLDB{$cellName}->dbMdbGetPins;
+        foreach $pinName ( @pins ) {
+          $pincount++;
+          my @RECTS = $PLDB{$cellName}->dbMdbGetPinRect($pinName);
+          my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$RECTS[0]))[0,2,3,4,5];
+          my $mid_x = ($llx + $urx)/2;
+          my $mid_y = ($lly + $ury)/2;
+          print WRITE_LIB "\t$mid_x $mid_y\n";
+        }
+      }
+    }
+  }
+  close(WRITE_LIB);
+  #---------------------------------------------------end libfile------------------------------------------#
+  
+  #---------------------------------------------------start nodeMap.txt------------------------------------------#
+  open(WRITE1,">nodeMap.txt");
+  %TEMPR = ();
+  foreach my $inst (keys %TEMP){
+    my $n = $TEMP{$inst};
+    print WRITE1 "$n $inst\n";
+    $TEMPR{$n} = $inst;
+  }
+  close(WRITE1);
+  #---------------------------------------------------end nodeMap.txt------------------------------------------#
+  
+  #-------------------------------------------------start  graphfile------------------------------------------#
+  &set_number_nodes_connected_to_all_net;
+  if ($pinOffset == 0) {
+    print "INFO-UTS-WR_GRPH_MDFD_EXPD_FXD_HRD_MCRO : 001 : Writing the graph file of the design in $TOP_MODULE\.txt\n";
+    open(WRITE,">$TOP_MODULE.txt");
+  }else {
+    print "INFO-UTS-WR_GRPH_MDFD_EXPD_FXD_HRD_MCRO : 002 : Writing the graph file of the design in ${TOP_MODULE}_pin_offset\.txt\n";
+    open(WRITE,">${TOP_MODULE}_pin_offset.txt");
+  }
+  my $very_high_fanout = $GLOBAL->dbfGlobalGetFanoutLimit;
+  my $net ;
+  foreach $net (keys %{NETS_ALREADY}){
+    if (exists $NETS_ROUTING_ALREADY{$net}){
+        my $power = $NETS_ROUTING_ALREADY{$net}->dbNetGetType;
+        if($power eq "POWER"){
+          next;
+        }
+        if($power eq "GROUND"){
+          next;
+        }
+     }#if routing exists already
+     if ( $net =~ /1\'b/ ){
+       next ;
+     }
+     if ( $net eq ""){
+       next ;
+     }
+     if (exists $TEMP_NET_CONN_NODE_NO{$net}) {
+       if ($TEMP_NET_CONN_NODE_NO{$net} > $very_high_fanout) {
+         next ;
+       }
+     }
+     my @driverInst = &getNetDriver($net);
+     print "\n DBG-UTS-WR_GRPH_MDFD_EXPD_FXD_HRD_MCRO : 003 : net Name $net driverInst : " if($debug);
+     print join ",",@driverInst if($debug);
+     print "\n" if($debug);
+     my @sinkInst = &getNetSink($net);
+     print "\n DBG-UTS-WR_GRPH_MDFD_EXPD_FXD_HRD_MCRO : 004 : net Name $net sinkInst : " if($debug);
+     print join ",",@sinkInst if($debug);
+     print "\n" if($debug);
+     my @instList = ();
+     my @instPinList = ();
+     if ( $driverInst[0] eq "UND"){
+       #do nothing
+     }elsif ( $driverInst[0] eq ""){
+       #do nothing
+     }else{
+           #$driver_pin_number = &get_nodenum_for_given_pin($driverInst[0],$driverInst[1]);
+           push(@instList,$driverInst[0]);
+           push(@instPinList,$driverInst[1]);
+     }#else driverInst
+  #-------------------------------------sinkInstance-------------------------------------------------------#
+    my $i = 0 ;
+    for($i = 0;$i<$#sinkInst;$i=$i+2){
+        #$sink_pin_number = &get_nodenum_for_given_pin($sinkInst[$i],$sinkInst[$i+1]);
+        push(@instList,$sinkInst[$i]);
+        push(@instPinList,$sinkInst[$i+1]);
+    }#for
+    my  $len = @instList;
+    if($len > 2){
+      print WRITE "$len -1\n";
+      foreach $inst (@instList){
+        my $instPin = shift(@instPinList) ;
+        my $pin1 = &get_nodenum_for_given_pin($inst,$instPin);
+        my $inst_number = &get_nodenum_for_given_inst($inst); 
+        if($pinOffset == 0){
+          print WRITE "\t$inst_number\n";
+        } else{
+          print WRITE "\t$inst_number $pin1\n";
+        }
+      }#foreach inst
+    }#if len > 2
+    if($len == 2){
+      $inst1 = $instList[0];
+      $inst2 = $instList[1];
+      my $inst_number_1 = &get_nodenum_for_given_inst($inst1);
+      my $inst_number_2 = &get_nodenum_for_given_inst($inst2);
+      my $instPin_1 = shift(@instPinList) ;
+      my $pin1 = &get_nodenum_for_given_pin($inst1,$instPin_1);
+      my $instPin_2 = shift(@instPinList) ;
+      my $pin2 = &get_nodenum_for_given_pin($inst2,$instPin_2);
+      if($pinOffset == 0){
+        print WRITE "$inst_number_1 $inst_number_2\n";
+      } else{
+        print WRITE "$inst_number_1  $inst_number_2 $pin1 $pin2\n";
+      }#else
+    }#if $len eq 2
+  }#foreach net
+  foreach my $inst (keys %{COMP_ALREADY} ) {
+    my $curr_hard_macro_node_no = $CADB{$inst}->dbCadbGetNodeNum($cnt);
+    my $curr_expanded_cell_node_no = $curr_hard_macro_node_no + 1 ;
+    my $cellref = $CADB{$inst}->dbCadbGetCellref;
+    my $inst_status = $CADB{$inst}->dbCadbGetStatus() ;
+    my $inst_class = $PLDB{$cellref}->dbMdbGetClass;
+    if(($inst_status eq "FIXED") && ($inst_class eq "BLOCK")) {
+        my @box = $PLDB{$cellref}->dbMdbGetSize;
+        my $cell_dim_X  =  $box[0]*$dbu;
+        my $cell_dim_Y  =  $box[1]*$dbu;
+        my @instLoc = $CADB{$inst}->dbCadbGetLoc;
+        my $instloc_llx = $instLoc[0];
+        my $instloc_lly = $instLoc[1];
+        my $instloc_urx = $instLoc[0] + $cell_dim_X ;
+        my $instloc_ury = $instLoc[1] + $cell_dim_Y ;
+        my $numBelow  = floor($instloc_Y/$cellHeight);
+        my $newRowYBelow = $numBelow*$cellHeight;
+        if(!exists $flat_new_tempRowHash{$newRowYBelow}){
+          $newRowYBelow = &get_nearest_previous_row($instloc_lly);
+        }
+        $newRowYBelow += $cellHeight;
+        while($newRowYBelow < $instloc_ury) {
+          print WRITE "$curr_hard_macro_node_no $curr_expanded_cell_node_no\n";
+          $newRowYBelow += $cellHeight;
+          $curr_expanded_cell_node_no++;
+        }
+    }
+  }
+  close(WRITE);
+  #&gen_initial_degree_for_all_nodes ;
+  #&gen_final_degree_for_all_nodes ;
+}#sub write_graph_modified_expand_fixed_hard_macro
+
+sub place_graph_macro_expanded {
+        &delete_all_tmp_placer_files;
+	&write_graph_modified_expand_fixed_hard_macro ;
+	&write_graph_modified_expand_fixed_hard_macro_normalized ;
+        &write_design_info_file ;
+	&run_placer;
+	&read_graph;
+        &delete_tmp_placer_files;
+}# sub place_graph_macro_expanded
+#--------------------------------------------------------------------------------------------------------------------#
+sub write_graph_modified_expand_fixed_hard_macro_normalized {
+
+#########################################################################
+# NAME
+#     write_graph_modified_expand_fixed_hard_macro_normalized
+# Assumptions
+# 
+# SYNOPSIS
+# 
+# INPUTS
+#   options:
+#    --pinOffset :  generate a graph file with pinOffset starting from 0
+# OUTPUTS
+# generate a nodefile ,libfile, graph file 
+# Note: All the dimension will be in micron, so DEF data needs to be 
+#       divided by data base unit and lef data to be outputted as such
+#########################################################################
+
+  my $noOfArguments = @_;
+  if( $noOfArguments > 1 || $_[0] eq '-h'){
+    print "Usage : write_graph_modified_expand_fixed_hard_macro_normalized [--pinOffset]\n";
+    return ;
+  }
+  my $pinOffset = 0;
+  for(my $i =0; $i<$noOfArguments; $i++){
+    if($_[$i] eq "--pinOffset"){
+      $pinOffset = 1;
+    }
+  }
+  use POSIX qw(ceil floor);
+  my @rows = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetRows;
+  %flat_new_tempRowHash = ();
+  foreach my $tag ( @rows ) {
+    my ($rowName,$y) = (split(/\s+/, $tag))[0,3];
+    $flat_new_tempRowHash{$y}=$rowName;
+  }
+  %TEMP = ();
+  %TEMP_NODE_DEGREE = ();
+  my $cnt = 0;
+  my $portCellID = 2;
+  #---------------------------------------------------start libfile------------------------------------------#
+  if ($pinOffset == 0) {
+    open(WRITE_LIB,">libfile_norm");
+  }else {
+    open(WRITE_LIB,">libfile_pin_offset_norm");
+  }
+  my $rowHeight = $GLOBAL->dbGlobalGetRowHeight;
+  my $giganticRowHeight = 1000;
+  unless ( defined $rowHeight && $rowHeight >= 0 && $rowHeight < $giganticRowHeight ) {
+    $rowHeight = 0;  # arbitrary non zero number
+  }
+  #---------------------------------------------------start nodefile------------------------------------------#
+  my $dbu = $GLOBAL->dbfGlobalGetDBU;
+  my $cellHeight = $GLOBAL->dbGlobalGetRowHeight;
+  $cellHeight = $cellHeight*$dbu;
+  my %cells = (); 
+  my $cellcnt = 3;
+  open(WRITE_NODE,">nodefile_norm");
+  my @size = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetSize ;
+  my $x = $size[0]/$dbu;
+  my $y = $size[1]/$dbu;
+  my $z = $size[2]/$dbu;
+  my $p = $size[3]/$dbu;
+  my $scale_x = 2/($z -$x);
+  my $scale_y = 2/($p -$y);
+  my $temp_rowHeight = $rowHeight * $scale_y;
+  print WRITE_LIB "1 $temp_rowHeight $temp_rowHeight\n";  # representing site height
+  print WRITE_LIB "2 0 0\n";  # representing all ports
+  
+  my @rows = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetRows;
+  my $row_count = @rows ;
+  print WRITE_NODE "$row_count\n"; 
+  print WRITE_NODE "-1  -1\n"; 
+  print WRITE_NODE "1  1\n"; 
+  
+  foreach my $port ( keys %{$PORTS_ALREADY{$TOP_MODULE}} ) {
+    $TEMP{$port} = $cnt;
+    $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortSetNodeNum($cnt);
+    my $port_status = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetStatus() ;
+    if($port_status == 3) {
+      print WRITE_NODE "$cnt \ -$portCellID\n";
+      my @port_loc = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetLoc;
+      my $portloc_X = $port_loc[0]/$dbu;
+      my $portloc_Y = $port_loc[1]/$dbu;
+      my $temp_portloc_X  = ($portloc_X * $scale_x) -1;
+      my $temp_portloc_Y  = ($portloc_Y * $scale_y) -1;
+      print WRITE_NODE "$temp_portloc_X \ $temp_portloc_Y\n";
+    }else {
+      print WRITE_NODE "$cnt \ $portCellID\n";
+    }
+    $cnt++;
+  }
+
+  foreach my $inst (keys %{COMP_ALREADY} ) {
+    my $cellref = $CADB{$inst}->dbCadbGetCellref;
+    my $inst_status = $CADB{$inst}->dbCadbGetStatus() ;
+    my $inst_class = $PLDB{$cellref}->dbMdbGetClass;
+    if(($inst_status eq "FIXED") && ($inst_class eq "BLOCK")) {
+        my @box = $PLDB{$cellref}->dbMdbGetSize;
+        my $cell_dim_X  =  $box[0]*$dbu;
+        my $cell_dim_Y  =  $box[1]*$dbu;
+        my @instLoc = $CADB{$inst}->dbCadbGetLoc;
+        my $instloc_llx = $instLoc[0];
+        my $instloc_lly = $instLoc[1];
+        my $instloc_urx = $instloc_llx + $cell_dim_X ;
+        my $instloc_ury = $instloc_lly + $cell_dim_Y ;
+        my $numBelow  = floor($instloc_lly/$cellHeight);
+        my $newRowYBelow = $numBelow*$cellHeight;
+        if(!exists $flat_new_tempRowHash{$newRowYBelow}){
+          $newRowYBelow = &get_nearest_previous_row($instloc_lly);
+        }
+        my $numAbove  = ceil($instloc_lly/$cellHeight);
+        my $newRowYAbove = $numAbove*$cellHeight;
+        if(!exists $flat_new_tempRowHash{$newRowYAbove}){
+          $newRowYAbove = &get_nearest_next_row($instloc_lly);
+        }
+        print WRITE_NODE "$cnt \ -$cellcnt\n";
+        my $temp_loc_x = $instloc_llx/$dbu;
+        my $temp_loc_y = $instloc_lly/$dbu;
+        my $temp_temp_loc_x  = ($temp_loc_x * $scale_x) -1;
+        my $temp_temp_loc_y  = ($temp_loc_y * $scale_y) -1;
+        print WRITE_NODE "$temp_temp_loc_x \ $temp_temp_loc_y\n";
+        my $temp_cell_x_dim = $cell_dim_X/$dbu;
+        my $temp_cell_y_dim = ($newRowYAbove - $instloc_lly);
+        if($newRowYAbove == $instloc_lly) {
+           $temp_cell_y_dim = $cellHeight;
+        }
+        $temp_cell_y_dim = $temp_cell_y_dim/$dbu;
+        $temp_cell_y_dim *= $scale_y;
+        $temp_cell_x_dim *= $scale_x;
+        print WRITE_LIB "$cellcnt $temp_cell_x_dim $temp_cell_y_dim\n";
+        $TEMP{$inst} = $cnt; 
+        $CADB{$inst}->dbCadbSetNodeNum($cnt);
+        $cnt++ ;
+        $cellcnt++ ;
+
+        $newRowYBelow += $cellHeight;
+
+        while($newRowYBelow < $instloc_ury) {
+          print WRITE_NODE "$cnt \ -$cellcnt\n";
+          my $temp_loc_x = $instloc_llx/$dbu;
+          my $temp_loc_y = $newRowYBelow/$dbu;
+          my $temp_temp_loc_x  = ($temp_loc_x * $scale_x) -1;
+          my $temp_temp_loc_y  = ($temp_loc_y * $scale_y) -1;
+          print WRITE_NODE "$temp_temp_loc_x \ $temp_temp_loc_y\n";
+          my $temp_cell_x_dim = $cell_dim_X/$dbu;
+          my $temp_cell_y_dim = $cellHeight/$dbu;
+          if(($newRowYBelow + $cellHeight) > $instloc_ury){
+            $temp_cell_y_dim = ($instloc_ury - $newRowYBelow)/$dbu; 
+          }
+          $temp_cell_y_dim *= $scale_y;
+          $temp_cell_x_dim *= $scale_x;
+          print WRITE_LIB "$cellcnt $temp_cell_x_dim $temp_cell_y_dim\n";
+          $newRowYBelow += $cellHeight;
+          $cnt++ ;
+          $cellcnt++ ;
+        }
+    }else{
+      $TEMP{$inst} = $cnt; 
+      $CADB{$inst}->dbCadbSetNodeNum($cnt);
+      #my $cellType = 0;
+      if(exists $cells{$cellref}){
+        my $num = $cells{$cellref};
+        #if ( $cellType == 1 ) { 
+        #  $num = $num + 10000; 
+        #}
+        my $inst_status = $CADB{$inst}->dbCadbGetStatus() ;
+        if($inst_status eq "FIXED") {
+          print WRITE_NODE "$cnt \ -$num\n";
+          my @instLoc = $CADB{$inst}->dbCadbGetLoc;
+          my $instloc_X = $instLoc[0]/$dbu;
+          my $instloc_Y = $instLoc[1]/$dbu;
+          $instloc_Y *= $scale_y;
+          $instloc_X *= $scale_x;
+          $instloc_Y += -1;
+          $instloc_X += -1;
+          print WRITE_NODE "$instloc_X \ $instloc_Y\n";
+        }else {
+          print WRITE_NODE "$cnt \ $num\n";
+        }
+      }else{
+        $cells{$cellref} = $cellcnt;
+        my $num = $cells{$cellref};
+        #if ($cellType == 1) { 
+        #  $num = $num + 10000;
+        #}
+        my $inst_status = $CADB{$inst}->dbCadbGetStatus() ;
+        if($inst_status eq "FIXED") {
+          print WRITE_NODE "$cnt \ -$num\n";
+          my @instLoc = $CADB{$inst}->dbCadbGetLoc;
+          my $instloc_X = $instLoc[0]/$dbu;
+          my $instloc_Y = $instLoc[1]/$dbu;
+          $instloc_Y *= $scale_y;
+          $instloc_X *= $scale_x;
+          $instloc_Y += -1;
+          $instloc_X += -1;
+          print WRITE_NODE "$instloc_X \ $instloc_Y\n";
+        }else {
+          print WRITE_NODE "$cnt \ $num\n";
+        }
+        $cellcnt++;
+      }
+      $cnt++;
+    }
+  }
+  close(WRITE_NODE);
+  #---------------------------------------------------end nodefile------------------------------------------#
+  
+  foreach my $cellName ( keys %cells ) {
+    if ( exists $PLDB{$cellName} ) {
+      my $pinc = 0;
+      my @pins = $PLDB{$cellName}->dbMdbGetPins;
+      foreach $pinName ( @pins ) {
+        $pinc++;
+      }
+      my @box = $PLDB{$cellName}->dbMdbGetSize;
+      if($pinOffset == 0){
+        $box[0] *= $scale_x;
+        $box[1] *= $scale_y;
+        print WRITE_LIB "$cells{$cellName} $box[0] $box[1]\n";
+      } else{
+        $box[0] *= $scale_x;
+        $box[1] *= $scale_y;
+        print WRITE_LIB "$cells{$cellName} $box[0] $box[1] $pinc\n";
+        my $pincount = 0;
+        my @pins = $PLDB{$cellName}->dbMdbGetPins;
+        foreach $pinName ( @pins ) {
+          $pincount++;
+          my @RECTS = $PLDB{$cellName}->dbMdbGetPinRect($pinName);
+          my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$RECTS[0]))[0,2,3,4,5];
+          my $mid_x = ($llx + $urx)/2;
+          my $mid_y = ($lly + $ury)/2;
+          $mid_x *= $scale_x;
+          $mid_y *= $scale_y;
+          print WRITE_LIB "\t$mid_x $mid_y\n";
+        }
+      }
+    }
+  }
+  close(WRITE_LIB);
+  #---------------------------------------------------end libfile------------------------------------------#
+  
+  #---------------------------------------------------start nodeMap.txt------------------------------------------#
+  open(WRITE1,">nodeMap_norm.txt");
+  %TEMPR = ();
+  foreach my $inst (keys %TEMP){
+    my $n = $TEMP{$inst};
+    print WRITE1 "$n $inst\n";
+    $TEMPR{$n} = $inst;
+  }
+  close(WRITE1);
+  #---------------------------------------------------end nodeMap.txt------------------------------------------#
+  
+  #-------------------------------------------------start  graphfile------------------------------------------#
+  &set_number_nodes_connected_to_all_net;
+  if ($pinOffset == 0) {
+    print "INFO-UTS : 001 : Writing the graph file of the design in $TOP_MODULE\.txt\n";
+    open(WRITE,">${TOP_MODULE}_norm.txt");
+  }else {
+    print "INFO-UTS : 002 : Writing the graph file of the design in ${TOP_MODULE}_pin_offset\.txt\n";
+    open(WRITE,">${TOP_MODULE}_pin_offset_norm.txt");
+  }
+  my $very_high_fanout = $GLOBAL->dbfGlobalGetFanoutLimit;
+  my $net ;
+  foreach $net (keys %{NETS_ALREADY}){
+    if (exists $NETS_ROUTING_ALREADY{$net}){
+        my $power = $NETS_ROUTING_ALREADY{$net}->dbNetGetType;
+        if($power eq "POWER"){
+          next;
+        }
+        if($power eq "GROUND"){
+          next;
+        }
+     }#if routing exists already
+     if ( $net =~ /1\'b/ ){
+       next ;
+     }
+     if ( $net eq ""){
+       next ;
+     }
+     if (exists $TEMP_NET_CONN_NODE_NO{$net}) {
+       if ($TEMP_NET_CONN_NODE_NO{$net} > $very_high_fanout) {
+         next ;
+       }
+     }
+     my @driverInst = &getNetDriver($net);
+     print "\nDBG-UTS : 003 : net Name $net driverInst : " if($debug);
+     print join ",",@driverInst if($debug);
+     print "\n" if($debug);
+     my @sinkInst = &getNetSink($net);
+     print "\nDBG-UTS : 004 : net Name $net sinkInst : " if($debug);
+     print join ",",@sinkInst if($debug);
+     print "\n" if($debug);
+     my @instList = ();
+     my @instPinList = ();
+     if ( $driverInst[0] eq "UND"){
+       #do nothing
+     }elsif ( $driverInst[0] eq ""){
+       #do nothing
+     }else{
+           #$driver_pin_number = &get_nodenum_for_given_pin($driverInst[0],$driverInst[1]);
+           push(@instList,$driverInst[0]);
+           push(@instPinList,$driverInst[1]);
+     }#else driverInst
+  #-------------------------------------sinkInstance-------------------------------------------------------#
+    my $i = 0 ;
+    for($i = 0;$i<$#sinkInst;$i=$i+2){
+        #$sink_pin_number = &get_nodenum_for_given_pin($sinkInst[$i],$sinkInst[$i+1]);
+        push(@instList,$sinkInst[$i]);
+        push(@instPinList,$sinkInst[$i+1]);
+    }#for
+    my  $len = @instList;
+    if($len > 2){
+      print WRITE "$len -1\n";
+      foreach $inst (@instList){
+        my $instPin = shift(@instPinList) ;
+        my $pin1 = &get_nodenum_for_given_pin($inst,$instPin);
+        my $inst_number = &get_nodenum_for_given_inst($inst); 
+        if($pinOffset == 0){
+          print WRITE "\t$inst_number\n";
+        } else{
+          print WRITE "\t$inst_number $pin1\n";
+        }
+      }#foreach inst
+    }#if len > 2
+    if($len == 2){
+      $inst1 = $instList[0];
+      $inst2 = $instList[1];
+      my $inst_number_1 = &get_nodenum_for_given_inst($inst1);
+      my $inst_number_2 = &get_nodenum_for_given_inst($inst2);
+      my $instPin_1 = shift(@instPinList) ;
+      my $pin1 = &get_nodenum_for_given_pin($inst1,$instPin_1);
+      my $instPin_2 = shift(@instPinList) ;
+      my $pin2 = &get_nodenum_for_given_pin($inst2,$instPin_2);
+      if($pinOffset == 0){
+        print WRITE "$inst_number_1 $inst_number_2\n";
+      } else{
+        print WRITE "$inst_number_1  $inst_number_2 $pin1 $pin2\n";
+      }#else
+    }#if $len eq 2
+  }#foreach net
+  foreach my $inst (keys %{COMP_ALREADY} ) {
+    my $curr_hard_macro_node_no = $CADB{$inst}->dbCadbGetNodeNum($cnt);
+    my $curr_expanded_cell_node_no = $curr_hard_macro_node_no + 1 ;
+    my $cellref = $CADB{$inst}->dbCadbGetCellref;
+    my $inst_status = $CADB{$inst}->dbCadbGetStatus() ;
+    my $inst_class = $PLDB{$cellref}->dbMdbGetClass;
+    if(($inst_status eq "FIXED") && ($inst_class eq "BLOCK")) {
+        my @box = $PLDB{$cellref}->dbMdbGetSize;
+        my $cell_dim_X  =  $box[0]*$dbu;
+        my $cell_dim_Y  =  $box[1]*$dbu;
+        my @instLoc = $CADB{$inst}->dbCadbGetLoc;
+        my $instloc_llx = $instLoc[0];
+        my $instloc_lly = $instLoc[1];
+        my $instloc_urx = $instLoc[0] + $cell_dim_X ;
+        my $instloc_ury = $instLoc[1] + $cell_dim_Y ;
+        my $numBelow  = floor($instloc_Y/$cellHeight);
+        my $newRowYBelow = $numBelow*$cellHeight;
+        if(!exists $flat_new_tempRowHash{$newRowYBelow}){
+          $newRowYBelow = &get_nearest_previous_row($instloc_lly);
+        }
+        $newRowYBelow += $cellHeight;
+        while($newRowYBelow < $instloc_ury) {
+          print WRITE "$curr_hard_macro_node_no $curr_expanded_cell_node_no\n";
+          $newRowYBelow += $cellHeight;
+          $curr_expanded_cell_node_no++;
+        }
+    }
+  }
+  close(WRITE);
+  #&gen_initial_degree_for_all_nodes ;
+  #&gen_final_degree_for_all_nodes ;
+}#sub write_graph_modified_expand_fixed_hard_macro_normalized
+1;

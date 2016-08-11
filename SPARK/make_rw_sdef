@@ -1,0 +1,1114 @@
+
+sub write_sdef {
+use Benchmark;
+my $t0 = new Benchmark;
+my $noOfArguments = @_;
+if($noOfArguments < 0 || $_[0] eq "-h"){ print "Usage : write_sdef\n";
+                                         print "      : --diearea\n"; 
+                                         print "      : --row\n";
+                                         print "      : --track\n";
+                                         print "      : --inst\n";
+                                         print "      : --pin\n";
+                                         print "      : --net\n";
+                                         print "      : --via\n";
+                        
+}
+else {
+my $OUTPUT = $TOP_MODULE;
+my $diearea = 0;
+my $write_row = 0;
+my $write_track = 0;
+my $write_comp = 0;
+my $write_net = 0;
+my $write_via = 0;
+my $write_pin = 0;
+my $default = 1;
+for(my $i=0;$i<$noOfArguments;$i++){
+  if($_[$i] =~ /-output/){$OUTPUT = $_[$i+1];}
+  if($_[$i] =~ /--diearea/){$diearea = 1;$default = 0;}
+  if($_[$i] =~ /--row/){$write_row = 1;$default = 0;}
+  if($_[$i] =~ /--track/){$write_track = 1;$default = 0;}
+  if($_[$i] =~ /--inst/){$write_comp = 1;$default = 0;}
+  if($_[$i] =~ /--pin/){$write_pin = 1;$default = 0;}
+  if($_[$i] =~ /--net/){$write_net = 1;$default = 0;}
+  if($_[$i] =~ /--via/){$write_via = 1;$default = 0;}
+}#for
+print "Writing sdef for $TOP_MODULE\n";
+
+# ---- setting the instance box for all instances ----#
+open(WRITE,">$OUTPUT.sdef");
+if(!exists $FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}){
+  &set_floorplan("-partition","$TOP_MODULE");
+}
+#------------------------------------------------DIE AREA---------------------------------------------#
+if($diearea == 1 || $default == 1){
+  my $dbu = $GLOBAL->dbfGlobalGetDBU;
+  print WRITE "DBU $dbu \n";
+  if(exists $DIE_ALREADY{dieArea} ) {
+     my @die_coords = @{$DIE_ALREADY{dieArea}};
+     print WRITE "DIEAREA @die_coords \n";
+  }
+}
+#------------------------------------------------ROW SECTION---------------------------------------------#
+if($write_row == 1 || $default == 1){
+  my @rows = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetRows;
+  foreach my $l (@rows) {
+    my @sl = split(/\s+/,$l);
+    print WRITE "ROW $sl[0] $sl[1] $sl[2] $sl[3] $sl[4] DO $sl[5] BY $sl[6] STEP $sl[7] $sl[8]\n";
+  }# foreach row
+}
+#------------------------------------------------INST SECTION---------------------------------------------#
+if($write_comp == 1 || $default == 1){
+&set_inst_box("--all") ; 
+  foreach $instance ( keys %COMP_ALREADY ) {
+    if( exists $CADB{$instance} ){
+      my $cellref =  $CADB{$instance}->dbCadbGetCellref;
+      print WRITE "INST $instance $cellref ";
+      if( exists $CADB{$instance} ){
+        my @loc = $CADB{$instance}->dbCadbGetLoc;
+        my $status = $CADB{$instance}->dbCadbGetStatus;
+        my $orient = $CADB{$instance}->dbCadbGetOrient;
+        my @box = $CADB{$instance}->dbCadbGetbBox;
+        if ( $status eq "PLACED" || $status eq "FIXED" ) {
+          print WRITE "@box $status "; 
+        }
+      }
+      print WRITE "\n";
+    }
+  }#foreach component db
+}
+#------------------------------------------------PINS SECTION---------------------------------------------#
+if($write_pin == 1 || $default == 1){
+  foreach my $pinName (keys %{$PORTS_ALREADY{$TOP_MODULE}} ){
+    my @netName = $PORTS_ALREADY{$TOP_MODULE}{$pinName}->dbPortGetConn;
+    my $dir = $PORTS_ALREADY{$TOP_MODULE}{$pinName}->dbPortGetDir; 
+    my $signal = $PORTS_ALREADY{$TOP_MODULE}{$pinName}->dbPortGetSignal;
+    my @loc = $PORTS_ALREADY{$TOP_MODULE}{$pinName}->dbPortGetLoc;
+    my $status = $PORTS_ALREADY{$TOP_MODULE}{$pinName}->dbPortGetStatus;
+    print WRITE "PINS $pinName $netName[0] $dir $signal @loc $status\n";   
+  }#foreach 
+}
+#------------------------------------------------TRACK SECTION--------------------------------------------#
+if($write_track == 1 || $default == 1){
+  foreach my $metal (sort keys %DEF_TRACKS_ALREADY) {
+    foreach my $dir (keys %{$DEF_TRACKS_ALREADY{$metal}}) {
+      %trackProp = %{$DEF_TRACKS_ALREADY{$metal}{$dir}};
+      if ($dir eq "Horizontal") {
+        print WRITE "TRACKS Y $trackProp{start} DO $trackProp{do} STEP $trackProp{step} LAYER $metal\n";
+      } else {
+        print WRITE "TRACKS X $trackProp{start} DO $trackProp{do} STEP $trackProp{step} LAYER $metal\n";
+      }#else
+    } #foreach $dir 
+  }#foreach $metal
+}
+#------------------------------------------------NETS SECTION---------------------------------------------#
+if($write_net == 1 || $default == 1){
+  foreach my $net (keys %NETS_ALREADY){
+    my $netType = 0;
+    if ( exists $NADB{$net} ) {$netType = $NADB{$net}->dbNadbGetNetType;}
+    if ( $netType == 0 ) { 
+      if(exists $NETS_ROUTING_ALREADY{$net}){
+        my @routes = $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBGetRegularRoute;
+        my @fixed_routes = $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBGetFixedRoute;
+        if ( @fixed_routes > 0 ) {
+#            print WRITE "-NET ROUTED $net\n";
+          foreach my $l ( @fixed_routes ) {
+            my ($layer,$via) = (split(/\s+/,$l))[0,-1];
+            my @fixed_routeBox = &xformNetSegToPathSeg($l,"--via");
+            my $num_of_coord = @fixed_routeBox;
+            if($num_of_coord == 4){
+              print WRITE "NETS ROUTED $net $layer @fixed_routeBox\n";
+            }else {
+              print WRITE "NETS ROUTED $net $layer $fixed_routeBox[0] $fixed_routeBox[1] $fixed_routeBox[2] $fixed_routeBox[3]\n";
+              print WRITE "NETS ROUTED $net $layer $fixed_routeBox[4] $fixed_routeBox[5] $fixed_routeBox[4] $fixed_routeBox[5]\n"; 
+            }
+          }
+        }#if routing information exists
+        if ( @routes > 0 ) {
+  #          print WRITE "-NET ROUTED $net\n";
+          foreach my $l ( @routes ) {
+            my ($layer,$via) = (split(/\s+/,$l))[0,-1];
+            my @routeBox = &xformNetSegToPathSeg($l,"--via");
+            my $num_of_coord = @routeBox;
+            if( $num_of_coord == 4){
+              print WRITE "NETS ROUTED $net $layer @routeBox\n";
+            }else {
+              print WRITE "NETS ROUTED $net $layer $routeBox[0] $routeBox[1] $routeBox[2] $routeBox[3]\n";
+              print WRITE "NETS ROUTED $net $layer $routeBox[4] $routeBox[5] $routeBox[4] $routeBox[5]\n";
+            }
+          }
+        }#if routing information exists
+        if(($#routes < 0) && ($#fixed_routes < 0)){
+           my @bbox = &return_bbox_for_unrouted_given_net($net);
+           if ($#bbox > 0){
+      #       print WRITE "-NET UNROUTED $net\n";
+             print WRITE "NETS UNROUTED $net @bbox\n"; 
+           }
+        }
+      }#if 
+    }else {
+      if(exists $NETS_ROUTING_ALREADY{$net}){
+        my @routes = ();
+        push(@routes, $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBGetSpecialRoute); 
+        push(@routes, $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBGetFixedRoute); 
+    #        print WRITE "-NET ROUTED $net\n";
+        if ( @routes > 0 ) {
+          foreach my $l ( @routes ) {
+            my ($layer,$via) = (split(/\s+/,$l))[0,-1];
+            my @special_routeBox = &xformNetSegToPathSeg($l,"--via");
+            my $num_of_coord = @special_routeBox;
+            if($num_of_coord == 4){
+              print WRITE "NETS ROUTED $net $layer @special_routeBox\n";
+            }else {
+              print WRITE "NETS ROUTED $net $layer $special_routeBox[0] $special_routeBox[1] $special_routeBox[2] $special_routeBox[3]\n";
+              print WRITE "NETS ROUTED $net $layer $special_routeBox[4] $special_routeBox[5] $special_routeBox[4] $special_routeBox[5]\n";
+            }
+          }
+        }# if routing information exists
+      }
+    }
+  }#foreach net
+}
+#------------------------------------------------VIA SECTION---------------------------------------------#
+if($write_via == 1 || $default == 1){
+  foreach my $net (keys %NETS_ALREADY){
+    my $netType = 0;
+    if ( exists $NADB{$net} ) {$netType = $NADB{$net}->dbNadbGetNetType;}
+    if ( $netType == 0 ) { 
+      if(exists $NETS_ROUTING_ALREADY{$net}){
+        my @routes = $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBGetRegularRoute;
+        my @fixed_routes = $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBGetFixedRoute;
+        if ( @routes > 0 ) {
+          #print WRITE "VIAS $net\n";
+          foreach my $l ( @routes ) {
+            my ($layer,$via) = (split(/\s+/,$l))[0,-1];
+            if($via =~ /\)/){next;}
+            print WRITE "VIAS $net $via\n";
+          }
+        }
+        if ( @fixed_routes > 0 ) {
+          #print WRITE "VIAS $net\n";
+          foreach my $l ( @fixed_routes ) {
+            my ($layer,$via) = (split(/\s+/,$l))[0,-1];
+            if($via =~ /\)/){next;}
+            print WRITE "VIAS $net $via\n";
+          }
+        }
+      }#if exists routing already
+    }else {
+      if(exists $NETS_ROUTING_ALREADY{$net}){
+        my @routes = ();
+        push(@routes, $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBGetSpecialRoute); 
+        push(@routes, $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBGetFixedRoute); 
+        if ( @routes > 0 ) {
+          foreach my $l ( @routes ) {
+            my ($layer,$via) = (split(/\s+/,$l))[0,-1];
+            if($via =~ /\)/){next;}
+            print WRITE "VIAS $net $via\n"; 
+          }
+        }# if routing information exists
+      }
+    }
+  }#foreach net
+}
+close(WRITE);
+}#else 
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "Command write_sdef took:",timestr($td),"\n";
+}#write_sdef 
+#------------------------------------------------------------------------------------#
+sub return_bbox_for_unrouted_given_net {
+my $nets = $_[0];
+if(exists $NETS_ALREADY{$nets}){
+  my @new_inst_data = ();
+  my @nodex = ();
+  my @nodey = ();
+  my @pinlayer_list = ();
+  my (@new_inst_data) = &return_inst_list($nets);
+  for (my $i=0;$i<=$#new_inst_data;$i= $i+2){
+    my $inst_tmp = $new_inst_data[$i];
+    my $pinName = $new_inst_data[$i+1];
+    if($inst_tmp eq "\*"){
+    }elsif(exists $PORTS_ALREADY{$TOP_MODULE}{$inst_tmp} ) {
+      my $status = $PORTS_ALREADY{$TOP_MODULE}{$inst_tmp}->dbPortGetStatus;
+      if($status >=1){
+        my @portLoc = $PORTS_ALREADY{$TOP_MODULE}{$inst_tmp}->dbPortGetLoc;
+        push(@nodex,$portLoc[0]);
+        push(@nodey,$portLoc[1]);
+      }#if status 
+    }elsif(exists $COMP_ALREADY{$inst_tmp}){
+      my $status = $CADB{$inst_tmp}->dbCadbGetStatus;
+      if ( $status eq "PLACED" || $status eq "FIXED" ) {
+        my $cellref = $CADB{$inst_tmp}->dbCadbGetCellref;
+        my @instLoc = $CADB{$inst_tmp}->dbCadbGetLoc;
+        my $instOrient = $CADB{$inst_tmp}->dbCadbGetOrient;
+        if (exists $PLDB{$cellref}){
+          my @cellOrigin = $PLDB{$cellref}->dbMdbGetOrigin;
+          my @cellsize = $PLDB{$cellref}->dbMdbGetSize;
+          my @pinRect = $PLDB{$cellref}->dbMdbGetPinRect($pinName);
+          my @POLY = $PLDB{$cellref}->dbMdbGetPinPolygon($pinName);
+          if(@pinRect > 0){
+            my ($pinlayer,$pinllx,$pinlly,$pinurx,$pinury) = (split(/\s+/,$pinRect[0]))[0,2,3,4,5];
+            if($pinlayer !~ /^v/i){
+              my @absolute_pin_rect = &xformCellPinToInstPin($instLoc[0],$instLoc[1],$cellOrigin[0], $cellOrigin[1],$instOrient,$cellsize[0],$cellsize[1],$pinllx,$pinlly,$pinurx,$pinury);
+              my $xmiddle_pin_rect = ($absolute_pin_rect[0]+$absolute_pin_rect[2])/2;
+              my $ymiddle_pin_rect = ($absolute_pin_rect[1]+$absolute_pin_rect[3])/2; 
+              push(@nodex,$xmiddle_pin_rect);
+              push(@nodey,$ymiddle_pin_rect); 
+              push(@pinlayer_list,$pinlayer);
+            }else {
+              my @rect_or_polygon = (split(/\s+/,$POLY[0]));
+              my $pinlayer = shift @rect_or_polygon;
+              shift @rect_or_polygon;
+              my @poly = &xformCellPinPolyToInstPin($instLoc[0],$instLoc[1],$cellOrigin[0], $cellOrigin[1],$instOrient,$cellsize[0],$cellsize[1],@rect_or_polygon);
+              my $xmiddle_pin_rect = $poly[0]; 
+              my $ymiddle_pin_rect = $poly[1];
+              push(@nodex,$xmiddle_pin_rect);
+              push(@nodey,$ymiddle_pin_rect); 
+              push(@pinlayer_list,$pinlayer);
+            }
+          }elsif(@POLY > 0) {
+            my @rect_or_polygon = (split(/\s+/,$POLY[0]));
+            my $pinlayer = shift @rect_or_polygon;
+            shift @rect_or_polygon;
+            my @poly = &xformCellPinPolyToInstPin($instLoc[0],$instLoc[1],$cellOrigin[0], $cellOrigin[1],$instOrient,$cellsize[0],$cellsize[1],@rect_or_polygon);
+            my $xmiddle_pin_rect = $poly[0]; 
+            my $ymiddle_pin_rect = $poly[1];
+            push(@nodex,$xmiddle_pin_rect);
+            push(@nodey,$ymiddle_pin_rect); 
+            push(@pinlayer_list,$pinlayer);
+          }
+        }# if exists cellref
+      }
+    }else {
+      print "001 : $inst_tmp not exists in PORTS_ALREADY and COMP_ALREADY\n";
+    }
+  }
+  if($#nodex >= 1){
+    @nodex = sort{$a<=>$b}@nodex;
+    @nodey = sort{$a<=>$b}@nodey;
+    my $xmin = int($nodex[0]);
+    my $ymin = int($nodey[0]);
+    my $xmax = int($nodex[-1]);
+    my $ymax = int($nodey[-1]);
+    my $pinlayer = shift (@pinlayer_list);
+    my @bbox = ($pinlayer,$xmin,$ymin,$xmax,$ymax);
+    return (@bbox);
+  }
+}
+}#sub return_bbox_for_unrouted_given_net
+#----------------------------------------------------------------------------------#
+sub return_inst_list {
+my $net = $_[0];
+my @inst_list = ();
+if ( exists $NETS_ALREADY{$net} ) {
+  foreach my $instance ( keys %{$NETS_ALREADY{$net}} ) {
+    if ( exists $COMP_ALREADY{$instance} ) {
+      my $cellref = $CADB{$instance}->dbCadbGetCellref;
+      if(exists $PLDB{$cellref}){
+        my @pins = $PLDB{$cellref}->dbMdbGetPins;
+        foreach my $pinName ( @pins ) {
+          my $conn_net = $COMP_ALREADY{$instance}{$pinName};
+          if ($conn_net eq $net) {
+            push(@inst_list,$instance,$pinName);
+          }
+        }
+      }
+    }elsif(exists $PORTS_ALREADY{$TOP_MODULE}{$instance}){
+      foreach my $port ( keys %{$PORTS_ALREADY{$TOP_MODULE}} ) {
+   	my @port_nets = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetConn;
+        if ($net eq $port_nets[0]){
+          push(@inst_list,$port,"PIN");
+        }
+      }
+    }elsif($instance eq "PIN"){
+      foreach my $port ( keys %{$PORTS_ALREADY{$TOP_MODULE}} ) {
+   	my @port_nets = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetConn;
+        if ($net eq $port_nets[0]){
+          push(@inst_list,$port,"PIN");
+        }
+      }
+    }
+  }
+ }
+return(@inst_list);
+}#sub return_inst_list
+#------------------------------------------------------------------------------------------------#
+sub write_mid_x_and_mid_y_of_inst_pin {
+use Benchmark;
+my $t0 = new Benchmark;
+my $noOfArguments = @_;
+
+if($noOfArguments < 0 || $_[0] eq "-h"){ print "Usage : write_mid_x_and_mid_y_of_inst_pin\n";
+                                         print "      : -output<fileName>\n";
+}else {
+  my $write_output = "";
+  for(my $i=0;$i<$noOfArguments;$i++){
+    if($_[$i] =~ /-output/){$write_output = $_[$i+1];}
+  }#for
+  open(WRITE,">$write_output");
+  foreach my $nets (keys %NETS_ALREADY){
+    my @new_inst_data = ();
+    my (@new_inst_data) = &return_inst_list($nets);
+    for (my $i=0;$i<=$#new_inst_data;$i= $i+2){
+      my $inst_tmp = $new_inst_data[$i];
+      my $pinName = $new_inst_data[$i+1];
+      if($inst_tmp eq "\*"){
+      }elsif(exists $PORTS_ALREADY{$TOP_MODULE}{$inst_tmp} ) {
+        my @portLoc = $PORTS_ALREADY{$TOP_MODULE}{$inst_tmp}->dbPortGetLoc;
+        print WRITE "$inst_tmp $portLoc[0] $portLoc[1]\n";
+      }elsif(exists $COMP_ALREADY{$inst_tmp}){
+        my $status = $CADB{$inst_tmp}->dbCadbGetStatus;
+        if ( $status eq "PLACED" || $status eq "FIXED" ) {
+          my $cellref = $CADB{$inst_tmp}->dbCadbGetCellref;
+          my @instLoc = $CADB{$inst_tmp}->dbCadbGetLoc;
+          my $instOrient = $CADB{$inst_tmp}->dbCadbGetOrient;
+          if (exists $PLDB{$cellref}){
+            my @cellOrigin = $PLDB{$cellref}->dbMdbGetOrigin;
+            my @cellsize = $PLDB{$cellref}->dbMdbGetSize;
+            my @pinRect = $PLDB{$cellref}->dbMdbGetPinRect($pinName);
+            my @POLY = $PLDB{$cellref}->dbMdbGetPinPolygon($pinName);
+            if(@pinRect > 0){
+              my ($pinlayer,$pinllx,$pinlly,$pinurx,$pinury) = (split(/\s+/,$pinRect[0]))[0,2,3,4,5];
+              if($pinlayer !~ /^v/i){
+                my @absolute_pin_rect = &xformCellPinToInstPin($instLoc[0],$instLoc[1],$cellOrigin[0], $cellOrigin[1],$instOrient,$cellsize[0],$cellsize[1],$pinllx,$pinlly,$pinurx,$pinury);
+                my $xmiddle_pin_rect = int (($absolute_pin_rect[0]+$absolute_pin_rect[2])/2);
+                my $ymiddle_pin_rect = int (($absolute_pin_rect[1]+$absolute_pin_rect[3])/2); 
+                print WRITE "$inst_tmp/$pinName $xmiddle_pin_rect $ymiddle_pin_rect\n";
+              }else {
+                my @rect_or_polygon = (split(/\s+/,$POLY[0]));
+                my $pinlayer = shift @rect_or_polygon;
+                shift @rect_or_polygon;
+                my @poly = &xformCellPinPolyToInstPin($instLoc[0],$instLoc[1],$cellOrigin[0], $cellOrigin[1],$instOrient,$cellsize[0],$cellsize[1],@rect_or_polygon);
+                my $xmiddle_pin_rect = int ($poly[0]); 
+                my $ymiddle_pin_rect = int ($poly[1]);
+                print WRITE "$inst_tmp/$pinName $xmiddle_pin_rect $ymiddle_pin_rect\n";
+              }
+            }elsif(@POLY > 0){
+              my @rect_or_polygon = (split(/\s+/,$POLY[0]));
+              my $pinlayer = shift @rect_or_polygon;
+              shift @rect_or_polygon;
+              my @poly = &xformCellPinPolyToInstPin($instLoc[0],$instLoc[1],$cellOrigin[0], $cellOrigin[1],$instOrient,$cellsize[0],$cellsize[1],@rect_or_polygon);
+              my $xmiddle_pin_rect = int ($poly[0]); 
+              my $ymiddle_pin_rect = int ($poly[1]);
+              print WRITE "$inst_tmp/$pinName $xmiddle_pin_rect $ymiddle_pin_rect\n";
+            }
+          }# if exists cellref
+        }else {
+          print WRITE "$inst_tmp/$pinName 0 0\n";
+        }
+      }else {
+        print "001 : $inst_tmp not exists in PORTS_ALREADY and COMP_ALREADY\n";
+      }
+    }
+  }#foreach
+close(WRITE);
+}#else
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "Command write_mid_x_and_mid_y_of_inst_pin took:",timestr($td),"\n";
+}#sub write_mid_x_and_mid_y_of_inst_pin
+#------------------------------------------------------------------------------------------------#
+sub write_cell_pin_loc_frm_lef {
+use Benchmark;
+my $t0 = new Benchmark;
+my $noOfArguments = @_;
+if($noOfArguments < 0 || $_[0] eq "-h"){ print "Usage : write_cell_pin_loc_frm_lef\n";
+                                         print "      : -output<fileName>\n";
+}else {
+  my $write_output = "";
+  for(my $i=0;$i<$noOfArguments;$i++){
+    if($_[$i] =~ /-output/){$write_output = $_[$i+1];}
+  }#for
+  open(WRITE,">$write_output");
+  my $dbu = $GLOBAL->dbfGlobalGetDBU;
+  foreach my $cell (keys %PLDB){
+    my @pins = $PLDB{$cell}->dbMdbGetPins;
+    if(@pins > 0){
+      print WRITE "$cell ";
+      foreach my $pinName (@pins){
+        my @pinRect = $PLDB{$cell}->dbMdbGetPinRect($pinName);
+        my @POLY = $PLDB{$cell}->dbMdbGetPinPolygon($pinName);
+        if(@pinRect > 0){
+          my ($pinlayer,$pinllx,$pinlly,$pinurx,$pinury) = (split(/\s+/,$pinRect[0]))[0,2,3,4,5];
+          if($pinlayer !~ /^v/i){
+            my $xmiddle_pin_rect = int ((($pinllx+$pinurx)/2)*$dbu);
+            my $ymiddle_pin_rect = int ((($pinlly+$pinury)/2)*$dbu); 
+            print WRITE "$pinName $xmiddle_pin_rect $ymiddle_pin_rect "; 
+          }else {
+            my @rect_or_polygon = (split(/\s+/,$POLY[0]));
+            shift @rect_or_polygon;
+            shift @rect_or_polygon;
+            my $xmiddle_pin_rect = int (($rect_or_polygon[0])*$dbu);
+            my $ymiddle_pin_rect = int (($rect_or_polygon[1])*$dbu);
+            print WRITE "$pinName $xmiddle_pin_rect $ymiddle_pin_rect "; 
+          }
+        }elsif(@POLY > 0){
+          my @rect_or_polygon = (split(/\s+/,$POLY[0]));
+          shift @rect_or_polygon;
+          shift @rect_or_polygon;
+          my $xmiddle_pin_rect = int (($rect_or_polygon[0])*$dbu);
+          my $ymiddle_pin_rect = int (($rect_or_polygon[1])*$dbu);
+          print WRITE "$pinName $xmiddle_pin_rect $ymiddle_pin_rect "; 
+        }else {
+          print WRITE "$pinName 0 0 ";
+        }
+      }#foreach pin
+      print WRITE "\n";
+    }#if pin
+  }#foreach 
+  close(WRITE);
+}
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "Command write_cell_pin_loc_frm_lef took:",timestr($td),"\n";
+}#sub write_cell_pin_loc_frm_lef
+#------------------------------------------------------------------------------------------------#
+sub write_info_of_layer {
+use Benchmark;
+my $t0 = new Benchmark;
+%bd = ();
+foreach my $layerName (keys %PTDB) {
+ my $LN = $PTDB{$layerName}->dbTechGetLayerName;
+ my $Ln = $PTDB{$layerName}->dbTechGetLayerNum;
+ my $LT = $PTDB{$layerName}->dbTechGetLayerType;
+ $bd{$LN}=$Ln;
+}#foreach
+
+open(WRITE,">layer_info.txt");
+my @routing_layer_list = ();
+my @key = sort hash_Value_AscendingNum (keys(%bd));
+for(my $i=0;$i<=$#key;$i=$i+2){
+ my $LT_1 = $PTDB{$key[$i]}->dbTechGetLayerType; 
+ if($LT_1 =~ /routing/i){
+   push(@routing_layer_list,$key[$i]);
+ }
+}
+print WRITE "@routing_layer_list\n";
+for(my $i=0;$i<=$#key;$i=$i+2){
+ my $LT_1 = $PTDB{$key[$i]}->dbTechGetLayerType; 
+ my $LT_2 = $PTDB{$key[$i+1]}->dbTechGetLayerType; 
+ if(($LT_1 =~ /routing/i) && ($LT_2 =~ /cut/i)){
+   print WRITE"$key[$i+1] $key[$i] $key[$i+2]\n"; 
+ } 
+}#for
+
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "Command write_info_of_layer took:",timestr($td),"\n";
+}#sub write_info_of_layer
+#------------------------------------------------------------------------------------------------#
+sub xformNetSegToPathSegForSdef {
+my $netSeg = $_[0];
+my @routeBox = ();
+my $dbu = $GLOBAL->dbfGlobalGetDBU;
+my $netSegZ = (split(/\s+/,$netSeg))[0];
+   if ( exists $PTDB{$netSegZ} ) {
+     if ($netSeg =~ m/\( (\d+) (\d+) \) (\w+)/ ) {
+       return($1,$2,$1,$2);
+     }#if only via
+     elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( (\d+) \* \) (\w+)/ ) {
+       my $llx = $1;
+       my $lly = $2;
+       my $urx = $3;
+       my $ury = $2;
+       my $via_llx = $urx;
+       my $via_lly = $lly;
+       return($llx,$lly,$urx,$ury,$via_llx,$via_lly,$via_llx,$via_lly);
+     }#if horizontal without extn with via
+     elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( (\d+) \* (\d+) \) (\w)/ ) {
+       my $llx = $1;
+       my $lly = $2;
+       my $urx = $3+$4;
+       my $ury = $2;
+       my $via_llx = $urx;  
+       my $via_lly = $lly; 
+       return($llx,$lly,$urx,$ury,$via_llx,$via_lly,$via_llx,$via_lly);
+     }#if horizontal R-extn with via
+     elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( (\d+) \* (\d+) \)/ ) {
+       my $llx = $1;
+       my $lly = $2;
+       my $urx = $3+$4;
+       my $ury = $2;
+       return($llx,$lly,$urx,$ury);
+     }#if horizontal R-extn without via
+     elsif ($netSeg =~ m/\( (\d+) (\d+) (\d+) \) \( (\d+) \* \) (\w)/ ) {
+       my $llx = $1-$3;
+       my $lly = $2;
+       my $urx = $4;
+       my $ury = $2;
+       my $via_llx = $urx;
+       my $via_lly = $lly;
+       return($llx,$lly,$urx,$ury,$via_llx,$via_lly,$via_llx,$via_lly);
+     }#if horizontal L-extn with via
+     elsif ($netSeg =~ m/\( (\d+) (\d+) (\d+) \) \( (\d+) \* \)/ ) {
+       my $llx = $1-$3;
+       my $lly = $2;
+       my $urx = $4;
+       my $ury = $2;
+       return($llx,$lly,$urx,$ury);
+     }#if horizontal L-extn without via
+     elsif ($netSeg =~ m/\( (\d+) (\d+) (\d+) \) \( (\d+) \* (\d+) \)/ ) {
+       my $llx = $1-$3;
+       my $lly = $2;
+       my $urx = $4+$5;
+       my $ury = $2;
+       return($llx,$lly,$urx,$ury);
+     }#if horizontal L-extn and R-extn without via
+     elsif ($netSeg =~ m/\( (\d+) (\d+) (\d+) \) \( (\d+) \* (\d+) \) (\w)/ ) {
+       my $llx = $1-$3;
+       my $lly = $2;
+       my $urx = $4+$5;
+       my $ury = $2;
+       my $via_llx = $urx;
+       my $via_lly = $lly;
+       return($llx,$lly,$urx,$ury,$via_llx,$via_lly,$via_llx,$via_lly);
+     }#if horizontal L-extn and R-extn with via
+     elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( (\d+) \* \)/ ) {
+       my $llx = $1;
+       my $lly = $2;
+       my $urx = $3;
+       my $ury = $2;
+       return($llx,$lly,$urx,$ury);
+     }#if horizontal without extn without via
+     elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( \* (\d+) \) (\w)/ ) {
+       my $llx = $1;
+       my $lly = $2;
+       my $urx = $1;
+       my $ury = $3;
+       my $via_llx = $llx; 
+       my $via_lly = $ury; 
+       return($llx,$lly,$urx,$ury,$via_llx,$via_lly,$via_llx,$via_lly);
+     }#if verical without extn with via
+     elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( \* (\d+) (\d+) \) (\w)/ ) {
+       my $llx = $1;
+       my $lly = $2;
+       my $urx = $1;
+       my $ury = $3+$4;
+       my $via_llx = $llx; 
+       my $via_lly = $ury; 
+       return($llx,$lly,$urx,$ury,$via_llx,$via_lly,$via_llx,$via_lly);
+     }#if verical T-extn with via
+     elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( \* (\d+) (\d+) \)/ ) {
+       my $llx = $1;
+       my $lly = $2;
+       my $urx = $1;
+       my $ury = $3+$4;
+       return($llx,$lly,$urx,$ury);
+     }#if verical T-extn without via
+     elsif ($netSeg =~ m/\( (\d+) (\d+) (\d+) \) \( \* (\d+) \) (\w)/ ) {
+       my $llx = $1;
+       my $lly = $2-$3;
+       my $urx = $1;
+       my $ury = $4;
+       my $via_llx = $llx; 
+       my $via_lly = $ury;
+       return($llx,$lly,$urx,$ury,$via_llx,$via_lly,$via_llx,$via_lly);
+     }#if verical B-extn with via
+     elsif ($netSeg =~ m/\( (\d+) (\d+) (\d+) \) \( \* (\d+) \)/ ) {
+       my $llx = $1;
+       my $lly = $2-$3;
+       my $urx = $1;
+       my $ury = $4;
+       return($llx,$lly,$urx,$ury);
+     }#if verical B-extn without via
+     elsif ($netSeg =~ m/\( (\d+) (\d+) (\d+) \) \( \* (\d+) (\d+) \)/ ) {
+       my $llx = $1;
+       my $lly = $2-$3;
+       my $urx = $1;
+       my $ury = $4+$5;
+       return($llx,$lly,$urx,$ury);
+     }#if verical B-extn and T-extn without via
+     elsif ($netSeg =~ m/\( (\d+) (\d+) (\d+) \) \( \* (\d+) (\d+) \) (\w)/ ) {
+       my $llx = $1;
+       my $lly = $2-$3;
+       my $urx = $1;
+       my $ury = $4+$5;
+       my $via_llx = $llx; 
+       my $via_lly = $ury;
+       return($llx,$lly,$urx,$ury,$via_llx,$via_lly,$via_llx,$via_lly);
+     }#if verical B-extn and T-extn with via
+     elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( \* (\d+) \)/ ) {
+       my $llx = $1;
+       my $lly = $2;
+       my $urx = $1;
+       my $ury = $3;
+       return($llx,$lly,$urx,$ury);
+     }#if verical without extn without via
+#--------------------- temporary code to support jspeed routing text -------------------------#
+     elsif ($netSeg =~ m/\( (\d+) (\d+) \) \( (\d+) (\d+) \)/ ) {
+       if ( $1 == $3 ) {
+         my $llx = $1;
+         my $lly = $2;
+         my $urx = $3;
+         my $ury = $4;
+         return($llx,$lly,$urx,$ury);
+       }
+       elsif ( $2 == $4 ) {
+         my $llx = $1;
+         my $lly = $2;
+         my $urx = $3;
+         my $ury = $4;
+         return($llx,$lly,$urx,$ury);
+       }
+     }# if verical without extn without via
+     elsif ($netSeg =~ m/\( (\d+) (\d+) (\d+) \) \( (\d+) (\d+) (\d+) \)/ ) {
+       if($1 == $4){
+         my $llx = $1;
+         my $lly = $2-$3;
+         my $urx = $4;
+         my $ury = $5+$6;
+         return($llx,$lly,$urx,$ury);
+       }elsif($3 == $6){
+         my $llx = $1-$3;
+         my $lly = $2;
+         my $urx = $4+$6;
+         my $ury = $5;
+         return($llx,$lly,$urx,$ury);
+       }
+     }# if verical B-extn and T-extn with via
+     elsif ($netSeg =~ m/\( (\d+) (\d+) (\d+) \) \( (\d+) (\d+) (\d+) \) (\w)/ ) {
+       if($1 == $4){
+         my $llx = $1;
+         my $lly = $2-$3;
+         my $urx = $4;
+         my $ury = $5+$6;
+         my $via_llx = $llx;
+         my $via_lly = $ury;
+         return($llx,$lly,$urx,$ury,$via_llx,$via_lly,$via_llx,$via_lly);
+       }elsif($3 == $6){
+         my $llx = $1-$3;
+         my $lly = $2;
+         my $urx = $4+$6;
+         my $ury = $5;
+         return($llx,$lly,$urx,$ury);
+       }
+     }# if verical B-extn and T-extn with via
+   }#if the routiung layer exists
+}#sub xformNetSegToPathSegForSdef
+#------------------------------------------------------------------------------------------------#
+sub write_slef {
+use Benchmark;
+my $t0 = new Benchmark;
+my $noOfArguments = @_;
+if($noOfArguments < 0 || $_[0] eq "-h"){ print "Usage : write_slef\n";
+                                         print "      :\n";
+}else {
+#for(my $i=0; $i<$noOfArguments;$i++){
+#  if($_[$i] =~ //){} 
+#}#for
+
+print "Writing slef file\n"; 
+open(WRITE,">output.slef");
+foreach my $cell (keys %PLDB){
+  my @size = $PLDB{$cell}->dbMdbGetSize; 
+  my $class = $PLDB{$cell}->dbMdbGetClass;
+  my @pins = $PLDB{$cell}->dbMdbGetPins;
+  print WRITE "Cell $cell @size $class\n"; 
+  foreach my $pin (@pins){
+    my $dir = $PLDB{$cell}->dbMdbGetPinDir($pin);
+    if ( $dir == 0 ) { $pinDir = 'INPUT'; } 
+    elsif ( $dir == 1 ) { $pinDir = 'OUTPUT'; }
+    elsif ( $dir == 2 ) { $pinDir = 'INOUT'; }
+#    print WRITE "Cell $cell $pin ";
+    my @rects = $PLDB{$cell}->dbMdbGetPinRect($pin);
+    my @polygon = $PLDB{$cell}->dbMdbGetPinPolygon($pin);
+    if(@rects > 0){
+      foreach my $l ( @rects ) {
+        $l =~ s/\s*RECT//;
+        $l =~ s/\s*;//;
+#        my @L  = split(/\s+/,$l);
+        print WRITE "Cell $cell $pin $l $pinDir\n";
+      }
+    }
+    if(@polygon > 0){
+      foreach  my $plgn ( @polygon){
+        $plgn =~ s/\s*POLYGON//g;
+        my @pl_data = split(/\s+/,$plgn);
+        my $pl_layer_Name = shift (@pl_data);
+        my @rectangles = &break_polygon_into_rects(\@pl_data);
+        foreach my $rect(@rectangles){
+          print WRITE "Cell $cell $pin $pl_layer_Name @$rect $pinDir\n";
+        }
+      }
+    }
+  }#foreach pin
+  my @obs = $PLDB{$cell}->dbMdbGetObs;
+  my @obs_polygon = $PLDB{$cell}->dbMdbGetObsPolygon; 
+  if(@obs > 0 ){
+    foreach my $obs (@obs){
+      $obs =~ s/\s*RECT//;
+      $obs =~ s/\s*;//;
+      print WRITE "Cell $cell OBS $obs\n";
+    }
+  }
+  if(@obs_polygon > 0){
+    foreach my $obs_plgn (@obs_polygon){
+      $obs_plgn =~ s/\s*POLYGON//;
+      my @obs_pl_data = split(/\s+/,$obs_plgn);
+      my $obs_pl_layer_Name = shift(@obs_pl_data);
+      my @obs_rectangles =  &break_polygon_into_rects(\@obs_pl_data);
+      foreach my $rect(@obs_rectangles){
+        print WRITE "Cell $cell OBS $obs_pl_layer_Name @$rect\n";
+      }
+    }
+  }
+}#foreach
+}
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "Command write_slef took:",timestr($td),"\n";
+}#sub write_slef
+#------------------------------------------------------------------------------------------------#
+sub write_slib {
+use Benchmark;
+my $t0 = new Benchmark;
+my $noOfArguments = @_;
+if($noOfArguments < 0 || $_[0] eq "-h"){ print "Usage : write_slib\n";
+}else {
+  print "Writing slib file\n";
+  open(WRITE,">output.slib");
+  foreach my $cell (keys %TLDB){
+    print "Timing Cell $cell \n";
+    my @pins = $TLDB{$cell}->dbTimingLibGetPins; 
+    foreach my $pin (@pins){
+      my $pinDir = $TLDB{$cell}->dbTimingLibGetPinDir($pin);  
+      if($pinDir eq ""){next;}     
+      if($pinDir =~ /output/i){
+        #print WRITE "$pin $pinDir ";
+        my $pinFunc = $TLDB{$cell}->dbTimingLibGetPinFunc($pin);
+        my @reltdPins = $TLDB{$cell}->dbTimingLibGetPinRPin($pin);
+        foreach my $reltdPin(@reltdPins){
+          my @conds = $TLDB{$cell}->dbTimingLibGetPinCond($pin,$reltdPin);
+          push (@conds, "NONE");     
+          foreach my $condition (@conds){
+            my @cellRiseIndexVal = $TLDB{$cell}->dbTimingLibGetPinDelayIndex($pin,$reltdPin,$condition,"riseDelay");
+            my @cellRiseDelayVal = $TLDB{$cell}->dbTimingLibGetPinDelay($pin,$reltdPin,$condition,"riseDelay");
+            my @cellFallIndexVal = $TLDB{$cell}->dbTimingLibGetPinDelayIndex($pin,$reltdPin,$condition,"fallDelay");
+            my @cellFallDelayVal = $TLDB{$cell}->dbTimingLibGetPinDelay($pin,$reltdPin,$condition,"fallDelay");
+
+            my @cellRisePowerIndexVal = $TLDB{$cell}->dbTimingLibGetPinIndexPower($pin,$reltdPin,$condition,"risePower"); 
+            my @cellRisePowerVal = $TLDB{$cell}->dbTimingLibGetPinPower($pin,$reltdPin,$condition,"risePower");
+            my @cellFallPowerIndexVal = $TLDB{$cell}->dbTimingLibGetPinIndexPower($pin,$reltdPin,$condition,"fallPower"); 
+            my @cellFallPowerVal = $TLDB{$cell}->dbTimingLibGetPinPower($pin,$reltdPin,$condition,"fallPower"); 
+            if((@cellRisePowerIndexVal > 0 && @cellRisePowerVal > 0) || (@cellFallPowerIndexVal > 0 && @cellFallPowerVal > 0)){
+              print WRITE "Power Cell: $cell $pin ";
+              print WRITE "related_pin:\"$reltdPin\" ";
+              print WRITE "when:\"$condition\" "if($condition ne "NONE");
+              if(@cellRisePowerIndexVal > 0){
+                print WRITE "rise_power\($cellRisePowerIndexVal[0]\)\{ ";
+                print WRITE "index_1 \(\"$cellRisePowerIndexVal[1]\"\) ";
+                print WRITE "index_2 \(\"$cellRisePowerIndexVal[2]\"\) " if($cellRisePowerIndexVal[2] ne "");
+                print WRITE "index_3 \(\"$cellRisePowerIndexVal[3]\"\) " if($cellRisePowerIndexVal[3] ne ""); 
+                print WRITE "values \(";
+                foreach my $rPwrVal (@cellRisePowerVal){
+                  if($rPwrVal ne $cellRisePowerVal[-1]){
+                    print WRITE "$rPwrVal ";
+                  }else {
+                    print WRITE "$rPwrVal\) ";
+                  }
+                }#foreach
+                print WRITE "\} ";
+              } 
+              if(@cellFallPowerIndexVal > 0){
+                print WRITE "fall_power\($cellFallPowerIndexVal[0]\)\{ ";
+                print WRITE "index_1 \(\"$cellFallPowerIndexVal[1]\"\) ";
+                print WRITE "index_2 \(\"$cellFallPowerIndexVal[2]\"\) " if($cellFallPowerIndexVal[2] ne "");
+                print WRITE "index_3 \(\"$cellFallPowerIndexVal[3]\"\) " if($cellFallPowerIndexVal[3] ne "");
+                print WRITE "values \("; 
+                foreach my $fPwrVal (@cellFallPowerVal){
+                  if($fPwrVal ne $cellFallPowerVal[-1]){
+                    print WRITE "$fPwrVal ";
+                  }else {
+                    print WRITE "$fPwrVal\) ";
+                  }
+                }#foreach
+                print WRITE "\} ";
+              }
+              print WRITE "\n";
+            }
+            if((@cellRiseIndexVal > 0 && @cellRiseDelayVal > 0) || (@cellFallIndexVal > 0 && @cellFallDelayVal > 0)){
+              print WRITE "Timing Cell: $cell $pin $pinDir ";
+              print WRITE "related_pin:\"$reltdPin\" ";
+              print WRITE "when:\"$condition\" " if($condition ne "NONE");
+              if(@cellRiseDelayVal > 0){
+                 print WRITE "cell_rise\($cellRiseIndexVal[0]\) \{ ";
+                 print WRITE "index_1 \(\"$cellRiseIndexVal[1]\"\) ";
+                 print WRITE "index_2 \(\"$cellRiseIndexVal[2]\"\) ";
+                 print WRITE "values \(";
+                 foreach my $rDelVal (@cellRiseDelayVal){
+                   if($rDelVal ne $cellRiseDelayVal[-1]){
+                      print WRITE "$rDelVal ";
+                   }else{
+                      print WRITE "$rDelVal\) ";
+                   }
+                 }
+                 print WRITE "\} ";
+              }
+              if(@cellFallDelayVal > 0){
+                 print WRITE "cell_fall\($cellFallIndexVal[0]\) \{ ";
+                 print WRITE "index_1 \(\"$cellFallIndexVal[1]\"\) ";
+                 print WRITE "index_2 \(\"$cellFallIndexVal[2]\"\) ";
+                 print WRITE "values \(";
+                 foreach my $fDelVal (@cellFallDelayVal){
+                   if($fDelVal ne $cellFallDelayVal[-1]){
+                      print WRITE "$fDelVal ";
+                   }else{
+                      print WRITE "$fDelVal\) ";
+                   }
+                 }
+                 print WRITE"\} ";
+              }
+            }
+            print WRITE "\n";
+          }#foreach
+        }#foreach
+      }
+    }#foreach
+  }#foreach
+  close(WRITE);
+}#else                                              
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "Command write_slib took:",timestr($td),"\n";
+}#sub write_slib 
+#------------------------------------------------------------------------------------------------#
+sub gen_supply_resistor_network_new 
+{
+  my $power_pad_bump_instance = $_[0];
+  my $power_pad_bump_pin = $_[1];
+  my $max_node_number = 0;
+  my %node_num_vs_layer_location = ();
+  my %connection_hash_of_array = ();
+  my %hash_of_start_node_coord = ();
+  my %hash_of_end_node_coord = ();
+  my %temp_check_coord_hash = ();
+  my %temp_via_hash = ();
+  my %connection_hash = ();
+  my %check_node_hash = ();
+  my $dbu = $GLOBAL->dbfGlobalGetDBU;
+  if(exists $COMP_ALREADY{$power_pad_bump_instance}){
+    if(exists $COMP_ALREADY{$power_pad_bump_instance}{$power_pad_bump_pin}){
+      my $curr_supply_net = $COMP_ALREADY{$power_pad_bump_instance}{$power_pad_bump_pin};
+      #this wil store layer+(xy) Vs node number
+      if(exists $NETS_ROUTING_ALREADY{$curr_supply_net}){
+        my @regular_routes = $NETS_ROUTING_ALREADY{$curr_supply_net}->dbNetRoutingDBGetRegularRoute;
+        if ( @regular_routes > 0 ) {
+          foreach my $regular_route ( @regular_routes ) {
+            my ($layer,$via) = (split(/\s+/,$regular_route))[0,-1];
+            my @routeBox = &xformNetSegToPathSeg($regular_route,"--via");
+            my $layer_resis = $PTDB{$layer}->dbTechGetLayerResistance*$dbu;
+            my $layer_width = $PTDB{$layer}->dbTechGetLayerWidth*$dbu;
+            my $num_of_coord = @routeBox;
+            my ($x_start,$x_end,$y_start,$y_end); 
+            my $metal_length;
+            if(abs($routeBox[0] - $routeBox[2]) > abs($routeBox[1] - $routeBox[3])){
+              #horizontal wire
+              $x_start = $routeBox[0];
+              $y_start = ($routeBox[1] + $routeBox[3])/2;
+              $x_end = $routeBox[2];
+              $y_end = ($routeBox[1] + $routeBox[3])/2;
+              $metal_length = abs($routeBox[0] - $routeBox[2]);
+            }elsif(abs($routeBox[0] - $routeBox[2]) < abs($routeBox[1] - $routeBox[3])){
+              #vertical wire
+              $x_start = ($routeBox[0] + $routeBox[2])/2;
+              $y_start = $routeBox[1];
+              $x_end = ($routeBox[0] + $routeBox[2])/2;
+              $y_end = $routeBox[3];
+              $metal_length = abs($routeBox[1] - $routeBox[3]);
+            }else{
+              #error condition
+              if(exists $VDB{$via}){
+                my $via_resis = $VDB{$via}->dbGetViaResistance*$dbu;
+                $temp_via_hash{$routeBox[0]."|".$routeBox[1]} = $via_resis;
+              }
+            }
+            if($metal_length == 0){next;}
+            my $resistance_seg = ($metal_length/$layer_width)*$layer_resis;
+            my $new_resistnce_seg = sprintf("%.2f",$resistance_seg); 
+
+            my $start_point_node_key = $layer."|".$x_start."|".$y_start;
+            my $point_node_key_for_start = $x_start."|".$y_start;
+            my $start_node_number;
+            if(!exists $node_num_vs_layer_location{$start_point_node_key}){
+              $node_num_vs_layer_location{$start_point_node_key} = $max_node_number;
+              $start_node_number = $max_node_number;
+              $max_node_number++;
+            }else{
+              $start_node_number = $node_num_vs_layer_location{$start_point_node_key};
+            }
+
+            my $end_point_node_key = $layer."|".$x_end."|".$y_end;
+            my $point_node_key_for_end = $x_end."|".$y_end;
+            my $end_node_number;
+            if(!exists $node_num_vs_layer_location{$end_point_node_key}){
+              $node_num_vs_layer_location{$end_point_node_key} = $max_node_number;
+              $end_node_number = $max_node_number;
+              $max_node_number++;
+            }else{
+              $end_node_number = $node_num_vs_layer_location{$end_point_node_key};
+            }
+
+            if(exists $hash_of_start_node_coord{$point_node_key_for_start}){
+              push(@{$hash_of_start_node_coord{$point_node_key_for_start}},$start_node_number);
+            }else {
+              $hash_of_start_node_coord{$point_node_key_for_start} = [$start_node_number];
+            }
+            if(exists $hash_of_end_node_coord{$point_node_key_for_end}){
+              push(@{$hash_of_end_node_coord{$point_node_key_for_end}},$end_node_number);
+            }else {
+              $hash_of_end_node_coord{$point_node_key_for_end} = [$end_node_number];
+            }
+
+            if(exists $connection_hash_of_array{$start_node_number}){
+              push(@{$connection_hash_of_array{$start_node_number}},$end_node_number.",".$new_resistnce_seg);
+            }else{
+              $connection_hash_of_array{$start_node_number} = [$end_node_number.",".$new_resistnce_seg];
+              $temp_check_coord_hash{$start_node_number} = [$point_node_key_for_start];
+            }
+
+            if(exists $connection_hash_of_array{$end_node_number}){
+              push(@{$connection_hash_of_array{$end_node_number}},$start_node_number.",".$new_resistnce_seg);
+            }else{
+              $connection_hash_of_array{$end_node_number} = [$start_node_number.",".$new_resistnce_seg];
+              $temp_check_coord_hash{$end_node_number} = [$point_node_key_for_end];
+            }
+            if( $num_of_coord == 4){
+            }if( ($num_of_coord == 6) ){
+            #  #there is via at the end of the segment
+                my $via_resis = $VDB{$via}->dbGetViaResistance*$dbu;
+                $temp_via_hash{$x_end."|".$y_end} = $via_resis;
+            }
+          }
+        }
+      }
+      foreach my $node (sort {$a <=> $b} keys %connection_hash_of_array){
+        my @data = @{$temp_check_coord_hash{$node}};
+        my $point = join"",@data; 
+        my @start_node_list = ();
+        if(exists $hash_of_start_node_coord{$point}){
+          @start_node_list = @{$hash_of_start_node_coord{$point}};
+          foreach my $num (@start_node_list){
+            $check_node_hash{$num}  = 1;
+            if($num != $node){
+              if(exists $temp_via_hash{$point}){
+                push(@{$connection_hash{$node}},$num.",".$temp_via_hash{$point});
+              }else {
+                #push(@{$connection_hash{$node}},$num);
+              }
+            }else {
+              push(@{$connection_hash{$node}},@{$connection_hash_of_array{$node}});
+            }
+          }#foreach
+        }
+        if(exists $hash_of_end_node_coord{$point}){
+          my @end_node_list = @{$hash_of_end_node_coord{$point}};
+          foreach my $num (@end_node_list){
+            if(!exists $check_node_hash{$num}){
+              if($num != $node){
+                if(exists $temp_via_hash{$point}){
+                  push(@{$connection_hash{$node}},$num.",".$temp_via_hash{$point});
+                }else {
+                  #push(@{$connection_hash{$node}},$num);
+                }
+              }else {
+                push(@{$connection_hash{$node}},@{$connection_hash_of_array{$node}});
+              }
+            }
+          }#foreach
+        }
+      }
+      if(exists $NETS_ALREADY{$curr_supply_net}){
+        foreach my $instance (keys %{$NETS_ALREADY{$curr_supply_net}}){
+          if(exists $COMP_ALREADY{$instance}){
+            my $cellref = $CADB{$instance}->dbCadbGetCellref;
+            my @pins = $PLDB{$cellref}->dbMdbGetPins;
+            foreach my $pinName (@pins){
+              my $conn_net = $COMP_ALREADY{$instance}{$pinName};
+              if($conn_net eq $curr_supply_net){
+                my $dir = $PLDB{$cellref}->dbMdbGetPinDir($pinName);
+                if($dir == 0){
+                  my @instLoc = $CADB{$instance}->dbCadbGetLoc;
+                  my $instOrient = $CADB{$instance}->dbCadbGetOrient;
+                  my @cellOrigin = $PLDB{$cellref}->dbMdbGetOrigin;
+                  my @cellSize = $PLDB{$cellref}->dbMdbGetSize;
+                  my @pinRects = $PLDB{$cellref}->dbMdbGetPinRect($pinName);
+                  foreach my $pinRect (@pinRects){
+                    my ($pinRectLayer,$pinllx,$pinlly,$pinurx,$pinury) = (split(/\s+/, $pinRect))[0,2,3,4,5];
+                    my @instPinRect = &xformCellPinToInstPin($instLoc[0],$instLoc[1],$cellOrigin[0],$cellOrigin[1],$instOrient,$cellSize[0],$cellSize[1],$pinllx,$pinlly,$pinurx,$pinury);
+                    push(@sinkList,$instance); 
+                    push(@sinkList,$pinName);
+                  }
+                }
+              }
+            }
+          }elsif((exists $PORTS_ALREADY{$TOP_MODULE}{$instance})||($instance eq "PIN")){
+            foreach my $port (keys %{$PORTS_ALREADY{$TOP_MODULE}}){
+              my @port_nets = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetConn;
+              if($curr_supply_net eq $port_nets[0]){
+                my $dir = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetDir;
+                if($dir eq "output"){ 
+                  push(@sinkList,$port); 
+                  push(@sinkList,"PIN");
+                } 
+              }
+            }
+          }else{ 
+            #control will never reach here
+          }
+        }
+      }
+    }
+  }
+#return(\%connection_hash_of_array);
+return(\%connection_hash);
+}#sub gen_supply_resistor_network_new
+#------------------------------------------------------------------------------------------------#
+sub gen_lef_cell_pin_resistor_network 
+{
+  #It will create file which will have list of layer-polygon for pins
+  #spark code will read this file and generate resistor graph for each pin
+  my $lef_cell = $_[0];
+  open (LEF_PIN_LAYER_POLY_INFO, ">lef_pin_layer_poly_info");
+  my @lef_cell_pins = $PLDB{$lef_cell}->dbMdbGetPins;
+  my $is_first_line = 1;
+  foreach my $lef_cell_pin (@pins){
+    my @pinRects = $PLDB{$lef_cell}->dbMdbGetPinRect($lef_cell_pin);
+    foreach my $pinRect (@pinRects){
+      my ($pinRectLayer,$pinllx,$pinlly,$pinurx,$pinury) = (split(/\s+/, $pinRect))[0,2,3,4,5];
+      if($is_first_line == 0){
+        print LEF_PIN_LAYER_POLY_INFO "\n";
+      }
+      print LEF_PIN_LAYER_POLY_INFO "$lef_cell_pin,$pinRectLayer,$pinllx,$pinlly,$pinurx,$pinury";
+      $is_first_line = 0;
+    }
+  }
+  close(LEF_PIN_LAYER_POLY_INFO);
+}#sub gen_lef_cell_pin_resistor_network
+#------------------------------------------------------------------------------------------------#
+sub resistor_graph {
+my %Get_Resistor_Hash = ();
+foreach my $inst (keys %COMP_ALREADY){
+  if($inst !~ /PIN/){
+    my $cellref = $CADB{$inst}->dbCadbGetCellref;
+    my @pins = $PLDB{$cellref}->dbMdbGetPins;
+    foreach my $pin (@pins){
+      my $curr_supply_net = $COMP_ALREADY{$inst}{$pin};
+      if(!exists $Get_Resistor_Hash{$curr_supply_net}){
+        my $return_connection_hash_of_array = &gen_supply_resistor_network_new($inst,$pin);
+        my %get_conn_connection_hash_of_array = %$return_connection_hash_of_array;
+        $Get_Resistor_Hash{$curr_supply_net} = $return_connection_hash_of_array;
+      }
+    }#foreach 
+  }
+}
+foreach my $net (keys %Get_Resistor_Hash){
+  print "$net\n";
+  foreach my $node (sort {$a <=> $b}keys %{$Get_Resistor_Hash{$net}}){
+    print "$node = @{$Get_Resistor_Hash{$net}{$node}}\n";
+  }
+} 
+}#sub resistor_graph
+#------------------------------------------------------------------------------------------------#
+1;

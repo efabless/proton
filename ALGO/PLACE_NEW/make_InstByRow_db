@@ -1,0 +1,180 @@
+#!/bin/perl -w
+
+%RO_ROWNAME2INFO_DB = ();
+%BIN_DB = ();
+%RO_YTOROWNAME =();
+%row_y2name = ();
+$bin_size = 10;
+sub dbPlaceCreateRowInstDB {
+$debug = 0;
+	#print "Overlap variable is $overlap\n";
+	my(@array) = @_; 
+	my @covg_area = ($array[0],$array[1],$array[2],$array[3]);
+	my @hard_block = ($array[4],$array[5],$array[6],$array[7]);
+        my $pass2 = $arrary[8];
+	my %row_y2name = ();
+	my %row_y2orient = ();
+	my $cellHeight = $GLOBAL->dbGlobalGetRowHeight;
+	my $DBU = $GLOBAL->dbfGlobalGetDBU;
+	$cellHeight *= $DBU;
+	my $llx_covg = $covg_area[0];
+	my $lly_covg = $covg_area[1];
+	my $urx_covg = $covg_area[2];
+	my $ury_covg = $covg_area[3];
+	
+	
+	my @rows = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetRows;
+        foreach my $tag ( @rows ) {
+          	my ($rowName,$x,$y,$row_orient) = (split(/\s+/, $tag))[0,2,3,4];
+                $row_y2name{$y} = $rowName;
+                $row_y2orient{$y} = $row_orient;
+        }# foreach
+	
+	
+	for ($i=$lly_covg; $i <$ury_covg; $i+=$cellHeight) {
+		my $rowName = $row_y2name{$i};
+		my $orient = $row_y2orient{$i};
+		print "DBG-ALGO_PL_NW-PL_CR_RW_INST_DB : 001 : Processing for row $i $rowName \n" if ($debug);
+		$RO_YTOROWNAME{$i} = $rowName;
+                $RO_ROWNAME2INFO_DB{$rowName} = RowInstDB::new(); 
+                $RO_ROWNAME2INFO_DB{$rowName}->dbPlaceSetRowY($i); 
+                $RO_ROWNAME2INFO_DB{$rowName}->dbPlaceSetOrient($orient); 
+	}#end for 
+	
+	#####################################################
+     	##Set gcells: Assuming 10 rows to be a gcell#########
+	#####################################################
+	@RO_YTOROWNAME_array = sort { $a <=> $b } keys %RO_YTOROWNAME;
+	my $no_of_gcells =  ceil(@RO_YTOROWNAME_array /$bin_size);
+	print "DBG-ALGO_PL_NW-PL_CR_RW_INST_DB : 002 : Number of gcells: $no_of_gcells \n" if ($debug);
+	for ($i=1; $i <= $no_of_gcells; $i++) {
+		$BIN_DB{$i} = BinInstDB::new();
+		my $y = (($i-1) * $bin_size * $cellHeight);
+		$BIN_DB{$i} -> dbPlaceSetBinY($y);
+	}		
+	
+	foreach ( keys %COMP_ALREADY ) {
+	my @loc = $CADB{$_}->dbCadbGetLoc;
+	my $cellref =  $CADB{$_}->dbCadbGetCellref;
+       	my $orient = $CADB{$_}->dbCadbGetOrient;
+	my $inst_class = $PLDB{$cellref}->dbMdbGetClass;
+        # Added by Rajeev on 03/17/10, skip the instance if it is unplaced, 
+        # this enables remove overlap to work iven if all instances are not placed
+       	my $plc_status = $CADB{$_}->dbCadbGetStatus;
+        print "DBG-ALGO_PL_NW-PL_CR_RW_INST_DB : 003 : $_ : $plc_status\n" if ($debug);
+        if ( $plc_status eq "UNPLACED" | $plc_status eq "UND" ) { next; }
+	$xorigin = $loc[0];
+        $yorigin = $loc[1];
+			
+	$size = $MACROS_ATTRIBUTE_ALREADY{$cellref}{size};
+    	($width,$height)=(split(/\s+/,$size))[0,1];
+
+    	$width = $width*$DBU;
+    	$height = $height*$DBU;  
+	if( $orient eq "N") {
+    		$llx = $xorigin;
+    		$lly = $yorigin;
+    		$urx = $xorigin+$width;
+    		$ury = $yorigin+$height;
+        }
+  	elsif( $orient eq "FN")
+ 	{
+    		$llx = $xorigin;
+    		$lly = $yorigin+$height;
+    		$urx = $xorigin+$width;
+    		$ury = $yorigin;
+        }
+ 	elsif( $orient eq "FS") {
+  		$llx = $xorigin;
+  		$lly = $yorigin;
+  		$urx = $xorigin+$width;
+  		$ury = $yorigin+$height;
+        }
+ 	elsif( $orient eq "S") {
+  		$llx = $xorigin;
+  		$lly = $yorigin;
+  		$urx = $xorigin+$width;
+  		$ury = $yorigin+$height;
+        }
+ 	elsif( $orient eq "W") {
+  		$llx = $xorigin;
+  		$lly = $yorigin;
+  		$urx = $xorigin+$height;
+  		$ury = $yorigin+$width;
+        }
+ 	elsif( $orient eq "FW") {
+  		$llx = $xorigin;
+  		$lly = $yorigin;
+  		$urx = $xorigin+$height;
+  		$ury = $yorigin+$width;
+        }
+ 	elsif( $orient eq "E") {
+  		$llx = $xorigin;
+  		$lly = $yorigin;
+  		$urx = $xorigin+$height;
+  		$ury = $yorigin+$width;
+        }
+ 	elsif( $orient eq "FE") {
+  		$llx = $xorigin;
+  		$lly = $yorigin;
+  		$urx = $xorigin+$height;
+  		$ury = $yorigin+$width;
+         }
+	print "DBG-ALGO_PL_NW-PL_CR_RW_INST_DB : 004 : Instance : $_\n" if ($debug);
+	print "DBG-ALGO_PL_NW-PL_CR_RW_INST_DB : 005 : COVG AREA llx : $llx_covg , lly: $lly_covg , urx = $urx_covg , ury = $ury_covg\n" if ($debug);
+	print "DBG-ALGO_PL_NW-PL_CR_RW_INST_DB : 006 : INSTANCE  llx : $llx,lly : $lly, urx = $urx, ury : $ury \n" if ($debug);
+	#####################################################
+     	##Set gcells: Assuming 10 rows to be a gcell#########
+	#####################################################
+		my $temp1 = ($lly + $cellHeight)/$cellHeight ;
+		my $temp2 = int ($temp1/$bin_size) + 1;
+		my $bin = $temp2; 
+		$CADB{$_}->dbCadbSetBin($bin);
+			
+	######################################################	
+	       if ($pass2) {
+		 if ($llx <= $llx_covg) {$llx = $llx_covg;  $loc[0] = $llx_covg;} 
+		 if ($llx >=$urx_covg)  {$llx = $llx_covg; $loc[0] = $llx_covg;}
+	       }
+	### Adding this as per Narendra's requirement that if cells are placed outside of the coverage area
+	### then next stage should fix it rather than flagging an error
+	if ($llx <= $llx_covg)  {$llx = $llx_covg;           $loc[0] = $llx;} 
+	if ($urx >= $urx_covg)  {$llx = $urx_covg - $width ; $loc[0] = $llx;}
+	if ($lly <= $lly_covg)  {$lly = $lly_covg ;          $loc[1] = $lly;}
+	if ($ury >= $ury_covg)  {$lly = $ury_covg - $height ; $loc[1] = $lly;}
+
+
+
+
+	       if (($llx >= $llx_covg) && ($llx <=$urx_covg) && ($lly >= $lly_covg)&& ($lly  < $ury_covg)){
+		 print "DBG-ALGO_PL_NW-PL_CR_RW_INST_DB : 007 : $_ inside covg area\n" if ($debug);
+		 if ($overlap ==1) {
+		   $RO_ROWNAME2INFO_DB{$RO_YTOROWNAME{$loc[1]}}->dbPlaceAddInstInRow($_);
+		   $BIN_DB{$bin} -> dbPlaceAddInstInBin($_);
+		 } else {
+		   if (($llx >= $hard_block[0]) && ($llx <=$hard_block[2]) && ($lly >= $hard_block[1])&& ($lly  < $hard_block[3])){
+		     print "DBG-ALGO_PL_NW-PL_CR_RW_INST_DB : 008 : $_ inside hard block area\n" if ($debug) ;
+		   } else {
+		     ## if the cell is not aligned to a row even after snap, do so
+		     $remain = $loc[1]%$cellHeight;
+		     if ($remain != 0) {
+		       $adjloc = int ($loc[1] - $remain); 
+		       print "DBG-ALGO_PL_NW-PL_CR_RW_INST_DB : 009 : $_ : $loc[1] : $RO_YTOROWNAME{$adjloc}\n" if ( $debug);
+		       $RO_ROWNAME2INFO_DB{$RO_YTOROWNAME{$adjloc}}->dbPlaceAddInstInRow($_);
+		     } else {
+		       print "DBG-ALGO_PL_NW-PL_CR_RW_INST_DB : 009 : $_ : $loc[1] : $RO_YTOROWNAME{$loc[1]}\n" if ( $debug);
+		       $RO_ROWNAME2INFO_DB{$RO_YTOROWNAME{$loc[1]}}->dbPlaceAddInstInRow($_);
+		     }
+		     $BIN_DB{$bin} -> dbPlaceAddInstInBin($_);
+		   } 
+		 }
+	       } else {
+		 print "DBG-ALGO_PL_NW-PL_CR_RW_INST_DB : 010 : $_ outside the area\n" if ($debug);
+	       }
+	
+      }
+%row_y2name = ();
+%row_y2orient = ();
+}#sub dbPlaceCreateRowInstDB
+
+1;

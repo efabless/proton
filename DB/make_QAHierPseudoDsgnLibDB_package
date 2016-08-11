@@ -1,0 +1,356 @@
+package DsgnLibDB;
+
+####  explanation of database ####
+##    S is Size
+##    O is Orentation
+##    PIN is a multilevel hash to store pin data 
+##    PIN { A => [dir][flags][lay1]->{rects}
+##                           [lay2]->{rects}
+##    F is element function
+##    T is cell type sequential or combinational 0 means combi 1 means seq 2 means block
+##    R is pin routibility factor
+##
+##    PINS FLAGS Explanation : 0 == signal 
+##                        1 == power
+##                        2 == ground
+##                        3 == clock
+##                        4 == scan
+##   C is CLASS of the design library element
+##          0 : Soft module
+##          1 : Region module
+##          2 : Firm module
+##          3 : Complex or custom RTL module
+##          4 : IP block
+##          5 : Arithmatic element
+##          6 : Boolean element
+##          7 : Register element
+##          8 : Parametric RTL element
+##          9 : STD cell
+##          10 : hard macro
+##          11 : blackbox module
+##   OBS is an array with stores the obstruction information
+
+sub new {
+    
+my $Cellref = {
+                    S => [],
+                    O => "N",
+                    PIN => DsgnLibPinDB::createEmpty(),
+                    F => "UND",
+                    T => 0,
+                    C => 0,
+                    OBS => [],
+                    R => 0, 
+                    };
+bless $Cellref, 'DsgnLibDB';
+return $Cellref;
+}#sub new
+
+#------------------------------------------------------------------#
+sub dbDldbDoesPinExist {
+my  ($self,$pinName) = @_;
+if ( exists ${$self->{PIN}}{$pinName} ) {
+return(1); } else { return(0);}
+}#sub dbDldbDoesPinExist
+
+sub dbDldbDoesBusExist {
+my  ($self,$busName) = @_;
+my @pins = $self->dbDldbGetPins;
+my $cnt = 0 ;
+   foreach my $pinName ( @pins ) {
+           if ( $pinName =~ /$busName\[[0-9]+\]/ ) { $cnt++; }
+                                 }
+if( $cnt > 0 ) {return(1); } else { return(0);}
+}#sub dbDldbDoesBusExist
+
+sub dbDldbGetPinsFromBus {
+my  ($self,$busName) = @_;
+my @allPins = $self->dbDldbGetPins;
+my @pins = ();
+   foreach my $pinName ( @allPins ) {
+           if ( $pinName =~ /$busName\[[0-9]+\]/ ) { push(@pins,$pinName);  }
+                                 }
+my @sortedPins = sort {$a <=> $b} @pins;
+print "From Inside DB\n";
+print join "," , @sortedPins;
+print "\n";
+return(@sortedPins);
+}#sub dbDldbGetPinsFromBus
+
+
+#------------------------------------------------------------------#
+sub dbDldbSetPinAccess {
+my ($self,$pinName,$type,$val) =@_;
+    ${$self->{PIN}}{$pinName}->{AF}->[$type] = $val;
+}# sub dbDldbSetPinAccess
+
+sub dbDldbGetPinAccess {
+my ($self,$pinName) =@_;
+my @accessData = @{${$self->{PIN}}{$pinName}->{AF}};
+return(@accessData)
+}# sub dbDldbGetPinAccess
+#------------------------------------------------------------------#
+
+sub dbDldbSetClass {
+my ($self,$class) =@_;
+  $self->{C} = $class;
+}# sub dbDldbSetClass
+
+sub dbDldbGetClass {
+my ($self) =@_;
+ $class = $self->{C};
+return($class);
+}# sub dbDldbGetClass
+#------------------------------------------------------------------#
+sub dbDldbAddPinBusWidth {
+my ($self,$pinName,$width) =@_;
+    ${$self->{PIN}}{$pinName}->{BW} = $width;
+}#sub dbDldbAddPinBusWidth
+
+sub dbDldbGetPinBusWidth {
+my ($self,$pinName) =@_;
+my $width = ${$self->{PIN}}{$pinName}->{BW};
+return($width);
+}#sub dbDldbGetPinBusWidth
+
+#------------------------------------------------------------------#
+sub dbDldbAddPinBusBaseName {
+my ($self,$pinName,$base) =@_;
+    ${$self->{PIN}}{$pinName}->{BN} = $base;
+}#sub dbDldbAddPinBusBaseName
+
+sub dbDldbAddPinBusBit {
+my ($self,$pinName,$bit) =@_;
+    ${$self->{PIN}}{$pinName}->{BB} = $bit;
+}#sub dbDldbAddPinBusBit
+
+
+
+sub dbDldbSetPinIsSignal {
+my ($self,$pinName) =@_;
+    ${$self->{PIN}}{$pinName}->{F} = 0;
+}# sub dbDldbSetPinIsSignal
+
+sub dbDldbSetPinIsPower {
+my ($self,$pinName) =@_;
+    ${$self->{PIN}}{$pinName}->{F} = 1;
+}# sub dbDldbSetPinIsPower
+
+sub dbDldbSetPinIsGround {
+my ($self,$pinName) =@_;
+    ${$self->{PIN}}{$pinName}->{F} = 2;
+}# sub dbDldbSetPinIsGround
+
+sub dbDldbSetPinIsClock {
+my ($self,$pinName) =@_;
+    ${$self->{PIN}}{$pinName}->{F} = 3;
+}# sub dbDldbSetPinIsClock
+
+sub dbDldbGetPinIsClock {
+ my ($self,$pinName) =@_;
+ $flag = ${$self->{PIN}}{$pinName}->{F};
+ return($flag);
+ }#sub dbDldbGetPinIsClock
+
+sub dbDldbSetPinIsRegIn1 {
+my ($self,$pinName) =@_;
+    ${$self->{PIN}}{$pinName}->{F} = 4;
+}# sub dbDldbSetPinIsRegIn1
+
+sub dbDldbGetPinIsRegIn1 {
+my ($self,$pinName) =@_;
+$flag = ${$self->{PIN}}{$pinName}->{F};
+return($flag);
+}#sub dbDldbGetPinIsRegIn1
+
+sub dbDldbSetPinIsRegOut1 {
+my ($self,$pinName) =@_;
+    ${$self->{PIN}}{$pinName}->{F} = 9;
+}# sub dbDldbSetPinIsRegOut1
+
+sub dbDldbGetPinIsRegOut1 {
+my ($self,$pinName) =@_;
+$flag = ${$self->{PIN}}{$pinName}->{F};
+return($flag);
+}#sub dbDldbGetPinIsRegOut1
+
+sub dbDldbGetPinType {
+my ($self,$pinName) =@_;
+my $flag =  ${$self->{PIN}}{$pinName}->{F};
+return($flag);
+}# sub dbDldbGetPinType
+
+
+
+sub dbDldbGetIsSpiceNetlist {
+my ($self) =@_;
+  my $status =  $self->{SN};
+return($status);
+}# sub dbDldbGetIsSpiceNetlist
+
+sub dbDldbSetIsSpiceNetlist {
+my ($self,$status) =@_;
+    $self->{SN} = $status,
+}# sub dbDldbSetIsSpiceNetlist
+
+sub dbDldbAddPinRect {
+my ($self,$pinName,$data) = @_;
+   push( @{${$self->{PIN}}{$pinName}->{RECT}}, $data);
+}#sub dbDldbAddPinRect
+
+sub dbDldbGetPinRect {
+my ($self,$pinName) = @_;
+   my @data = @{${$self->{PIN}}{$pinName}->{RECT}};
+return(@data);
+}#sub dbDldbGetPinRect
+
+sub dbgDldbGetPinRect {
+my ($self,$pinName) = @_;
+   my @data = @{${$self->{PIN}}{$pinName}->{RECT}};
+   foreach $_ ( @data ) { print "$_\n"; };
+}#sub dbgDldbGetPinRect
+
+
+sub dbDldbSetPinDir {
+my ($self,$pinName,$direction) = @_;
+my $dir = 2;
+   if ( $direction eq "input" ) { $dir = 0;}
+   elsif ( $direction eq "output" ) { $dir = 1;}
+   elsif ( $direction eq "inout" ) { $dir = 2;}
+   else { print "unknown direction\n"; }
+${$self->{PIN}}{$pinName}->{D} = $dir;
+}#sub dbDldbSetPinDir
+
+sub dbDldbGetPinDir {
+my ($self,$pinName) = @_;
+my $direction = ${$self->{PIN}}{$pinName}->{D};
+return($direction);
+}#sub dbDldbGetPinDir
+
+
+sub dbgDldbGetPinDir {
+my ($self,$pinName) = @_;
+my $direction = ${$self->{PIN}}{$pinName}->{D};
+print "Pin $pinName direction is $direction\n";
+}#sub dbgDldbGetPinDir
+
+sub dbDldbAddPin {
+my ($self,$pinName) = @_;
+    ${$self->{PIN}}{$pinName} = DsgnLibPinDB::new();
+}#sub dbDldbAddPin
+
+sub dbDldbGetPins {
+my ($self) = @_;
+my @pins = ();
+   foreach my $pinName ( keys %{$self->{PIN}} ) { push(@pins,$pinName); }
+return(@pins);
+}#sub dbDldbGetPins
+
+sub dbgDldbGetPins {
+my ($self) = @_;
+   foreach my $pinName ( keys %{$self->{PIN}} ) { print "$pinName\n"; }
+}#sub dbgDldbGetPins
+
+sub dbDldbSetSize {
+my ($self,$x,$y) = @_;
+   push(@{$self->{S}}, $x);
+   push(@{$self->{S}}, $y);
+}#sub dbDldbSetSize
+
+sub dbDldbGetSize {
+my ($self) = @_;
+my @size = @{$self->{S}};
+return(@size);
+}#sub dbDldbGetSize
+
+sub dbgDldbGetSize {
+my ($self) = @_;
+my @size = @{$self->{S}};
+   print "SIZE = $size[0] by $size[1]\n";
+}#sub dbgDldbGetSize
+#-------------------------------------------------------------#
+sub dbDldbAddObs {
+my ($self,$obsLine) = @_;
+   push(@{$self->{OBS}}, $obsLine);
+}#sub dbDldbAddObs
+
+sub dbDldbGetObs {
+my ($self) = @_;
+my @obs = @{$self->{OBS}};
+return(@obs);
+}#sub dbDldbGetObs
+
+sub dbgDldbGetObs {
+my ($self) = @_;
+my @obs = @{$self->{OBS}};
+foreach my $l ( @obs ) { print "$l\n"; }
+}#sub dbgDldbGetObs
+#-------------------------------------------------------------#
+sub dbDldbSetOrient {
+my ($self,$orient) = @_;
+    $self->{O} = $orient;
+}#sub dbDldbSetOrient
+
+sub dbDldbGetOrient {
+my ($self) = @_;
+my $orient = $self->{O};
+return($orient);
+}#sub dbDldbGetOrient
+
+sub dbgDldbGetOrient {
+my ($self) = @_;
+my $orient = $self->{O};
+   print "ORIENTATION  = $orient\n";
+}#sub dbgDldbGetOrient
+
+sub dbDldbSetFunction {
+my ($self,$funct) = @_;
+    $self->{F} = $funct;
+}#sub dbDldbSetFunction
+
+sub dbDldbGetFunction {
+my ($self) = @_;
+my $funct = $self->{F};
+return($funct);
+}#sub dbDldbGetFunction
+
+sub dbgDldbGetFunction {
+my ($self) = @_;
+my $funct = $self->{F};
+   print "Function  = $funct\n";
+}#sub dbgDldbGetFunction
+
+sub dbDldbSetType {
+my ($self,$type) = @_;
+    if ( $type =~ /comb/ || $type =~ /COMB/ ) { $self->{T} = 0; }
+    elsif ( $type =~ /seq/ || $type =~ /SEQ/ ) { $self->{T} = 1; }
+    elsif ( $type =~ /block/ || $type =~ /BLOCK/ ) { $self->{T} = 2; }
+    else { print "WARN : 0 :  the cell type is unknown\n"; }
+}#sub dbDldbSetType
+
+sub dbDldbGetType {
+my ($self) = @_;
+my $type = $self->{T};
+return($type);
+}#sub dbDldbGetType
+
+sub dbgDldbGetType {
+my ($self) = @_;
+my $type = $self->{T};
+   print "Type  = $type\n";
+}#sub dbgDldbGetType
+
+##----------------------------------------------------##
+sub dbDldbSetPinRoutibility {
+my ($self,$route) = @_;
+    $self->{R} = $route;
+}#sub dbDldbSetPinRoutibility
+
+sub dbDldbGetPinRoutibility {
+my ($self) = @_;
+my $route = $self->{R};
+return($route);
+}#sub dbDldbGetPinRoutibility
+##----------------------------------------------------##
+
+1;

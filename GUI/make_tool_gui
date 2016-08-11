@@ -1,0 +1,99 @@
+#!/usr/bin/perl -w
+
+#	use strict;
+	use Tk;
+
+	my $box = [0, 0, 500, 500];
+
+	my $mw = new MainWindow;
+
+	my $c  = $mw->Scrolled(qw/
+			       Canvas -bg black
+			       -xscrollincrement 1
+			       -yscrollincrement 1
+			       -confine 1
+			       -scrollbars se
+			       -width 500
+			       -height 500/,
+			       -scrollregion => $box,
+			       );
+
+	$c->pack(qw/-fill both -expand 1 -side top/);
+
+	$mw->bind('<Any-Enter>' => sub { $c->Tk::focus });
+
+	$c->CanvasBind('<1>' => sub {
+	    my ($x, $y) = ($Tk::event->x, $Tk::event->y);
+
+	    my $size = rand 100;
+	    $c->createRectangle($x, $y, 
+				$x+$size, $y+$size,
+				-fill => 'white');
+	});
+
+	my $zoomRect;
+	my @zoomRectCoords;
+
+	$c->CanvasBind('<3>' => sub {
+	    my $x = $c->canvasx($Tk::event->x);
+	    my $y = $c->canvasy($Tk::event->y);
+
+	    @zoomRectCoords = ($x, $y, $x, $y);
+    
+	    $zoomRect = $c->createRectangle(
+					    @zoomRectCoords,
+					    -outline => 'red',
+					    );
+	});
+
+	$c->CanvasBind('<B3-Motion>' => sub {
+	    @zoomRectCoords[2,3] = ($c->canvasx($Tk::event->x),
+				    $c->canvasy($Tk::event->y));
+    
+	    $c->coords($zoomRect => @zoomRectCoords);
+
+	});
+
+	$c->CanvasBind('<B3-ButtonRelease>' => sub {
+	    # Delete the rectangle.
+	    $c->delete($zoomRect);
+    
+	    # Was the rectangle big enough?
+	    return if 
+		abs($zoomRectCoords[0] - $zoomRectCoords[2]) < 10 ||
+		    abs($zoomRectCoords[1] - $zoomRectCoords[3]) < 10;
+    
+	    # Let's find the zooming factor.
+	    my $dx = $c->width  /abs($zoomRectCoords[0] - $zoomRectCoords[2]);
+	    my $dy = $c->height /abs($zoomRectCoords[1] - $zoomRectCoords[3]);
+    
+	    my $scale = [$dx => $dy] -> [$dy <= $dx];
+
+	    # Let's scale everything up.
+	    $c->scale('all' => 0, 0, $scale, $scale);
+
+	    # Modify the bounding box.
+	    $_ *= $scale for @$box;
+
+	    # Resize the scrollregion.
+	    $c->configure(-scrollregion => $box);
+    
+	    # Now we change the view to center on correct area.
+
+	    $c->xviewMoveto($zoomRectCoords[0] * $scale / $box->[2]);
+	    $c->yviewMoveto($zoomRectCoords[1] * $scale / $box->[3]);
+	});
+
+	$c->Tk::bind('<f>' => sub {
+	    my $scale = 500/$box->[2];
+
+	    $c->scale('all' => 0, 0, $scale, $scale);
+
+	    $box = [0, 0, 500, 500];
+
+	    $c->configure(-scrollregion => $box);
+	});
+
+	MainLoop;
+
+1;

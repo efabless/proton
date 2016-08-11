@@ -1,0 +1,492 @@
+
+
+
+sub dbaGetInstRiseDly {
+my $instName = $_[0];
+my $inPin = $_[1];
+my $outPin = $_[2];
+my $slew = $_[3];
+my $load = $_[4];
+#### since i have not yet decided on condition ... i will use the condition 0 to get the delay at present ###
+my $cellref = $CADB{$instName}->dbCadbGetCellref;
+#print "finding cell delay for $cellref,$inPin,$outPin,$slew,$load\n";
+my $instDly = dbaGetCellRiseDly($cellref,$inPin,$outPin,$slew,$load);
+return($instDly, 0.120);
+}# sub dbaGetInstRiseDly
+
+sub dbaGetInstFallDly {
+
+
+
+}# sub dbaGetInstFallDly
+
+
+
+
+
+############################################## COMMENTS ################################################
+# I have added this routine to accomodate cadence request to get delay and transition from a lib file ##
+############################################## COMMENTS ################################################
+
+
+sub dbaGetCellRiseDly {
+my $cellref = $_[0];
+my $inPin = $_[1];
+my $outPin = $_[2];
+my $slew = $_[3];
+my $load = $_[4];
+#### since i have not yet decided on condition ... i will use the condition 0 to get the delay at present ###
+print "DBG-TE : 001 : Looking delay DB for $cellref $inPin to $outPin rising arc with $slew ps and $load pf ...\n" if ($DEBUG > 200 && $DEBUG < 300 );
+
+if ($DEBUG > 200 && $DEBUG < 300 ) {$TLDB{$cellref}->dbgTimingLibGetPinDelay($outPin,$inPin,0,riseDelay)};
+my @dlyData = $TLDB{$cellref}->dbTimingLibGetPinDelay($outPin,$inPin,0,riseDelay);
+my ($index,@indexData) = ($index,@data) = $TLDB{$cellref}->dbTimingLibGetPinDelayIndex($outPin,$inPin,0,riseDelay);
+
+my @slewIndexData = split(/\s+/, $indexData[0]);
+my $slewIndexLen = @slewIndexData;
+my @loadIndexData = split(/\s+/, $indexData[1]);
+my $loadIndexLen = @loadIndexData;
+
+#####  if the load and slope data matches exactly the one in the table ######
+$SLEW_MATCH = -1;
+$LOAD_MATCH = -1;
+$x = -1;
+$y = -1;
+for (my $i = 0; $i< $slewIndexLen ; $i++ ) { if ( $slew == $slewIndexData[$i] ) { $SLEW_MATCH = $i; } }
+for (my $i = 0; $i< $loadIndexLen ; $i++ ) { if ( $load == $loadIndexData[$i] ) { $LOAD_MATCH = $i; } }
+
+if ( $SLEW_MATCH > -1 && $LOAD_MATCH > -1 ) {
+     print "DBG-TE : 002 : Found exact match for slew and load... \n" if ($DEBUG > 200 && $DEBUG < 300 );
+     $instDly = (split(/\s+/, $dlyData[$SLEW_MATCH]))[$LOAD_MATCH];
+     return($instDly);
+                                            }
+ elsif ( $SLEW_MATCH > -1 && $LOAD_MATCH == -1 ) {
+      print "DBG-TE : 003 : Found exact match for slew only... \n" if ($DEBUG > 200 && $DEBUG < 300 );
+      for (my $i = 0; $i< $loadIndexLen ; $i++ ) { if ( $loadIndexData[$i] < $load && $load < $loadIndexData[$i+1] ) { $y = $i; } } 
+      my $indxVal1 = $loadIndexData[$y];
+      my $indxVal2 = $loadIndexData[$y + 1];
+      $val1 = (split(/\s+/, $dlyData[$SLEW_MATCH]))[$y];
+      $val2 = (split(/\s+/, $dlyData[$SLEW_MATCH]))[$y+1];
+      print "INFO-TE : 004 : interpolating between $val1 and $val2 for slew axis $SLEW_MATCH\n";
+      $instDly = &dbgTElinearInterpolate($indxVal1,$val1,$indxVal2,$val2,$load);
+      return($instDly);
+                                             }
+ elsif ( $SLEW_MATCH == -1 && $LOAD_MATCH > -1 ) {
+      print "DBG-TE : 005 : Found exact match for load only... \n" if ($DEBUG > 200 && $DEBUG < 300 );
+    
+      for (my $i = 0; $i< $slewIndexLen ; $i++ ) { if ( $slewIndexData[$i] < $slew && $slew < $slewIndexData[$i+1] ) { $y = $i; } }
+      my $indxVal1 = $slewIndexData[$y];
+      my $indxVal2 = $slewIndexData[$y + 1];
+      $val1 = (split(/\s+/, $dlyData[$y]))[$LOAD_MATCH];
+      $val2 = (split(/\s+/, $dlyData[$y+1]))[$LOAD_MATCH];
+      print "INFO-TE : 006 : interpolating between $val1 and $val2 for load axis $LOAD_MATCH\n";
+      $instDly = &dbgTElinearInterpolate($indxVal1,$val1,$indxVal2,$val2,$slew);
+      return($instDly);
+                                             }
+ elsif ( $SLEW_MATCH == -1 && $LOAD_MATCH == -1 ) {
+      print "DBG-TE : 007 : Found no match for slew and load... \n" if ($DEBUG > 200 && $DEBUG < 300 );
+ for (my $i = 0; $i< $loadIndexLen ; $i++ ) { if ( $loadIndexData[$i] < $load && $load < $loadIndexData[$i+1] ) { $x = $i; } } 
+ for (my $i = 0; $i< $slewIndexLen ; $i++ ) { if ( $slewIndexData[$i] < $slew && $slew < $slewIndexData[$i+1] ) { $y = $i; } }
+my $dly1 = (split(/\s+/, $dlyData[$y]))[$x];
+my $dly2 = (split(/\s+/, $dlyData[$y]))[$x+1];
+my $dly3 = (split(/\s+/, $dlyData[$y+1]))[$x];
+my $dly4 = (split(/\s+/, $dlyData[$y+1]))[$x+1];
+
+my $instDly = &dbgTEbiLinearInterpolateAjit( $slewIndexData[$y],$loadIndexData[$x],$slewIndexData[$y+1],$loadIndexData[$x+1],$dly1,$dly2,$dly3,$dly4,$slew,$load);
+return($instDly);
+                                                }
+
+}#sub dbaGetCellRiseDly
+
+
+
+sub dbaGetCellFallDly {
+my $cellref = $_[0];
+my $inPin = $_[1];
+my $outPin = $_[2];
+my $slew = $_[3];
+my $load = $_[4];
+#### since i have not yet decided on condition ... i will use the condition 0 to get the delay at present ###
+print "INFO-TE : 001 : Looking delay DB for $cellref $inPin to $outPin falling arc with $slew ps and $load pf ...\n";
+
+my @dlyData = $TLDB{$cellref}->dbTimingLibGetPinDelay($outPin,$inPin,0,fallDelay);
+my ($index,@indexData) = ($index,@data) = $TLDB{$cellref}->dbTimingLibGetPinDelayIndex($outPin,$inPin,0,fallDelay);
+
+my @slewIndexData = split(/\s+/, $indexData[0]);
+my $slewIndexLen = @slewIndexData;
+my @loadIndexData = split(/\s+/, $indexData[1]);
+my $loadIndexLen = @loadIndexData;
+
+#####  if the load and slope data matches exactly the one in the table ######
+$SLEW_MATCH = -1;
+$LOAD_MATCH = -1;
+$x = -1;
+$y = -1;
+for (my $i = 0; $i< $slewIndexLen ; $i++ ) { if ( $slew == $slewIndexData[$i] ) { $SLEW_MATCH = $i; } }
+for (my $i = 0; $i< $loadIndexLen ; $i++ ) { if ( $load == $loadIndexData[$i] ) { $LOAD_MATCH = $i; } }
+
+if ( $SLEW_MATCH > -1 && $LOAD_MATCH > -1 ) {
+     print "INFO-TE : 002 : Found exact match for slew and load... \n";
+     $instDly = (split(/\s+/, $dlyData[$SLEW_MATCH]))[$LOAD_MATCH];
+     return($instDly);
+                                            }
+ elsif ( $SLEW_MATCH > -1 && $LOAD_MATCH == -1 ) {
+      print "INFO-TE : 003 : Found exact match for slew only... \n";
+      for (my $i = 0; $i< $loadIndexLen ; $i++ ) { if ( $loadIndexData[$i] < $load && $load < $loadIndexData[$i+1] ) { $y = $i; } } 
+      my $indxVal1 = $loadIndexData[$y];
+      my $indxVal2 = $loadIndexData[$y + 1];
+      $val1 = (split(/\s+/, $dlyData[$SLEW_MATCH]))[$y];
+      $val2 = (split(/\s+/, $dlyData[$SLEW_MATCH]))[$y+1];
+      print "INFO-TE : 004 : interpolating between $val1 and $val2 for slew axis $SLEW_MATCH\n";
+      $instDly = &dbgTElinearInterpolate($indxVal1,$val1,$indxVal2,$val2,$load);
+      return($instDly);
+                                             }
+ elsif ( $SLEW_MATCH == -1 && $LOAD_MATCH > -1 ) {
+      print "INFO-TE : 005 : Found exact match for load only... \n";
+    
+      for (my $i = 0; $i< $slewIndexLen ; $i++ ) { if ( $slewIndexData[$i] < $slew && $slew < $slewIndexData[$i+1] ) { $y = $i; } }
+      my $indxVal1 = $slewIndexData[$y];
+      my $indxVal2 = $slewIndexData[$y + 1];
+      $val1 = (split(/\s+/, $dlyData[$y]))[$LOAD_MATCH];
+      $val2 = (split(/\s+/, $dlyData[$y+1]))[$LOAD_MATCH];
+      print "INFO-TE : 006 : interpolating between $val1 and $val2 for load axis $LOAD_MATCH\n";
+      $instDly = &dbgTElinearInterpolate($indxVal1,$val1,$indxVal2,$val2,$slew);
+      return($instDly);
+                                             }
+ elsif ( $SLEW_MATCH == -1 && $LOAD_MATCH == -1 ) {
+      print "WARN-TE : 007 : Found no match for slew and load... \n";
+ for (my $i = 0; $i< $loadIndexLen ; $i++ ) { if ( $loadIndexData[$i] < $load && $load < $loadIndexData[$i+1] ) { $x = $i; } } 
+ for (my $i = 0; $i< $slewIndexLen ; $i++ ) { if ( $slewIndexData[$i] < $slew && $slew < $slewIndexData[$i+1] ) { $y = $i; } }
+my $dly1 = (split(/\s+/, $dlyData[$y]))[$x];
+my $dly2 = (split(/\s+/, $dlyData[$y]))[$x+1];
+my $dly3 = (split(/\s+/, $dlyData[$y+1]))[$x];
+my $dly4 = (split(/\s+/, $dlyData[$y+1]))[$x+1];
+
+my $instDly = &dbgTEbiLinearInterpolateAjit( $slewIndexData[$y],$loadIndexData[$x],$slewIndexData[$y+1],$loadIndexData[$x+1],$dly1,$dly2,$dly3,$dly4,$slew,$load);
+return($instDly);
+                                                }
+
+}#sub dbaGetCellFallDly
+
+
+
+sub dbaGetCellRiseTran {
+my $cellref = $_[0];
+my $inPin = $_[1];
+my $outPin = $_[2];
+my $slew = $_[3];
+my $load = $_[4];
+#### since i have not yet decided on condition ... i will use the condition 0 to get the delay at present ###
+print "INFO-TE : 001 : Looking transition DB for $cellref $inPin to $outPin rising arc with $slew ps and $load pf ...\n";
+
+my @tranData = $TLDB{$cellref}->dbTimingLibGetPinTran($outPin,$inPin,0,riseTran);
+my ($index,@indexData) = ($index,@data) = $TLDB{$cellref}->dbTimingLibGetPinTranIndex($outPin,$inPin,0,riseTran);
+
+my @slewIndexData = split(/\s+/, $indexData[0]);
+my $slewIndexLen = @slewIndexData;
+my @loadIndexData = split(/\s+/, $indexData[1]);
+my $loadIndexLen = @loadIndexData;
+
+#####  if the load and slope data matches exactly the one in the table ######
+$SLEW_MATCH = -1;
+$LOAD_MATCH = -1;
+$x = -1;
+$y = -1;
+for (my $i = 0; $i< $slewIndexLen ; $i++ ) { if ( $slew == $slewIndexData[$i] ) { $SLEW_MATCH = $i; } }
+for (my $i = 0; $i< $loadIndexLen ; $i++ ) { if ( $load == $loadIndexData[$i] ) { $LOAD_MATCH = $i; } }
+
+
+if ( $SLEW_MATCH > -1 && $LOAD_MATCH > -1 ) {
+     print "INFO-TE : 002 : Found exact match for slew and load... \n";
+     $cellTran = (split(/\s+/, $tranData[$SLEW_MATCH]))[$LOAD_MATCH];
+     return($cellTran);
+                                            }
+ elsif ( $SLEW_MATCH > -1 && $LOAD_MATCH == -1 ) {
+      print "INFO-TE : 003 : Found exact match for slew only... \n";
+      for (my $i = 0; $i< $loadIndexLen ; $i++ ) { if ( $loadIndexData[$i] < $load && $load < $loadIndexData[$i+1] ) { $y = $i; } } 
+      my $indxVal1 = $loadIndexData[$y];
+      my $indxVal2 = $loadIndexData[$y + 1];
+      $val1 = (split(/\s+/, $tranData[$SLEW_MATCH]))[$y];
+      $val2 = (split(/\s+/, $tranData[$SLEW_MATCH]))[$y+1];
+      print "INFO-TE : 004 : interpolating between $val1 and $val2 for slew axis $SLEW_MATCH\n";
+      $cellTran = &dbgTElinearInterpolate($indxVal1,$val1,$indxVal2,$val2,$load);
+      return($cellTran);
+                                             }
+ elsif ( $SLEW_MATCH == -1 && $LOAD_MATCH > -1 ) {
+      print "INFO-TE : 005 : Found exact match for load only... \n";
+    
+      for (my $i = 0; $i< $slewIndexLen ; $i++ ) { if ( $slewIndexData[$i] < $slew && $slew < $slewIndexData[$i+1] ) { $y = $i; } }
+      my $indxVal1 = $slewIndexData[$y];
+      my $indxVal2 = $slewIndexData[$y + 1];
+      $val1 = (split(/\s+/, $tranData[$y]))[$LOAD_MATCH];
+      $val2 = (split(/\s+/, $tranData[$y+1]))[$LOAD_MATCH];
+      print "INFO-TE : 006 : interpolating between $val1 and $val2 for load axis $LOAD_MATCH\n";
+      $cellTran = &dbgTElinearInterpolate($indxVal1,$val1,$indxVal2,$val2,$slew);
+      return($cellTran);
+                                             }
+ elsif ( $SLEW_MATCH == -1 && $LOAD_MATCH == -1 ) {
+      print "WARN-TE : 007 : Found no match for slew and load... \n";
+ for (my $i = 0; $i< $loadIndexLen ; $i++ ) { if ( $loadIndexData[$i] < $load && $load < $loadIndexData[$i+1] ) { $x = $i; } } 
+ for (my $i = 0; $i< $slewIndexLen ; $i++ ) { if ( $slewIndexData[$i] < $slew && $slew < $slewIndexData[$i+1] ) { $y = $i; } }
+my $dly1 = (split(/\s+/, $tranData[$y]))[$x];
+my $dly2 = (split(/\s+/, $tranData[$y]))[$x+1];
+my $dly3 = (split(/\s+/, $tranData[$y+1]))[$x];
+my $dly4 = (split(/\s+/, $tranData[$y+1]))[$x+1];
+
+my $cellTran = &dbgTEbiLinearInterpolateAjit( $slewIndexData[$y],$loadIndexData[$x],$slewIndexData[$y+1],$loadIndexData[$x+1],$dly1,$dly2,$dly3,$dly4,$slew,$load);
+return($cellTran);
+                                                }
+
+}#sub dbaGetCellRiseTran
+
+
+
+sub dbaGetCellFallTran {
+my $cellref = $_[0];
+my $inPin = $_[1];
+my $outPin = $_[2];
+my $slew = $_[3];
+my $load = $_[4];
+#### since i have not yet decided on condition ... i will use the condition 0 to get the delay at present ###
+print "INFO-TE : 001 : Looking transition DB for $cellref $inPin to $outPin fall arc with $slew ps and $load pf ...\n";
+
+my @tranData = $TLDB{$cellref}->dbTimingLibGetPinTran($outPin,$inPin,0,fallTran);
+my ($index,@indexData) = ($index,@data) = $TLDB{$cellref}->dbTimingLibGetPinTranIndex($outPin,$inPin,0,fallTran);
+
+my @slewIndexData = split(/\s+/, $indexData[0]);
+my $slewIndexLen = @slewIndexData;
+my @loadIndexData = split(/\s+/, $indexData[1]);
+my $loadIndexLen = @loadIndexData;
+
+#####  if the load and slope data matches exactly the one in the table ######
+$SLEW_MATCH = -1;
+$LOAD_MATCH = -1;
+$x = -1;
+$y = -1;
+for (my $i = 0; $i< $slewIndexLen ; $i++ ) { if ( $slew == $slewIndexData[$i] ) { $SLEW_MATCH = $i; } }
+for (my $i = 0; $i< $loadIndexLen ; $i++ ) { if ( $load == $loadIndexData[$i] ) { $LOAD_MATCH = $i; } }
+
+if ( $SLEW_MATCH > -1 && $LOAD_MATCH > -1 ) {
+     print "INFO-TE : 002 : Found exact match for slew and load... \n";
+     $instDly = (split(/\s+/, $tranData[$SLEW_MATCH]))[$LOAD_MATCH];
+     return($instDly);
+                                            }
+ elsif ( $SLEW_MATCH > -1 && $LOAD_MATCH == -1 ) {
+      print "INFO-TE : 003 : Found exact match for slew only... \n";
+      for (my $i = 0; $i< $loadIndexLen ; $i++ ) { if ( $loadIndexData[$i] < $load && $load < $loadIndexData[$i+1] ) { $y = $i; } } 
+      my $indxVal1 = $loadIndexData[$y];
+      my $indxVal2 = $loadIndexData[$y + 1];
+      $val1 = (split(/\s+/, $tranData[$SLEW_MATCH]))[$y];
+      $val2 = (split(/\s+/, $tranData[$SLEW_MATCH]))[$y+1];
+      print "INFO-TE : 004 : interpolating between $val1 and $val2 for slew axis $SLEW_MATCH\n";
+      $instDly = &dbgTElinearInterpolate($indxVal1,$val1,$indxVal2,$val2,$load);
+      return($instDly);
+                                             }
+ elsif ( $SLEW_MATCH == -1 && $LOAD_MATCH > -1 ) {
+      print "INFO-TE : 005 : Found exact match for load only... \n";
+    
+      for (my $i = 0; $i< $slewIndexLen ; $i++ ) { if ( $slewIndexData[$i] < $slew && $slew < $slewIndexData[$i+1] ) { $y = $i; } }
+      my $indxVal1 = $slewIndexData[$y];
+      my $indxVal2 = $slewIndexData[$y + 1];
+      $val1 = (split(/\s+/, $tranData[$y]))[$LOAD_MATCH];
+      $val2 = (split(/\s+/, $tranData[$y+1]))[$LOAD_MATCH];
+      print "INFO-TE : 006 : interpolating between $val1 and $val2 for load axis $LOAD_MATCH\n";
+      $instDly = &dbgTElinearInterpolate($indxVal1,$val1,$indxVal2,$val2,$slew);
+      return($instDly);
+                                             }
+ elsif ( $SLEW_MATCH == -1 && $LOAD_MATCH == -1 ) {
+      print "INFO-TE : 007 : Found no match for slew and load... \n";
+ for (my $i = 0; $i< $loadIndexLen ; $i++ ) { if ( $loadIndexData[$i] < $load && $load < $loadIndexData[$i+1] ) { $x = $i; } } 
+ for (my $i = 0; $i< $slewIndexLen ; $i++ ) { if ( $slewIndexData[$i] < $slew && $slew < $slewIndexData[$i+1] ) { $y = $i; } }
+my $dly1 = (split(/\s+/, $tranData[$y]))[$x];
+my $dly2 = (split(/\s+/, $tranData[$y]))[$x+1];
+my $dly3 = (split(/\s+/, $tranData[$y+1]))[$x];
+my $dly4 = (split(/\s+/, $tranData[$y+1]))[$x+1];
+
+my $cellTran = &dbgTEbiLinearInterpolateAjit( $slewIndexData[$y],$loadIndexData[$x],$slewIndexData[$y+1],$loadIndexData[$x+1],$dly1,$dly2,$dly3,$dly4,$slew,$load);
+return($cellTran);
+                                                }
+
+}#sub dbaGetCellFallTran
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+sub usrGetCellDelay {
+my $noOfArguments = @_;
+local $DEBUG = 201;
+
+if($noOfArguments < 4 || $_[0] eq '-h'){ print "Usage : usrGetCellDelay -cell <cell name>\n";
+                        print "                        -inPin <input pin>\n";
+                        print "                        -outPin <input pin>\n";
+                        print "                        -rise / -fall\n";
+                        print "                        -load < capacitance in pf >\n";
+                        print "                        -slew / < slope in ns > \n";
+                      }else{
+for(my $x = 0; $x < $noOfArguments; $x++){
+if($_[$x] =~ /-cell/){ $CELLREF = $_[$x+1];}
+if($_[$x] =~ /-inPin/){ $INPUT_PIN = $_[$x+1];}
+if($_[$x] =~ /-outPin/){ $OUTPUT_PIN = $_[$x+1];}
+if($_[$x] =~ /-rise/){ $ARC = riseDelay;}
+if($_[$x] =~ /-fall/){ $ARC = fallDelay;}
+if($_[$x] =~ /-load/){ $LOAD = $_[$x+1];}
+if($_[$x] =~ /-slew/){ $SLEW = $_[$x+1];}
+                                         }#for correct no of Arguments
+
+if ( exists $TLDB{$CELLREF} ) { 
+     if ( $ARC eq "riseDelay" ) {
+my    $instDly =  &dbaGetCellRiseDly($CELLREF,$INPUT_PIN,$OUTPUT_PIN,$SLEW,$LOAD);
+print "INFO-TE-USR_GT_CL_CLY : 001 : RESULT DELAY : $CELLREF $SLEW $LOAD $instDly\n";
+                                }
+     elsif ( $ARC eq "fallDelay" ) {
+my    $instDly =  &dbaGetCellFallDly($CELLREF,$INPUT_PIN,$OUTPUT_PIN,$SLEW,$LOAD);
+print "INFO-TE-USR_GT_CL_CLY : 002 : RESULT DELAY : $CELLREF $SLEW $LOAD $instDly\n";
+                                }
+                              } else {
+print "ERR-TE-USR_GT_CL_CLY : 003 : The cell $CELLREF does not exist in DB\n"; }
+                           }# if correct arguments
+
+}# sub usrGetCellDelay
+
+sub usrGetCellTran {
+my $noOfArguments = @_;
+
+if($noOfArguments < 4){ print "Usage : usrGetCellTran  -cell <cell name>\n";
+                        print "                        -inPin <input pin>\n";
+                        print "                        -outPin <input pin>\n";
+                        print "                        -rise / -fall\n";
+                        print "                        -load < capacitance in pf >\n";
+                        print "                        -slew / < slope in ns > \n";
+                      }else{
+for(my $x = 0; $x < $noOfArguments; $x++){
+if($_[$x] =~ /-cell/){ $CELLREF = $_[$x+1];}
+if($_[$x] =~ /-inPin/){ $INPUT_PIN = $_[$x+1];}
+if($_[$x] =~ /-outPin/){ $OUTPUT_PIN = $_[$x+1];}
+if($_[$x] =~ /-rise/){ $ARC = riseTran;}
+if($_[$x] =~ /-fall/){ $ARC = fallTran;}
+if($_[$x] =~ /-load/){ $LOAD = $_[$x+1];}
+if($_[$x] =~ /-slew/){ $SLEW = $_[$x+1];}
+                                         }#for correct no of Arguments
+
+if ( exists $TLDB{$CELLREF} ) {
+     if ( $ARC eq "riseTran" ) {
+my    $instDly =  &dbaGetCellRiseTran($CELLREF,$INPUT_PIN,$OUTPUT_PIN,$SLEW,$LOAD);
+print "INFO-TE : 001 : RESULT TRAN : $CELLREF $SLEW $LOAD  $instDly\n";
+                                }
+     elsif ( $ARC eq "fallTran" ) {
+my    $instDly =  &dbaGetCellFallTran($CELLREF,$INPUT_PIN,$OUTPUT_PIN,$SLEW,$LOAD);
+print "INFO-TE : 002 : RESULT TRAN : $CELLREF $SLEW $LOAD  $instDly\n";
+                                }
+                              } else {
+print "ERR-TE : 003 : The cell $CELLREF does not exist in DB\n"; }
+                           }# if correct arguments
+
+}# sub usrGetCellTran
+
+sub dbgTElinearInterpolate {
+my $x1 = $_[0];
+my $y1 = $_[1];
+my $x2 = $_[2];
+my $y2 = $_[3];
+my $X  = $_[4];
+
+#print "$x1 , $y1 , $x2 , $y2 , $X\n";
+my $Y  = 0;
+my $m = ($y2 - $y1)/($x2 -$x1);
+my $c = $y2 -$m*$x2;
+
+$Y = $m*$X + $c;
+
+return($Y);
+
+}#sub dbgTElinearInterpolate
+
+sub dbgTEbiLinearInterpolate {
+my $x1 = $_[0];
+my $y1 = $_[1];
+my $x2 = $_[2];
+my $y2 = $_[3];
+my $dly1 = $_[4];
+my $dly2 = $_[5];
+my $dly3 = $_[6];
+my $dly4 = $_[7];
+my $X  = $_[8];
+my $Y  = $_[9];
+
+print "DBG-TE : 001 : using bilinear interpolation\n" if ($DEBUG > 200 && $DEBUG < 300 );
+my $t = (($X - $x1 ) / ( $x2 - $x1));
+my $u = (($Y - $y1 ) / ( $y2 - $y1 ));
+
+my $instDly = ((1 - $t ) * ( 1 - $u )* $dly1 ) + ( $t*(1-$u)*$dly3 ) + $t*$u*$dly4 + $u*(1-$t)*$dly2;
+return($instDly);
+
+}#sub dbgTEbiLinearInterpolate
+
+sub dbgTEbiLinearInterpolateAjit {
+my $x1 = $_[0];
+my $y1 = $_[1];
+my $x2 = $_[2];
+my $y2 = $_[3];
+my $dly1 = $_[4];
+my $dly2 = $_[5];
+my $dly3 = $_[6];
+my $dly4 = $_[7];
+my $X  = $_[8];
+my $Y  = $_[9];
+
+print "DBG-TE : 002 : using bilinear interpolation\n" if ($DEBUG > 200 && $DEBUG < 300 );
+#print "$x1 $x2 $y1 $y2 $dly1 $dly2 $dly3 $dly4 $X $Y \n";
+
+    my $diffX1 = $dly3 - $dly1;
+    my $diffX2 = $dly4 - $dly2;
+    my $diffXIndex = $x2 - $x1;
+    my $slopeX1 = $diffX1 / $diffXIndex;
+    my $slopeX2 = $diffX2 / $diffXIndex;
+###    my $avgSlopeX = ($slopeX1 + $slopeX2) / 2;
+
+#print "$diffX1 $diffX2 $diffXIndex $slopeX1 $slopeX2 \n";
+
+    my $diffY1 = $dly2 - $dly1;
+    my $diffY2 = $dly4 - $dly3;
+    my $diffYIndex = $y2 - $y1;
+    my $slopeY1 = $diffY1 / $diffYIndex;
+    my $slopeY2 = $diffY2 / $diffYIndex;
+###    my $avgSlopeY = ($slopeY1+$slopeY2)/2;
+
+#print "$diffY1 $diffY2 $diffYIndex $slopeY1 $slopeY2 \n";
+
+    my $ratioX1 = 1 - (($X-$x1) / $diffXIndex);
+    my $ratioX2 = 1 - (($x2-$X) / $diffXIndex);
+    my $slopeY = ($slopeY1 * $ratioX1) + ($slopeY2 * $ratioX2);
+
+    my $ratioY1 = 1 - (($Y-$y1) / $diffYIndex);
+    my $ratioY2 = 1 - (($y2-$Y) / $diffYIndex);
+    my $slopeX = ($slopeX1 * $ratioY1) + ($slopeX2 * $ratioY2);
+
+    my $A = $dly1 + $slopeX1 * ($X - $x1);
+    my $Z = $A + $slopeY * ($Y - $y1);
+    my $instDly = $Z; 
+
+#print "$ratioX1 $ratioX2 $ratioY1 $ratioY2 $slopeX $slopeY \n";
+#print "$A $Z \n";
+#print "$Z \n";
+
+return($instDly);
+
+}#sub dbgTEbiLinearInterpolateAjit
+
+1;

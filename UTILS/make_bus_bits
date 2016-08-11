@@ -1,0 +1,111 @@
+
+#
+#  Example: argument "[7:0]" returns (7, 0)
+#           argument "[3]"   returns (3, 3)
+#
+#
+sub utilGetBitsRange {
+
+my $bits = $_[0];
+
+$bits =~ s/\[\s*(.*)\s*\]/\1/;  # get rid of brackets
+my @B = ();
+if ( $bits =~ m/:/ ) {
+  @B = split(/\s*:\s*/, $bits);
+}
+else {
+  $B[0] = $B[1] = $bits;
+}
+return ($B[0], $B[1]);
+}#sub utilGetBitsRange
+
+
+#
+#  Example: argument "B[3:0]" returns (B[3], B[2], B[1], B[0])
+#           argument "4'b0100" returns (1'b0, 1'b1, 1'b0, 1'b0)
+#
+#
+sub utilSplitBusBits {
+
+my $name = $_[0];
+my $reverse = $_[1];
+
+unless ( $name =~ m/\[\d+:\d+\]/ || $name =~ m/^\d*'b[01]+/ ) {
+  return ($name);
+}
+
+my $isReverse = ( defined $reverse && $reverse =~ m/rev/ );
+my @splitName = ();
+
+if ( $name =~ m/\[.*\]/ ) {
+  my $bits = $name;
+  $bits =~ s/^.*\[/\[/;
+  my ($from, $to) = &utilGetBitsRange($bits);
+  $name =~ s/\[.*\]//;
+  
+  my $ascending = ( ($from <= $to && ! $isReverse) ||
+                    ($from > $to && $isReverse) );
+  my ($lo, $hi) = $to > $from ? ($from, $to) : ($to, $from);
+  
+  if ( $ascending ) {
+    for ( my $i = $lo; $i <= $hi; $i++ ) {
+      push(@splitName, "$name\[$i\]");
+    }
+  }
+  else {
+    for ( my $i = $hi; $i >= $lo; $i-- ) {
+      push(@splitName, "$name\[$i\]");
+    }
+  }
+}
+else {  #<!--  implied ( $name =~ m/^\d+'b[01]+/ ) -->
+  my $width = $name;
+  $width =~ s/'b.+$//;
+  $name =~ s/^.*'b//;
+  if ( length($width) == 0 ) {
+    $width = length($name);
+  }
+  my @bits = unpack("A1" x $width, $name);
+  for ( my $i = 0; $i < $width; $i++ ) {
+    push(@splitName, "1'b$bits[$i]");
+  }
+  if ( $isReverse ) {
+    @splitName = reverse @splitName;
+  }
+}
+return @splitName;
+}#sub utilSplitBusBits
+
+
+#
+#  Example: (B[3], B[2], B[1], B[0]) returns "B[0:3]"
+#
+#
+sub utilJoinBusBits {
+
+if ( @_ < 1 ) {
+  return "";
+}
+
+my $base = $_[0];
+$base =~ s/\[.*\]//;
+
+my ($lo, $hi) = (0, -1);
+foreach my $name ( @_ ) {
+  my $bit = $name;
+  $bit =~ s/^.+\[(.*)\].*$/\1/;
+  if ( $lo > $hi ) {
+    $lo = $hi = $bit;
+  }
+  elsif ( $bit < $lo ) {
+    $lo = $bit;
+  }
+  elsif ( $bit > $hi ) {
+    $hi = $bit;
+  }
+}# foreach name
+
+return "$base\[$lo:$hi\]";
+}#sub utilJoinBusBits
+
+1;

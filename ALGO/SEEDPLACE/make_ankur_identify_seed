@@ -1,0 +1,147 @@
+
+sub dbPlaceAnkurGetSeedFlops {
+use Benchmark;
+my $t0 = new Benchmark;
+
+ my $min_conn_lmt = $_[0];
+ my $max_conn_lmt = $_[1];
+ my %temp_hash = ();
+ my @seedFlopList = ();
+
+###### making hash with key as flop and no of fanIn & fanOut as value #######
+ my @flopList = $PLACE{$TOP_MODULE}->dbPlaceGetFlopList;
+ foreach my $flop (@flopList){         
+    my @fanIns = $PLACE{$TOP_MODULE}->dbPlaceGetFanInsByName($flop);
+    my @fanOuts = $PLACE{$TOP_MODULE}->dbPlaceGetFanOutsByName($flop);
+    if((@fanIns + @fanOuts) >= $min_conn_lmt){
+       $temp_hash{$flop} = @fanIns + @fanOuts;
+    }
+ } 
+
+###### arranging the hash keys in decreasing order of num of fanIn+fanOut ######## 
+  my @newFlopList = sort{$temp_hash{$b}<=>$temp_hash{$a}}keys %temp_hash;
+##------------------------------------------------------------------------------##
+  for(my $i=0; $i<$#newFlopList;){
+      my $seedFlop = $newFlopList[$i];
+      my $current_incr = $i;
+      push(@seedFlopList,$seedFlop) if($i == 0); ## assuming first flop as seed
+      my @seedFanInFanOutList = sort{$a<=>$b}($PLACE{$TOP_MODULE}->dbPlaceGetFanInsByName($seedFlop),$PLACE{$TOP_MODULE}->dbPlaceGetFanOutsByName($seedFlop)); ## fanIn & fanOut list of seed flop
+
+      for(my $j=$i+1; $j<=$#newFlopList;$j++){
+          my @fanInFanOutList = sort{$a<=>$b}($PLACE{$TOP_MODULE}->dbPlaceGetFanInsByName($newFlopList[$j]),$PLACE{$TOP_MODULE}->dbPlaceGetFanOutsByName($newFlopList[$j]));## fanIn & fanOut list of flop except seed flop ( hence $j = $i+1)
+          my $similarFlopCnt = 0; 
+          foreach my $flop1 (@fanInFanOutList){
+            foreach my $flop2 (@seedFanInFanOutList){
+               if($flop1 == $flop2){ ##comparing fanIn & fanout id of seed and consecutive flop
+                  $similarFlopCnt++;
+                  last;
+               }#if similar
+            }#foreach primary fanIn fanOut list
+          }#foreach sec fanIn fanOut list
+          if($similarFlopCnt <= (($#fanInFanOutList+1)/10)){ ## if less than 10% similar, assuming as seed
+             push(@seedFlopList,$newFlopList[$j]);
+             $i = $j;
+             last;
+          }#if more than 90% dissimilar
+      }#foreach secondary flop
+      #----------if preceding flop does not have dissimilar fanIn&fanOut---------# 
+      #-----then we will ignore previous seed and assume next flop as seed ------# 
+      if($i == $current_incr){
+         shift @seedFlopList;
+         $i = $i+1;
+      }#
+      #-------------------------------------------------------------------------#
+  }#foreach primary flop 
+  print "seed flop list: @seedFlopList\n";
+  &dbCreateAnkurGcellDB(@seedFlopList);
+ 
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "command dbPlaceAnkurGetSeedFlops took:",timestr($td),"\n";
+}#sub dbPlaceAnkurGetSeedFlops
+
+
+sub dbDebugPlaceDB {
+ my $noOfArg = @_;
+ my $file = "debugPlace.log";
+ my ($flop,$flopNum,$fanInCnt,$fanOutCnt);
+ if($noOfArg < 1 || $_[0] eq "-h" || $_[0] eq "-help" || $_[0] eq "-HELP"){
+    print "Usage: dbDebugPlaceDB --ankur/--conn/--slk/--dist/--grid\n";
+    return;
+ }else{
+    if($_[0] eq "--ankur"){
+       open ( MYFORMAT, ">$file");    
+format MYFORMAT = 
+@<<<<<<<<<<<<<<<<<<<<<<<        @<<<<<<<<    @<<<<<<<    @<<<<<<<<    
+$flop                           $flopNum     $fanInCnt   $fanOutCnt    
+. 
+format MYFORMAT_TOP = 
+ffName                        ffNum       fanInCnt    fanOutCnt
+---------------------------------------------------------------
+.
+        #write MYFORMAT;
+        #print WRITE "ffName\t\tffNum\t\tfanInCnt\tfanOutCnt\n";
+        my @flopList = $PLACE{$TOP_MODULE}->dbPlaceGetFlopList;
+        foreach $flop (@flopList){         
+           $flopNum = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByName($flop);
+           my @fanIns = $PLACE{$TOP_MODULE}->dbPlaceGetFanInsByName($flop);
+           my @fanOuts = $PLACE{$TOP_MODULE}->dbPlaceGetFanOutsByName($flop);
+           $fanInCnt = @fanIns;
+           $fanOutCnt = @fanOuts;
+           #print WRITE "$flop\t\t$flopNum\t\t$fanInCnt\t\t$fanOutCnt\n";
+           write MYFORMAT;
+        }  
+       close WRITE;
+    }elsif($_[0] eq "--conn"){
+    }elsif($_[0] eq "--slk"){
+    }elsif($_[0] eq "--dist"){
+    }elsif($_[0] eq "--grid"){
+    }else{
+       print "Usage: dbDebugPlaceDB --ankur/--conn/--slk/--dist/--grid\n";
+       return
+    }
+ }#else correct no of arg
+}#sub dbDebugPlaceDB
+
+
+sub dbCreateAnkurGcellDB {
+  my @seedFlopList = @_;
+################# creating gcells and setting the bbox value ###################
+  my ($llx, $lly, $urx, $ury) = @{$DIE_ALREADY{dieArea}};
+  #print "chip $llx, $lly, $urx, $ury\n";
+  my $gcellX = ($urx - $llx)/10;
+  my $gcellY = ($ury - $lly)/10;
+  #print "gcellsize $gcellX, $gcellY\n";
+  my ($x, $y) = ($llx, $lly);
+  my ($numX, $numY) = (0,0);
+  my ($x1, $y1);
+  while ($y < $ury) {
+      $y1 = $y + $gcellY;
+      if ($y1 > $ury) {$y1 = $ury;}
+      while ($x < $urx) {
+        $x1 = $x + $gcellX;
+        if ($x1 > $urx) {$x1 = $urx;}
+        $GCellAnkur[$numX][$numY] = new GCell;
+        $GCellAnkur[$numX][$numY]->dbgGcellSetBBox($x,$y, $x1,$y1);
+        #print "$numX,$numY | bbox $x,$y,$x1,$y1\n";
+        $x = $x1; $numX++;
+      } #while
+      $y = $y1; $numY++;
+      $x = $llx; $numX = 0;
+  }
+ 
+################ Assigning gcell to flops #################
+  my $count = 0;
+  foreach my $seedFlop (@seedFlopList){
+     my $row = int ($count/10);
+     my $col = $count%10;
+     if($row/10 >= 1){ $count = 0; $row = 0}
+     $GCellAnkur[$row][$col]->dbgGcellAddInst($seedFlop);   
+     #print "$row,$col => $seedFlop\n";
+     $count++;
+  } 
+}#sub dbCreateAnkurGcellDB
+
+
+
+1;

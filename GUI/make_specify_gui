@@ -1,0 +1,922 @@
+sub prepare_specify_tab{
+   my $specifyBook = $tab12->NoteBook(-tabpady=>0,-tabpadx=>0,-relief=>"raised",-font=> "Times 10 italic")->pack(-side=>"top",-fill=>'both',-expand=>1);
+   $specifyBlockTab = $specifyBook->add( "Sheet 1", -label=>"Block",-justify => "center" );
+   $specifyNetTab = $specifyBook->add( "Sheet 2", -label=>"netConn",-justify => "center" );
+   &create_block_specify_table;
+   &create_net_specify_table;
+}#sub prepare_specify_tab
+
+#############################################################################################
+########################## subroutine to make specify table for blocks ######################
+#############################################################################################
+
+sub create_block_specify_table{
+use Tk::TableMatrix::Spreadsheet;
+
+my ($max_row, $max_col) = (30, 13);
+my $specify_table_topFrame = $specifyBlockTab->Frame()->pack(-side=>"top");
+   $specify_table_middleFrame = $specifyBlockTab->Frame()->pack(-side=>"top");
+my $specify_table_bottomFrame = $specifyBlockTab->Frame()->pack(-side=>"top");
+
+my $arrayVar = {};
+my @headersNames = ("module", "parent", "instance", "width", "height", "locX", "locY", "status","orient","ffs", "io", "tc", "rc");
+my $col_count = 0;
+foreach my $headersName (@headersNames){
+  $col_count++;
+  $arrayVar->{"0,$col_count"} = $headersName;
+}
+
+$block_specify_table = $specify_table_middleFrame->Scrolled('Spreadsheet', 
+                                          -rows => $max_row, -cols => $max_col, 
+                                          -width => $max_col, -height => 20,
+                                          -variable => $arrayVar,
+                                          -selectmode => 'extended',
+                                          -resizeborders => 'both',
+                                          -titlerows => 1,
+                                          -titlecols => 1,
+                                          -bg => 'white',
+                                         )->pack();
+$block_specify_table->tagConfigure('active', -bg => 'gray90', -relief => 'sunken');
+$block_specify_table->tagConfigure('title', -bg => 'gray85', -fg => 'black', -relief =>'sunken');
+
+
+my $write_button = $specify_table_bottomFrame->Button(-text => 'Create Design', -command=>sub{&run_pseudo_command_for_blocks;})->pack(-side=>"left");
+my $write_button = $specify_table_bottomFrame->Button(-text => 'UpdateFromHier', -command=>sub{&add_rows_in_block_specify_table;&update_block_specify_table("",2);&editModule("-module", $GLOBAL->dbfGlobalGetTOP);})->pack(-side=>"left");
+my $exit_button = $specify_table_bottomFrame->Button(-text => 'Refresh', -command=>sub{&refresh_block_table;})->pack(-side=>"left");
+
+my $read_xls_button = $specify_table_topFrame->Button(-text => 'Load xls', -command=>sub{&call_read_block_xls_andLoadData();})->pack(-side=>"left");
+my $write_xls_button = $specify_table_topFrame->Button(-text => 'Write xls', -command=>sub{&call_write_block_specify_xls;})->pack(-side=>"left");
+
+}# sub create_block_specify_table
+
+######################################################################################################
+############################# Subroutine to read and load xls in table ###############################
+######################################################################################################
+sub call_read_block_xls_andLoadData {
+my $fileName = $_;
+my @types = (["Config Files", '.xls'],
+             ["All Files", "*"]);
+
+ $fileName = $top->getOpenFile(-filetypes =>\@types,
+                               -defaultextension => '.xls'); 
+          
+ &read_block_xls_andLoadData($fileName) if($fileName ne "");
+}#sub call_read_block_xls_andLoadData
+
+
+sub read_block_xls_andLoadData {
+my $fileName = $_[0];
+use Spreadsheet::ParseExcel;
+use Tk::TableMatrix::Spreadsheet;
+
+my $oExcel = new Spreadsheet::ParseExcel;
+my $oBook = $oExcel->Parse($fileName);
+my $oWkS = $oBook->{Worksheet}[0];
+my @headers = ();
+my $max_row = $oWkS->{MaxRow} + 1;
+for(my $iR = $oWkS->{MinRow} ;defined $oWkS->{MaxRow} && $iR <= $oWkS->{MaxRow} ;$iR++){
+  for(my $iC = $oWkS->{MinCol} ; defined $oWkS->{MaxCol} && $iC <= $oWkS->{MaxCol} ;$iC++) {
+      my $oWkC = $oWkS->{Cells}[$iR][$iC];
+      if($iR == 0 && defined $oWkC && $oWkC->Value ne ""){
+         push(@headers,$oWkC->Value);
+      }
+  }#foreach column
+}#foreach row
+
+$block_specify_table->destroy();
+
+my $max_col = @headers+1;
+my $table_rows = $max_row;
+if($max_row < 30){$table_rows = 30;}
+my $arrayVar = {};
+
+my $col_count = 0;
+foreach my $header (@headers){
+  $col_count++;
+  $arrayVar->{"0,$col_count"} = $header;
+}
+
+$block_specify_table = $specify_table_middleFrame->Scrolled('Spreadsheet', 
+                                          -rows => $table_rows, -cols => $max_col, 
+                                          -width => $max_col, -height => 20,
+                                          -variable => $arrayVar,
+                                          -selectmode => 'extended',
+                                          -resizeborders => 'both',
+                                          -titlerows => 1,
+                                          -titlecols => 1,
+                                          -bg => 'white',
+                                         )->pack();
+$block_specify_table->tagConfigure('active', -bg => 'gray90', -relief => 'sunken');
+$block_specify_table->tagConfigure('title', -bg => 'gray85', -fg => 'black', -relief =>'sunken');
+
+foreach my $row_num(1 .. $max_row-1){
+   $block_specify_table->set("$row_num,0",$row_num);
+   foreach my $col_num(0 .. $max_col-1){
+      my $cellHash = $oWkS->{Cells}[$row_num][$col_num]; 
+      if($cellHash){
+         my $new_col_num = $col_num+1;
+         $block_specify_table->set("$row_num,$new_col_num",$cellHash->Value);
+      }
+   }
+}
+}#sub read_block_xls_andLoadData
+
+######################################################################################################
+################################## Subroutine to run pseudo commands #################################
+######################################################################################################
+sub run_pseudo_command_for_blocks{
+my $cols = $block_specify_table->cget(-cols);
+my $rows = $block_specify_table->cget(-rows);
+my $top_module = "";
+my $current_top = "";
+my %MODULE = ();
+
+LOOPA: foreach my $row(1 .. $rows-1){
+         my ($mod_width,$mod_height,$llx,$lly, $space) = (0,0,0,0,0);
+         my ($parent_module,$modName,$instName,$array,$orient) = ("","","","","N"); 
+         foreach  my $col(1 .. $cols-1){
+              my $headers = $block_specify_table->get("0,$col");
+              my $cell_value = $block_specify_table->get("$row,$col");
+              if($headers eq "module"){
+                 if($cell_value eq ""){last LOOPA;}
+                 $modName = $cell_value;
+                 $modName =~ s/^\s+|\s+$//g;
+                 $MODULE{$modName} = 1;
+              }elsif($headers eq "parent"){
+                 $parent_module = $cell_value;
+                 $parent_module =~ s/^\s+|\s+$//g;
+              }elsif($headers eq "instance"){
+                 $instName = $cell_value;
+                 $instName =~ s/^\s+|\s+$//g;
+              }elsif($headers eq "width"){
+                 $mod_width = $cell_value;
+              }elsif($headers eq "height"){
+                 $mod_height = $cell_value;
+              }elsif($headers eq "locX"){
+                 $llx = $cell_value if($cell_value ne "");
+              }elsif($headers eq "locY"){
+                 $lly = $cell_value if($cell_value ne "");
+              }elsif($headers eq "array"){
+                 $array = $cell_value if($cell_value ne ""); 
+              }elsif($headers eq "space"){
+                 $space = $cell_value if($cell_value ne "");
+              }elsif($headers eq "orient"){
+                 $orient = $cell_value if($cell_value ne "");
+                 $orient =~ s/^\s+|\s+$//g;
+              }else{}
+         }#foreach column
+         my $urx = $llx+$mod_width; 
+         my $ury = $lly+$mod_height; 
+         if($row == 1){
+            $top_module = $modName;
+            &createPseudoTopModule("-top", $modName, "-H", $mod_height, "-W", $mod_width);  
+            print "#<CMD> createPseudoTopModule -top $modName -H $mod_height -W $mod_width\n";
+            $current_top = $top_module;
+         }else{
+            if(exists $MODULE{$parent_module}){
+               if($parent_module ne $current_top){
+                  &commitModule("-module", $current_top);
+                  &editModule("-module", $parent_module);
+                  print "#<CMD> commit_module -module $current_top\n";
+                  print "#<CMD> edit_module -module $parent_module\n";
+               }                                         
+               if(exists $PLDB{$modName}){                     
+                 &createPseudoInstance("-parent", $parent_module, "-cell", $modName, "-inst", $instName, "-loc", "{$llx,$lly}", "-orient", $orient);
+                 print "#<CMD> createPseudoInstance -parent $parent_module -cell $modName -inst $instName -loc {$llx,$lly} -orient $orient\n";
+               }else {
+                 &createPseudoModule("-top", "$parent_module", "-module", $modName, "-bbox", "{$llx,$lly,$urx,$ury}");
+                 print "#<CMD> createPseudoModule -top $parent_module -module $modName -bbox {$llx,$lly,$urx,$ury}\n";
+                 &createPseudoHierModuleInst("-parent", $parent_module, "-bbox", "{$llx,$lly,$urx,$ury}","-cellref", "$modName", "-inst", "$instName");
+                 print "#<CMD> createPseudoHierModuleInst -parent $parent_module -bbox {$llx,$lly,$urx,$ury} -cellref $modName -inst $instName\n";
+                 if($array > 1){
+                    for(my $i=1; $i< $array; $i++){
+                        $llx = $urx + $space;
+                        $urx = $llx + $mod_width;
+                        &createPseudoHierModuleInst("-parent", $parent_module, "-bbox", "{$llx,$lly,$urx,$ury}","-cellref", "$modName", "-inst", $instName.$i);
+                        print "#<CMD> createPseudoHierModuleInst -parent $parent_module -bbox {$llx,$lly,$urx,$ury} -cellref $modName -inst $instName$i\n";
+                    }
+                 }
+               }
+            }else{print "WARN: Parent module $parent_module for instance $instName of cell $modName does not exists\n";}
+         }#if not top row
+         $current_top = $parent_module if($row != 1);
+      }#foreach row
+      &commitModule("-module", $current_top);
+      &editModule("-module", $top_module);
+      print "#<CMD> commit_module -module $current_top\n";
+      print "#<CMD> edit_module -module $top_module\n";
+}#sub run_pseudo_command_for_blocks
+
+######################################################################################################
+############################ Subroutine to write data from table to xls ##############################
+######################################################################################################
+
+sub call_write_block_specify_xls {
+my $fileName =$_;
+my @types = (["Config Files", '.xls'],
+             ["All Files", "*"]);
+
+  $fileName = $top->getSaveFile(-filetypes =>\@types,
+                                -defaultextension => '.xls'); 
+            
+  &write_block_specify_xls($fileName) if($fileName ne "");
+}#sub call_write_block_specify_xls
+
+
+sub write_block_specify_xls{
+use Spreadsheet::WriteExcel;
+my $fileName = $_[0];
+my $write_end = 0;
+
+my $workbook = Spreadsheet::WriteExcel->new($fileName);
+#my $sheet_name = $block_specify_table->get("1,1");
+my $sheet_name = "blocks";
+my $sheet = $workbook->add_worksheet($sheet_name);
+   $sheet->activate($sheet_name);
+
+my $cols = $block_specify_table->cget(-cols);
+my $rows = $block_specify_table->cget(-rows);
+
+foreach my $row (0 .. $rows-1){
+  foreach my $col (1 .. $cols-1){
+    my $cell_value =  $block_specify_table->get("$row,$col");
+    #if($col == 1 && $cell_value eq ""){$write_end = 1; last}
+    $sheet->write($row, $col-1, $cell_value);
+  }
+  #if($write_end == 1){$write_end =0 ; next;}
+}
+
+}#sub write_block_specify_xls
+
+######################################################################################################
+################################# Subroutine to update specify table #################################
+######################################################################################################
+sub find_total_num_hInst{
+   my $moduleName = $_[0];
+   $specify_hinst_count = $_[1];
+   
+   if($moduleName eq ""){
+      $moduleName = $GLOBAL->dbfGlobalGetTOP;
+   }
+   if(exists $PSEUDO_MODULE_ALREADY{$moduleName} ) {
+     foreach my $instance ( keys %{$PSEUDO_VINST_ALREADY{$moduleName}} ) {
+         my $cellref = $PSEUDO_VINST_ALREADY{$moduleName}{$instance}->dbPimDBGetInstCellref;
+         if($instance eq "PIN"){ 
+         }else{ 
+           $specify_hinst_count++;
+           if(exists $PSEUDO_MODULE_ALREADY{$cellref}){
+               &editModule("-module",$cellref);
+               &find_total_num_hInst($cellref,$specify_hinst_count);
+            }
+         }
+      }
+   }
+return $specify_hinst_count
+}#sub find_total_num_hInst
+
+sub add_rows_in_block_specify_table{
+   my $num_hinst = &find_total_num_hInst("",0);
+   #---- 2 extra rows are needed, one for column name & 2nd for top module ---#
+   my $total_num_rows_needed = $num_hinst+2;
+   if($total_num_rows_needed > 30){
+      $block_specify_table->configure(-rows=>$total_num_rows_needed);
+   }
+   my @headers = ("module", "parent", "instance", "width", "height", "locX", "locY", "status", "ffs", "io", "tc", "rc");
+   my $col_count = 0;
+   foreach my $header (@headers){
+     $col_count++;
+     $block_specify_table->set("0,$col_count", $header)
+   }
+}#sub add_rows_in_block_specify_table
+
+sub update_block_specify_table{
+   my $moduleName = $_[0];
+   $block_specify_row_cnt = $_[1];
+   
+   if($moduleName eq ""){
+      $moduleName = $GLOBAL->dbfGlobalGetTOP;
+   }
+   if(exists $PSEUDO_MODULE_ALREADY{$moduleName} ) {
+      my @size = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetSize;   
+      my $width = abs($size[2]-$size[0]);      
+      my $height = abs($size[3]-$size[1]);      
+      if($block_specify_row_cnt == 2){
+         $block_specify_table->set("1,0",1);
+         $block_specify_table->set("1,1",$moduleName);
+         $block_specify_table->set("1,2","self");
+         $block_specify_table->set("1,4",$width);
+         $block_specify_table->set("1,5",$height);
+      }
+      foreach my $instance ( keys %{$PSEUDO_VINST_ALREADY{$moduleName}} ) {
+         my ($inst_locX, $inst_locY, $inst_width, $inst_height);
+         my ($RC,$TC,$ff,$in,$out) = (0,0,0,0,0);
+         if($instance eq "PIN"){ 
+         }else{ 
+            my $cellref = $PSEUDO_VINST_ALREADY{$moduleName}{$instance}->dbPimDBGetInstCellref;
+            my @loc = $PSEUDO_VINST_ALREADY{$moduleName}{$instance}->dbPimDBGetInstRelBbox;
+            if(exists $PSEUDO_MODULE_ALREADY{$cellref}){
+               $RC = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetRoutingComplexity;
+               $TC = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetTimingComplexity;
+               $ff = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetSeqComps;
+               $in = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetInCount;
+               $out = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetOutCount;
+            }
+            if($loc[0]==0 && $loc[1]==0 && $loc[2]==0 && $loc[3]==0){  
+               $PSEUDO_VINST_ALREADY{$moduleName}{$instance}->dbPimDBSetInstStatus("UNPLACED");
+            }#if location is (0,0,0,0)
+            my $status = $PSEUDO_VINST_ALREADY{$moduleName}{$instance}->dbPimDBGetInstStatus;
+          
+            if($status eq "UNPLACED" || $status eq "UND"){
+               my @mod_bbox = &return_pseudo_vinst_size($moduleName,$instance);
+               $inst_locX = 0;
+               $inst_locY = 0;
+               $inst_width = sprintf("%.2f",(abs($mod_bbox[2] - $mod_bbox[0])));
+               $inst_height = sprintf("%.2f",(abs($mod_bbox[3] - $mod_bbox[1])));
+            }else{
+               $inst_locX = sprintf("%.2f", ($loc[0]));
+               $inst_locY = sprintf("%.2f", ($loc[1]));
+               $inst_width = sprintf("%.2f", (abs($loc[2] - $loc[0])));
+               $inst_height = sprintf("%.2f", (abs($loc[3] - $loc[1])));
+            }
+            $block_specify_table->set("$block_specify_row_cnt,0",$block_specify_row_cnt);
+
+            $block_specify_table->set("$block_specify_row_cnt,1",$cellref);
+            $block_specify_table->set("$block_specify_row_cnt,2",$moduleName);
+            $block_specify_table->set("$block_specify_row_cnt,3",$instance);
+            $block_specify_table->set("$block_specify_row_cnt,4",$inst_width);
+            $block_specify_table->set("$block_specify_row_cnt,5",$inst_height);
+            $block_specify_table->set("$block_specify_row_cnt,6",$inst_locX);
+            $block_specify_table->set("$block_specify_row_cnt,7",$inst_locY);
+            $block_specify_table->set("$block_specify_row_cnt,8",$status);
+            $block_specify_table->set("$block_specify_row_cnt,9",$ff);
+            $block_specify_table->set("$block_specify_row_cnt,10",$in.",".$out);
+            $block_specify_table->set("$block_specify_row_cnt,11",$TC);
+            $block_specify_table->set("$block_specify_row_cnt,12",$RC);
+            $block_specify_row_cnt++;
+            if(exists $PSEUDO_MODULE_ALREADY{$cellref}){
+               &editModule("-module",$cellref);
+               &update_block_specify_table($cellref,$block_specify_row_cnt);
+            }
+         }
+      }#foreach hier instance
+    }#if module exists
+}#sub update_block_specify_table
+
+######################################################################################################
+########################### Subroutine to update if Resize/move in Hier-View #########################
+######################################################################################################
+sub update_specifyTable_ifResizeOrMove_hierInst{
+my $instName = $_[0];
+my $moduleName = $_[1];
+my $bBox = $_[2];
+my $operation = $_[3];
+
+my @poly = @$bBox;
+my ($inst_col_num,$cellref_col_num,$width_col_num,$height_col_num,$locX_col_num, $locY_col_num, $width, $height);
+my @x_coords = ();
+my @y_coords = ();
+
+   if(Exists $block_specify_table){
+      my $cols = $block_specify_table->cget(-cols);
+      my $rows = $block_specify_table->cget(-rows);
+      
+      foreach  my $col(1 .. $cols-1){
+        my $header = $block_specify_table->get("0,$col");
+        if($header eq "instance"){ $inst_col_num = $col;}
+        if($header eq "module"){$cellref_col_num = $col;}
+        if($header eq "width"){$width_col_num = $col;} 
+        if($header eq "height"){$height_col_num = $col;} 
+        if($header eq "locX"){$locX_col_num = $col;} 
+        if($header eq "locY"){$locY_col_num = $col;} 
+      }
+      my $loc_x = sprintf("%.2f",($poly[0]));
+      my $loc_y = sprintf("%.2f",($poly[1]));
+      if($operation eq "resize"){
+         for(my $i=0; $i<=$#poly; $i=$i+2){
+             push(@x_coords, $poly[$i]);
+             push(@y_coords, $poly[$i+1]);
+         }
+         @x_coords = sort{$a<=>$b}@x_coords;
+         @y_coords = sort{$a<=>$b}@y_coords;
+         $width = sprintf("%.2f",($x_coords[-1] - $x_coords[0]));
+         $height = sprintf("%.2f",($y_coords[-1] - $y_coords[0]));
+      }
+      foreach my $row(1 .. $rows-1){
+         my $inst = $block_specify_table->get("$row,$inst_col_num");
+         my $cellRef = $block_specify_table->get("$row,$cellref_col_num");
+         if($inst eq $instName && $cellRef eq $moduleName){
+            my $W = $block_specify_table->get("$row,$width_col_num");
+            my $H = $block_specify_table->get("$row,$height_col_num");
+            my $locX = $block_specify_table->get("$row,$locX_col_num");
+            my $locY = $block_specify_table->get("$row,$locY_col_num");
+            if($W eq "" && $H eq "" && $locX eq "" && $locY eq ""){
+            }else{
+               $block_specify_table->set("$row,$locX_col_num",$loc_x);
+               $block_specify_table->set("$row,$locY_col_num",$loc_y);
+               $block_specify_table->set("$row,$width_col_num",$width) if($operation eq "resize");
+               $block_specify_table->set("$row,$height_col_num",$height) if($operation eq "resize");
+            } 
+         }
+      }
+   }
+}#sub update_specifyTable_ifResizeOrMove_hierInst
+
+######################################################################################################
+############################## subroutine to write xml from xls ######################################
+######################################################################################################
+sub write_block_xlsToXml {
+use XML::Excel;
+my $xlsFileName = $_[0];
+my $xmlFileName = $_[1];
+
+if (!defined($xlsFileName) || !defined($xmlFileName)){
+   print "\nUsage: write_block_xlsToXml infilename(xls file) outfilename(xml file)\n";
+   return; 
+}
+#my ($name, $ext) = (split(/\./,$xlsFileName))[0,1];
+#my $xmlFileName = $name.".xml";
+my $xls = XML::Excel->new();
+
+$xls->parse_doc($xlsFileName,{headings=>1});
+$xls->declare_xml({version => '1.0',
+                   standalone => 'yes'});
+
+$xls->print_xml("$xmlFileName",
+                {file_tag    => 'design',
+                 parent_tag  => 'block'}
+               );
+}#sub write_block_xlsToXml
+
+######################################################################################################
+############################## subroutine to write xls from xml ######################################
+######################################################################################################
+sub write_block_xmlToXls{
+use XML::Simple;
+use Data::Dumper;
+use Spreadsheet::WriteExcel;
+
+my $inFile = $_[0];
+my $outFile = $_[1];
+if (!defined($inFile) || !defined($outFile)){
+   print "\nUsage: write_block_xmlToXls infilename(xml file) outfilename(xls file)\n";
+   return;
+}
+
+my $workbook = Spreadsheet::WriteExcel->new($outFile);
+my $sheet = $workbook->add_worksheet("block");
+   $sheet->activate("block");
+
+my $xml = new XML::Simple;
+my $data = $xml->XMLin($inFile,KeyAttr => "block"); #returns hash reference
+#print Dumper($data);
+
+my %blockHash = %$data;
+my $hashValue = $blockHash{block}; #returns hashValue as array of hashes 
+
+############# Writing headers in first row of xls ##############
+my @headers = keys %{@{$hashValue}[0]};
+my $col_cnt = 0;
+foreach my $heading (@headers){
+  $sheet->write(0, $col_cnt, $heading);
+  $col_cnt++;
+}   
+
+my $row_count = 0;
+foreach my $arrEle (@$hashValue){
+   $row_count++;
+   my $col_count = 0;
+   foreach my $colName (keys %{$arrEle}){
+       my $cellValue = ${$arrEle}{$colName};
+       if(ref($cellValue) eq "HASH"){$cellValue = ""}
+       $sheet->write($row_count, $col_count, $cellValue);  
+       #print "$colName | $cellValue\n" ;#if(!ref($cellValue));
+       $col_count++;
+   }
+}
+}#sub write_block_xmlToXls
+
+
+######################################################################################################
+################################# subroutine to refresh table ########################################
+######################################################################################################
+sub refresh_block_table {
+my $cols = $block_specify_table->cget(-cols);
+my $rows = $block_specify_table->cget(-rows);
+foreach my $row(1 .. $rows-1){
+  foreach  my $col(0 .. $cols-1){
+    $block_specify_table->set("$row,$col", ""); 
+  }
+}
+}#sub refresh_block_table
+
+######################################################################################################
+########################## Subroutine to create table for net connectivity ###########################
+######################################################################################################
+
+sub create_net_specify_table{
+use Tk::TableMatrix::Spreadsheet;
+
+my ($max_row, $max_col) = (30, 8);
+my $net_specify_table_topFrame = $specifyNetTab->Frame()->pack(-side=>"top");
+   $net_specify_table_middleFrame = $specifyNetTab->Frame()->pack(-side=>"top");
+my $net_specify_table_bottomFrame = $specifyNetTab->Frame()->pack(-side=>"top");
+
+my $arrayVar = {};
+my @headersNames = ("name", "parent", "source", "sink", "width", "type", "class");
+my $col_count = 0;
+foreach my $headersName (@headersNames){
+  $col_count++;
+  $arrayVar->{"0,$col_count"} = $headersName;
+}
+
+$net_specify_table = $net_specify_table_middleFrame->Scrolled('Spreadsheet', 
+                                          -rows => $max_row, -cols => $max_col, 
+                                          -width => $max_col, -height => 20,
+                                          -variable => $arrayVar,
+                                          -selectmode => 'extended',
+                                          -resizeborders => 'both',
+                                          -titlerows => 1,
+                                          -titlecols => 1,
+                                          -bg => 'white',
+                                         )->pack();
+$net_specify_table->tagConfigure('active', -bg => 'gray90', -relief => 'sunken');
+$net_specify_table->tagConfigure('title', -bg => 'gray85', -fg => 'black', -relief =>'sunken');
+
+
+my $write_button = $net_specify_table_bottomFrame->Button(-text => 'Create Nets', -command=>sub{&run_pseudo_command_for_nets;})->pack(-side=>"left");
+my $write_button = $net_specify_table_bottomFrame->Button(-text => 'UpdateFromHier', -command=>sub{&add_rows_in_net_specify_table;&update_net_specify_table("",1);&editModule("-module", $GLOBAL->dbfGlobalGetTOP);})->pack(-side=>"left");
+my $exit_button = $net_specify_table_bottomFrame->Button(-text => 'Refresh', -command=>sub{&refresh_net_table;})->pack(-side=>"left");
+
+my $read_xls_button = $net_specify_table_topFrame->Button(-text => 'Load xls', -command=>sub{&call_read_net_xls_andLoadData();})->pack(-side=>"left");
+my $write_xls_button = $net_specify_table_topFrame->Button(-text => 'Write xls', -command=>sub{&call_write_net_specify_xls;})->pack(-side=>"left");
+
+}# sub create_net_specify_table
+
+############################################################################################################
+########################### subroutine to read xls contains net connectivity ###############################
+############################################################################################################
+sub call_read_net_xls_andLoadData {
+my $fileName = $_;
+my @types = (["Config Files", '.xls'],
+             ["All Files", "*"]);
+
+ $fileName = $top->getOpenFile(-filetypes =>\@types,
+                               -defaultextension => '.xls'); 
+          
+ &read_net_xls_andLoadData($fileName) if($fileName ne "");
+}#sub call_read_net_xls_andLoadData
+
+
+sub read_net_xls_andLoadData {
+my $fileName = $_[0];
+use Spreadsheet::ParseExcel;
+
+my $oExcel = new Spreadsheet::ParseExcel;
+my $oBook = $oExcel->Parse($fileName);
+my $max_row = 1;
+my $filled_row = 0;
+my @headers = ();
+my $count = $oBook->{SheetCount}; 
+for(my $iSheet=0; $iSheet < $oBook->{SheetCount} ; $iSheet++) {
+    my $oWkS = $oBook->{Worksheet}[$iSheet];
+    $max_row = $max_row+ $oWkS->{MaxRow};
+    LOOPB: for(my $iR = $oWkS->{MinRow} ;defined $oWkS->{MaxRow} && $iR <= $oWkS->{MaxRow} ;$iR++){
+      for(my $iC = $oWkS->{MinCol} ; defined $oWkS->{MaxCol} && $iC <= $oWkS->{MaxCol} ;$iC++) {
+          my $oWkC = $oWkS->{Cells}[$iR][$iC];
+          if($iR == 0 && defined $oWkC && $oWkC->Value ne "" && $iSheet==0){
+             push(@headers,$oWkC->Value);
+          #}elsif(($oWkS->{Cells}[$iR][$oWkS->{MinCol}]) eq ""){
+          #   $filled_row = $filled_row + $iR;
+          #   $max_row = $filled_row;
+          #   last LOOPB;
+          }else{}
+      }#foreach column
+    }#foreach row
+}#foreach sheet
+$net_specify_table->destroy();
+
+my $max_col = @headers+1;
+my $table_rows = $max_row;
+if($max_row < 30){$table_rows = 30;}
+my $arrayVar = {};
+
+my $col_count = 0;
+foreach my $header (@headers){
+  $col_count++;
+  $arrayVar->{"0,$col_count"} = $header;
+}
+
+$net_specify_table = $net_specify_table_middleFrame->Scrolled('Spreadsheet', 
+                                          -rows => $table_rows, -cols => $max_col, 
+                                          -width => $max_col, -height => 20,
+                                          -variable => $arrayVar,
+                                          -selectmode => 'extended',
+                                          -resizeborders => 'both',
+                                          -titlerows => 1,
+                                          -titlecols => 1,
+                                          -bg => 'white',
+                                         )->pack();
+$net_specify_table->tagConfigure('active', -bg => 'gray90', -relief => 'sunken');
+$net_specify_table->tagConfigure('title', -bg => 'gray85', -fg => 'black', -relief =>'sunken');
+ 
+my $new_row_num = 1;  
+for(my $iSheet=0; $iSheet < $oBook->{SheetCount} ; $iSheet++) {
+    my $oWkS = $oBook->{Worksheet}[$iSheet];
+    LOOPC: foreach my $row_num(1 .. $max_row-1){
+      foreach my $col_num(0 .. $max_col-1){
+         my $cellHash = $oWkS->{Cells}[$row_num][$col_num];
+         my $start_col =  $oWkS->{Cells}[$row_num][0];
+         #if($start_col eq ""){ last LOOPC;}
+         if($cellHash){
+            my $new_col_num = $col_num+1;
+            $net_specify_table->set("$new_row_num,$new_col_num",$cellHash->Value);
+         }
+      }
+      $net_specify_table->set("$new_row_num,0",$new_row_num);
+      $new_row_num++;
+    }
+}
+}#sub read_net_xls_andLoadData
+
+######################################################################################################
+############################# Subroutine to run pseudo commands for nets #############################
+######################################################################################################
+sub run_pseudo_command_for_nets{
+my $cols = $net_specify_table->cget(-cols);
+my $rows = $net_specify_table->cget(-rows);
+my $top_module = $GLOBAL->dbfGlobalGetTOP;
+my $current_top = $GLOBAL->dbfGlobalGetTOP;
+my %MODULE = ();
+LOOPA: foreach my $row(1 .. $rows-1){
+         my ($netName,$parent_module,$srcInst, $sinkInst,$srcPin, $sinkPin) = ("","","","","","");
+         my ($net_width,$net_type,$net_class,$srcOpt, $sinkOpt) = (1,"wire","digital","-pin","-pin");
+         foreach  my $col(1 .. $cols-1){
+              my $headers = $net_specify_table->get("0,$col");
+              my $cell_value = $net_specify_table->get("$row,$col");
+              if($headers eq "name"){
+                 if($cell_value eq ""){last LOOPA;}
+                 $netName = $cell_value;
+              }elsif($headers eq "parent"){
+                 $parent_module = $cell_value;
+                 if($parent_module eq ""){$parent_module = $top_module;}
+              }elsif($headers eq "source"){
+                 $cell_value =~ s/\(//;
+                 $cell_value =~ s/\)//;
+                 ($srcInst, $srcPin) = (split(/\:/,$cell_value))[0,1];
+                 if($srcPin eq ""){$srcOpt = "";
+                 }else{$srcOpt = "-pin";}
+              }elsif($headers eq "sink"){
+                 $cell_value =~ s/\(//;
+                 $cell_value =~ s/\)//;
+                 ($sinkInst, $sinkPin) = (split(/\:/,$cell_value))[0,1];
+                 if($sinkPin eq ""){$sinkOpt = "";   
+                 }else{$sinkOpt = "-pin";}
+              }elsif($headers eq "width"){
+                 $net_width = $cell_value;
+              }elsif($headers eq "type"){
+                 $net_type = $cell_value;
+                 #if($net_type eq "single"){$net_type = "wire";}  
+              }elsif($headers eq "class"){
+                 $net_class = $cell_value;
+              }else{}
+         }#foreach column
+         if($parent_module ne $current_top){
+            &commitModule("-module", $current_top);
+            &editModule("-module", $parent_module);
+            #print "#<CMD> commit_module -module $current_top\n";
+            #print "#<CMD> edit_module -module $parent_module\n";
+         }
+         &createPseudoNet("-parentModule","$parent_module","-type",$net_type,"-class", $net_class,"-source","$srcInst",$srcOpt,$srcPin ,"-sink","$sinkInst",$sinkOpt, "{$sinkPin}","-prefix", $netName, "-wireWidth", $net_width);
+         #print "#<CMD> createPseudoNet -parentModule $parent_module -type $net_type -class $net_class -source $srcInst $srcOpt $srcPin -sink $sinkInst $sinkOpt {$sinkPin} -prefix $netName -wireWidth $net_width\n";
+         $current_top = $parent_module;
+      }#foreach row
+      &commitModule("-module", $current_top);
+      &editModule("-module", $top_module);
+      #print "#<CMD> commit_module -module $current_top\n";
+      #print "#<CMD> edit_module -module $top_module\n";
+}#sub run_pseudo_command_for_nets
+
+######################################################################################################
+######################## Subroutine to write data from  netconntable to xls ##########################
+######################################################################################################
+sub call_write_net_specify_xls {
+my $fileName =$_;
+my @types = (["Config Files", '.xls'],
+             ["All Files", "*"]);
+
+  $fileName = $top->getSaveFile(-filetypes =>\@types,
+                                -defaultextension => '.xls'); 
+            
+  &write_net_specify_xls($fileName) if($fileName ne "");
+}#sub call_write_net_specify_xls
+
+
+sub write_net_specify_xls{
+use Spreadsheet::WriteExcel;
+my $fileName = $_[0];
+my $write_end = 0;
+
+my $workbook = Spreadsheet::WriteExcel->new($fileName);
+my $sheet = $workbook->add_worksheet("chip connection");
+   $sheet->activate("chip connection");
+
+my $cols = $net_specify_table->cget(-cols);
+my $rows = $net_specify_table->cget(-rows);
+
+foreach my $row (0 .. $rows-1){
+  foreach my $col (1 .. $cols-1){
+     my $cell_value =  $net_specify_table->get("$row,$col");
+     #if($col == 1 && $cell_value eq ""){$write_end = 1; last}
+        $sheet->write($row, $col-1, $cell_value);
+  }
+  #if($write_end == 1){$write_end =0 ; next;}
+}
+
+}#sub write_net_specify_xls
+
+######################################################################################################
+############################# Subroutine to update netconn specify table #############################
+######################################################################################################
+sub find_total_num_specify_nets{
+   my $moduleName = $_[0];
+   $specify_net_count = $_[1];
+   
+   if($moduleName eq ""){
+      $moduleName = $GLOBAL->dbfGlobalGetTOP;
+   }
+   if(exists $PSEUDO_MODULE_ALREADY{$moduleName} ) {
+     if(exists $PSEUDO_VNET_ALREADY{$moduleName}){
+         foreach my $net (keys %{$PSEUDO_VNET_ALREADY{$moduleName}}) {
+           $specify_net_count++;
+         }
+     } 
+     foreach my $instance ( keys %{$PSEUDO_VINST_ALREADY{$moduleName}} ) {
+         my $cellref = $PSEUDO_VINST_ALREADY{$moduleName}{$instance}->dbPimDBGetInstCellref;
+         if($instance eq "PIN"){ 
+         }else{ 
+           if(exists $PSEUDO_MODULE_ALREADY{$cellref}){
+               &editModule("-module",$cellref);
+               &find_total_num_specify_nets($cellref,$specify_net_count);
+            }
+         }
+      }
+   }
+return $specify_net_count
+}#sub find_total_num_specify_nets
+
+sub add_rows_in_net_specify_table{
+   my $num_hinst = &find_total_num_specify_nets("",0);
+   #---- 1 extra row is needed for column name  ---#
+   my $total_num_rows_needed = $num_hinst+1;
+   if($total_num_rows_needed > 30){
+      $net_specify_table->configure(-rows=>$total_num_rows_needed);
+   }
+   my @headers = ("name", "parent", "source", "sink", "width", "type", "class");
+   my $col_count = 0;
+   foreach my $header (@headers){
+     $col_count++;
+     $net_specify_table->set("0,$col_count", $header)
+   }
+}#sub add_rows_in_net_specify_table
+
+sub update_net_specify_table{
+   my $moduleName = $_[0];
+   $net_specify_row_cnt = $_[1];
+   
+   if($moduleName eq ""){
+      $moduleName = $GLOBAL->dbfGlobalGetTOP;
+   }
+   if(exists $PSEUDO_MODULE_ALREADY{$moduleName} ) {
+     if(exists $PSEUDO_VNET_ALREADY{$moduleName}){
+         foreach my $net (keys %{$PSEUDO_VNET_ALREADY{$moduleName}}) {
+           my @source = $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenGetPseudoNetSourceFanInList;
+           my @sink = $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenGetPseudoNetSinkFanOutList;
+           my $width = $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenGetPseudoNetWidth;
+           my $type = $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenGetPseudoNetType;   
+           my $class = $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenGetPseudoNetClass;   
+           $net_specify_table->set("$net_specify_row_cnt,0",$net_specify_row_cnt);
+           $net_specify_table->set("$net_specify_row_cnt,1",$net);
+           $net_specify_table->set("$net_specify_row_cnt,2",$moduleName);
+           $net_specify_table->set("$net_specify_row_cnt,3","($source[0]:$source[1])");
+           $net_specify_table->set("$net_specify_row_cnt,4","($sink[0]:$sink[1])");
+           $net_specify_table->set("$net_specify_row_cnt,5",$width);
+           $net_specify_table->set("$net_specify_row_cnt,6",$type);
+           $net_specify_table->set("$net_specify_row_cnt,7",$class);
+           $net_specify_row_cnt++;
+         }
+     } 
+      foreach my $instance ( keys %{$PSEUDO_VINST_ALREADY{$moduleName}} ) {
+         if($instance eq "PIN"){ 
+         }else{ 
+            my $cellref = $PSEUDO_VINST_ALREADY{$moduleName}{$instance}->dbPimDBGetInstCellref;
+            if(exists $PSEUDO_MODULE_ALREADY{$cellref}){
+               &editModule("-module",$cellref);
+               &update_net_specify_table($cellref,$net_specify_row_cnt);
+            }
+         }
+      }#foreach hier instance
+   }#if module exists
+}#sub update_net_specify_table
+
+######################################################################################################
+############################## subroutine to write xml from xls ######################################
+######################################################################################################
+sub write_net_xlsToXml{
+use XML::Excel;
+my $xlsFileName = $_[0];
+my $xmlFileName = $_[1];
+if (!defined($xlsFileName) || !defined($xmlFileName)){
+   print"\nusage: write_net_xlsToXml infilename(xls file) outfilename(xml file)\n";
+   return;
+}
+#my ($name, $ext) = (split(/\./,$xlsFileName))[0,1];
+#my $xmlFileName = $name.".xml";
+my $xls = XML::Excel->new();
+
+$xls->parse_doc($xlsFileName,{headings=>1});
+$xls->declare_xml({version => '1.0',
+                   standalone => 'yes'});
+
+$xls->print_xml("$xmlFileName",
+                {file_tag    => 'nets',
+                 parent_tag  => 'net'}
+               );
+}#sub write_net_xlsToXml
+
+######################################################################################################
+############################## subroutine to write xls from xml ######################################
+######################################################################################################
+sub write_net_xmlToXls{
+use XML::Simple;
+use Data::Dumper;
+use Spreadsheet::WriteExcel;
+
+my $inFile = $_[0];
+my $outFile = $_[1];
+if (!defined($inFile) || !defined($outFile)){
+   print"\nusage: write_net_xmlToXls infilename(xml file) outfilename(xls file)\n";
+   return;
+}
+
+my $workbook = Spreadsheet::WriteExcel->new($outFile);
+my $sheet = $workbook->add_worksheet("net connections");
+   $sheet->activate("net connections");
+
+my $xml = new XML::Simple;
+my $data = $xml->XMLin($inFile,KeyAttr => "net"); #returns hash reference
+#print Dumper($data);
+
+my %blockHash = %$data;
+my $hashValue = $blockHash{net}; #returns hashValue as array of hashes 
+
+############# Writing headers in first row of xls ##############
+my @headers = keys %{@{$hashValue}[0]};
+my $col_cnt = 0;
+foreach my $heading (@headers){
+  $sheet->write(0, $col_cnt, $heading);
+  $col_cnt++;
+}   
+
+my $row_count = 0;
+foreach my $arrEle (@$hashValue){
+   $row_count++;
+   my $col_count = 0;
+   foreach my $colName (keys %{$arrEle}){
+       my $cellValue = ${$arrEle}{$colName};
+       if(ref($cellValue) eq "HASH"){$cellValue = ""}
+       $sheet->write($row_count, $col_count, $cellValue);  
+       #print "$colName | $cellValue\n" ;#if(!ref($cellValue));
+       $col_count++;
+   }
+}
+}#sub write_net_xmlToXls
+
+
+######################################################################################################
+################################# subroutine to refresh net table ####################################
+######################################################################################################
+sub refresh_net_table {
+my $cols = $net_specify_table->cget(-cols);
+my $rows = $net_specify_table->cget(-rows);
+foreach my $row(1 .. $rows-1){
+  foreach  my $col(0 .. $cols-1){
+     $net_specify_table->set("$row,$col", ""); 
+  }
+}
+}#sub refresh_net_table
+
+#####################################################################
+#    if (ref($r) eq "HASH") {
+#        print "r is a reference to a hash.\n";
+#    }
+#    if (!ref($r)) {
+#        print "r is not a reference at all.\n";
+#    }
+#
+#  ref expression returns values (REF,SCALAR,ARRAY,HASH,CODE,GLOB);
+#####################################################################
+
+
+
+
+1;

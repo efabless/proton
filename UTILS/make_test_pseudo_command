@@ -1,0 +1,255 @@
+sub new_command_testing_last
+{
+  print "\nINFO-UTS : 001 : Hierarchical placement starts:" ;
+  print "\n------------------------------" ;
+  my $start_module =  $GLOBAL->dbfGlobalGetTOP();
+  @list_instance_being_placed = ();
+  &new_command_testing_subroutine_place_top_module($start_module,$start_module);
+  while ($#list_instance_being_placed >= 0) {
+    for(my $temp_cnt = 0 ; $temp_cnt <= $#list_instance_being_placed;$temp_cnt++) {
+      my $hier_inst_name = $list_instance_being_placed[$temp_cnt];
+      splice(@list_instance_being_placed,$temp_cnt,1);
+      &new_command_testing_read_placement_curr_instance($hier_inst_name);
+      my $instance_in_process = $hier_inst_name ;
+      if($hier_inst_name =~ /.*\/.*/) {
+        my @inst_names = split(/\//, $hier_inst_name);
+        $instance_in_process = $inst_names[$#inst_names];
+      }
+      my $parent_module_inprocess = &get_parent_module($hier_inst_name);
+      my $cellref_instance = $MODULE_ALREADY{$parent_module_inprocess}->dbVNOMGetHierInstCell($instance_in_process);
+      my @insts0 =  $MODULE_ALREADY{$cellref_instance}->dbVNOMGetHierInst;
+      my @insts =  sort {$a cmp $b} @insts0 ;
+      foreach my $inst ( @insts) {
+        my $cellref = $MODULE_ALREADY{$start_module}->dbVNOMGetHierInstCell($inst);
+        &new_command_testing_subroutine_fire_instance_placement($inst,$hier_inst_name."/".$inst);
+      }
+    }
+  }
+}#sub new_command_testing_last
+
+sub new_command_testing_subroutine_place_top_module
+{
+  my $start_module =  $_[0];
+  my $start_fplan =  $_[1];
+
+  my $hierarchy_value = 1 ;
+  if($start_fplan =~ /.*\/.*/) {
+    my @split_names = split(/\//, $start_fplan);
+    $hierarchy_value = $#split_names + 1  ;
+  }
+
+  &report_verilog_area ("-module", $start_module) ;
+  &editModule("-module",$start_module,"-floorplan",$start_fplan);
+
+  print "\nINFO-UTS : 001 : Starting placement for instance : $start_fplan" ;
+  print "\nINFO-UTS : 002 : module : $start_module" ;
+  my @size = $PSEUDO_MODULE_ALREADY{$start_module}->dbaTstgenGetSize;
+  if(($size[2] - $size[0])<=0){
+    print "\nERR-UTS : 003 : size of the module is not set properly" ;
+    print "\nINFO-UTS : 004 : It's size is "; 
+    print join ",",@size;
+    print "\n" ;
+    exit ;
+  }
+  if(($size[3] - $size[1])<=0){
+    print "\nERR-UTS : 005 : size of the module is not set properly" ;
+    print "\nINFO-UTS : 006 : It's size is "; 
+    print join ",",@size;
+    print "\n" ;
+    exit ;
+  }
+  print "\nINFO-UTS : 007 : placement fired" ;
+  print "\nINFO-UTS : 008 : Reading placement for instance : $start_module" ;
+  my @insts0 =  $MODULE_ALREADY{$start_module}->dbVNOMGetHierInst;
+  my @insts =  sort {$a cmp $b} @insts0 ;
+  foreach my $inst ( @insts) {
+    my @cur_bbox = ();
+    $cur_bbox[0] = 0; 
+    $cur_bbox[1] = 0; 
+    $cur_bbox[2] = $hierarchy_value; 
+    $cur_bbox[3] = $hierarchy_value; 
+    $PSEUDO_VINST_ALREADY{$start_module}{$inst}->dbPimDBSetInstRelBbox(@cur_bbox);
+    $PSEUDO_VINST_ALREADY{$start_module}{$inst}->dbPimDBSetInstStatus(PLACED);
+    $PSEUDO_VINST_ALREADY{$start_module}{$inst}->dbPimDBSetInstOrient(N);
+
+    my $curr_module = $MODULE_ALREADY{$start_module}->dbVNOMGetHierInstCell($inst);
+    my @output_pins = $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenGetOutput;
+    my @input_pins = $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenGetInput;
+    my @bidi_pins = $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenGetBidi;
+    my @total_pins = (); 
+    push(@total_pins, @output_pins, @input_pins, @bidi_pins);
+    foreach my $pin (@total_pins){
+      my $curr_module_floor_plan = $start_module."\/".$inst;
+      $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenSetFloorplan($curr_module_floor_plan);
+      $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenSetPhysicalDirty(1);
+      $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenWipePinRect($pin);
+      $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenSetPinStatus($pin, "PLACED");
+      my $pin_layer = "NONE";
+      my @bbox = (0, 0, $hierarchy_value, $hierarchy_value);
+      my $shape = join(" ", $pin_layer, @bbox);
+      $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenAddPinRect($pin, $shape);
+    }
+  }
+  print "\nINFO-UTS : 009 : Done reading placement for instance : $start_module" ;
+
+  print "\n" ; 
+  &commitModule("-module",$start_module,"-floorplan",$start_fplan);
+  #&dbfTstgenUpdateFlplanFromPseudo($start_module,$start_fplan);
+  print "\nINFO-UTS : 010 : Committed  instance : $start_module" ;
+
+  my $full_path_name = "";
+  my @insts0 =  $MODULE_ALREADY{$start_module}->dbVNOMGetHierInst;
+  my @insts =  sort {$a cmp $b} @insts0 ;
+  foreach my $inst ( @insts) {
+    &new_command_testing_subroutine_fire_instance_placement($inst,$inst);
+  }
+}#sub new_command_testing_subroutine_place_top_module
+
+sub new_command_testing_subroutine_fire_instance_placement
+{
+  my $instance_in_process = $_[0] ;
+  my $full_path_name = $_[1] ;
+  my $hierarchy_value = 1 ;
+  if($full_path_name =~ /.*\/.*/) {
+    my @split_names = split(/\//, $full_path_name);
+    $hierarchy_value = $#split_names + 1  ;
+  }
+  print "\nINFO-UTS : 001 : Starting placement for instance : $full_path_name" ;
+  my $parent_module_inprocess = &get_parent_module($full_path_name);
+  my $cellref = $MODULE_ALREADY{$parent_module_inprocess}->dbVNOMGetHierInstCell($instance_in_process);
+  print "\nINFO-UTS : 002 : module : $cellref\n" ;
+  my @hierInsts =  $MODULE_ALREADY{$cellref}->dbVNOMGetHierInst;
+  my @leafInsts = $MODULE_ALREADY{$cellref}->dbVNOMGetLeafInst;
+  if(($#hierInsts + $#leafInsts) < 0){
+    print "\nINFO-UTS : 003 : placement not fired" ;
+    return ;
+  }
+  push(@list_instance_being_placed,$full_path_name);
+  my $global_top_module = $GLOBAL->dbfGlobalGetTOP();
+  my $curr_floor_plan_name = $global_top_module."\/".$full_path_name ; 
+  &editModule("-module",$cellref,"-floorplan",$curr_floor_plan_name);
+  my @size = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetSize;
+  if(($size[2] - $size[0])<=0){
+    print "\nERR-UTS : 004 : size of the module is not set properly" ;
+    print "\nINFO-UTS : 005 : It's size is "; 
+    print join ",",@size;
+    print "\n" ;
+    exit ;
+  }
+  if(($size[3] - $size[1])<=0){
+    print "\nERR-UTS : 006 : size of the module is not set properly" ;
+    print "\nINFO-UTS : 007 : It's size is "; 
+    print join ",",@size;
+    print "\n" ;
+    exit ;
+  }
+  my @output_pins = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetOutput;
+  my @input_pins = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetInput;
+  my @bidi_pins = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetBidi;
+  my @total_pins = () ; 
+  push(@total_pins, @output_pins, @input_pins, @bidi_pins);
+  foreach my $pin (@total_pins){
+    my $status = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetPinStatus($pin);
+    if ($status >0){
+      my @shapes = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetPinRect($pin);
+      my $shape = $shapes[0];
+      $shape =~ s/\bRECT\s+//;  # get rid of RECT keyword
+      $shape =~ s/\s*\;\s*$//;  # get rid of semicolon at end
+      my @xy = split(/\s+/, $shape);
+      shift(@xy);
+      if($xy[2] != $hierarchy_value) {
+        print("\nERR-UTS : 008 : PIN location was not set correctly as per hierarchy in the parent instance");
+        print "\nINFO-UTS : 009 : PIN $pin box coords are "; 
+        print join ",",@xy;
+        print "\n" ;
+        exit ;
+      }
+      if($xy[3] != $hierarchy_value) {
+        print("\nERR-UTS : 010 : PIN location was not set correctly as per hierarchy in the parent instance");
+        print "\nERR-UTS : 011 : PIN $pin box coords are "; 
+        print join ",",@xy;
+        print "\n" ;
+        exit ;
+      }
+    }else {
+      print("\nERR-UTS : 012 : PIN location was not set correctly in the parent instance, it is unplaced");
+      exit ;
+    }
+  }
+  print "\n" ; 
+  &commitModule("-module",$cellref,"-floorplan",$curr_floor_plan_name);
+  #&dbfTstgenUpdateFlplanFromPseudo($cellref,$curr_floor_plan_name);
+  print "\nINFO-UTS : 013 : placement fired" ;
+}#sub new_command_testing_subroutine_fire_instance_placement
+
+sub new_command_testing_read_placement_curr_instance
+{
+  my $full_path_name = $_[0] ;
+  print "\nINFO-UTS : 001 : Reading placement for instance : $full_path_name\n" ;
+  my $instance_in_process = $full_path_name ;
+  if($full_path_name =~ /.*\/.*/) {
+    my @inst_names = split(/\//, $full_path_name);
+    $instance_in_process = $inst_names[$#inst_names];
+  }
+  my $hierarchy_value = 2 ;
+  if($full_path_name =~ /.*\/.*/) {
+    my @split_names = split(/\//, $full_path_name);
+    $hierarchy_value = $#split_names + 2  ;
+  }
+  my $parent_module_inprocess = &get_parent_module($full_path_name);
+  my $cellref = $MODULE_ALREADY{$parent_module_inprocess}->dbVNOMGetHierInstCell($instance_in_process);
+  my $global_top_module = $GLOBAL->dbfGlobalGetTOP();
+  my $curr_floor_plan_name = $global_top_module."\/".$full_path_name ; 
+  &editModule("-module",$cellref,"-floorplan",$curr_floor_plan_name);
+  my @insts0 =  $MODULE_ALREADY{$cellref}->dbVNOMGetHierInst;
+  my @insts =  sort {$a cmp $b} @insts0 ;
+  foreach my $inst ( @insts) {
+    my @cur_bbox = ();
+    $cur_bbox[0] = 0; 
+    $cur_bbox[1] = 0; 
+    $cur_bbox[2] = $hierarchy_value; 
+    $cur_bbox[3] = $hierarchy_value; 
+    $PSEUDO_VINST_ALREADY{$cellref}{$inst}->dbPimDBSetInstRelBbox(@cur_bbox);
+    $PSEUDO_VINST_ALREADY{$cellref}{$inst}->dbPimDBSetInstStatus(PLACED);
+    $PSEUDO_VINST_ALREADY{$cellref}{$inst}->dbPimDBSetInstOrient(N);
+
+    my $curr_module = $MODULE_ALREADY{$cellref}->dbVNOMGetHierInstCell($inst);
+    my @output_pins = $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenGetOutput;
+    my @input_pins = $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenGetInput;
+    my @bidi_pins = $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenGetBidi;
+    my @total_pins ; 
+    push(@total_pins, @output_pins, @input_pins, @bidi_pins);
+    foreach my $pin (@total_pins){
+      my $curr_module_floor_plan = $curr_floor_plan_name."\/".$inst;
+      $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenSetFloorplan($curr_module_floor_plan);
+      $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenSetPhysicalDirty(1);
+      $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenWipePinRect($pin);
+      $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenSetPinStatus($pin, "PLACED");
+      my $pin_layer = "NONE";
+      my @bbox = (0, 0, $hierarchy_value, $hierarchy_value);
+      my $shape = join(" ", $pin_layer, @bbox);
+      $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenAddPinRect($pin, $shape);
+    }
+  }
+  print "\nINFO-UTS : 002 : Done reading placement for instance : $full_path_name" ;
+  print "\n" ; 
+  &commitModule("-module",$cellref,"-floorplan",$curr_floor_plan_name);
+  #&dbfTstgenUpdateFlplanFromPseudo($cellref,$curr_floor_plan_name);
+  print "\nINFO-UTS : 003 : Committed  instance : $full_path_name" ;
+}#sub new_command_testing_read_placement_curr_instance
+
+sub get_parent_module
+{
+  my $hier_inst_name = $_[0];
+  my @inst_names = ($hier_inst_name);
+  if($hier_inst_name =~ /.*\/.*/) {
+    @inst_names = split(/\//, $hier_inst_name);
+  }
+  my $parent_cell_ref =  $GLOBAL->dbfGlobalGetTOP();
+  for(my $i = 0 ; $i < $#inst_names ; $i++){
+    my $curr_inst = $inst_names[$i];  
+    $parent_cell_ref = $MODULE_ALREADY{$parent_cell_ref}->dbVNOMGetHierInstCell($curr_inst);
+  }
+  return $parent_cell_ref;
+}
+1;

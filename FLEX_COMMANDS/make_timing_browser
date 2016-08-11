@@ -1,0 +1,608 @@
+sub read_timing_report {
+use Benchmark;
+my $t0 = new Benchmark;
+
+my $noOfArguments = @_;
+my $input_file;
+my $path_num = 1;
+my $print = 0;
+
+if($noOfArguments < 2 || $_[0] eq '-h' || $_[0] eq '-help' || $_[0] eq '-HELP'){ 
+                        print "Usage : read_timing_report -file <input timing report file>\n";
+                        print "                           -path < path number (defult value is 1)> \n";
+                        print "                           --print < to print xml data on tool_shell> \n";
+                      }
+else{
+  for(my $x = 0; $x < $noOfArguments ; $x++){
+      if($_[$x] eq "-file"){$input_file = $_[$x+1];}
+      if($_[$x] eq "-path"){$path_num = $_[$x+1];}
+      if($_[$x] eq "--print"){$print = 1;}
+  }#for all the arguments
+  if(-e "$input_file" ) {
+    open (READ,"$input_file");
+    my $path_reads = 0;
+    my $path_exists = 0;
+    my @columns = () ;
+    my $read_data = 0;
+    my $hd_st = 0;
+    my $instance_pos = -1 ;                        
+    my $instanceLocation_pos = -1 ;        
+    my $arc_pos = -1 ;              
+    my $cell_pos = -1 ;        
+    my $delay_pos = -1 ;   
+    my $load_pos = -1 ;  
+    my $arrivalTime_pos = -1 ;  
+    my $requiredTime_pos = -1 ;
+    my $slew_pos = -1;
+    my $instance_val = "" ;                        
+    my $instanceLocation_val = "" ;        
+    my $locationX = "";
+    my $locationY = "";
+    my $loc_val = "";
+    my $arc_val = "" ;              
+    my $cell_val = "" ;        
+    my $delay_val = "" ;   
+    my $load_val = "" ;  
+    my $arrivalTime_val = "" ;  
+    my $requiredTime_val = "" ;
+    my $slew_val = "";
+    my $xml_out = "";
+    my $xml = new XML::Writer(OUTPUT => \$xml_out, NEWLINES => 0);
+    
+    while (<READ>) {
+    chomp();
+    if($_ =~ (/^\s*Path\s*\d+/)||(/^\s*PATH\s*\d+/)){
+       my ($pathNum)=(split(/\s+/,$_))[1];
+       $pathNum =~ s/://;
+       if($pathNum == $path_num){
+          $path_reads = 1;
+          $path_exists = 1;
+       }else{
+          $path_reads = 0;
+       }
+    }
+    if($path_reads == 1){
+       if($_ =~ (/^\s*Path\s*\d+/)||(/^\s*PATH\s*\d+/)){
+          $xml->startTag("root");
+          $xml_out .= "\n";
+          $xml->startTag('path', 'num'=>$path_num);
+          @columns = () ;
+       }elsif($_ =~ /^\s*Endpoint/){
+          my $end_point = (split(/\s+/,$_))[1];
+          $xml_out .= "\n";
+          $xml->dataElement("end_point" => $end_point);
+       }elsif($_ =~ /^\s*Beginpoint/){
+          my $begin_point = (split(/\s+/,$_))[1];
+          $xml_out .= "\n";
+          $xml->dataElement("begin_point" => $begin_point);
+       }elsif($_ =~ /^\s*Other\s*End\s*Arrival\s*Time/){
+          my $oeat = (split(/\s+/,$_))[4];
+          $xml_out .= "\n";
+          $xml->dataElement("other_end_arrival_time" => $oeat);
+       }elsif($_ =~ /^\s*-\s*Setup/){
+          my $setup = (split(/\s+/,$_))[2];
+          $xml_out .= "\n";
+          $xml->dataElement("setup" => $setup);
+       }elsif($_ =~ /^\s*\+\s*Phase\s*Shift/){
+          my $phase_shift = (split(/\s+/,$_))[3];
+          $xml_out .= "\n";
+          $xml->dataElement("phase_shift" => $phase_shift);
+       }elsif($_ =~ /^\s*-\s*Uncertainty/){
+          my $uncer = (split(/\s+/,$_))[2];
+          $xml_out .= "\n";
+          $xml->dataElement("uncertanity" => $uncer);
+       }elsif($_ =~ /^\s*Clock\s*Rise\s*Edge/){
+          my $clk_rise_edge = (split(/\s+/,$_))[4];
+          $xml_out .= "\n";
+          $xml->dataElement("clk_rise_edge" => $clk_rise_edge);
+       }elsif ($_ =~/^\s*\+\s*Network\s*Insertion\s*Delay/){
+          my $ntwrk_insrt_dly = (split(/\s+/,$_))[5];
+          $xml_out .= "\n";
+          $xml->dataElement("ntwrk_insrt_dly" => $ntwrk_insrt_dly);
+       }elsif ($_ =~ /^\s*=\s*Beginpoint\s*Arrival\s*Time/){
+          my $bp_arr_time = (split(/\s+/,$_))[5];
+          $xml_out .= "\n";
+          $xml->dataElement("begin_point_arrival_time" => $bp_arr_time);
+       }elsif($_ =~ /^\s*=\s*Required\s*Time\s*\d+/){
+          my $reqtime = (split(/\s+/,$_))[3];
+          $xml_out .= "\n";
+          $xml->dataElement("required_time" => $reqtime);
+       }elsif($_ =~ /^\s*-\s*Arrival\s*Time\s*\d+/){ 
+          my $arrtime = (split(/\s+/,$_))[3];
+          $xml_out .= "\n";
+          $xml->dataElement("arrival_time" => $arrtime);
+       }elsif($_ =~ /Slack\s*Time/){
+          my $slack_time = (split(/\s+/,$_))[3];
+          $xml_out .= "\n";
+          $xml->dataElement("slack_time" => $slack_time);
+       }elsif($_ =~/^\s*\+-+\+\s*$/){
+          if($read_data ==1){
+             $read_data = 0 ;
+             $hd_st = 0;
+             next;
+          }elsif($hd_st ==0){
+            $hd_st = 1;
+            $read_data = 0; 
+            next ;
+          }#elsif
+       }elsif($_ =~/^\s*\|(\+|-)+\|\s*$/){
+          shift(@columns) ;
+          for(my $i = 0 ; $i <=$#columns; $i++) {
+              if($columns[$i] =~ (/^\s*Instance\s*$/)||(/^\s*inst\s*$/)||(/^\s*instance\s*$/)||(/^\s*InstName\s*$/)){$instance_pos = $i;}
+              elsif($columns[$i] =~(/^\s*Instance\s*Location\s*$/)||(/^\s*loc\s*$/)||(/^\s*instloc\s*$/)||(/^\s*location\s*$/)||(/^\s*instance\s*location\s*$/)){$instanceLocation_pos = $i;}
+              elsif($columns[$i] =~/^\s*Arc\s*$/){$arc_pos= $i;}
+              elsif($columns[$i] =~(/^\s*Cell\s*$/)||(/^\s*cellref\s*$/)||(/^\s*cell\s*$/)||(/^\s*CELL\s*$/)||(/^\s*MACRO\s*$/)||(/^\s*instcell\s*$/)){$cell_pos = $i;}
+              elsif($columns[$i] =~(/^\s*Delay\s*$/)||(/^\s*delay\s*$/)||(/^\s*delta\s*$/)||(/^\s*incrdly\s*$/)||(/^\s*dly\s*$/)||(/^\s*instdly\s*$/)||(/^\s*instdelay\s*$/)){$delay_pos = $i;}
+              elsif($columns[$i] =~/^\s*Load\s*$/){$load_pos = $i;}
+              elsif($columns[$i] =~(/^\s*Arrival Time\s*$/)||(/^\s*arrival\s*$/)||(/^\s*Arrival\s*$/)){$arrivalTime_pos = $i;}
+              elsif($columns[$i] =~/^\s*Required Time\s*$/){$requiredTime_pos = $i;}
+              elsif($columns[$i] =~(/^\s*Slew\s*$/)||(/^\s*slew\s*$/)||(/^\s*slope\s*$/)){$slew_pos = $i;}
+          }#for 
+          $hd_st = 0;$read_data = 1; 
+          next ;
+       }
+       if($hd_st == 1 && $read_data == 0){
+              my @curr_column = (split(/\s*\|\s*/,$_));
+              if($#columns ==0){
+                foreach my $temp_col (@curr_column){
+                  push(@columns, $temp_col);
+                }#foreach
+              }else{
+                my $temp_index = 0 ;
+                foreach my $temp_col (@curr_column){
+                  my $temp_val = $columns[$temp_index];
+                  $temp_val = $temp_val." ".$temp_col;
+                  $columns[$temp_index] = $temp_val;
+                  $temp_index++ ;
+                }#foreach
+              }#else
+       }#if hd_st
+       if($read_data == 1 && $hd_st == 0){
+          my @curr_data = (split(/\|\s*/,$_)); 
+          shift(@curr_data);
+          $instance_val = $curr_data[$instance_pos] ;                        
+          $instanceLocation_val = $curr_data[$instanceLocation_pos] ;        
+          ($locationX,$locationY) = (split(/\s*\,\s*/,$instanceLocation_val));
+          $locationX =~ s/\(//;
+          $locationY =~ s/\)//;
+          $loc_val = $locationX." ".$locationY;
+          $arc_val = $curr_data[$arc_pos] ;              
+          $cell_val = $curr_data[$cell_pos] ;        
+          $delay_val = $curr_data[$delay_pos] ;   
+          $load_val = $curr_data[$load_pos] ;  
+          $arrivalTime_val = $curr_data[$arrivalTime_pos] ;  
+          $requiredTime_val = $curr_data[$requiredTime_pos] ;
+          $slew_val = $curr_data[$slew_pos];
+          if($arc_val ne "" && $delay_val ne ""){
+             $xml_out .= "\n";
+             $xml->emptyTag("inst", "name"=>$instance_val,"loc"=>$loc_val,"arc"=>$arc_val,"cell"=>$cell_val,"delay"=>$delay_val,"load"=>$load_val,"arrival_time"=>$arrivalTime_val,"required_time"=>$requiredTime_val,"slew"=>$slew_val);
+          }elsif ($arc_val eq "" && $delay_val ne ""){
+             $xml_out .= "\n";
+             $xml->emptyTag("net", "name"=>$instance_val,"loc"=>$loc_val,"cell"=>$cell_val,"delay"=>$delay_val,"load"=>$load_val,"arrival_time"=>$arrivalTime_val,"required_time"=>$requiredTime_val,"slew"=>$slew_val);
+          }#elsif 
+       }#if read_data
+    }else {next;}
+    }#while
+    if($path_exists == 1){
+       $xml_out .= "\n";
+       $xml->endTag();
+       $xml_out .= "\n";
+       $xml->endTag();
+       $xml->end();
+       print "$xml_out\n" if($print == 1);
+       my $t1 = new Benchmark;
+       my $td = timediff($t1, $t0);
+       print "command read_timing_report took:",timestr($td),"\n";
+       return $xml_out;
+    }else { return "<error_msg> The given path does not found <error_msg>";}
+  }#if file exists
+}
+}#sub read_timing_report
+
+#################################################################################################################
+############################ Subroutine to create image of timing path ##########################################
+#################################################################################################################
+sub create_timing_path_image {
+use Benchmark;
+my $t0 = new Benchmark;
+
+my $noOfArguments = @_;
+my $input_file;
+my $path_num = 1;
+my ($image_width, $image_height) = (540,540);
+my ($image_file, $format) = ("timing_path", "png");
+my @bbox = ();
+my @errBBox = ();
+
+
+if($noOfArguments < 2 || $_[0] eq '-h' || $_[0] eq '-help' || $_[0] eq '-HELP'){ 
+   print "Usage : create_timing_path_image -file <input timing report file>\n";
+   print "                                 -path <path number> \n";
+   print "                                 -output <image file> \n";
+   print "                                 -width <image width> \n";
+   print "                                 -height <image height> \n";
+   print "                                 -bbox <{x1,y1,x2,y2}> \n";
+   print "                                 -format <file format> \n";
+   print" default value <path:1>\n";
+   print" default value <output:flat_view.png>\n";
+   print" default value <width:540>\n";
+   print" default value <height:540>\n";
+   print" default value <format:png>\n";
+   return @errBBox;
+}else{
+   for(my $x = 0; $x < $noOfArguments ; $x++){
+       if($_[$x] eq "-file"){$input_file = $_[$x+1];}
+       if($_[$x] eq "-path"){$path_num = $_[$x+1];}
+       if($_[$x] eq "-output"){$image_file = $_[$x+1];}
+       if($_[$x] eq "-width"){$image_width = $_[$x+1];}
+       if($_[$x] eq "-height"){$image_height = $_[$x+1];}
+       if($_[$x] eq "-format"){$format = $_[$x+1];}
+       if($_[$x] eq "-bbox"){
+          my $bbox_str = $_[$x+1];
+          $bbox_str =~ s/\{//;         
+          $bbox_str =~ s/\}//;        
+          @bbox = split(/\,/,$bbox_str);
+       }
+   }#for all the arguments
+   $image_file = $image_file.".".$format;
+   if(-e "$input_file" ) {
+     open (READ,"$input_file");
+     my $path_reads = 0;
+     my $path_exists = 0;
+     my @columns = () ;
+     my $read_data = 0;
+     my $hd_st = 0;
+     my $instance_pos = -1 ;                        
+     my $instanceLocation_pos = -1 ;        
+     my $arc_pos = -1 ;              
+     my $delay_pos = -1 ;   
+     my $minloc_x = 0;
+     my $maxloc_x = 0;
+     my $minloc_y = 0;
+     my $maxloc_y = 0;
+     my $count = 0;
+     my @instances = ();
+     my @inst_loc = ();
+     
+     while (<READ>) {
+     chomp();
+     if($_ =~ (/^\s*Path\s*\d+/)||(/^\s*PATH\s*\d+/)){
+        my ($pathNum)=(split(/\s+/,$_))[1];
+        $pathNum =~ s/://;
+        if($pathNum == $path_num){
+           $path_reads = 1;
+           $path_exists = 1;
+        }else{
+           $path_reads = 0;
+        }
+     }
+     if($path_reads == 1){
+        if($_ =~/^\s*\+-+\+\s*$/){
+           if($read_data ==1){
+              $read_data = 0 ;
+              $hd_st = 0;
+              next;
+           }elsif($hd_st ==0){
+             $hd_st = 1;
+             $read_data = 0; 
+             next ;
+           }#elsif
+        }elsif($_ =~/^\s*\|(\+|-)+\|\s*$/){
+           shift(@columns) ;
+           for(my $i = 0 ; $i <=$#columns; $i++) {
+               if($columns[$i] =~ (/^\s*Instance\s*$/)||(/^\s*inst\s*$/)||(/^\s*instance\s*$/)||(/^\s*InstName\s*$/)){$instance_pos = $i;}
+               elsif($columns[$i] =~(/^\s*Instance\s*Location\s*$/)||(/^\s*loc\s*$/)||(/^\s*instloc\s*$/)||(/^\s*location\s*$/)||(/^\s*instance\s*location\s*$/)){$instanceLocation_pos = $i;}
+               elsif($columns[$i] =~/^\s*Arc\s*$/){$arc_pos= $i;}
+               elsif($columns[$i] =~(/^\s*Delay\s*$/)||(/^\s*delay\s*$/)||(/^\s*delta\s*$/)||(/^\s*incrdly\s*$/)||(/^\s*dly\s*$/)||(/^\s*instdly\s*$/)||(/^\s*instdelay\s*$/)){$delay_pos = $i;}
+           }#for 
+           $hd_st = 0;$read_data = 1; 
+           next ;
+        }else{}
+        if($hd_st == 1 && $read_data == 0){
+           my @curr_column = (split(/\s*\|\s*/,$_));
+           if($#columns ==0){
+             foreach my $temp_col (@curr_column){
+               push(@columns, $temp_col);
+             }#foreach
+           }else{
+             my $temp_index = 0 ;
+             foreach my $temp_col (@curr_column){
+               my $temp_val = $columns[$temp_index];
+               $temp_val = $temp_val." ".$temp_col;
+               $columns[$temp_index] = $temp_val;
+               $temp_index++ ;
+             }#foreach
+           }#else
+        }#if hd_st
+        if($read_data == 1 && $hd_st == 0){
+           my @curr_data = (split(/\|\s*/,$_)); 
+           shift(@curr_data);
+           my $instance_val = $curr_data[$instance_pos] ;                        
+           my $instanceLocation_val = $curr_data[$instanceLocation_pos] ;        
+           my ($locationX,$locationY) = (split(/\s*\,\s*/,$instanceLocation_val));
+           $locationX =~ s/\(//;
+           $locationY =~ s/\)//;
+           my $loc_val = $locationX." ".$locationY;
+           if($count == 0 && ($locationX ne "" && $locationY ne "")){$minloc_x = $locationX; $maxloc_x = $locationX; $minloc_y = $locationY; $maxloc_y = $locationY;$count++;
+           }
+           else{
+                 if($locationX < $minloc_x && $locationX ne ""){ $minloc_x = $locationX;}
+                 if($locationX > $maxloc_x && $locationX ne ""){ $maxloc_x = $locationX;}
+                 if($locationY < $minloc_y && $locationY ne ""){ $minloc_y = $locationY;}
+                 if($locationY > $maxloc_y && $locationY ne ""){ $maxloc_y = $locationY;}
+           }
+           my $arc_val = $curr_data[$arc_pos] ;              
+           my $delay_val = $curr_data[$delay_pos] ;   
+           if($arc_val ne "" && $delay_val ne ""){
+              push(@instances, $instance_val); 
+              push(@inst_loc, $loc_val); 
+           }#if 
+        }#if read_data
+     }else {next;}
+     }#while
+     if($path_exists == 1){
+       my $im = new GD::Image($image_width,$image_height,[0,0,0]);
+       my $po = new Graphics::ColorNames('X');
+       my $scaleFact = 1;
+       my ($chip_width, $chip_height);
+       my ($guiXScale, $guiYScale);
+       ################## if -bbox option is used ##############
+       #-------- we should scale the design with bbox ---------#
+       if((@bbox < 4) || ($bbox[0] == 0 && $bbox[1] == 0 && $bbox[2] == 0 && $bbox[3] == 0)){
+          @bbox = ($minloc_x,$minloc_y,$maxloc_x,$maxloc_y);
+          $chip_width = abs($maxloc_x - $minloc_x);
+          $chip_height = abs($maxloc_y - $minloc_y);
+          $guiXScale  = ($image_width - 40)/$chip_width;
+          $guiYScale  = ($image_height - 40)/$chip_height;
+       }else{
+          $chip_width = abs($bbox[2] - $bbox[0]);
+          $chip_height = abs($bbox[3] - $bbox[1]);
+          $guiXScale  = $image_width/$chip_width;
+          $guiYScale  = $image_height/$chip_height;
+       }
+       #-------------------------------------------------------#
+       my $shiftX = $bbox[0];
+       my $shiftY = $bbox[1];
+
+       if($guiXScale < $guiYScale){
+          $scaleFact = $guiXScale;
+       }else{
+          $scaleFact = $guiYScale;
+       }
+       my $marginX = ($image_width - $chip_width*$scaleFact)/2;
+       my $marginY = ($image_height - $chip_height*$scaleFact)/2;
+
+       my $chip_llx = ($minloc_x - $shiftX)*$scaleFact;
+       my $chip_lly = ($minloc_y - $shiftY)*$scaleFact;
+       my $chip_urx = ($maxloc_x - $shiftX)*$scaleFact;
+       my $chip_ury = ($maxloc_y - $shiftY)*$scaleFact;
+       if($minloc_x < 0 && $minloc_y < 0){
+          $chip_llx = $image_width/2 + $chip_llx; 
+          $chip_lly = $image_height/2 - $chip_lly; 
+          $chip_urx = $image_width/2 + $chip_urx;
+          $chip_ury = $image_height/2 - $chip_ury;
+       }else{
+          $chip_llx = $marginX + $chip_llx;
+          $chip_lly = ($image_height - $marginY) - $chip_lly;
+          $chip_urx = $marginX + $chip_urx;
+          $chip_ury = ($image_height - $marginY) - $chip_ury;
+       }
+       my $chip_color = $im->colorAllocate($po->rgb("green"));
+       $im->rectangle($chip_llx,$chip_lly,$chip_urx,$chip_ury, $chip_color);
+
+       my $start_inst = shift @instances;
+       my $start_inst_loc = shift @inst_loc; 
+       my ($llx,$lly) = split(/\s+/,$start_inst_loc);
+       $llx = ($llx - $shiftX)*$scaleFact;
+       $lly = ($lly - $shiftY)*$scaleFact;
+       my $urx = $llx + 5;
+       my $ury = $lly + 5;
+       if($minloc_x < 0 && $minloc_y < 0){
+          $llx = $image_width/2 + $llx; 
+          $lly = $image_height/2 - $lly; 
+          $urx = $image_width/2 + $urx;
+          $ury = $image_height/2 - $ury;
+       }else{
+          $llx = $marginX + $llx;
+          $lly = ($image_height - $marginY) - $lly;
+          $urx = $marginX + $urx;
+          $ury = ($image_height - $marginY) - $ury;
+       }
+       my $inst_color = $im->colorAllocate($po->rgb("red"));
+       my $text_color = $im->colorAllocate($po->rgb("white"));
+       my $line_color = $im->colorAllocate($po->rgb("yellow"));
+       $im->rectangle($llx,$lly,$urx,$ury, $inst_color);
+       $im->string(gdSmallFont,$llx,$lly,"S", $text_color);
+       my $previousX = $urx;
+       my $previousY = $ury;
+          
+        my $num_comb_comp = @instances;
+        my $cnt = 0;
+        foreach my $tag ( @instances ) { 
+           $cnt++;
+           my $inst_location = shift @inst_loc;
+           my ($nllx,$nlly) = split(/\s+/,$inst_location);
+           $nllx = ($nllx -$shiftX)*$scaleFact;
+           $nlly = ($nlly -$shiftY)*$scaleFact;
+           my $nurx = $nllx + 5;
+           my $nury = $nlly + 5;
+           if($minloc_x < 0 && $minloc_y < 0){
+              $nllx = $image_width/2 + $nllx; 
+              $nlly = $image_height/2 - $nlly; 
+              $nurx = $image_width/2 + $nurx;
+              $nury = $image_height/2 - $nury;
+           }else{
+              $nllx = $marginX + $nllx;
+              $nlly = ($image_height - $marginY) - $nlly;
+              $nurx = $marginX + $nurx;
+              $nury = ($image_height - $marginY) - $nury;
+           }
+           $im->rectangle($nllx,$nlly,$nurx,$nury, $inst_color);
+           $im->line($previousX, $previousY,$nllx, $nlly, $line_color);
+           $im->string(gdSmallFont,$nllx,$nlly,"E", $text_color) if($cnt == $num_comb_comp);
+           $previousX = $nurx;
+           $previousY = $nury;
+        }#for each instance
+        ##################### context bbox #########################
+        $bbox[0] = $bbox[0] - $marginX/$scaleFact;
+        $bbox[1] = $bbox[1] - $marginY/$scaleFact;
+        $bbox[2] = $bbox[0] + $image_width/$scaleFact;
+        $bbox[3] = $bbox[1] + $image_height/$scaleFact;
+        ############################################################
+        open(PICTURE, ">$image_file") or $! and print"permission denied to write $image_file\n" and return @errBBox;
+        # Make sure we are writing to a binary stream
+        binmode PICTURE;
+        # Convert the image to PNG and print it to the file PICTURE
+        print PICTURE $im->png if($format eq "png");
+        print PICTURE $im->jpeg if($format eq "jpeg");
+        print PICTURE $im->gif() if($format eq "gif");
+        print PICTURE $im->gd if($format eq "gd");
+        print PICTURE $im->gd2 if($format eq "gd2");
+        close PICTURE;
+        return @bbox;
+     }else {return @errBBox;}
+   }#if file exists
+}
+}#sub create_timing_path_image
+
+#################################################################################################################
+################################## Subroutine to return summary as xml ##########################################
+#################################################################################################################
+sub get_report_summary {
+use Benchmark;
+my $t0 = new Benchmark;
+
+my $noOfArguments = @_;
+my $input_file;
+my $print = 0;
+
+if($noOfArguments < 2 || $_[0] eq '-h' || $_[0] eq '-help' || $_[0] eq '-HELP'){ 
+                        print "Usage : get_report_summary -file <input timing report file>\n";
+                        print "                           -print <print the xml data on tool_shell>\n";
+                      }
+else{
+  for(my $x = 0; $x < $noOfArguments ; $x++){
+      if($_[$x] eq "-file"){$input_file = $_[$x+1];}
+      if($_[$x] eq "--print"){$print = 1;}
+  }#for all the arguments
+  if(-e "$input_file" ) {
+    open (READ,"$input_file");
+    my $path_reads = 0;
+    my $end_path_reads = 0;
+    #my $pathNum = "";
+    my @path = ();
+    my @slack = ();
+    my $tns = 0;
+    #my $xml_out = "";
+    #my $xml = new XML::Writer(OUTPUT => \$xml_out, NEWLINES => 0);
+    #$xml->startTag("root");
+    
+    while (<READ>) {
+    chomp();
+
+    if($_ =~ (/^\s*Path\s*\d+/)||(/^\s*PATH\s*\d+/)){$path_reads = 1;$end_path_reads = 0;}
+    elsif($_ =~ (/\s*End\s*Path/)||(/\s*END\s*PATH/)){$end_path_reads=1; $path_reads = 0;}
+
+    if($path_reads == 1 || $end_path_reads == 0){
+       if($_ =~ (/^\s*Path\s*\d+/)||(/^\s*PATH\s*\d+/)){
+          my $pathNum=(split(/\s+/,$_))[1];
+          $pathNum =~ s/://;
+          push(@path, $pathNum);
+       }elsif($_ =~ /Slack\s*Time/){
+          my $slack_time = (split(/\s+/,$_))[3];
+          $tns = $tns + $slack_time;
+          push(@slack, $slack_time);
+          #$xml_out .= "\n";
+          #$xml->startTag('path', 'num'=>$pathNum, 'slack'=>$slack_time);
+          #$xml_out .= "\n";
+          #$xml->endTag();
+          #$pathNum = "";
+       }else{next;}
+    }else {next;}
+    }#while
+    my $xml_out = "";
+    my $xml = new XML::Writer(OUTPUT => \$xml_out, NEWLINES => 0);
+    $xml->startTag("root");
+    my @sort_slack = sort{$a<=>$b}@slack;
+    $xml_out .= "\n";
+    $xml->startTag('summary', 'total_num_path'=>$#path+1, 'TNS'=>$tns, 'WNS'=>$sort_slack[0]);
+    $xml_out .= "\n";
+    $xml->endTag();
+    $xml_out .= "\n";
+    $xml->endTag();
+    $xml->end();
+    print "$xml_out\n" if($print == 1);
+    my $t1 = new Benchmark;
+    my $td = timediff($t1, $t0);
+    print "command get_report_summary took:",timestr($td),"\n";
+    return $xml_out;
+  }#if file exists
+}
+}#sub get_report_summary
+
+#################################################################################################################
+##################################### Subroutine to return histogram data #######################################
+#################################################################################################################
+sub get_histogram_data {
+use Benchmark;
+my $t0 = new Benchmark;
+
+my $noOfArguments = @_;
+my $input_file;
+my $print = 0;
+
+if($noOfArguments < 2 || $_[0] eq '-h' || $_[0] eq '-help' || $_[0] eq '-HELP'){ 
+                        print "Usage : get_histogram_data -file <input timing report file>\n";
+                        print "                           -print <print the xml data on tool_shell>\n";
+                      }
+else{
+  for(my $x = 0; $x < $noOfArguments ; $x++){
+      if($_[$x] eq "-file"){$input_file = $_[$x+1];}
+      if($_[$x] eq "--print"){$print = 1;}
+  }#for all the arguments
+  if(-e "$input_file" ) {
+    open (READ,"$input_file");
+    my $path_reads = 0;
+    my $end_path_reads = 0;
+    my $pathNum = "";
+    my @path = ();
+    my @slack = ();
+    my $tns = 0;
+    my $xml_out = "";
+    my $xml = new XML::Writer(OUTPUT => \$xml_out, NEWLINES => 0);
+    $xml->startTag("root");
+    
+    while (<READ>) {
+    chomp();
+
+    if($_ =~ (/^\s*Path\s*\d+/)||(/^\s*PATH\s*\d+/)){$path_reads = 1;$end_path_reads = 0;}
+    elsif($_ =~ (/\s*End\s*Path/)||(/\s*END\s*PATH/)){$end_path_reads=1; $path_reads = 0;}
+
+    if($path_reads == 1 || $end_path_reads == 0){
+       if($_ =~ (/^\s*Path\s*\d+/)||(/^\s*PATH\s*\d+/)){
+          $pathNum=(split(/\s+/,$_))[1];
+          $pathNum =~ s/://;
+          push(@path, $pathNum);
+       }elsif($_ =~ /Slack\s*Time/){
+          my $slack_time = (split(/\s+/,$_))[3];
+          $tns = $tns + $slack_time;
+          push(@slack, $slack_time);
+          $xml_out .= "\n";
+          $xml->emptyTag('path', 'num'=>$pathNum, 'slack'=>$slack_time);
+          $pathNum = "";
+       }else{next;}
+    }else {next;}
+    }#while
+    $xml_out .= "\n";
+    $xml->endTag();
+    $xml->end();
+    print "$xml_out\n" if($print == 1);
+    my $t1 = new Benchmark;
+    my $td = timediff($t1, $t0);
+    print "command get_histogram_data took:",timestr($td),"\n";
+    return $xml_out;
+  }#if file exists
+}
+}#sub get_histogram_data
+
+1;

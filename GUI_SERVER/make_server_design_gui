@@ -1,0 +1,283 @@
+sub serGetDefData{
+ my $pix_size = $_[0];
+
+ my $top_module = $GLOBAL->dbfGlobalGetTOP;
+ my $dbu = $GLOBAL->dbfGlobalGetDBU;
+ my $comp_str = &getInstanceListString($pix_size);
+
+ my $str = "<design name=\"$top_module\" dbu=\"$dbu\">\n";
+ $str = $str." <dieArea>@{$DIE_ALREADY{dieArea}}</dieArea>\n";
+ if (exists $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$top_module/_self_"}}){
+     my @rows = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$top_module/_self_"}}->dbFlplanGetRows;
+     my $noOfRows = @rows;
+     $str = $str." <rows count=\"$noOfRows\">\n";  
+     foreach my $tag ( @rows ) {
+         $str = $str."  <row>$tag</row>\n";
+     } 
+     $str = $str." </rows>\n";  
+ }#rows
+ my $noOfPorts = keys %{$PORTS_ALREADY{$top_module}};
+ $str = $str." <pins count=\"$noOfPorts\">\n";  
+ foreach my $port ( keys %{$PORTS_ALREADY{$top_module}} ) {
+   my $status = $PORTS_ALREADY{$top_module}{$port}->dbPortGetStatus;
+   my @loc = $PORTS_ALREADY{$top_module}{$port}->dbPortGetLoc;
+   my ($X,$Y,$orient) = &dbPlaceFindClosestBoundary($loc[0],$loc[1]);
+   $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortSetSide($orient);
+   my $dir = $PORTS_ALREADY{$top_module}{$port}->dbPortGetDir;
+   my $orient = $PORTS_ALREADY{$top_module}{$port}->dbPortGetSide;
+   $str = $str."  <pin name=\"$port\" status=\"$status\" orient=\"$orient\" dir=\"$dir\">\n";
+   $str = $str."   <loc>@loc</loc>\n";
+   $str = $str."  </pin>\n";
+ }#ports
+ $str = $str." </pins>\n";
+ $str = $str." <components>\n";
+ $str = $str.$comp_str;
+ $str = $str." </components>\n";
+ $str = $str."</design>\n";
+ return $str;
+}#sub serGetDefData
+
+############################################
+sub getInstanceListString{
+ my $pix_size = $_[0];
+ &create_gcell_db;
+ my $str = "";
+ my $DBSCALEFACTOR = $GLOBAL->dbfGlobalGetDBU;
+ my $MICRONFACTOR = 1;
+ my $dieIsCentre = 0;
+ if (exists $DIE_ALREADY{dieArea} ) {
+     my $guiDiellx = $DIE_ALREADY{dieArea}[0];
+     my $guiDielly = $DIE_ALREADY{dieArea}[1];
+     my $guiDieurx = $DIE_ALREADY{dieArea}[2];
+     my $guiDieury = $DIE_ALREADY{dieArea}[3];
+     
+     my $guiMuDiellx = $guiDiellx/$DBSCALEFACTOR;
+     my $guiMuDielly = $guiDielly/$DBSCALEFACTOR;
+     my $guiMuDieurx = $guiDieurx/$DBSCALEFACTOR;
+     my $guiMuDieury = $guiDieury/$DBSCALEFACTOR;
+     if($guiDiellx == 0 && $guiDielly == 0 ){
+        $dieIsCentre = 0; 
+     }elsif($guiDiellx+$guiDieurx == 0 && $guiDieury+$guiDielly == 0){
+        $dieIsCentre = 1;
+     }else {
+        $dieIsCentre = 2;
+     }
+     $GLOBAL->dbfGlobalSetDieCentre($dieIsCentre);
+     my $guiWidth = abs($guiMuDieurx - $guiMuDiellx) ;
+     my $guiHeight = abs($guiMuDieury - $guiMuDielly) ;
+     my $dieHMultFact  = 500/$guiHeight;
+     my $dieWMultFact  = 500/$guiWidth;
+     
+     if($dieHMultFact < $dieWMultFact){
+        $MICRONFACTOR = $dieHMultFact;
+     }else{
+        $MICRONFACTOR =  $dieWMultFact; 
+     }
+ $GLOBAL->dbGlobalSetMicronFactor($MICRONFACTOR);
+ }#if dieArea exists
+ my $MulFactor = $MICRONFACTOR/$DBSCALEFACTOR;
+ for(my $i=0; $i<=$#GCellArray ; $i++) {
+    for (my $j=0; $j<=$#{@GCellArray[0]} ; $j++) {
+         my @instList = $GCellArray[$i][$j]->dbgGcellGetInst; 
+         my @filtered_inst_array = ();
+         my @displayed_inst_array = ();
+         foreach my $InstanceName (@instList){
+              my @Inst_bbox = $CADB{$InstanceName}->dbCadbGetbBox;;
+              my $cellref = $CADB{$InstanceName}->dbCadbGetCellref;
+              my $status = $CADB{$InstanceName}->dbCadbGetStatus;  
+              my $type = $PLDB{$cellref}->dbMdbGetType;
+              my $class = $PLDB{$cellref}->dbMdbGetClass; 
+              if($status eq "PLACED" || $status eq "FIXED" ) {
+                 my $llx = $Inst_bbox[0]*$MulFactor;
+                 my $lly = $Inst_bbox[1]*$MulFactor;
+                 my $urx = $Inst_bbox[2]*$MulFactor;
+                 my $ury = $Inst_bbox[3]*$MulFactor;
+                 my $is_display = &isDisplayTrue($llx,$lly,$urx,$ury,$pix_size);
+                 if($is_display == 1){
+                    $str = $str."  <component name=\"$InstanceName\" cellref=\"$cellref\" type=\"$type\" class=\"$class\">\n";
+                    $str = $str."   <bbox>@Inst_bbox</bbox>\n";
+                    $str = $str."  </component>\n";
+                    push(@displayed_inst_array,$InstanceName);
+                 }else{ 
+                    push(@filtered_inst_array,$InstanceName);
+                 }
+              }# if component status is fixed or placed
+         } # foreach Instance
+         $GCellArray[$i][$j]->dbgGcellSetFilteredList(@filtered_inst_array);
+         $GCellArray[$i][$j]->dbgGcellSetDisplayedList(@displayed_inst_array);
+    }
+  }
+  return $str;
+}#sub getInstanceListString
+
+############################################
+sub serGetFilterdInstanceList{
+my @view_area = @{$_[0]};
+my $pix_size = $_[1];
+my $dbu = $GLOBAL->dbfGlobalGetDBU;
+my $micron_factor = $GLOBAL->dbGlobalGetMicronFactor;
+my $MulFactor = $micron_factor/$dbu;
+my $str = "";
+for (my $i=0; $i<=$#GCellArray ; $i++) {
+    for (my $j=0; $j<=$#{@GCellArray[0]} ; $j++) {
+      my @bbox = $GCellArray[$i][$j]->dbgGcellGetBBox;
+      $_ *= $MulFactor for @bbox;
+      $_ += 20 for @bbox;
+      if    ($bbox[0] < $view_area[0] && $bbox[2] < $view_area[0]){ 
+      }elsif($bbox[0] > $view_area[2] && $bbox[2] > $view_area[2]){
+      }elsif($bbox[1] < $view_area[1] && $bbox[3] < $view_area[1]){
+      }elsif($bbox[1] > $view_area[3] && $bbox[3] > $view_area[3]){
+      }else {
+        my @instList = $GCellArray[$i][$j]->dbgGcellGetFilteredList;
+        my @filtered_inst_array = ();
+        my @inst_displayed = ();
+        foreach my $InstanceName (@instList){
+           my @Inst_bbox = $CADB{$InstanceName}->dbCadbGetbBox;
+           my $cellref =  $CADB{$InstanceName}->dbCadbGetCellref;
+           my $type = $PLDB{$cellref}->dbMdbGetType;
+           my $class = $PLDB{$cellref}->dbMdbGetClass; 
+           my $llx = $Inst_bbox[0]*$MulFactor;
+           my $lly = $Inst_bbox[1]*$MulFactor;
+           my $urx = $Inst_bbox[2]*$MulFactor;
+           my $ury = $Inst_bbox[3]*$MulFactor;
+           my $dieIsCentre = $GLOBAL->dbfGlobalGetDieCentre; 
+           if($dieIsCentre == 1) {
+              $lly = $lly + 270;
+              $ury = $ury + 270;
+              $llx = $llx + 270;
+              $urx = $urx + 270;
+           }else {
+              $lly = $lly + 20;
+              $ury = $ury + 20;
+              $llx = $llx + 20;
+              $urx = $urx + 20;
+           }
+           if($llx >= $view_area[0] && $llx <= $view_area[2] && $lly >= $view_area[1] && $lly <= $view_area[3]){
+              my $is_display = &isDisplayTrue($llx,$lly,$urx,$ury,$pix_size);
+              if($is_display == 1){
+                 $str = $str."<component name=\"$InstanceName\" cellref=\"$cellref\" type=\"$type\" class=\"$class\">\n";
+                 $str = $str." <bbox>@Inst_bbox</bbox>\n";
+                 $str = $str."</component>\n";
+                 push(@inst_displayed, $InstanceName);
+              }else{ 
+                 push(@filtered_inst_array,$InstanceName);
+              }#if instance is not drawn
+           }#if instance is inside the view area
+           else{push(@filtered_inst_array,$InstanceName);}
+        } # foreach Instance
+        $GCellArray[$i][$j]->dbgGcellSetFilteredList(@filtered_inst_array);
+        my @prev_list =  $GCellArray[$i][$j]->dbgGcellGetDisplayedList;
+        push(@prev_list, @inst_displayed);
+        $GCellArray[$i][$j]->dbgGcellSetDisplayedList(@prev_list);
+      }#if view area overlaps with gcell
+   }
+ }
+ return $str;
+}#sub serGetFilterdInstanceList
+
+############################################
+sub serGetDisplayedInstanceList{
+my @view_area = @{$_[0]};
+my $pix_size = $_[1];
+
+my $dbu = $GLOBAL->dbfGlobalGetDBU;
+my $micron_factor = $GLOBAL->dbGlobalGetMicronFactor;
+my $MulFactor = $micron_factor/$dbu;
+my @instance_to_delete = ();
+for (my $i=0; $i<=$#GCellArray ; $i++) {
+    for (my $j=0; $j<=$#{@GCellArray[0]} ; $j++) {
+      my @bbox = $GCellArray[$i][$j]->dbgGcellGetBBox;
+      $_ *= $MulFactor for @bbox;
+      $_ += 20 for @bbox;
+      if    ($bbox[0] < $view_area[0] && $bbox[2] < $view_area[0]){ 
+      }elsif($bbox[0] > $view_area[2] && $bbox[2] > $view_area[2]){
+      }elsif($bbox[1] < $view_area[1] && $bbox[3] < $view_area[1]){
+      }elsif($bbox[1] > $view_area[3] && $bbox[3] > $view_area[3]){
+      }else {
+        my @instList =  $GCellArray[$i][$j]->dbgGcellGetDisplayedList;
+        my @filtered_inst_array = ();
+        my @inst_displayed = ();
+        foreach my $InstanceName (@instList){
+             my @Inst_bbox = $CADB{$InstanceName}->dbCadbGetbBox;
+             my $llx = $Inst_bbox[0]*$MulFactor;
+             my $lly = $Inst_bbox[1]*$MulFactor;
+             my $urx = $Inst_bbox[2]*$MulFactor;
+             my $ury = $Inst_bbox[3]*$MulFactor;
+             if($llx >= $view_area[0] && $llx <= $view_area[2] && $lly >= $view_area[1] && $lly <= $view_area[3]){
+                my $is_display = &isDisplayTrue($llx,$lly,$urx,$ury,$pix_size);
+                if($is_display == 1){
+                   push(@inst_displayed, $InstanceName);
+                }else{ 
+                   push(@instance_to_delete,$InstanceName);
+                   push(@filtered_inst_array,$InstanceName);
+                }#if instance is not drawn
+             }#if instance is inside the view area
+             else{push(@inst_displayed,$InstanceName);}
+        } # foreach Instance
+        my @prev_list = $GCellArray[$i][$j]->dbgGcellGetFilteredList;
+        push(@prev_list, @filtered_inst_array);
+        $GCellArray[$i][$j]->dbgGcellSetFilteredList(@prev_list);
+        $GCellArray[$i][$j]->dbgGcellSetDisplayedList(@inst_displayed);
+      }#if view area overlaps with gcell
+   }
+ }
+ return "<components>@instance_to_delete</components>";
+}#sub serGetDisplayedInstanceList
+
+############################################
+sub serGetFanInFanOutList{
+ my @arg = @_;
+ my $instList_str = $_[0];
+ my $flyLineMode = $_[1];
+ my $fanOutLimit = $_[2];
+ my @instList = split(/\,/,$instList_str);
+ my $str;
+ foreach my $inst(@instList){
+    $str = $str."<instance name=\"$inst\">\n";
+    foreach my $pin (keys %{$COMP_ALREADY{$inst}} ){
+        my $cellRef = $CADB{$inst}->dbCadbGetCellref;
+        my $pinDirection = $PLDB{$cellRef}->dbMdbGetPinDir($pin);
+        my @sourceInst = ();
+        my @destinationInst = ();
+        my $net = $COMP_ALREADY{$inst}{$pin};
+        my $total_inst_connected = keys %{$NETS_ALREADY{$net}};
+        if($total_inst_connected < 2 || $total_inst_connected > 100){next;}
+        if($flyLineMode eq "LimitedFanouts" && $total_inst_connected >= $fanOutLimit){next;}   
+        foreach my $instance (keys %{$NETS_ALREADY{$net}}){
+            my $pinName = $NETS_ALREADY{$net}{$instance};
+            if(exists $PORTS_ALREADY{$TOP_MODULE}{$instance}){
+               my $status = $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortGetStatus;
+               my @loc = $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortGetLoc;
+               if($inst eq $instance) {push(@sourceInst, $loc[0], $loc[1]);
+               }else {push(@destinationInst, $loc[0], $loc[1]);}
+            }elsif(exists $COMP_ALREADY{$instance}){
+                 my $cellref = $CADB{$instance}->dbCadbGetCellref;
+                 my @instLoc = $CADB{$instance}->dbCadbGetLoc;
+                 my $orient = $CADB{$instance}->dbCadbGetOrient;
+                 if (exists $PLDB{$cellref} ){
+                    my @cellOrigin = $PLDB{$cellref}->dbMdbGetOrigin;
+                    my @cellSize = $PLDB{$cellref}->dbMdbGetSize;
+                    my @pinRects = $PLDB{$cellref}->dbMdbGetPinRect($pinName);
+                    my $firstrect = shift @pinRects;
+                    my ($layer, $llx2, $lly2, $urx2, $ury2)=(split(/\s+/,$firstrect))[0,2,3,4,5];
+                    my @FirstRect = &xformCellPinToInstPin($instLoc[0],$instLoc[1],$cellOrigin[0],$cellOrigin[1],$orient,$cellSize[0],$cellSize[1],$llx2,$lly2,$urx2,$ury2);
+                    my $midx = ($FirstRect[0] + $FirstRect[2])/2;
+                    my $midy = ($FirstRect[1] + $FirstRect[3])/2;
+                    if($inst eq $instance) {push(@sourceInst, $midx, $midy);
+                    }else {push(@destinationInst, $midx, $midy);}
+                 }#if cellref exists
+            }else {}
+        }#foreach instance
+        $str = $str." <pin name=\"$pin\" dir=\"$pinDirection\" loc=\"@sourceInst\">\n"; 
+        $str = $str."  <conn>@destinationInst</conn>\n"; 
+        $str = $str." </pin>\n";
+    }#foreach pin
+    $str = $str."</instance>\n";
+ }#for each instance
+ return $str;
+}#sub serGetFanInFanOutList
+
+############################################
+
+
+1;

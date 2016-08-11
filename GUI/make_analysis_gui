@@ -1,0 +1,83 @@
+sub activate_hierAreaTab{
+    $GLOBAL->dbGlobalSetActiveAnalysisTab("hierArea");
+    $GLOBAL->dbGlobalSetActiveCanvas("hierArea_view");
+    $hierAreaCanv->CanvasFocus;
+}#sub activate_hierAreaTab
+
+
+sub display_hierArea{
+if($GLOBAL->dbGlobalGetVerilogArea == 0){
+   print "WARN: You should run the command report_verilog_area\n";
+   return;
+}
+my $canvas = $_[0];
+   $canvas->createRectangle(-10,-10,910,610, -outline=>"black");
+   $canvas->createRectangle(0,0,900,600, -outline=>"green");
+if(exists $MODULE_ALREADY{$TOP_MODULE}){
+     my $topArea = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetArea;
+     my $canWidth = 900;
+     my $canHeight = 600;
+     my $rowHeight = ($canHeight-32*5)/33;
+     my $llx = 10;
+     my $lly = $canHeight-$rowHeight;
+     my $urx = $canWidth - 10;
+     my $ury = $lly-5;
+   $canvas->createText(($urx+$llx)/2, $lly+5, -text=>$TOP_MODULE, -fill=>"red");
+   $canvas->createRectangle($llx,$lly,$urx,$ury, -outline=>"orange",-fill=>"orange",-stipple=>"gray12");
+   &call_display_hierArea($TOP_MODULE,$topArea,$rowHeight,$canWidth-20,$llx,$ury,$canvas); 
+}#if top Module exists in DB
+
+$canvas->viewAll;
+my @box_org = $canvas->getView();
+&design_ZoomIn_ZoomOut($canvas,\@box_org);
+}#sub display_hierArea
+
+
+sub call_display_hierArea {
+my $parent = $_[0];
+my $parentArea = $_[1];
+my $rowHeight = $_[2];
+my $parentWidth = $_[3];
+my $llx = $_[4];
+my $ury = $_[5];
+my $canvas = $_[6];
+
+my $refX = $llx;
+my $textY = $ury-$rowHeight; #########
+my $totalHinstArea = 0;
+
+if(exists $MODULE_ALREADY{$parent}){
+   my @hierInsts = $MODULE_ALREADY{$parent}->dbVNOMGetHierInst;
+   my @leafInsts = $MODULE_ALREADY{$parent}->dbVNOMGetLeafInst;
+   my $textHeight = $rowHeight/($#hierInsts+2);######
+   foreach my $inst(sort @hierInsts){
+      my $cellref = $MODULE_ALREADY{$parent}->dbVNOMGetHierInstCell($inst);
+      my $hinstArea = $MODULE_ALREADY{$cellref}->dbVNOMGetArea;
+      if($parentArea == 0){next;}
+         my $hinstWidth = $hinstArea*$parentWidth/$parentArea;
+         my $h_llx = $refX;
+         my $h_lly = $ury - $rowHeight;
+         my $h_urx = $h_llx + $hinstWidth;
+         my $h_ury = $h_lly - 5;
+         $refX = $h_urx;
+         $textY = $textY+$textHeight;#######   
+         $totalHinstArea += $hinstArea;
+      $canvas->createLine($h_llx, $textY,$h_llx,$h_lly, -fill=>"white");#,-stipple=>"gray12");######
+      $canvas->createText($h_llx, $textY, -text=>$inst."(".$cellref.")", -fill=>"red","-anchor"=>"w");######
+      #$canvas->createText(($h_urx+$h_llx)/2, $h_lly+5, -text=>$inst."(".$cellref.")", -fill=>"red");
+      $canvas->createRectangle($h_llx,$h_lly,$h_urx,$h_ury, -outline=>"orange", -fill=>"orange",-stipple=>"gray12");
+      &call_display_hierArea($cellref,$hinstArea,$rowHeight,$hinstWidth,$h_llx,$h_ury,$canvas);
+   }#foreach hier inst
+   if($parentArea != 0 && $#leafInsts > -1){
+      my $leafArea = $parentArea - $totalHinstArea;  
+      my $leafWidth = $leafArea*$parentWidth/$parentArea; 
+      my $leaf_llx = $refX;
+      my $leaf_lly = $ury - $rowHeight;
+      my $leaf_urx = $leaf_llx + $leafWidth;
+      my $leaf_ury = $leaf_lly - 5;
+   $canvas->createRectangle($leaf_llx,$leaf_lly,$leaf_urx,$leaf_ury, -outline=>"green",-fill=>"green",-stipple=>"gray12");
+   }#if leaf instance found
+}#if module exists in DB
+}#sub call_display_hierArea
+
+1;

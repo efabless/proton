@@ -1,0 +1,1215 @@
+sub activate_kbTab{
+    $GLOBAL->dbGlobalSetActiveCanvas("kb_view");
+    $KbCanvas->CanvasFocus;
+}#sub activate_kbTab
+
+sub populate_fields {
+    my $hlist = shift;
+    my $create = shift;
+    my @field_array = @_;
+    my $des = shift @field_array;
+if ($create) {
+    $hlist->add($des);
+    $hlist->itemCreate($des, 0, -text => $des);
+}
+    my $i = 1;
+    foreach (@field_array) {
+        $hlist->itemCreate($des, $i, -text => $_);
+        $i++;
+    }
+$hlist->autosetmode();
+}#sub populate_fields
+
+
+sub fill_kb_tab {
+ my ($hlist) = $_[0];
+ my $ShowAll = $_[1];
+ my @res = ();
+ my $DBvalue = $GLOBAL->dbfGlobalGetInitializeDB;
+ if ( $DBvalue == 0 ) {
+      print "WARN-KNLBSE : 001 : first call IntKB to create database table\n";
+      return;
+ }
+  
+ my @fields = $GLOBAL->dbGlobalGetKbfo;    
+ my $i = 0;
+ foreach (@fields) {
+          $hlist->headerCreate($i, -text => "$_");
+          $i++;
+ }
+    
+ $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","$KB_ADMIN","$KB_PASSWD" ) || die "Cannot connect: $DBI::errstr";
+ my $displayList = join (", ", @fields) ;
+
+ if ($ShowAll==1){
+     $res2 = $dbh->selectall_arrayref("SELECT $displayList  FROM designStat  WHERE TestName LIKE '%%' ORDER BY RID");
+     @res = @$res2;
+ }else {
+     my @len;
+     my $res = ();
+        $sth = $dbh->prepare("SELECT TestName FROM designStat WHERE RID = 0");
+        $sth->execute();
+        while (my $test = $sth->fetchrow_array){
+               my @RID = ();
+               my @finalRID = (0);
+                  $sth1 = $dbh->prepare("SELECT RID FROM designStat WHERE TestName = '$test'");
+                  $sth1->execute();
+               while (my @rid = $sth1->fetchrow_array){push (@RID, $rid[0]);}
+                  my $length = @RID;
+                  for (my $i = 1; $i <= 9; $i ++){
+                   if ($i>= $length){ last;}
+                   push (@finalRID, $RID[-$i]);}
+                   my $List = join (", ", @finalRID) ;
+                      $sm = $dbh->prepare("SELECT $displayList  FROM designStat WHERE RID IN ($List) AND TestName = '$test' ORDER BY RID");
+                      $sm->execute();
+                      while (my @res1 = $sm->fetchrow_array){ push (@res, [@res1]);}
+       }#while testcases found 
+  }#if ShowAll!=1
+
+foreach( @res ) {
+         populate_fields($hlist, 1, @{$_});
+                 }
+}#sub fill_kb_tab
+
+
+sub call_TestCase{
+   $dbSelecttest = $_[0];
+my $sth = $dbh->prepare("SELECT TestName,TestPath,ScriptName FROM designStat WHERE ID = '$dbSelecttest'");
+$sth->execute();
+($SelectedTestName,$SelectedTestPath,$SelectedTestScript) = $sth->fetchrow_array();
+return($SelectedTestName,$SelectedTestPath,$SelectedTestScript);
+}#sub call_TestCase
+
+sub dbfUpdateGolden {
+    @curr_fields = qw(s3649   -0.116  -12.66  179     1829    2044    36      49      1       2.315068493     0.7     4       0.18    1.8     typical SVT);
+    populate_fields($hlist, "GOLDEN", 0, @curr_fields);
+}
+
+sub dbfRefreshKBView {
+use Benchmark;
+my $t0 = new Benchmark;
+
+my $hlist = $_[0];
+my @res =();
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","$KB_ADMIN","$KB_PASSWD" ) || die "Cannot connect: $DBI::errstr";
+my @fields = $GLOBAL->dbGlobalGetKbfo;
+my $displayList = join (", ", @fields) ;
+
+if($toggle_default_showAll == 1){
+my @len;
+my $res = ();
+$sth = $dbh->prepare("SELECT TestName FROM designStat WHERE RID = 0");
+$sth->execute();
+
+while (my $test = $sth->fetchrow_array){
+my @RID = ();
+my @finalRID = (0);
+$sth1 = $dbh->prepare("SELECT RID FROM designStat WHERE TestName = '$test'");
+$sth1->execute();
+while (my @rid = $sth1->fetchrow_array){push (@RID, $rid[0]);}
+my $length = @RID;
+for (my $i = 1; $i <= 9; $i ++){
+if ($i>= $length){ last;}
+push (@finalRID, $RID[-$i]);}
+my $List = join (", ", @finalRID) ;
+########################################################################################################
+$sm = $dbh->prepare("SELECT $displayList  FROM designStat WHERE RID IN ($List) AND TestName = '$test' ORDER BY RID");
+$sm->execute();
+while (my @res1 = $sm->fetchrow_array){ push (@res, [@res1]);}
+}
+}
+else {
+   $res2 = $dbh->selectall_arrayref("SELECT $displayList  FROM designStat  WHERE TestName LIKE '%%' ORDER BY ID");
+   @res = @$res2;
+ }
+    foreach( @res ) {
+           populate_fields($hlist, 0, @{$_});
+                     }
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "command refresh took:",timestr($td),"\n";
+}#sub dbfRefreshKBView
+
+#---------------------------------------------------------------------------#
+
+sub popup_register_testcase { 
+my $testName = "";
+my $testPath = "";
+my $testScript = "";
+my $testCategory = "";
+my $toolName = "";
+my $cvsPath = "";
+my $popupgui = MainWindow->new();
+$popupgui->title ("Register Testcase");
+#my $lockVar = 0;
+my $book = $popupgui->NoteBook()->pack( -fill=>'both');
+my $tab1 = $book->add( "Sheet 1", -label=>"Basic");
+my $tab2 = $book->add( "Sheet 2", -label=>"Advance");
+######################### for Basic tab => tab1 ############################
+        my $EntryFrame1=$tab1->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $EntryFrame2=$tab1->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $EntryFrame3=$tab1->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $EntryFrame4=$tab1->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $EntryFrame5=$tab1->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $EntryFrame6=$tab1->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $ButtonFrame1=$tab1->Frame->pack(-side => 'top',-anchor=>'n');
+       
+$EntryFrame1->Label(-text => "testName")->pack(-side =>'left', -anchor => 'w');
+$EntryFrame1->Entry(-textvariable =>\$testName)->pack(-side =>'left', -anchor => 'w',
+                                                  -fill => 'x', -expand=> '1');
+$EntryFrame2->Label(-text => "testPath  ")->pack(-side =>'left', -anchor => 'w');
+$EntryFrame2->Entry(-textvariable =>\$testPath)->pack(-side =>'left', -anchor => 'w',
+                                                  -fill => 'x', -expand=> '1');
+$EntryFrame3->Label(-text => "testScript")->pack(-side =>'left', -anchor => 'w');
+$EntryFrame3->Entry(-textvariable =>\$testScript)->pack(-side =>'left', -anchor => 'w',
+                                                  -fill => 'x', -expand=> '1');
+$EntryFrame4->Label(-text => "Ctegory   ")->pack(-side =>'left', -anchor => 'w');
+$EntryFrame4->Entry(-textvariable =>\$testCategory)->pack(-side =>'left', -anchor => 'w',
+                                                  -fill => 'x', -expand=> '1');
+$EntryFrame5->Label(-text => "toolName")->pack(-side =>'left', -anchor => 'w');
+$EntryFrame5->Entry(-textvariable =>\$toolName)->pack(-side =>'left', -anchor => 'w',
+                                                  -fill => 'x', -expand=> '1');
+$EntryFrame6->Label(-text => "cvsPath  ")->pack(-side =>'left', -anchor => 'w');
+$EntryFrame6->Entry(-textvariable =>\$cvsPath)->pack(-side =>'left', -anchor => 'w',
+                                                  -fill => 'x', -expand=> '1');
+$OkButton = $ButtonFrame1->Button(-text=>'Ok',-command =>sub {&register_testcase(-name,$testName,-path,$testPath,-script,$testScript,-category,$testCategory,-toolName,$toolName,-cvsPath,$cvsPath,-freq,$frequency,-mac,$MachineName,-macLock,$lockVar);
+$popupgui->destroy;}                                    
+                                     )->pack(-side => 'left',-anchor=>'n');
+
+$ApplyButton = $ButtonFrame1->Button(-text=>'Apply',-command =>sub {&register_testcase(-name,$testName,-path,$testPath,-script,$testScript,-category,$testCategory,-toolName,$toolName,-cvsPath,$cvsPath,-freq,$frequency,-mac,$MachineName,-macLock,$lockVar);}                                    
+                                     )->pack(-side => 'left',-anchor=>'n');
+$cancelbutton = $ButtonFrame1->Button(-text=>'Cancel',-command =>sub {$popupgui->destroy;}
+                                     )->pack(-side => 'left');
+############################## for Advance tab => tab2 ##########################
+
+        my $EntryFrame21=$tab2->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $EntryFrame22=$tab2->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $EntryFrame23=$tab2->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $ButtonFrame2=$tab2->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1);
+
+
+$EntryFrame21->Label(-text => "testCategory  ")->pack(-side =>'left', -anchor => 'w');
+$EntryFrame21->Entry(-textvariable =>\$testCategory)->pack(-side =>'left', -anchor => 'w',
+                                                  -fill => 'x', -expand=> '1');
+$EntryFrame22->Label(-text => "Frequency       ")->pack(-side =>'left', -anchor => 'w');
+$EntryFrame22->Entry(-textvariable =>\$frequency)->pack(-side =>'left', -anchor => 'w',
+                                                  -fill => 'x', -expand=> '1');
+
+
+$ButtonFrame2->Checkbutton(-variable =>\$lockVar,
+  		     -onvalue => 1,
+  		     -text => "MacLock",
+                     -command => sub{} 
+                                   )->pack(-side =>"left");  
+$EntryFrame23->Label(-text => "MachineName")->pack(-side =>'left', -anchor => 'w');
+$EntryFrame23->Entry(-textvariable =>\$MachineName)->pack(-side =>'left', -anchor => 'w',
+                                                  -fill => 'x', -expand=> '1');
+
+}#sub popup_register_testcase
+
+#---------------------------------------------------------------------------#
+sub popup_column_displayOrder { 
+my %keysyms = (' ' => 'space', '/' => 'slash', "," => 'comma');
+my @COLUMNS = ();
+my @COLORDER = ();
+
+my $popupgui = MainWindow->new();
+$popupgui->title ("Set Column Order");
+        my $EntryFrame=$popupgui->Frame()->pack(-side => 'top',-anchor=>'n',-expand=>1, -fill=>'x');
+        my $ListFrame =$popupgui->Frame()->pack(-side => 'top',-anchor=>'n');  
+        my $ButtonFrame=$popupgui->Frame()->pack(-side => 'top',-anchor=>'n',-expand=>1, -fill=>'x');
+        my $ButtonFrame1=$ButtonFrame->Frame()->pack(-side => 'top',-anchor=>'n',);
+
+my @fields = $GLOBAL->dbGlobalGetKbfo;
+my $n = @fields;
+my $columnName = "";
+
+   $EntryFrame->Label(-text => "COLUMNS NAME :",-font=> "Times 10 italic",)->pack(-side =>'left', -anchor => 'w');
+my $entry = $EntryFrame->Entry(-textvariable =>\$columnName)->pack(-side =>'left', -anchor => 'w',-expand=>1,-fill=>'x');
+
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE",qaadmin,qaadmin ) || die "Cannot connect: $DBI::errstr";
+$sth = $dbh->prepare("SHOW COLUMNS FROM designStat");
+$sth->execute();
+while (($colName) = $sth->fetchrow_array) { if ($colName eq "ID"){}
+                                            else {push(@COLUMNS,$colName);} }
+
+my $list = $ListFrame->Scrolled('Listbox',
+                              -listvariable => \@COLUMNS,
+                              -scrollbars=>'osoe',
+                               )->pack(-side=>'left'); 
+$list->Subwidget("yscrollbar")->configure(-width=>10);
+
+
+    $list->bind( '<Button-1>', sub {  
+                                          my $selection =  $_[0]->get( $_[0]->curselection);
+                                          my $entryFound = 0;
+                                          foreach (@COLORDER){if ($_ eq $selection){$entryFound = 1;}}
+                                          if($entryFound == 1){print "WARN-KNLBSE : 001 : you have allready selected $selection\n";}
+                                          else { 
+                                             push(@COLORDER,$selection);
+                                             $columnName = "";
+                                             $columnName = join(",",@COLORDER);
+                                                 }#else
+                                                });
+
+
+my $list1 = $ListFrame->Scrolled('Listbox',
+                              -listvariable => \@COLORDER,
+                              -scrollbars=>'osoe',
+                               )->pack(-side=>'left'); 
+$list1->Subwidget("yscrollbar")->configure(-width=>10);
+    $list1->bind( '<Button-1>', sub {  
+                                     my @temp =();
+                                        $columnName = "";
+                                     my $selection1 =  $_[0]->get( $_[0]->curselection);
+                                     foreach (@COLORDER){
+                                          if($_ eq $selection1){}
+                                          else { push(@temp, $_);}
+                                                         }  
+                                          @COLORDER = ();
+                                          @COLORDER = @temp;
+                                          $columnName = join (",",@COLORDER);
+                                                });
+
+my $DisplayButton = $ButtonFrame1->Button(-text=>'Display',-relief=>'groove',-pady=>0,
+                                          -command =>sub {&call_kb_field_order($columnName);
+                                            $hlist->delete("all");
+                                            for ($i=1;$i<$n;$i++){
+                                                         if ( $hlist->headerExists($i)){
+                                                              $hlist->headerDelete($i);}
+                                                                  }#for existing headers
+                                            &fill_kb_tab($hlist);}
+                                         )->pack(-side => 'left',-anchor=>'n');
+
+my $exitbutton = $ButtonFrame1->Button(-text=>'Exit',-relief=>'groove',-pady=>0,
+                                       -command =>sub {$popupgui->destroy;}
+                                     )->pack(-side => 'left');
+}#popup_column_displayOrder
+
+sub call_kb_field_order {
+my $colName = $_[0];
+my @colName = ('ID');
+my @array_colName  = split(/\,/,$colName);
+push(@colName,@array_colName); 
+&set_kb_field_order(@colName);
+}#call_kb_field_order
+
+sub popup_setGoldenValue {
+
+my $popupgui = MainWindow->new();
+$popupgui->title ("Select golden values for test");
+        my $Frame1=$popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $Frame2=$popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $Frame3=$popupgui->Frame()->pack(-side => 'bottom',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $ButtonFrame = $Frame3->Frame()->pack(-side=>'bottom');
+
+$Frame1->Label(-text => "TestName",-font=>"Times 10 italic")->pack(-side =>'left', -anchor => 'w');
+$Frame1->Entry(-textvariable =>\$SelectedTestName)->pack(-side =>'left', -anchor => 'w',-fill => 'x', -expand=> '1');
+$Frame2->Label(-text => "TestRID ",-font=>"Times 10 italic")->pack(-side =>'left', -anchor => 'w');
+$Frame2->Entry(-textvariable =>\$SelectedRID)->pack(-side =>'left', -anchor => 'w',-fill => 'x', -expand=> '1');
+                                                  
+my $Applybutton = $ButtonFrame->Button(-text=>'Apply', 
+                                       -pady=>0,                                                                                                                -command =>sub {&setGoldenValue($SelectedTestName, $SelectedRID);
+                                                                   }
+                                     )->pack(-side => 'left');
+
+my $Okbutton = $ButtonFrame->Button(-text=>'Ok', 
+                                    -pady=>0, 
+                                    -command =>sub {&setGoldenValue($SelectedTestName, $SelectedRID);
+                                                                   $popupgui->destroy;}
+                                     )->pack(-side => 'left');
+
+
+my $cancelbutton = $ButtonFrame->Button(-text=>'Cancel', 
+                                     -pady=>0,                                                                                                                             -command =>sub {$popupgui->destroy;},
+                                     )->pack(-side => 'left');
+
+}#sub popup_setGoldenValue
+
+sub setGoldenValue {
+my $test = $_[0];
+my $rid = $_[1];
+my @fields = $GLOBAL->dbGlobalGetKbfo;    
+my $displayList = join (", ", @fields) ;
+my $length = @fields;
+    
+$dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","$KB_ADMIN","$KB_PASSWD" ) || die "Cannot connect: $DBI::errstr";
+
+$sm = $dbh->prepare("SELECT $displayList  FROM designStat WHERE RID = $rid AND TestName = '$test'");
+$sm->execute();
+my @value = $sm->fetchrow_array();
+for (my $i = 3; $i< $length; $i++){
+my $col = $fields[$i];
+my $val = $value[$i];
+$dbh->do( "UPDATE designStat SET $col='$val' WHERE RID=0 AND TestName='$test'" );
+                                     }
+}#sub setGoldenValue 
+
+
+sub toggle_default_showAll {
+if ($kbColumn->cget('-text') eq 'ShowAll') {
+                                           #&popup_select_column;
+                                           $hlist->delete("all");
+                                           &fill_kb_tab($hlist,1);
+        $kbColumn->configure(-text => 'Default',
+                             -relief=>'groove',
+                             -padx=>0, -pady=>0,
+                                );
+         $toggle_default_showAll = 0;
+                  } 
+ elsif ($kbColumn->cget('-text') eq 'Default') {     
+                                           $hlist->delete("all");
+                                           &fill_kb_tab($hlist);
+        $kbColumn->configure(-text => 'ShowAll',
+                             -relief=>'groove',
+                             -padx=>0, -pady=>0,
+                                );
+         $toggle_default_showAll = 1;
+                  } 
+}#sub toggle_default_showAll
+
+sub find_Testcases {
+my %TESTHASH;
+my $pattern = $_[0];
+my $hlist = $_[1];
+$hlist->delete("all");
+my @patterns = split(/\,/,$pattern);
+my $patlen = @patterns;
+my @res =();
+my @testNames = ();
+
+my @fields = $GLOBAL->dbGlobalGetKbfo;    
+my $displayList = join (", ", @fields) ;
+
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","$KB_ADMIN","$KB_PASSWD" ) || die "Cannot connect: $DBI::errstr";
+$sth = $dbh->prepare("SELECT TestName FROM designStat WHERE RID = 0");
+$sth->execute();
+
+my $i = 0;
+while (my $t = $sth->fetchrow_array){foreach my $pat(@patterns){
+                                          my $pat = "\.\*".$pat."\.\*";
+                                          if ( $t =~ /$pat/ ){
+                                                    if ($i == 0){
+                                                       $TESTHASH{$t} = $i;
+                                                              push (@testNames, $t);
+                                                                }
+                                                     else {
+                                                          if(exists $TESTHASH{$t}){ }
+                                                          else { $TESTHASH{$t} = $i;
+                                                              push (@testNames, $t);}
+                                                           }  
+                                                                            $i++
+                                                               }#if pattern matches
+                                                              }#foreach pattern                       
+                                     }#while
+if($toggle_default_showAll == 1){
+my @len;
+
+foreach $test(@testNames){
+my @RID = ();
+my @finalRID = (0);
+$sth1 = $dbh->prepare("SELECT RID FROM designStat WHERE TestName = '$test'");
+$sth1->execute();
+while (my @rid = $sth1->fetchrow_array){push (@RID, $rid[0]);}
+my $length = @RID;
+for (my $i = 1; $i <= 9; $i ++){
+if ($i>= $length){ last;}
+push (@finalRID, $RID[-$i]);}
+my $List = join (", ", @finalRID) ;
+########################################################################################################
+$sm = $dbh->prepare("SELECT $displayList  FROM designStat WHERE RID IN ($List) AND TestName = '$test' ORDER BY RID");
+$sm->execute();
+while (my @res1 = $sm->fetchrow_array){ push (@res, [@res1]);}
+
+}
+}
+else {
+foreach $test(@testNames){
+$sm1 = $dbh->prepare("SELECT $displayList  FROM designStat WHERE TestName = '$test' ORDER BY RID");
+$sm1->execute();
+while (my @res2 = $sm1->fetchrow_array){ push (@res, [@res2]);}
+}
+ }
+    foreach( @res ) {
+           populate_fields($hlist, 1, @{$_});
+                     }
+
+}#sub find_Testcases
+
+sub find_Testcases1 {
+#my $testName = @_;
+#my @testNames = split(/\,/,$testName);
+
+my $pat = $_[0];
+my $hlist = $_[1];
+
+my @res =();
+my @testNames = ();
+$pat = "\.\*".$pat."\.\*";
+
+my @fields = $GLOBAL->dbGlobalGetKbfo;    
+my $displayList = join (", ", @fields) ;
+
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","$KB_ADMIN","$KB_PASSWD" ) || die "Cannot connect: $DBI::errstr";
+$sth = $dbh->prepare("SELECT TestName FROM designStat WHERE RID = 0");
+$sth->execute();
+while (my $t = $sth->fetchrow_array){if ( $t =~ /$pat/ ){
+                                     push (@testNames, $t);}
+                                     }
+
+if($toggle_default_showAll == 1){
+my @len;
+
+foreach $test(@testNames){
+my @RID = ();
+my @finalRID = (0);
+$sth1 = $dbh->prepare("SELECT RID FROM designStat WHERE TestName = '$test'");
+$sth1->execute();
+while (my @rid = $sth1->fetchrow_array){push (@RID, $rid[0]);}
+my $length = @RID;
+for (my $i = 1; $i <= 9; $i ++){
+if ($i>= $length){ last;}
+push (@finalRID, $RID[-$i]);}
+my $List = join (", ", @finalRID) ;
+########################################################################################################
+$sm = $dbh->prepare("SELECT $displayList  FROM designStat WHERE RID IN ($List) AND TestName = '$test' ORDER BY RID");
+$sm->execute();
+while (my @res1 = $sm->fetchrow_array){ push (@res, [@res1]);}
+
+}
+}
+else {
+foreach $test(@testNames){
+$sm1 = $dbh->prepare("SELECT $displayList  FROM designStat WHERE TestName = '$test' ORDER BY RID");
+$sm1->execute();
+while (my @res2 = $sm1->fetchrow_array){ push (@res, [@res2]);}
+}
+ }
+    foreach( @res ) {
+           populate_fields($hlist, 1, @{$_});
+                     }
+}#sub find_Testcases1
+
+
+############################  code to plot graph and take its snapshot from proton ###################
+sub snapshot {
+#****f* /snapshot
+# NAME
+#   snapshot
+# FUNCTION
+#    plot the graph in proton gui for each testcase in Kb database and take its snapshots.
+#    snapshot has the following command line options .
+# SYNOPSIS
+#   snapshot -path <dirName where you want to create GUI_SCREENSHOTS dir which will store all jpeg/png/ps file>
+#            -test <testcase for whitch you want to create snapshot,you can choose All for all testcases.
+#                    by default it takes snapshots for all testcases>
+#            -format <.png/.jpg/.ps (by default it chooses .png format>                       
+# INPUTS
+#      options :
+#            -path <dirName where you want to create GUI_SCREENSHOTS dir which will store all jpeg/png/ps file>
+#            -test <testcase for whitch you want to create snapshot,you can choose All for all testcases.
+#                    by default it takes snapshots for all testcases>
+#            -format <.png/.jpg/.ps (by default it chooses .png format> 
+# OUTPUTS
+#      generates GUI_SCREENSHOTS dir which contains the snapshot files for kb graphs.
+#****
+
+my $path;
+my $testcaseName;
+my $fileFormat ; 
+my $NoOfArg = @_;
+for(my $i =0 ; $i<$NoOfArg; $i++){
+if ($_[$i] eq "-path"){$path = $_[$i+1];}
+if ($_[$i] eq "-test"){$testcaseName = $_[$i+1];}
+if ($_[$i] eq "-format"){$fileFormat = $_[$i+1];}
+}#for no of arguments
+
+if($path eq ""){$path = "/home/rajeevs/public_html";}
+if($testcaseName eq ""){$testcaseName = "All";}
+if($fileFormat eq ""){$fileFormat  = ".png"; }
+
+if ($_[0] eq '-h' || $_[0] eq "-help" || $_[0] eq "-HELP"){
+                   print "usage: snapshot -dir <directoryName>\n";   
+                   print "                -test <testName/All(default value is All)>\n";                      
+                   print "                -format <.jpg/.png/.ps (default value is .png)>\n";
+                   return;}
+                   
+my $dir = "GUI_SCREENSHOTS";
+my $maindir = "$path/$dir";
+
+if (-e $maindir){system("rm -rf $maindir");}
+system("mkdir $maindir");
+
+if($testcaseName eq "All"){
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","$KB_ADMIN","$KB_PASSWD" ) || die "Cannot connect: $DBI::errstr";
+$sth = $dbh->prepare("SELECT TestName FROM designStat WHERE RID = 0");
+$sth->execute();
+while (my $t = $sth->fetchrow_array){
+#my $savedir = "$maindir/$t";
+#system("mkdir $savedir");
+
+&plot_graph("-testName", "$t", "-refField", "RID", "-dataField", "00area,01area,10area,11area");
+$top->update;
+&kb_screenshot1($t."_area".$fileFormat);
+&plot_graph("-testName", "$t", "-refField", "RID", "-dataField", "00slack,01slack,10slack,11slack");
+$top->update;
+&kb_screenshot1($t."_slack".$fileFormat);
+&plot_graph("-testName", "$t", "-refField", "RID", "-dataField", "00tns,01tns,10tns,11tns");
+$top->update;
+&kb_screenshot1($t."_tns".$fileFormat);
+&plot_graph("-testName", "$t", "-refField", "RID", "-dataField", "00utime,01utime,10utime,11utime");
+$top->update;
+&kb_screenshot1($t."_utime".$fileFormat);
+&plot_graph("-testName", "$t", "-refField", "RID", "-dataField", "00vmem,01vmem,10vmem,11vmem");
+$top->update;
+&kb_screenshot1($t."_vmem".$fileFormat);
+
+my $file1 = $t."_area".$fileFormat; 
+my $file2 = $t."_slack".$fileFormat; 
+my $file3 = $t."_tns".$fileFormat; 
+my $file4 = $t."_utime".$fileFormat; 
+my $file5 = $t."_vmem".$fileFormat; 
+####----------------------------------------------------------------------------------------------------------##
+sysopen (HTML,$t, O_RDWR|O_EXCL|O_CREAT, 0755);
+    printf HTML "<html>\n";
+printf HTML "<IMG SRC=$file1>\n";
+printf HTML "<IMG SRC=$file2>\n";
+printf HTML "<IMG SRC=$file3>\n";
+printf HTML "<IMG SRC=$file4>\n";
+printf HTML "<IMG SRC=$file5>\n";
+    printf HTML "</html>\n";
+    close (HTML);
+####----------------------------------------------------------------------------------------------------------##
+#system("mv $t $savedir");
+system("mv *$fileFormat $maindir");
+system("mv $t $maindir");
+                                     }#while
+}#for all testcases
+else {
+#my $savedir = "$maindir/$testcaseName";
+#system("mkdir $savedir");
+&plot_graph("-testName", "$testcaseName", "-refField", "RID", "-dataField", "00area,01area,10area,11area");
+$top->update;
+&kb_screenshot1($testcaseName."_area".$fileFormat);
+&plot_graph("-testName", "$testcaseName", "-refField", "RID", "-dataField", "00slack,01slack,10slack,11slack");
+$top->update;
+&kb_screenshot1($testcaseName."_slack".$fileFormat);
+&plot_graph("-testName", "$testcaseName", "-refField", "RID", "-dataField", "00tns,01tns,10tns,11tns");
+$top->update;
+&kb_screenshot1($testcaseName."_tns".$fileFormat);
+
+&plot_graph("-testName", "$t", "-refField", "RID", "-dataField", "00utime,01utime,10utime,11utime");
+$top->update;
+&kb_screenshot1($t."_utime".$fileFormat);
+&plot_graph("-testName", "$t", "-refField", "RID", "-dataField", "00vmem,01vmem,10vmem,11vmem");
+$top->update;
+&kb_screenshot1($t."_vmem".$fileFormat);
+
+my $file1 = $t."_area".$fileFormat; 
+my $file2 = $t."_slack".$fileFormat; 
+my $file3 = $t."_tns".$fileFormat; 
+my $file4 = $t."_utime".$fileFormat; 
+my $file5 = $t."_vmem".$fileFormat; 
+####----------------------------------------------------------------------------------------------------------##
+sysopen (HTML,$t, O_RDWR|O_EXCL|O_CREAT, 0755);
+    printf HTML "<html>\n";
+printf HTML "<IMG SRC=$file1>\n";
+printf HTML "<IMG SRC=$file2>\n";
+printf HTML "<IMG SRC=$file3>\n";
+printf HTML "<IMG SRC=$file4>\n";
+printf HTML "<IMG SRC=$file5>\n";
+    printf HTML "</html>\n";
+    close (HTML);
+####----------------------------------------------------------------------------------------------------------##
+#system("mv $t $savedir");
+system("mv *$fileFormat $maindir");
+system("mv $testcaseName $maindir");
+}
+
+}#sub snapshot
+
+
+sub popup_kb_snapshot {
+my @Test_Name = ();
+my @File_Format = (".png",".jpg", ".ps");
+my $testcaseName = "All";
+my $fileFormat = ".png";
+
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","$KB_ADMIN","$KB_PASSWD" ) || die "Cannot connect: $DBI::errstr";
+$sth = $dbh->prepare("SELECT TestName FROM designStat WHERE RID = 0");
+$sth->execute();
+while (my $t = $sth->fetchrow_array){push(@Test_Name, $t)}
+push(@Test_Name, "All");
+
+my $popupgui = MainWindow->new();
+$popupgui->title ("Choose Path to make GUI_SCREENSHOT Dir");
+        my $Frame1=$popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $Frame3=$popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $Frame4=$popupgui->Frame()->pack(-side => 'bottom',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $ButtonFrame = $Frame4->Frame()->pack(-side=>'bottom');
+
+$Frame1->Label(-text => "Directory        ",-font=>"Times 10 italic")->pack(-side =>'left', -anchor => 'w');
+$Frame1->Entry(-textvariable =>\$pathName)->pack(-side =>'left', -anchor => 'w',-fill => 'x', -expand=> '1');
+
+
+$Frame3->Label(-text => "Testcase",-font=>"Times 10 italic")->pack(-side =>'left', -anchor => 'w');
+my $testcase_dropdown = $Frame3->BrowseEntry(-variable => \$testcaseName,-width=>10,)->pack(-side=>"left");
+foreach (@Test_Name) {$testcase_dropdown->insert('end', $_);}
+
+$Frame3->Label(-text => "fileFormat  ",-font=>"Times 10 italic")->pack(-side =>'left', -anchor => 'w');
+my $Format_dropdown = $Frame3->BrowseEntry(-variable => \$fileFormat,-width=>5)->pack;
+foreach (@File_Format  ) {$Format_dropdown->insert('end', $_);}
+
+
+
+
+my $Browsebutton = $Frame1->Button(-text=>'Browse',
+                                   -command =>sub {&call_popup_kb_snapshot;}
+                                    )->pack(-side => 'right');
+my $okbutton = $ButtonFrame->Button(-text=>'Ok', 
+                                    -pady=>0, -command =>sub {&snapshot("-path",$pathName,"-test",$testcaseName,"-format",$fileFormat);
+                                                    $popupgui->destroy;},
+                                     )->pack(-side => 'left');
+
+my $applybutton = $ButtonFrame->Button(-text=>'Apply', 
+                                       -pady=>0,-command =>sub {&snapshot("-path",$pathName,"-test",$testcaseName,"-format",$fileFormat)},
+                                       )->pack(-side => 'left');
+
+my $cancelbutton = $ButtonFrame->Button(-text=>'Cancel', 
+                                        -pady=>0,-command =>sub {$popupgui->destroy;},
+                                         )->pack(-side => 'left');
+
+}#sub popup_kb_snapshot
+
+sub call_popup_kb_snapshot {
+
+use Tk::DirTree;
+use Cwd;
+
+my $top1 = new MainWindow;
+$top1->withdraw;
+
+my $t = $top1->Toplevel;
+$t->title("Choose directory:");
+my $ok = 0; 
+# Create Frame widget before the DirTree widget, so it's always visible
+# if the window gets resized.
+my $f = $t->Frame->pack(-fill => "x", -side => "bottom");
+
+ $pathName = Cwd::cwd();
+
+my $d;
+$d = $t->Scrolled('DirTree',
+		  -scrollbars => 'osoe',
+		  -width => 25,
+		  -height => 10,
+		  -selectmode => 'browse',
+		  -exportselection => 1,
+		  -browsecmd => sub { $pathName = shift },
+		  # With this version of -command a double-click will
+		  # select the directory
+		  -command   => sub { $ok = 1 },
+		  # With this version of -command a double-click will
+		  # open a directory. Selection is only possible with
+		  # the Ok button.
+		  #-command   => sub { $d->opencmd($_[0]) },
+		 )->pack(-fill => "both", -expand => 1);
+# Set the initial directory
+$d->chdir($pathName);
+
+$f->Button(-text => 'Ok',
+           -pady=>0,
+	   -command => sub {$ok=1; $top1->destroy; })->pack(-side => 'left');
+$f->Button(-text => 'Cancel',
+           -pady=>0,
+	   -command => sub { $top1->destroy; })->pack(-side => 'left');
+
+$f->waitVariable(\$ok);
+if ($ok == 1) {
+    #warn "The resulting directory is: $designName\n";
+my @array_dir  = split(/\//,$pathName);
+my $n = @array_dir;
+ $DirToSave = $array_dir[$n-1];
+
+                }#if 
+}#sub call_popup_kb_snapshot
+
+sub kb_screenshot1 {
+my $fileWithExt = $_[0];
+my ($fileName, $fileFormat) = split(/\./,$fileWithExt);
+if($fileWithExt eq ""){$fileWithExt = "kb.png"; $fileFormat = ".png"}
+
+if($fileFormat eq "jpg"){
+   #use Tk::WinPhoto;
+   #use Tk::JPEG; 
+   my $image = $KbCanvas->Photo(-format => 'Window',
+                                -data => oct($KbCanvas->id)
+                                  );
+      $image->write($fileWithExt, -format => 'JPEG');
+
+}elsif($fileFormat eq "ps"){
+      $KbCanvas->postscript(-file => "$fileWithExt");
+
+}else{
+      #use Tk::PNG;
+      #my $image = $KbCanvas->Photo('-format' => 'png', -file => $fileWithExt);
+      my $image = $KbCanvas->Photo(-format => 'Window',
+                                   -data => oct($KbCanvas->id)
+                                  );
+      $image->write($fileWithExt, -format => 'PNG');
+
+}#for png format
+
+}#sub kb_screenshot1
+
+
+
+########################## code to generate snapshots without using proton GUI ######################
+sub snapshot_IndGui {
+#****f* /snapshot_IndGui
+# NAME
+#   snapshot_IndGui
+# FUNCTION
+#    plot the graph in special gui for each testcase in Kb database and take snapshots of them.
+#    snapshot_IndGui has the following command line options .
+# SYNOPSIS
+# snapshot_IndGui -dir <dirName where you want to create GUI_SCREENSHOTS dir which will store all snapshot files> 
+#                      -ex
+# INPUTS
+#      options :
+#      -dir <directory Name> : where you want to create GUI_SCREENSHOTS dir which will store all snapshot file.
+#      -ex                   : to exit from tool shell. 
+# OUTPUTS
+#      generates GUI_SCREENSHOTS dir which contains the snapshot files for  kb graphs.
+#****
+
+my $exit_eqator = 0;
+my $path ;
+my $dir = "GUI_SCREENSHOTS";
+my $noOfArg = @_;
+for (my $i=0; $i< $noOfArg; $i++) {
+     if ($_[$i] eq "-ex" ){$exit_eqator = 1;}
+     if ($_[$i] eq "-dir"){$path = $_[$i+1];}
+     if ($_[$i] eq "-h" || $_[0] eq "-help" || $_[0] eq "-HELP"){
+                         print "Usase: snapshot_IndGui -dir <dirName>\n";
+                         print "to exit tool           -ex\n";
+                         return; 
+                            }
+                                  }#for no of arg 
+if($path eq ""){$path = "/home/rajeevs/public_html";}
+my $maindir = "$path/$dir";
+if (-e $maindir){system("rm -rf $maindir");}
+system("mkdir $maindir");
+
+my %keysyms = (' ' => 'space', '/' => 'slash', ',' => 'comma', '_' => 'underscore');
+my $guiCanvasHeight = 500;
+my $guiCanvasWidth = 700;
+my $box = [0, 0, $guiCanvasWidth, $guiCanvasHeight];
+
+my $mw = MainWindow->new();
+   $mw->title (" GRAPH DISPLAY ");
+   
+my $menubar = $mw->Frame(-relief=>"ridge");
+   $menubar->pack(-side=>'top', -fill=>'both');
+my $test ="";
+my $data = "";
+my $ref = "RID";
+my $Limit = "";
+my $Offset = "";
+my $Order = "";
+
+$menubar->Label(-text => "Test")->pack(-side =>'left', -anchor => 'w');
+$e1 = $menubar->Entry(-textvariable =>\$test, -width => 10,)->pack(-side =>'left', -anchor => 'w');
+$menubar->Label(-text => "DataFd")->pack(-side =>'left', -anchor => 'w');
+$e2 = $menubar->Entry(-textvariable =>\$data, -width => 5)->pack(-side =>'left', -anchor => 'w');
+$menubar->Label(-text => "RefFd")->pack(-side =>'left', -anchor => 'w');
+$menubar->Entry(-textvariable =>\$ref, -width => 5)->pack(-side =>'left', -anchor => 'w');
+$menubar->Label(-text => "Limit")->pack(-side =>'left', -anchor => 'w');
+$menubar->Entry(-textvariable =>\$Limit, -width => 3)->pack(-side =>'left', -anchor => 'w');
+$menubar->Label(-text => "OffSet")->pack(-side =>'left', -anchor => 'w');
+$menubar->Entry(-textvariable =>\$Offset, -width => 3)->pack(-side =>'left', -anchor => 'w');
+$menubar->Label(-text => "Order")->pack(-side =>'left', -anchor => 'w');
+$menubar->Radiobutton(-variable =>\$Order,
+  		     -value => "ASC",
+  		     -text => "ASC",)->pack(-side =>"left");
+                                          
+$menubar->Radiobutton(-variable =>\$Order,
+  		     -value => "DESC",
+                     -text => "DESC",)->pack(-side =>"left");
+
+ $displayButton = $menubar->Button(-text=>"DisplayGraph", -underline => 0,-relief=>"raised",-pady=>0, -command => sub {&plot_graphPS('-testName',$test,'-refField',$ref,'-dataField',$data,'-limit',$Limit,'-order',$Order,'-offset',$Offset);
+                              $mw->update;
+                              my @d = split (/,/,$data);
+                              my @d1 = split (//,$d[0]);
+                              my $n = @d1;   
+                              my $fd = "";    
+                              for (my $i =2 ;$i< $n; $i++){ $fd = $fd.$d1[$i];}
+                              &kb_screenshot($test."_".$fd.".png");$data ="";
+});
+$displayButton->pack(-side=>'right');
+#$captureButton = $menubar->Button(-text=>"CaptureCanvas", -underline => 0,-background=>"pink",-foreground=>"blue",-activebackground=>"orange",-activeforeground=>"black",-relief=>"raised",-highlightthickness=>1,-highlightbackground=>"purple",-pady=>0, -command => sub {#&plot_graphPS('-testName',$test,'-refField',$ref,'-dataField',$data,'-limit',$Limit,'-order',$Order,'-offset',$Offset);
+#                              my @d = split (/,/,$data);
+#                              my @d1 = split (//,$d[0]);
+#                              my $n = @d1;   
+#                              my $fd = "";    
+##                              for (my $i =2 ;$i< $n; $i++){ $fd = $fd.$d1[$i];}
+#                              &kb_screenshot($test."_".$fd.".jpg");$data ="";});
+#$captureButton->pack(-side=>'right');
+
+
+
+
+$graph_canvas  = $mw->Scrolled(qw/Canvas -bg black -xscrollincrement 40 -yscrollincrement 40 -confine 1 -scrollbars se/, -width => $guiCanvasWidth, -height => $guiCanvasHeight, -scrollregion => $box,);
+$graph_canvas->Subwidget("xscrollbar")->configure(-width=>10,-borderwidth=>2);
+$graph_canvas->Subwidget("yscrollbar")->configure(-width=>10,-borderwidth=>2);
+$graph_canvas->pack(qw/-fill both -expand 1 -side top/);
+
+my @fields = ("00slack,01slack,10slack,11slack","00area,01area,10area,11area","00tns,01tns,10tns,11tns","00utime,01utime,10utime,11utime","00vmem,01vmem,10vmem,11vmem"); 
+
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","$KB_ADMIN","$KB_PASSWD" ) || die "Cannot connect: $DBI::errstr";
+$sth = $dbh->prepare("SELECT TestName FROM designStat WHERE RID = 0");
+$sth->execute();
+while (my $t = $sth->fetchrow_array){
+#my $savedir = "$maindir/$t";
+#system("mkdir $savedir");
+
+$test = "";
+$e1->focus;
+$mw->update;
+
+foreach (split '', $t) {
+$_ = $keysyms{$_} if exists $keysyms{$_}; 
+
+$e1->eventGenerate('<KeyPress>', -keysym => $_);
+$mw->idletasks;
+$mw->after(200);
+}
+$e2->focus;
+$mw->update;
+foreach $field (@fields){
+foreach (split '', $field) {
+    $_ = $keysyms{$_} if exists $keysyms{$_};
+    $e2->eventGenerate('<KeyPress>', -keysym => $_);
+    $mw->idletasks;
+    $mw->after(20);
+
+                           }#foreach field's character
+
+
+$mw->after(10);
+$displayButton->eventGenerate('<Enter>');
+$displayButton->eventGenerate('<ButtonPress-1>');
+$displayButton->eventGenerate('<ButtonRelease-1>');
+#$mw->update;
+#$mw->after(10);
+#$captureButton->eventGenerate('<Enter>');
+#$captureButton->eventGenerate('<ButtonPress-1>');
+#$captureButton->eventGenerate('<ButtonRelease-1>');
+
+                 }#foreach field
+my $file1 = $t."_area.png"; 
+my $file2 = $t."_slack.png"; 
+my $file3 = $t."_tns.png"; 
+my $file4 = $t."_utime.png"; 
+my $file5 = $t."_vmem.png"; 
+####----------------------------------------------------------------------------------------------------------##
+sysopen (HTML,$t, O_RDWR|O_EXCL|O_CREAT, 0755);
+    printf HTML "<html>\n";
+printf HTML "<IMG SRC=$file1>\n";
+printf HTML "<IMG SRC=$file2>\n";
+printf HTML "<IMG SRC=$file3>\n";
+printf HTML "<IMG SRC=$file4>\n";
+printf HTML "<IMG SRC=$file5>\n";
+    printf HTML "</html>\n";
+    close (HTML);
+
+system("mv *.png $maindir");
+system("mv $t $maindir");
+}#while testcase found
+#---------------------------#
+$mw->destroy;
+if ($exit_eqator == 1){exit;}
+MainLoop;
+
+}#sub snapshot_IndGui
+
+sub plot_graphPS {
+$graph_canvas->delete("all");
+my $noOfArguments = @_;
+if( $noOfArguments < 6 ) { 
+                           print "Usage : plot_graph -testName <testname> \n";
+                           print "                   -dataField <dataField> \n";
+                           print "                   -refField <refField> \n";
+                           print "                   -order <ASC or DESC> \n";
+                           print "limit is optional   [-limit <limitno> ] \n";
+                           print "offset is optional  [-offset <offsetno> ] \n";
+                           
+                                                 }#if no. of arg not eq
+else {#correct no of arguments
+
+#------------------------ Initialising Limit-------------------------#
+my @Tests = ();
+my @array_testName = ();
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE","$KB_ADMIN","$KB_PASSWD" ) || die "Cannot connect: $DBI::errstr";
+my $sth2 = $dbh->prepare( "SELECT TestName FROM designStat WHERE RID = 0");
+$sth2->execute();
+my $ii = 0;
+my %TESTS = ();
+while (($tp2 )= $sth2->fetchrow_array) { $TESTS{$tp2} = $ii; $ii++;}#push(@Tests, $tp2); }
+my $testFoundLen = @Tests;
+   $testName = "";
+   $dataField = "";
+   $refField = ""; 
+my $limitNo = "";   
+my $offsetNo = ""; 
+if ($offsetNo eq ""){$offsetNo = 0;}
+my $order = "";
+
+for (my $i =0; $i< $noOfArguments ; $i++){
+if($_[$i] eq "-testName"){
+   $testName = $_[$i+1];
+   @array_test  = split(/\,/,$testName);
+foreach (@array_test) {
+          if (exists $TESTS{$_}){push (@array_testName, $_);}
+          else {print "WARN-KNLBSE : 001 : $_ not found in database\n";}  
+                       }#foreach   
+ $testName = join(",", @array_testName);
+                           }
+if($_[$i] eq "-dataField"){
+$dataField = $_[$i+1];
+ @array_dataField = split(/\,/,$dataField);
+                              }
+if($_[$i] eq "-refField"){
+$refField = $_[$i+1];
+                             }
+if($_[$i] eq "-limit"){
+$limitNo = $_[$i+1];
+
+                         }
+if($_[$i] eq "-offset"){
+$offsetNo = $_[$i+1];
+if ($offsetNo eq ""){$offsetNo = 0;}
+else {$offsetNo = $offsetNo;}
+
+                         }
+if($_[$i] eq "-order"){
+$order = $_[$i+1];
+                         }
+
+                                         } # for no. of arguments
+
+
+if ($limitNo eq ""){
+my @count=();
+foreach $testName(@array_testName){
+#--------------------------------------------------------#
+my @ref1=();
+my $sth1 = $dbh->prepare( "SELECT $refField FROM designStat WHERE TestName = '$testName'");
+$sth1->execute();
+while (($tp1 )= $sth1->fetchrow_array) { push(@ref1,$tp1); }
+my $count_reffield = @ref1;
+push (@count, $count_reffield);
+@count =sort {$b<=>$a} @count;
+                             }#foreach testcase
+$limitNo = $count[0];
+                 }#if limit is empty
+#--------------------------------------------------------#
+
+my @plotData=();
+my @ref = ();
+my @refStorage = ();
+my @refLengths = ();
+my @refLengths1 = ();
+
+foreach $testName(@array_testName){
+my @ref1=();
+my $n;
+my $sth = $dbh->prepare( "SELECT $refField FROM designStat WHERE TestName = '$testName' ORDER BY $refField $order LIMIT $limitNo OFFSET $offsetNo");
+$sth->execute();
+while (($tp) = $sth->fetchrow_array) { push(@ref1,$tp); }
+$n = @ref1;
+push (@refStorage, [@ref1]);
+push (@refLengths, $n);
+                                   }#foreach testname
+my $m = @refLengths;
+@refLengths1 = sort {$b<=>$a} @refLengths;
+for (my $k = 0; $k<$m ; $k++){
+if ($refLengths1[0] == $refLengths[$k]){
+@ref = @{$refStorage[$k]};}}
+  @plotData = (@plotData,[@ref]);
+
+foreach $testName(@array_testName){
+foreach $dataField(@array_dataField){
+my $sth = $dbh->prepare( "SELECT $dataField FROM designStat WHERE TestName = '$testName' ORDER BY $refField $order LIMIT $limitNo OFFSET $offsetNo");
+$sth->execute();
+my @data=();
+my @data1= ();
+my @data2 = ();
+while (($tp) = $sth->fetchrow_array) {
+                                      if ($tp eq ""){push(@data,"NULL");}
+                                      else {push(@data,$tp);}
+                                     }
+my $datalen = @data;
+
+if ($datalen==$refLengths1[0]){@data2 = @data;}
+else {my $lenDiff = $refLengths1[0]-$datalen;
+    if ($order eq "DESC"){
+        for (my $i=0; $i<$lenDiff; $i++){
+                                      push (@data1,"NULL");
+                                         }
+           push (@data2,@data1);
+           push (@data2,@data);
+                         }
+   else {
+       for (my $i=0; $i<$lenDiff; $i++){
+                                      push (@data1,"NULL");
+                                         }
+           push (@data2,@data);
+           push (@data2,@data1);
+
+               }
+      }#else
+        
+@plotData = (@plotData,[@data2]);
+                                     }#foreach dataField
+                                      }#foreach testName
+                                                   
+&Plot_Kb_GraphPS(@plotData);
+                         }#else correct no. of arguments
+}#sub plot_graphPS
+
+sub Plot_Kb_GraphPS {
+my @data = @_;
+my $canvas = $graph_canvas;
+my $CanvasWidth = 700;
+my $CanvasHeight = 500;
+my @LineColor=("blue", "orange","orange red", "red","SeaGreen1","sienna", "sienna2","sienna4", "VioletRed","purple");
+#my @LineColor=("green", "purple","yellow", "red","lime","fuchsia", "blue","aqua", "maroon","purple");
+my @LineType = ([2,4],[2,8],[4,4],[6,4],[6,4,2,4],[6,4,2,4,2,4]);
+my @Stipple = ("gray12","gray25","gray50","gray75");
+my $graphTitle = "Graph:->  For ".$testName.":-{".$dataField." vs ".$refField."}";
+my $xLabel = $refField."  ----->";
+my $yLabel = $dataField."  ----->";
+my $test = $testName;
+&Call_Plot_Kb_Graph(\@data,$CanvasWidth,$CanvasHeight,\@LineColor,\@LineType,\@Stipple,$graphTitle,$xLabel,$canvas,$dataField,$test);
+}#sub Plot_Kb_GraphPS
+
+sub kb_screenshot {
+my $noOfArg = @_;
+if ($_[0] eq '-h'){print "usage: kb_screenshot <fileName>\n";
+                   print "fileName is optional, default fileName is kb.png\n";
+                   return;}
+my $file = $_[0];
+if($file eq ""){$file = "kb.png";}
+
+my $image = $graph_canvas->Photo(-format => 'Window',
+                       -data => oct($graph_canvas->id)
+                        );
+$image->write($file, -format => 'PNG');
+
+
+#--------- for .ps file -------------#
+#print "writing out the screenshot of KB in postscript format\n";
+#$graph_canvas->postscript(-file => "$file");
+}#sub kb_screenshot
+############################# End 
+
+###########################################################################################################################
+############################################## Creating popup to Run Testcases ############################################
+###########################################################################################################################
+sub popup_runTestcase {
+my @buildList = ();
+my $popupgui = MainWindow->new();
+   $popupgui->title ("Run Testcase");
+my $userName = `whoami`;
+my $hostName = `uname -n`;
+$userName = (split(/\s+/, $userName))[0];
+$hostName = (split(/\s+/, $hostName))[0];
+my $build_dropdown_value = "latestBuild";
+
+        my $build_dropdown = $popupgui->BrowseEntry(-label => "Build",-variable => \$build_dropdown_value,)->pack;
+        my $EntryFrame1=$popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $EntryFrame2=$popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $EntryFrame3=$popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $EntryFrame4=$popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $EntryFrame5=$popupgui->Frame->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+        my $ButtonFrame1=$popupgui->Frame->pack(-side => 'top',-anchor=>'n');
+       
+$EntryFrame1->Label(-text => "testName")->pack(-side =>'left', -anchor => 'w');
+$EntryFrame1->Entry(-textvariable =>\$SelectedTestName)->pack(-side =>'right', -anchor => 'w',
+                                                  -fill => 'x', -expand=> '1');
+$EntryFrame2->Label(-text => "testPath")->pack(-side =>'left', -anchor => 'w');
+$EntryFrame2->Entry(-textvariable =>\$SelectedTestPath)->pack(-side =>'right', -anchor => 'w',
+                                                  -fill => 'x', -expand=> '1');
+$EntryFrame3->Label(-text => "scriptName")->pack(-side =>'left', -anchor => 'w');
+$EntryFrame3->Entry(-textvariable =>\$SelectedTestScript)->pack(-side =>'right', -anchor => 'w',
+                                                  -fill => 'x', -expand=> '1');
+$EntryFrame4->Label(-text => "userName")->pack(-side =>'left', -anchor => 'w');
+$EntryFrame4->Entry(-textvariable =>\$userName)->pack(-side =>'right', -anchor => 'w',
+                                                  -fill => 'x', -expand=> '1');
+$EntryFrame5->Label(-text => "hostName")->pack(-side =>'left', -anchor => 'w');
+$EntryFrame5->Entry(-textvariable =>\$hostName)->pack(-side =>'right', -anchor => 'w',
+                                                  -fill => 'x', -expand=> '1');
+############################################################################################################
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE",qaadmin,qaadmin ) || die "Cannot connect: $DBI::errstr";
+my $sth = $dbh->prepare( "SELECT toolName FROM designStat WHERE TestName = '$SelectedTestName' AND RID = 0");
+$sth->execute();
+my ($tn) = $sth->fetchrow_array();
+my $list_builds;
+if($tn eq "realTime"){
+       $list_builds = `ls /home/rajeevs/builds/realtime_build`;
+}else{} 
+                    $list_builds = "latestBuild"." ".$list_builds;        
+                    @buildList  = split(/\s+/, $list_builds);
+	   foreach (@buildList) {$build_dropdown->insert('end', $_);}
+            #$build_dropdown_value = "latestBuild";
+###########################################################################################################
+
+$RunButton = $ButtonFrame1->Button(-text=>'Run',-command =>sub {&write_makefile("-test",$SelectedTestName,"-path",$SelectedTestPath,"-script",$SelectedTestScript,"-build",$build_dropdown_value);
+                                                                $popupgui->destroy;}                                    
+                                     )->pack(-side => 'left',-anchor=>'n');
+
+$cancelbutton = $ButtonFrame1->Button(-text=>'Exit',-command =>sub {$popupgui->destroy;}
+                                     )->pack(-side => 'left');
+
+########################################### popup to run All testcases ########################################
+}#sub popup_runTestcase
+
+sub popup_runAllTestcase {
+my $dbh = DBI->connect( "dbi:mysql:$KB_DATABASE",qaadmin,qaadmin ) || die "Cannot connect: $DBI::errstr";
+my $sth = $dbh->prepare( "SELECT toolName FROM designStat WHERE ID = 1.0");
+$sth->execute();
+my ($tn) = $sth->fetchrow_array();
+if($tn eq "realTime"){
+   system("cd /home/rajeevs/testArea2 ; make &");
+}else {
+   system("cd /vol2/testcase/placement_analysis ; make &");
+} 
+}#sub popup_runAllTestcase
+
+###############################################################################################################
+sub make_RealTimeBuild {
+system("cd /home/rajeevs/builds ; make build");
+}#sub make_RealTimeBuild
+
+
+#------------------------------------------------------------------------------------#
+sub toggle_RunTestAndPlotGraph {
+if ($kbRun_Plot->cget('-text') eq 'GraphMode') {
+        $kbRun_Plot->configure(-text => 'RunMode',
+                             -relief=>'groove',
+                             -padx=>0, -pady=>0,
+                                );
+         $toggle_runTestcase = 0;
+                  } 
+ elsif ($kbRun_Plot->cget('-text') eq 'RunMode') {     
+        $kbRun_Plot->configure(-text => 'GraphMode',
+                             -relief=>'groove',
+                             -padx=>0, -pady=>0,
+                                );
+         $toggle_runTestcase = 1;
+                  } 
+}#sub toggle_RunTestAndPlotGraph
+
+
+1;

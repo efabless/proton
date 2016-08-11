@@ -1,0 +1,243 @@
+###############################################################################################################
+################################### Load Block xls data from command Line #####################################
+###############################################################################################################
+sub loadBlockXls {
+  my $fileName = $_[0];
+
+  flxLoadBlockXls($fileName);
+  flxCreateBlockPseudo();
+}#sub loadBlockXls
+
+
+sub flxLoadBlockXls {
+  my $fileName = $_[0];
+
+  if ( $DEBUG == 328 ) {
+    return (caller(0))[3] . " $fileName";
+  }
+
+  # save XLS data to global hash table, similar to
+  # sub read_block_xls_andLoadData in GUI/make_specify_gui
+}#sub flxLoadBlockXls
+
+
+sub flxCreateBlockPseudo {
+
+use Spreadsheet::ParseExcel;
+my $top_module = "";
+my $current_top = "";
+my %MODULE = ();
+
+my $oExcel = new Spreadsheet::ParseExcel;
+my $oBook; # Get data from global hash table instead of a file,
+# similar to sub run_pseudo_command_for_blocks in GUI/make_specify_gui
+#my $oBook = $oExcel->Parse($fileName);
+my $oWkS = $oBook->{Worksheet}[0];
+ for(my $iR = 1 ;defined $oWkS->{MaxRow} && $iR <= $oWkS->{MaxRow} ;$iR++){
+   my ($mod_width,$mod_height,$llx,$lly) = (0,0,0,0);
+   my ($parent_module,$modName,$instName) = ("","",""); 
+   for(my $iC = $oWkS->{MinCol} ; defined $oWkS->{MaxCol} && $iC <= $oWkS->{MaxCol} ;$iC++) {
+       my $header = $oWkS->{Cells}[0][$iC];
+       my $oWkC = $oWkS->{Cells}[$iR][$iC];
+       my $cell_value = $oWkC->Value if(defined $oWkC);
+       if($header->Value eq "blockName"){
+          $modName = $cell_value;
+          $MODULE{$modName} = 1;
+       }elsif($header->Value eq "parentName"){
+          $parent_module = $cell_value;
+       }elsif($header->Value eq "instanceName"){
+          $instName = $cell_value;
+       }elsif($header->Value eq "size"){
+          ($mod_width, $mod_height) = (split(/\,/,$cell_value))[0,1];
+       }elsif($header->Value eq "loc"){
+          ($llx, $lly) = (split(/\,/,$cell_value))[0,1] if($cell_value ne "");
+       }else{}
+   }#foreach column
+   my $urx = $llx+$mod_width; 
+   my $ury = $lly+$mod_height; 
+   if($iR == 1){
+      $top_module = $modName;
+      &createPseudoTopModule("-top", $modName, "-H", $mod_height, "-W", $mod_width);  
+      $current_top = $top_module;
+   }else{
+      if(exists $MODULE{$parent_module}){
+         if($parent_module ne $current_top){
+            &commitModule("-module", $current_top);
+            &editModule("-module", $parent_module);
+         }                                         
+         &createPseudoModule("-top", "$parent_module", "-module", $modName, "-bbox", "{$llx,$lly,$urx,$ury}");
+         &createPseudoHierModuleInst("-parent", $parent_module, "-bbox", "{$llx,$lly,$urx,$ury}","-cellref", "$modName", "-inst", "$instName");
+      }else{print "WARN: Parent module $parent_module for instance $instName of cell $modName does not exists\n";}
+   }#if not top row
+   $current_top = $parent_module if($iR != 1);
+ }#foreach row
+ &commitModule("-module", $current_top);
+ &editModule("-module", $top_module);
+}#sub flxCreateBlockPseudo
+
+###############################################################################################################
+#################################### Load Net xls data from command Line ######################################
+###############################################################################################################
+sub loadNetXls {
+  my $fileName = $_[0];
+
+  flxLoadNetXls($fileName);
+  flxCreateNetPseudo();
+}#sub loadNetXls
+
+
+sub flxLoadNetXls {
+  my $fileName = $_[0];
+
+  if ( $DEBUG == 328 ) {
+    return (caller(0))[3] . " $fileName";
+  }
+
+  # save XLS data to global hash table, similar to
+  # sub read_net_xls_andLoadData in GUI/make_specify_gui
+}#sub flxLoadNetXls
+
+
+sub flxCreateNetPseudo {
+
+use Spreadsheet::ParseExcel;
+my $top_module = $GLOBAL->dbfGlobalGetTOP;
+my $current_top = $GLOBAL->dbfGlobalGetTOP;
+
+my $oExcel = new Spreadsheet::ParseExcel;
+my $oBook; # Get data from global hash table instead of a file,
+# similar to sub run_pseudo_command_for_nets in GUI/make_specify_gui
+# my $oBook = $oExcel->Parse($fileName);
+my $oWkS = $oBook->{Worksheet}[0];
+ for(my $iR = 1 ;defined $oWkS->{MaxRow} && $iR <= $oWkS->{MaxRow} ;$iR++){
+   my ($netName,$parent_module,$srcInst, $sinkInst,$srcPin, $sinkPin) = ("","","","","","");
+   my ($net_width,$net_type,$srcOpt, $sinkOpt) = (1,"wire","-pin","-pin");
+   for(my $iC = $oWkS->{MinCol} ; defined $oWkS->{MaxCol} && $iC <= $oWkS->{MaxCol} ;$iC++) {
+       my $header = $oWkS->{Cells}[0][$iC];
+       my $oWkC = $oWkS->{Cells}[$iR][$iC];
+       my $cell_value = $oWkC->Value if(defined $oWkC);
+       if($header->Value eq "netName"){
+          $netName = $cell_value;
+       }elsif($header->Value eq "parent"){
+          $parent_module = $cell_value;
+          if($parent_module eq ""){$parent_module = $top_module;}
+       }elsif($header->Value eq "sourcePin"){
+          $cell_value =~ s/\(//;
+          $cell_value =~ s/\)//;
+          ($srcInst, $srcPin) = (split(/\:/,$cell_value))[0,1];
+          if($srcPin eq ""){$srcOpt = "";
+          }else{$srcOpt = "-pin";}
+       }elsif($header->Value eq "sinkPin"){
+          $cell_value =~ s/\(//;
+          $cell_value =~ s/\)//;
+          ($sinkInst, $sinkPin) = (split(/\:/,$cell_value))[0,1];
+          if($sinkPin eq ""){$sinkOpt = "";   
+          }else{$sinkOpt = "-pin";}
+       }elsif($header->Value eq "width"){
+          $net_width = $cell_value;
+       }elsif($header->Value eq "type"){
+          $net_type = $cell_value;
+       }else{}
+   }#foreach column
+   if($parent_module ne $current_top){
+      &commitModule("-module", $current_top);
+      &editModule("-module", $parent_module);
+   }
+   &createPseudoNet("-parentModule","$parent_module","-type",$net_type,"-source","$srcInst",$srcOpt,$srcPin ,"-sink","$sinkInst",$sinkOpt, "{$sinkPin}","-prefix", $netName, "-wireWidth", $net_width);
+   $current_top = $parent_module;
+ }#foreach row
+ &commitModule("-module", $current_top);
+ &editModule("-module", $top_module);
+}#sub flxCreateNetPseudo
+
+###############################################################################################################
+################################# Read Block xls and return data in xml format ################################
+###############################################################################################################
+sub flxGetBlockXml {
+
+  if ( $DEBUG == 328 ) {
+    return (caller(0))[3];
+  }
+
+use Spreadsheet::ParseExcel;
+my $out;
+my $xml = new XML::Writer(OUTPUT => \$out);
+$xml->startTag("design");
+
+my $oExcel = new Spreadsheet::ParseExcel;
+my $oBook; # Get data from global hash table instead of a file
+#my $oBook = $oExcel->Parse($fileName);
+my $oWkS = $oBook->{Worksheet}[0];
+ for(my $iR = 1 ;defined $oWkS->{MaxRow} && $iR <= $oWkS->{MaxRow} ;$iR++){
+   $out .= "\n";
+   $xml->startTag("block");
+   for(my $iC = $oWkS->{MinCol} ; defined $oWkS->{MaxCol} && $iC <= $oWkS->{MaxCol} ;$iC++) {
+       my $header = $oWkS->{Cells}[0][$iC];
+       my $oWkC = $oWkS->{Cells}[$iR][$iC];
+       my $header_value = $header->Value if(defined $header);
+       my $cell_value = $oWkC->Value if(defined $oWkC);
+       $xml->dataElement($header_value => $cell_value);
+   }#foreach column
+   $xml->endTag();
+ }#foreach row
+ $out .= "\n";
+ $xml->endTag();
+ $xml->end();
+ return $out;
+}#sub flxGetBlockXml
+
+###############################################################################################################
+################################## Read Net xls and return data in xml format #################################
+###############################################################################################################
+sub flxGetNetXml {
+
+  if ( $DEBUG == 328 ) {
+    return (caller(0))[3];
+  }
+
+use Spreadsheet::ParseExcel;
+my $out;
+my $xml = new XML::Writer(OUTPUT => \$out);
+$xml->startTag("nets");
+
+my $oExcel = new Spreadsheet::ParseExcel;
+my $oBook; # Get data from global hash table instead of a file
+#my $oBook = $oExcel->Parse($fileName);
+my $oWkS = $oBook->{Worksheet}[0];
+ for(my $iR = 1 ;defined $oWkS->{MaxRow} && $iR <= $oWkS->{MaxRow} ;$iR++){
+   $out .= "\n";
+   $xml->startTag("net");
+   for(my $iC = $oWkS->{MinCol} ; defined $oWkS->{MaxCol} && $iC <= $oWkS->{MaxCol} ;$iC++) {
+       my $header = $oWkS->{Cells}[0][$iC];
+       my $oWkC = $oWkS->{Cells}[$iR][$iC];
+       my $header_value = $header->Value if(defined $header);
+       my $cell_value = $oWkC->Value if(defined $oWkC);
+       $xml->dataElement($header_value => $cell_value);
+   }#foreach column
+   $xml->endTag();
+ }#foreach row
+ $out .= "\n";
+ $xml->endTag();
+ $xml->end();
+ return $out;
+}#sub flxGetNetXml
+
+
+###############################################################################################################
+######################################## Write block xls from pseudo db #######################################
+###############################################################################################################
+sub flxCreateBlockXls{
+
+}#sub flxCreateBlockXls
+
+###############################################################################################################
+######################################### Write Net xls from pseudo db ########################################
+###############################################################################################################
+sub flxCreateNetXls{
+
+}#sub flxCreateNetXls
+
+
+
+
+1;

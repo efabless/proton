@@ -1,0 +1,1425 @@
+package PlaceDB;
+
+# FIP : FanIn Path
+# SLK : Slack 
+# ColumnIndex : array with instance names representing columns
+# RowIndex : array with instance names representing rows
+# NetCount : number of nets in the design
+# InstCount : number of instances in the design
+# MaxRow : max row num , starts from 1 to max
+# MaxColumn : max col num , starts from 1 to max
+# FFCount
+# InCount
+# OutCount
+# Flags : on each instance flags if flop = 1 / port = 0
+#         FF => is flop
+#         P  => is port
+#         O  => orientation
+#         L  => depth level ( used in placement )
+# Loc : location of each flop and port
+
+sub new {
+my $dd = {
+          FIP => {},
+          SLK => {},
+          ColumnIndex => [],
+          RowIndex => [],
+          NetCount => 0,
+          InstCount => 0,
+          MaxRow => 0,
+          MaxColumn => 0,
+          FFCount => 0,
+          InCount => 0,
+          OutCount => 0,
+          MaxFFID => 0,
+          FFID => {},
+          FFAttr => {},
+          MaxPortID => 0,
+          PortID => {},
+          PortAttr => {},
+          MaxID => 0,  # row multiplier to calc index, TODO rm after disk DB
+          FanIn => {},
+          FanOut => {},
+          #L => (),    # level temp placeholder, now separated for FF and port
+          #Flags => PlaceFlagDB::createEmpty(),
+          #Loc => PlaceLocDB::createEmpty(),
+          #OL => PlaceOptLenDB::createEmpty(),
+          };
+bless $dd, 'PlaceDB';
+return $dd;
+}# sub new
+
+
+# Constants for FFAttr and PortAttr fields
+my $ROW_ = 0;
+my $COL_ = 1;
+my $NAME_ = 2;
+my $LX_ = 3;
+my $LY_ = 4;
+my $ORI_ = 5;
+my $OL_ = 6;
+my $LEVEL0_ = 7;
+my $LEVEL1_ = 8;
+my $CLK_ = 9;
+
+
+# ID is read-only for now
+sub dbPlaceGetFlopID {
+my ($self, $name) = @_;
+if ( exists $self->{FFID}{$name} ) {
+  return $self->{FFID}{$name};
+}
+return 0;
+}#sub dbPlaceGetFlopID
+
+# ID is read-only for now
+sub dbPlaceGetPortID {
+my ($self, $name) = @_;
+if ( exists $self->{PortID}{$name} ) {
+  return $self->{PortID}{$name};
+}
+return 0;
+}#sub dbPlaceGetPortID
+
+# FF row number => set OptLen
+sub dbPlaceSetOptLen {
+my ($self, $ff, $len) = @_;
+my $id = $self->{RowIndex}[$ff];
+unless ( exists $self->{FFAttr}{$id} ) {
+  return;
+}
+my $attr = $self->{FFAttr}{$id};
+my @attrList = split(':', $attr);
+$attrList[$OL_] = $len;
+$attr = join(':', @attrList);
+$self->{FFAttr}{$id} = $attr;
+}#sub dbPlaceSetOptLen
+
+# FF row number => get OptLen
+sub dbPlaceGetOptLen {
+my ($self, $ff) = @_;
+my $id = $self->{RowIndex}[$ff];
+if ( exists $self->{FFAttr}{$id} ) {
+  my $attr = $self->{FFAttr}{$id};
+  return (split(':', $attr))[$OL_];
+}
+return undef;
+}#sub dbPlaceGetOptLen
+
+sub dbgPlaceGetOptLen {
+my ($self, $ff) = @_;
+my $len = $self->dbPlaceGetOptLen($ff);
+print "Optimal Length of this flop is : $len\n";
+}#sub dbgPlaceGetOptLen
+
+# args don't matter
+sub dbPlaceGetP2PFlopDist2 {
+my ($start,$end) = @_;
+my $x = int(rand(5) + 1 );
+return($x);
+}#sub dbPlaceGetP2PFlopDist2
+
+# List of all FF names (use rows)
+sub dbPlaceGetFlopList {
+my ($self) = @_;
+my @var = ();
+for ( my $xx = 1 ; $xx <= $self->{FFCount} ; $xx++ ) {
+  my $id = $self->{RowIndex}[$xx];
+  my $attr = $self->{FFAttr}{$id};
+  my @attrList = split(':', $attr);
+  push(@var, $attrList[$NAME_]);
+}
+return(@var);
+}#sub dbPlaceGetFlopList
+
+# List of all input port names (use columns)
+sub dbPlaceGetInPortList {
+my ($self) = @_;
+my @var = ();
+for ( my $xx = $self->{FFCount}+1 ; $xx <= $self->{MaxColumn}; $xx++ ) {
+  my $id = $self->{ColumnIndex}[$xx];
+  my $attr = $self->{PortAttr}{$id};
+  my @attrList = split(':', $attr);
+  push(@var, $attrList[$NAME_]);
+}
+return(@var);
+}#sub dbPlaceGetInPortList
+
+# List of all output port names (use rows)
+sub dbPlaceGetOutPortList {
+my ($self) = @_;
+my @var = ();
+for ( my $xx = $self->{FFCount}+1 ; $xx <= $self->{MaxRow}; $xx++ ) {
+  my $id = $self->{RowIndex}[$xx];
+  my $attr = $self->{PortAttr}{$id};
+  my @attrList = split(':', $attr);
+  push(@var, $attrList[$NAME_]);
+}
+return(@var);
+}#sub dbPlaceGetOutPortList
+
+
+sub dbPlaceInit {
+my ($self,$row,$col,$ff,$in,$out)  = @_;
+$self->{MaxRow} = $row;
+$self->{MaxColumn} = $col;
+$self->{FFCount} = $ff;
+$self->{InCount} = $in;
+$self->{OutCount} = $out;
+$self->{MaxPortID} = $ff;
+$self->{MaxID} = $ff + $in + $out;
+}#sub dbPlaceInit
+
+##########################################################################
+# is the anchor place instace a flop or port 
+##########################################################################
+
+# FF name => set isFF
+sub dbPlaceSetIsInstFlop {
+my($self,$ff) = @_;
+$self->dbPlaceGetOrCreateFFID($ff);
+}#sub dbPlaceSetIsInstFlop
+
+# Name => isFF?
+sub dbPlaceGetIsInstFlop {
+my($self,$ff) = @_;
+if ( exists $self->{FFID}{$ff} ) {
+  return 1;
+}
+return 0;
+}#sub dbPlaceGetIsInstFlop
+
+# Port name => set isPort
+sub dbPlaceSetIsInstPort {
+my($self,$port) = @_;
+$self->dbPlaceGetOrCreatePortID($port);
+}#sub dbPlaceSetIsInstPort
+
+# Name => isPort?
+sub dbPlaceGetIsInstPort {
+my($self,$port) = @_;
+if ( exists $self->{PortID}{$port} ) {
+  return 1;
+}
+return 0;
+}#sub dbPlaceGetIsInstPort
+
+##########################################################################
+# Location of anchor place instances ( flops and ports ) it is indexed by instance names
+##########################################################################
+
+sub dbPlaceGetFlopLocByID {
+my ($self, $id) = @_;
+my @loc = ();
+unless ( exists $self->{FFAttr}{$id} ) {
+  return @loc;
+}
+my $attr = $self->{FFAttr}{$id};
+my ($x, $y) = (split(':', $attr))[$LX_, $LY_];
+if ( defined $x && defined $y ) {
+  push(@loc, $x, $y);
+}
+return @loc;
+}#sub dbPlaceGetFlopLocByID
+
+sub dbPlaceGetLocByRowNum {
+my($self,$num) = @_;
+my $id = $self->{RowIndex}[$num];
+return $self->dbPlaceGetFlopLocByID($id);
+}#sub dbPlaceGetLocByRowNum
+
+sub dbPlaceGetLocByColNum {
+my($self,$num) = @_;
+my $id = $self->{ColumnIndex}[$num];
+return $self->dbPlaceGetFlopLocByID($id);
+}#sub dbPlaceGetLocByColNum
+
+
+# FF name => set ($x, $y)
+sub dbPlaceSetFlopLoc {
+my($self,$ff,$x,$y) = @_;
+unless ( exists $self->{FFID}{$ff} ) {
+  return;
+}
+my $id = $self->{FFID}{$ff};
+my $attr = $self->{FFAttr}{$id};
+my @attrList = split(':', $attr);
+$attrList[$LX_] = $x;
+$attrList[$LY_] = $y;
+$attr = join(':', @attrList);
+$self->{FFAttr}{$id} = $attr;
+}#sub dbPlaceSetFlopLoc
+
+# FF name => print ($x, $y)
+sub dbgPlaceGetFlopLoc {
+my($self,$ff) = @_;
+my ($x, $y) = $self->dbPlaceGetFlopLoc();
+print "location is $x $y\n";
+}#sub dbgPlaceGetFlopLoc
+
+# FF name => get ($x, $y)
+sub dbPlaceGetFlopLoc {
+my($self,$ff) = @_;
+my @loc = ();
+if ( exists $self->{FFID}{$ff} ) {
+  my $id = $self->{FFID}{$ff};
+  @loc = $self->dbPlaceGetFlopLocByID($id);
+}
+return @loc;
+}#sub dbPlaceGetFlopLoc
+
+# Port name => set ($x, $y)
+sub dbPlaceSetPortLoc {
+my($self,$port,$x,$y) = @_;
+unless ( exists $self->{PortID}{$port} ) {
+  return;
+}
+my $id = $self->{PortID}{$port};
+my $attr = $self->{PortAttr}{$id};
+my @attrList = split(':', $attr);
+$attrList[$LX_] = $x;
+$attrList[$LY_] = $y;
+$attr = join(':', @attrList);
+$self->{PortAttr}{$id} = $attr;
+}#sub dbPlaceSetPortLoc
+
+# Port name => get ($x, $y)
+sub dbPlaceGetPortLoc {
+my($self,$port) = @_;
+my @loc = ();
+unless ( exists $self->{PortID}{$port} ) {
+  return @loc;
+}
+my $id = $self->{PortID}{$port};
+unless ( exists $self->{PortAttr}{$id} ) {
+  return @loc;
+}
+my $attr = $self->{PortAttr}{$id};
+my ($x, $y) = (split(':', $attr))[$LX_, $LY_];
+if ( defined $x && defined $y ) {
+  push(@loc, $x, $y);
+}
+return @loc;
+}#sub dbPlaceGetPortLoc
+
+##############################################################################
+# store the orientation of ports and possibiliy later flops                  #
+##############################################################################
+
+# Port name => set side
+sub dbPlaceSetInstOrient {
+my ($self, $port, $side) = @_;
+unless ( exists $self->{PortID}{$port} ) {
+  return;
+}
+my $id = $self->{PortID}{$port};
+my $attr = $self->{PortAttr}{$id};
+my @attrList = split(':', $attr);
+$attrList[$ORI_] = $side;
+$attr = join(':', @attrList);
+$self->{PortAttr}{$id} = $attr;
+}#sub dbPlaceSetInstOrient
+
+# Port name => get side
+sub dbPlaceGetInstOrient {
+my ($self, $port) = @_;
+unless ( exists $self->{PortID}{$port} ) {
+  return(0);
+}
+my $id = $self->{PortID}{$port};
+if ( exists $self->{PortAttr}{$id} ) {
+  my $attr = $self->{PortAttr}{$id};
+  my $side = (split(':', $attr))[$ORI_];
+  if ( defined($side) ) {
+    return($side);
+  }
+}
+return(0);
+}#sub dbPlaceGetInstOrient
+
+sub dbgPlaceGetInstOrient {
+my($self,$ff) = @_;
+my $flag = $self->dbPlaceGetInstOrient($ff);
+print "$flag\n";
+}#sub dbgPlaceGetInstOrient
+
+##############################################################################
+# store the depth of ports and flops : ports have level 0 flops have >= 1    #
+##############################################################################
+
+# FF name => set level from input
+sub dbPlaceSetFlopLevelIn {
+my ($self, $name, $level) = @_;
+unless ( exists $self->{FFID}{$name} ) {
+  return;
+}
+my $id = $self->{FFID}{$name};
+my $attr = $self->{FFAttr}{$id};
+my @attrList = split(':', $attr);
+$attrList[$LEVEL0_] = $level;
+$attr = join(':', @attrList);
+$self->{FFAttr}{$id} = $attr;
+}#sub dbPlaceSetFlopLevelIn
+
+# FF name => set level to output
+sub dbPlaceSetFlopLevelOut {
+my ($self, $name, $level) = @_;
+unless ( exists $self->{FFID}{$name} ) {
+  return;
+}
+my $id = $self->{FFID}{$name};
+my $attr = $self->{FFAttr}{$id};
+my @attrList = split(':', $attr);
+$attrList[$LEVEL1_] = $level;
+$attr = join(':', @attrList);
+$self->{FFAttr}{$id} = $attr;
+}#sub dbPlaceSetFlopLevelOut
+
+# Port name => set level
+sub dbPlaceSetPortLevel {
+my ($self, $name, $level) = @_;
+unless ( exists $self->{PortID}{$name} ) {
+  return;
+}
+my $id = $self->{PortID}{$name};
+my $attr = $self->{PortAttr}{$id};
+my @attrList = split(':', $attr);
+$attrList[$LEVEL0_] = $level;
+$attr = join(':', @attrList);
+$self->{PortAttr}{$id} = $attr;
+}#sub dbPlaceSetPortLevel
+
+# FF name => get level from input
+sub dbPlaceGetFlopLevelIn {
+my ($self, $name) = @_;
+if ( exists $self->{FFID}{$name} ) {
+  my $id = $self->{FFID}{$name};
+  my $attr = $self->{FFAttr}{$id};
+  my $level = (split(':', $attr))[$LEVEL0_];
+  if ( defined $level && $level ne "" ) {
+    return $level;
+  }
+}
+return -1;
+}#sub dbPlaceGetFlopLevelIn
+
+# FF name => get level to output
+sub dbPlaceGetFlopLevelOut {
+my ($self, $name) = @_;
+if ( exists $self->{FFID}{$name} ) {
+  my $id = $self->{FFID}{$name};
+  my $attr = $self->{FFAttr}{$id};
+  my $level = (split(':', $attr))[$LEVEL1_];
+  if ( defined $level && $level ne "" ) {
+    return $level;
+  }
+}
+return -1;
+}#sub dbPlaceGetFlopLevelOut
+
+# FF name => get level (input, output)
+sub dbPlaceGetFlopLevel {
+my ($self, $name) = @_;
+my @lvl;
+$lvl[0] = $self->dbPlaceGetFlopLevelIn($name);
+$lvl[1] = $self->dbPlaceGetFlopLevelOut($name);
+return @lvl;
+}#sub dbPlaceGetFlopLevel
+
+# Port name => get level
+sub dbPlaceGetPortLevel {
+my ($self, $name) = @_;
+if ( exists $self->{PortID}{$name} ) {
+  my $id = $self->{PortID}{$name};
+  my $attr = $self->{PortAttr}{$id};
+  my $flag = (split(':', $attr))[$LEVEL0_];
+  if ( defined $flag && $flag ne "" ) {
+    return $flag;
+  }
+}
+return(-1);
+}#sub dbPlaceGetPortLevel
+
+sub dbgPlaceGetInstLevel {
+my ($self, $name) = @_;
+if ( exists $self->{FFID}{$name} ) {
+  my @levels = $self->dbPlaceGetFlopLevel($name);
+  print "@levels\n";
+}
+elsif ( exists $self->{PortID}{$name} ) {
+  my $level = $self->dbPlaceGetPortLevel($name);
+  print "$level\n";
+}
+print "NULL\n";
+}#sub dbgPlaceGetInstLevel
+
+##########################################################################
+# flop clock domain
+##########################################################################
+
+# FF name => set clock domain
+sub dbPlaceSetFlopClockDomain {
+my ($self, $name, $clkDomain) = @_;
+unless ( exists $self->{FFID}{$name} ) {
+  return;
+}
+my $id = $self->{FFID}{$name};
+my $attr = $self->{FFAttr}{$id};
+my @attrList = split(':', $attr);
+$attrList[$CLK_] = $clkDomain;
+$attr = join(':', @attrList);
+$self->{FFAttr}{$id} = $attr;
+}#sub dbPlaceSetFlopClockDomain
+
+# FF name => get clock domain
+sub dbPlaceGetFlopClockDomain {
+my ($self, $name) = @_;
+my $clkDomain = undef;
+if ( exists $self->{FFID}{$name} ) {
+  my $id = $self->{FFID}{$name};
+  my $attr = $self->{FFAttr}{$id};
+  $clkDomain = (split(':', $attr))[$CLK_];
+}
+return $clkDomain;
+}#sub dbPlaceGetFlopClockDomain
+
+##############################################################################
+# number of iputs , outputs and registers                                    #
+##############################################################################
+sub dbPlaceGetFlopCount {
+my ($self) = @_;
+my $ff = $self->{FFCount};
+return($ff);
+}#sub dbPlaceGetFlopCount
+
+sub dbPlaceGetInputCount {
+my ($self) = @_;
+my $ff = $self->{InCount};
+return($ff);
+}#sub dbPlaceGetInputCount
+
+sub dbPlaceGetOutputCount {
+my ($self) = @_;
+my $ff = $self->{OutCount};
+return($ff);
+}#sub dbPlaceGetOutputCount
+########################################################################################
+# FanIn Path									       #
+########################################################################################
+
+sub dbPlaceGetIndexByRowCol {
+my ($self, $row, $col)  = @_;
+my $rowID = $self->{RowIndex}[$row];
+my $colID = $self->{ColumnIndex}[$col];
+my $index = ($rowID * $self->{MaxID} + $colID);
+return $index;
+}#sub dbPlaceGetIndexByRowCol
+
+
+sub dbgPlaceGetTpath {
+my($self) = @_;
+my $file = "smatrix.log";
+#print "\t";
+#for(my $yy = 1 ; $yy <= $self->{MaxColumn}; $yy++ ) {
+#     my $fname = $self->dbPlaceGetNameByNumberCol($yy);
+#print "$fname ";
+#}
+#print "\n";
+open ( WRITE, ">$file");
+   for(my $xx = 1 ; $xx <= $self->{MaxRow}; $xx++ ) {
+          my $name = $self->dbPlaceGetNameByNumberRow($xx);
+          print WRITE"$name \t";
+      for ( my $yy = 1 ; $yy <= $self->{MaxColumn}; $yy++ ) {
+            my $val = $self->dbPlaceGetTpathVal($xx ,$yy);
+            print WRITE"$val ";
+                                                           }# for all columns
+            print WRITE"\n";
+                                                   }# for all rows
+close WRITE;
+}#sub dbgPlaceGetTpath
+#--------------------------------------------------------------------------------------------#
+sub dbgPlaceGetTpathWithName {
+my($self) = @_;
+my $file = "smatrix_new.log";
+open ( WRITE, ">$file");
+   for(my $xx = 1 ; $xx <= $self->{MaxRow}; $xx++ ) {
+          my $name = $self->dbPlaceGetNameByNumberRow($xx);
+          print WRITE"$name \n";
+      for ( my $yy = 1 ; $yy <= $self->{MaxColumn}; $yy++ ) {
+            my $val = $self->dbPlaceGetTpathVal($xx ,$yy);
+            if($val > 0){
+               my $fname = $self->dbPlaceGetNameByNumberCol($yy);
+               print WRITE"\t$fname\n";
+            }
+            
+      }# for all columns
+   }# for all rows
+close WRITE;
+}#sub dbgPlaceGetTpathWithName
+
+#--------------------------------------------------------------------------------------------#
+
+# intentional inefficient to measure run time
+sub dbgPlaceGetTpathBM {
+my($self) = @_;
+
+use Benchmark;
+my $t0 = new Benchmark;
+
+my @flops = $self->dbPlaceGetFlopList();
+my @inPorts = $self->dbPlaceGetInPortList();
+my @outPorts = $self->dbPlaceGetOutPortList();
+
+print '__ROWS__ ', $self->{MaxRow}, "\n";
+for ( my $xx = 1; $xx <= $self->{MaxRow}; $xx++) {
+  my $name = $self->dbPlaceGetNameByNumberRow($xx);
+  print "$xx $name\n" if ( $main::DEBUG == 328 );
+} # for
+
+print '__COLUMNS__ ', $self->{MaxColumn}, "\n";
+for ( my $xx = 1; $xx <= $self->{MaxColumn}; $xx++) {
+  my $name = $self->dbPlaceGetNameByNumberCol($xx);
+  print "$xx $name\n" if ( $main::DEBUG == 328 );
+} # for
+
+print "__TPATH__\n";
+my $counter = 0;
+print "Input port to FF\n" if ( $main::DEBUG != 328 );
+foreach my $src ( @inPorts ) {
+  my $srcID = $self->{PortID}{$src};
+  foreach my $sink ( @flops ) {
+    my $sinkID = $self->{FFID}{$sink};
+    my $index = $sinkID * $self->{MaxID} + $srcID;
+    unless ( exists $self->{FIP}{$index} ) {
+      next;
+    }
+    if ( ++$counter % 10000 == 0 && $main::DEBUG != 328 ) {
+      my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$dst) = localtime;
+      $mon++;  $year += 1900;
+      printf("%d entries %02d/%02d/%04d %02d:%02d:%02d\n",
+             $counter, $mon, $mday, $year, $hour, $min, $sec);
+    }
+    my $col = $self->dbPlaceGetNumberByNameCol($src);
+    my $row = $self->dbPlaceGetNumberByNameRow($sink);
+    my $val = $self->{FIP}{$index};
+    print "$row $col $val\n" if ( $main::DEBUG == 328 );
+    my $colID = $self->{ColumnIndex}[$col];
+    my $rowID = $self->{RowIndex}[$row];
+    unless ( $colID == $srcID && $rowID == $sinkID ) {
+      print "ERROR : dbgPlaceGetTpath : in to flop inconsistent IDs\n";
+    }
+  }# foreach $sink
+}# foreach $src
+
+print "FF to FF after $counter\n" if ( $main::DEBUG != 328 );
+foreach my $src ( @flops ) {
+  my $srcID = $self->{FFID}{$src};
+  foreach my $sink ( @flops ) {
+    my $sinkID = $self->{FFID}{$sink};
+    my $index = $sinkID * $self->{MaxID} + $srcID;
+    unless ( exists $self->{FIP}{$index} ) {
+      next;
+    }
+    if ( ++$counter % 10000 == 0 && $main::DEBUG != 328 ) {
+      my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$dst) = localtime;
+      $mon++;  $year += 1900;
+      printf("%d entries %02d/%02d/%04d %02d:%02d:%02d\n",
+             $counter, $mon, $mday, $year, $hour, $min, $sec);
+    }
+    my $col = $self->dbPlaceGetNumberByNameCol($src);
+    my $row = $self->dbPlaceGetNumberByNameRow($sink);
+    my $val = $self->{FIP}{$index};
+    print "$row $col $val\n" if ( $main::DEBUG == 328 );
+    my $colID = $self->{ColumnIndex}[$col];
+    my $rowID = $self->{RowIndex}[$row];
+    unless ( $colID == $srcID && $rowID == $sinkID ) {
+      print "ERROR : dbgPlaceGetTpath : flop to flop inconsistent IDs\n";
+    }
+  }# foreach $sink
+}# foreach $src
+
+print "FF to output port after $counter\n" if ( $main::DEBUG != 328 );
+foreach my $src ( @flops ) {
+  my $srcID = $self->{FFID}{$src};
+  foreach my $sink ( @outPorts ) {
+    my $sinkID = $self->{PortID}{$sink};
+    my $index = $sinkID * $self->{MaxID} + $srcID;
+    unless ( exists $self->{FIP}{$index} ) {
+      next;
+    }
+    if ( ++$counter % 10000 == 0 && $main::DEBUG != 328 ) {
+      my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$dst) = localtime;
+      $mon++;  $year += 1900;
+      printf("%d entries %02d/%02d/%04d %02d:%02d:%02d\n",
+             $counter, $mon, $mday, $year, $hour, $min, $sec);
+    }
+    my $col = $self->dbPlaceGetNumberByNameCol($src);
+    my $row = $self->dbPlaceGetNumberByNameRow($sink);
+    my $val = $self->{FIP}{$index};
+    print "$row $col $val\n" if ( $main::DEBUG == 328 );
+    my $colID = $self->{ColumnIndex}[$col];
+    my $rowID = $self->{RowIndex}[$row];
+    unless ( $colID == $srcID && $rowID == $sinkID ) {
+      print "ERROR : dbgPlaceGetTpath : flop to out inconsistent IDs\n";
+    }
+  }# foreach $sink
+}# foreach $src
+
+print "__TPATH_END__ $counter\n";
+
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "SMatrix benchmark took: ", timestr($td), "\n";
+}#sub dbgPlaceGetTpathBM
+
+
+sub dbPlaceSetTpathVal {
+my ($self,$row,$col,$val)  = @_;
+my $index = $self->dbPlaceGetIndexByRowCol($row, $col);
+$self->{FIP}{$index} = $val;
+}#sub dbPlaceSetTpathVal
+
+sub dbPlaceIncrTpathVal {
+my ($self,$row,$col,$val)  = @_;
+my $index = $self->dbPlaceGetIndexByRowCol($row, $col);
+$self->{FIP}{$index} += $val;
+}#sub dbPlaceIncrTpathVal
+
+sub dbPlaceMinTpathVal {
+my ($self, $row, $col, $val) = @_;
+my $index = $self->dbPlaceGetIndexByRowCol($row, $col);
+if ( (!exists $self->{FIP}{$index}) || ($val < $self->{FIP}{$index}) ) {
+  $self->{FIP}{$index} = $val;
+}
+}#sub dbPlaceSetTpathVal
+
+sub dbPlaceGetTpathVal {
+my ($self,$row,$col)  = @_;
+my $val = 0;
+my $index = $self->dbPlaceGetIndexByRowCol($row, $col);
+   if ( exists $self->{FIP}{$index} ) {
+$val = $self->{FIP}{$index};
+                                      }
+return($val);
+}#sub dbPlaceGetTpathVal
+
+# Row number => sum of all fan-in paths  =EXPENSIVE=
+sub dbPlaceGetTotalFanInPaths {
+my ($self,$row)  = @_;
+my $count = 0;
+for ( my $xx = 0 ; $xx < $self->{MaxColumn} ; $xx++ ) {
+      my $index = $self->dbPlaceGetIndexByRowCol($row, $xx);
+      if ( exists $self->{FIP}{$index} ) {
+           my $val = $self->{FIP}{$index};
+           $count = $count + $val;
+                                         }
+}# for
+return($count);
+}#sub dbPlaceGetTotalFanInPaths
+
+########################################################################################
+# Slack 									       #
+########################################################################################
+sub dbgPlaceGetSlacks {
+my($self) = @_;
+   for(my $xx = 1 ; $xx <= $self->{MaxRow}; $xx++ ) {
+          my $name = $self->dbPlaceGetNameByNumberRow($xx);
+          print "$name \t";
+      for ( my $yy = 1 ; $yy <= $self->{MaxColumn}; $yy++ ) {
+            my $val = $self->dbPlaceGetSlackVal($xx, $yy);
+            print "$val ";
+                                                           }# for all columns
+            print "\n";
+                                                   }# for all rows
+}#sub dbgPlaceGetSlacks
+
+sub dbPlaceSetSlackVal {
+my ($self,$row,$col,$val)  = @_;
+my $index = $self->dbPlaceGetIndexByRowCol($row, $col);
+$self->{SLK}{$index} = $val;
+}#sub dbPlaceSetSlackVal
+
+sub dbPlaceGetSlackVal {
+my ($self,$row,$col)  = @_;
+my $val = 0;
+my $index = $self->dbPlaceGetIndexByRowCol($row, $col);
+   if ( exists $self->{SLK}{$index} ) {
+$val = $self->{SLK}{$index};
+                                      }
+return($val);
+}#sub dbPlaceGetSlackVal
+
+#-------------------------------- lot of slack reporting commands --------------------#
+sub dbPlaceGetCumSlackOnReg {
+my ($self,$ff) = @_;
+my $totalSlack = 0;
+my $col_num = $self->dbPlaceGetNumberByNameCol($ff);
+for(my $xx = 1; $xx <= $self->{MaxRow}; $xx++) {
+    my $index = $self->dbPlaceGetIndexByRowCol($xx, $col_num);
+    my $val = 0;
+    if ( exists $self->{SLK}{$index} ) { $val = $self->{SLK}{$index}; 
+                                       $totalSlack = $totalSlack + $val;
+                                       }
+    else { $val = 0; }
+                                }#for
+
+my $row_num = $self->dbPlaceGetNumberByNameRow($ff);
+for(my $xx = 1; $xx <= $self->{MaxColumn}; $xx++) {
+    my $index = $self->dbPlaceGetIndexByRowCol($row_num, $xx);
+    my $val = 0;
+    if ( exists $self->{SLK}{$index} ) { $val = $self->{SLK}{$index};
+                                       $totalSlack = $totalSlack + $val;
+                                       }
+    else { $val = 0; }
+                                }#for
+print "$totalSlack\n";
+return($totalSlack);
+}#sub dbPlaceGetCumSlackOnReg
+
+########################################################################################
+
+sub dbPlaceGetOrCreateFFID {
+my ($self, $name) = @_;
+my $id;
+if ( exists $self->{FFID}{$name} ) {
+  $id = $self->{FFID}{$name};
+}
+else {
+  $self->{MaxFFID} += 1;
+  $id = $self->{MaxFFID};
+  $self->{FFID}{$name} = $id;
+  my @attrList = ();
+  $attrList[$NAME_] = $name;
+  $attr = join(':', @attrList);
+  $self->{FFAttr}{$id} = $attr;
+}
+return $id;
+}# sub dbPlaceGetOrCreateFFID
+
+sub dbPlaceGetOrCreatePortID {
+my ($self, $name) = @_;
+my $id;
+if ( exists $self->{PortID}{$name} ) {
+  $id = $self->{PortID}{$name};
+}
+else {
+  $self->{MaxPortID} += 1;
+  $id = $self->{MaxPortID};
+  $self->{PortID}{$name} = $id;
+  my @attrList = ();
+  $attrList[$NAME_] = $name;
+  $attr = join(':', @attrList);
+  $self->{PortAttr}{$id} = $attr;
+}
+return $id;
+}# sub dbPlaceGetOrCreatePortID
+
+sub dbPlaceSetColumn {
+my ($self,$col,$name)  = @_;
+my $id;
+if ( $col <= $self->{FFCount} ) {
+  $id = $self->dbPlaceGetOrCreateFFID($name);
+  my $attr = $self->{FFAttr}{$id};
+  my @attrList = split(':', $attr);
+  $attrList[$COL_] = $col;
+  $attr = join(':', @attrList);
+  $self->{FFAttr}{$id} = $attr;
+}
+elsif ( $col <= $self->{MaxColumn} ) { #assert ( $self->{FFCount} < $col )
+  $id = $self->dbPlaceGetOrCreatePortID($name);
+  my $attr = $self->{PortAttr}{$id};
+  my @attrList = split(':', $attr);
+  $attrList[$COL_] = $col;
+  $attr = join(':', @attrList);
+  $self->{PortAttr}{$id} = $attr;
+}
+$self->{ColumnIndex}[$col] = $id;
+}#sub dbPlaceSetColumn
+
+sub dbPlaceGetColumn {
+my ($self,$col)  = @_;
+my $id = $self->{ColumnIndex}[$col];
+if ( $col <= $self->{FFCount} ) {
+  my $attr = $self->{FFAttr}{$id};
+  return (split(':', $attr))[$NAME_];
+}
+elsif ( $col <= $self->{MaxColumn} ) { #assert ( $self->{FFCount} < $col )
+  my $attr = $self->{PortAttr}{$id};
+  return (split(':', $attr))[$NAME_];
+}
+return "";
+}#sub dbPlaceGetColumn
+
+
+# Column number => FF name
+sub dbPlaceGetNameByNumber {
+my ($self,$col)  = @_;
+if ( $col <= $self->{FFCount} ) {
+  my $id = $self->{ColumnIndex}[$col];
+  my $attr = $self->{FFAttr}{$id};
+  return (split(':', $attr))[$NAME_];
+}
+else { print "WARN : flop number $col exceeds the flops in the design\n"; }
+}#sub dbPlaceGetNameByNumber
+
+# Column number => FF or port name, similar to dbPlaceGetColumn
+sub dbPlaceGetNameByNumberCol {
+my ($self,$col)  = @_;
+if ( $col <= $self->{MaxColumn} ) {
+  my $id = $self->{ColumnIndex}[$col];
+  if ( $col <= $self->{FFCount} ) {
+    my $attr = $self->{FFAttr}{$id};
+    return (split(':', $attr))[$NAME_];
+  }
+  else { #assert ( $self->{FFCount} < $col && $col <= $self->{MaxColumn} )
+    my $attr = $self->{PortAttr}{$id};
+    return (split(':', $attr))[$NAME_];
+  }
+}
+else { print "WARN : flop column number $col exceeds the flops in the design\n"; 
+return("");
+     }
+}#sub dbPlaceGetNameByNumberCol
+
+# Row number => FF or port name, similar to dbPlaceGetRow
+sub dbPlaceGetNameByNumberRow {
+my ($self,$row)  = @_;
+if ( $row <= $self->{MaxRow} ) {
+  my $id = $self->{RowIndex}[$row];
+  if ( $row <= $self->{FFCount} ) {
+    my $attr = $self->{FFAttr}{$id};
+    return (split(':', $attr))[$NAME_];
+  }
+  else { #assert ( $self->{FFCount} < $row && $row <= $self->{MaxRow} )
+    my $attr = $self->{PortAttr}{$id};
+    return (split(':', $attr))[$NAME_];
+  }
+}
+else { print "WARN : flop row number $row exceeds the flops in the design\n"; 
+return("");
+     }
+}#sub dbPlaceGetNameByNumberRow
+
+# FF or port name => row (if found) or column number
+sub dbPlaceGetNumberByName {
+my ($self,$flopName)  = @_;
+my $xx = $self->dbPlaceGetNumberByNameRow($flopName, "silent");
+if ( $xx > 0 ) {
+  return $xx;
+}
+$xx = $self->dbPlaceGetNumberByNameCol($flopName);
+if ( $xx == 0 ) {
+  print "The name $flopName is not found in placement database\n";
+}
+return $xx;
+}#sub dbPlaceGetNumberByName
+
+############################################3
+
+# FF or port name => column number
+sub dbPlaceGetNumberByNameCol {
+my ($self, $name) = @_;
+
+if ( exists $self->{FFID}{$name} ) {
+  my $id = $self->{FFID}{$name};
+  my $attr = $self->{FFAttr}{$id};
+  return (split(':', $attr))[$COL_];
+}
+elsif ( exists $self->{PortID}{$name} ) {
+  my $id = $self->{PortID}{$name};
+  my $attr = $self->{PortAttr}{$id};
+  return (split(':', $attr))[$COL_];
+}
+print "ERROR : dbPlaceGetNumberByNameCol : some thing is wrong\n";
+return 0;
+}#sub dbPlaceGetNumberByNameCol
+
+# FF or port name => row number
+sub dbPlaceGetNumberByNameRow {
+my ($self, $name, $silent) = @_;
+
+if ( exists $self->{FFID}{$name} ) {
+  my $id = $self->{FFID}{$name};
+  my $attr = $self->{FFAttr}{$id};
+  return (split(':', $attr))[$ROW_];
+}
+elsif ( exists $self->{PortID}{$name} ) {
+  my $id = $self->{PortID}{$name};
+  my $attr = $self->{PortAttr}{$id};
+  return (split(':', $attr))[$ROW_];
+}
+unless ( defined $silent ) {
+  print "ERROR : dbPlaceGetNumberByNameRow : some thing is wrong\n";
+}
+return 0;
+}#sub dbPlaceGetNumberByNameRow
+
+
+
+######
+###############################################------------------#####################################
+#sub dbPlaceGetNameByNumberColRow { unused(?) }
+
+#############################################------------------#########################################
+
+sub dbgPlaceGetColumn {
+my ($self)  = @_;
+for(my $xx = 1; $xx <= $self->{MaxColumn}; $xx++) { 
+   my $val = $self->dbPlaceGetColumn($xx);
+   print "$val\n";
+                                }
+}#sub dbgPlaceGetColumn
+
+sub dbPlaceSetRow {
+my ($self,$row,$name)  = @_;
+my $id;
+if ( $row <= $self->{FFCount} ) {
+  $id = $self->dbPlaceGetOrCreateFFID($name);
+  my $attr = $self->{FFAttr}{$id};
+  my @attrList = split(':', $attr);
+  $attrList[$ROW_] = $row;
+  $attr = join(':', @attrList);
+  $self->{FFAttr}{$id} = $attr;
+}
+elsif ( $row <= $self->{MaxRow} ) { #assert ( $self->{FFCount} < $row )
+  $id = $self->dbPlaceGetOrCreatePortID($name);
+  my $attr = $self->{PortAttr}{$id};
+  my @attrList = split(':', $attr);
+  $attrList[$ROW_] = $row;
+  $attr = join(':', @attrList);
+  $self->{PortAttr}{$id} = $attr;
+}
+$self->{RowIndex}[$row] = $id;
+}# sub dbPlaceSetRow
+
+sub dbPlaceGetRow {
+my ($self,$row)  = @_;
+my $id = $self->{RowIndex}[$row];
+if ( $row <= $self->{FFCount} ) {
+  my $attr = $self->{FFAttr}{$id};
+  return (split(':', $attr))[$NAME_];
+}
+elsif ( $row <= $self->{MaxRow} ) { #assert ( $self->{FFCount} < $row )
+  my $attr = $self->{PortAttr}{$id};
+  return (split(':', $attr))[$NAME_];
+}
+return "";
+}#sub dbPlaceGetRow
+
+sub dbgPlaceGetRow {
+my ($self)  = @_;
+for(my $xx = 1; $xx <= $self->{MaxRow}; $xx++) { 
+   my $val = $self->dbPlaceGetRow($xx);
+   print "$val\n";
+                                }
+}#sub dbgPlaceGetRow
+
+sub dbPlaceGetMaxRow {
+my ( $self) = @_;
+my $num = $self->{MaxRow};
+return($num);
+}#sub dbPlaceGetMaxRow
+
+sub dbPlaceGetMaxCol {
+my ( $self) = @_;
+my $num = $self->{MaxColumn};
+return($num);
+}#sub dbPlaceGetMaxCol
+
+#####################################################################################
+# get fanIns and fanOuts   flops and ports                                          #
+#####################################################################################
+
+# FF or port name => get list of fan in (FF and port) column numbers  =EXPENSIVE=
+sub dbPlaceGetFanInsByName {
+my($self,$flopname)  = @_;
+my $flop = $self->dbPlaceGetNumberByNameRow($flopname);
+my @fan = $self->dbPlaceGetFanIns($flop);
+return(@fan);
+}# sub dbPlaceGetFanInsByName
+
+# Row number => get list of fan in (FF and port) column numbers  =EXPENSIVE=
+sub dbPlaceGetFanIns {
+my ($self, $row)  = @_;
+my @fan = ();
+unless ( $row <= $self->{MaxRow} ) {
+  return(@fan);
+}
+my $rowID = $self->{RowIndex}[$row];
+if ( exists $self->{FanIn}{$rowID} ) {
+  foreach my $id ( @{$self->{FanIn}{$rowID}} ) {
+    if ( exists $self->{FFAttr}{$id} ) {
+      my $attr = $self->{FFAttr}{$id};
+      push(@fan, (split(':', $attr))[$COL_]);
+    }
+    elsif ( exists $self->{PortAttr}{$id} ) {
+      my $attr = $self->{PortAttr}{$id};
+      push(@fan, (split(':', $attr))[$COL_]);
+    }
+  }
+  return(@fan);
+}
+
+for(my $xx = 1; $xx <= $self->{MaxColumn}; $xx++) {
+    my $index = $self->dbPlaceGetIndexByRowCol($row, $xx);
+    if ( exists $self->{FIP}{$index} ) {
+      my $val = $self->{FIP}{$index};
+                if ( $val > 0 ) { push(@fan,$xx); }
+                                       }
+}#for
+return(@fan);
+}# sub dbPlaceGetFanIns
+
+sub dbgPlaceGetFanIns {
+my($self,$flop)  = @_;
+my @fan = $self->dbPlaceGetFanIns($flop);
+print join ",", @fan;
+print "\n";
+}# sub dbgPlaceGetFanIns
+
+# FF or port name => get list of fan out (FF and port) row numbers  =EXPENSIVE=
+sub dbPlaceGetFanOutsByName {
+my($self,$flopname)  = @_;
+my $flop = &dbPlaceGetNumberByNameCol($self,$flopname);
+my @fan = $self->dbPlaceGetFanOuts($flop);
+return(@fan);
+}# sub dbPlaceGetFanOutsByName
+
+# Column number => get list of fan out (FF and port) row numbers  =EXPENSIVE=
+sub dbPlaceGetFanOuts {
+my ($self, $col) = @_;
+my @fan = ();
+unless ( $col <= $self->{MaxColumn} ) {
+  return(@fan);
+}
+my $colID = $self->{ColumnIndex}[$col];
+if ( exists $self->{FanOut}{$colID} ) {
+  foreach my $id ( @{$self->{FanOut}{$colID}} ) {
+    if ( exists $self->{FFAttr}{$id} ) {
+      my $attr = $self->{FFAttr}{$id};
+      push(@fan, (split(':', $attr))[$ROW_]);
+    }
+    elsif ( exists $self->{PortAttr}{$id} ) {
+      my $attr = $self->{PortAttr}{$id};
+      push(@fan, (split(':', $attr))[$ROW_]);
+    }
+  }
+  return(@fan);
+}
+
+for(my $xx = 1; $xx <= $self->{MaxRow}; $xx++) {
+    my $index = $self->dbPlaceGetIndexByRowCol($xx, $col);
+    if ( exists $self->{FIP}{$index} ) {
+      my $val = $self->{FIP}{$index};
+                if ( $val > 0 ) { push(@fan,$xx); }
+                                       }
+}#for 
+return(@fan);
+}# sub dbPlaceGetFanOuts
+
+
+sub dbgPlaceGetFanOuts {
+my($self,$flop)  = @_;
+my @fan = $self->dbPlaceGetFanOuts($flop);
+print join ",", @fan;
+print "\n";
+}# sub dbgPlaceGetFanOuts
+################################################################################
+
+### flops
+
+# Row number => get list of fan in FF column numbers  =EXPENSIVE=
+sub dbPlaceGetFanInFlops {
+my ($self, $row) = @_;
+my @fan = ();
+unless ( $row <= $self->{MaxRow} ) {
+  return(@fan);
+}
+my $rowID = $self->{RowIndex}[$row];
+if ( exists $self->{FanIn}{$rowID} ) {
+  foreach my $id ( @{$self->{FanIn}{$rowID}} ) {
+    if ( exists $self->{FFAttr}{$id} ) {
+      my $attr = $self->{FFAttr}{$id};
+      push(@fan, (split(':', $attr))[$COL_]);
+    }
+  }
+  return(@fan);
+}
+
+for(my $xx = 1; $xx <= $self->{FFCount}; $xx++) {
+    my $index = $self->dbPlaceGetIndexByRowCol($row, $xx);
+    if ( exists $self->{FIP}{$index} ) {
+      my $val = $self->{FIP}{$index};
+                if ( $val > 0 ) { push(@fan,$xx); }
+                                       }
+}#for
+return(@fan);
+}# sub dbPlaceGetFanInFlops
+
+sub dbgPlaceGetFanInFlops {
+my($self,$flop) = @_;
+my @fan = $self->dbPlaceGetFanInFlops($flop);
+print join ",", @fan;
+print "\n";
+}# sub dbgPlaceGetFanInFlops
+
+sub dbgPlaceGetFanOutFlops {
+my($self,$flop)  = @_;
+my @fan = $self->dbPlaceGetFanOutFlops($flop);
+print join ",", @fan;
+print "\n";
+}#sub dbgPlaceGetFanOutFlops
+
+# Column number => get list of fan out FF row numbers  =EXPENSIVE=
+sub dbPlaceGetFanOutFlops {
+my ($self, $col) = @_;
+my @fan = ();
+unless ( $col <= $self->{MaxColumn} ) {
+  return(@fan);
+}
+my $colID = $self->{ColumnIndex}[$col];
+if ( exists $self->{FanOut}{$colID} ) {
+  foreach my $id ( @{$self->{FanOut}{$colID}} ) {
+    if ( exists $self->{FFAttr}{$id} ) {
+      my $attr = $self->{FFAttr}{$id};
+      push(@fan, (split(':', $attr))[$ROW_]);
+    }
+  }
+  return(@fan);
+}
+
+for(my $xx = 1; $xx <= $self->{FFCount}; $xx++) {
+    my $index = $self->dbPlaceGetIndexByRowCol($xx, $col);
+    if ( exists $self->{FIP}{$index} ) {
+      my $val = $self->{FIP}{$index};
+                if ( $val > 0 ) { push(@fan,$xx); }
+                                       }
+}#for
+return(@fan);
+}#sub dbPlaceGetFanOutFlops
+
+### ports
+
+# Row number => get list of fan in port column numbers  =EXPENSIVE=
+sub dbPlaceGetFanInPorts {
+my ($self, $row) = @_;
+my @fan = ();
+unless ( $row <= $self->{MaxRow} ) {
+  return(@fan);
+}
+my $rowID = $self->{RowIndex}[$row];
+if ( exists $self->{FanIn}{$rowID} ) {
+  foreach my $id ( @{$self->{FanIn}{$rowID}} ) {
+    if ( exists $self->{PortAttr}{$id} ) {
+      my $attr = $self->{PortAttr}{$id};
+      push(@fan, (split(':', $attr))[$COL_]);
+    }
+  }
+  return(@fan);
+}
+
+for (my $xx = $self->{FFCount}+ 1; $xx <= $self->{MaxColumn} ; $xx++) {
+    my $index = $self->dbPlaceGetIndexByRowCol($row, $xx);
+    if ( exists $self->{FIP}{$index} ) {
+      my $val = $self->{FIP}{$index};
+                if ( $val > 0 ) { push(@fan,$xx); }
+                                       }
+}#for
+return(@fan);
+}# sub dbPlaceGetFanInPorts
+
+sub dbgPlaceGetFanInPorts {
+my($self,$flop) = @_;
+my @fan = $self->dbPlaceGetFanInPorts($flop);
+print join ",", @fan;
+print "\n";
+}# sub dbgPlaceGetFanInPorts
+
+
+# Column number => get list of fan out port row numbers  =EXPENSIVE=
+sub dbPlaceGetFanOutPorts {
+my ($self, $col) = @_;
+my @fan = ();
+unless ( $col <= $self->{MaxColumn} ) {
+  return(@fan);
+}
+my $colID = $self->{ColumnIndex}[$col];
+if ( exists $self->{FanOut}{$colID} ) {
+  foreach my $id ( @{$self->{FanOut}{$colID}} ) {
+    if ( exists $self->{PortAttr}{$id} ) {
+      my $attr = $self->{PortAttr}{$id};
+      push(@fan, (split(':', $attr))[$ROW_]);
+    }
+  }
+  return(@fan);
+}
+
+for (my $xx = $self->{FFCount}+ 1; $xx <= $self->{MaxRow} ; $xx++) {
+    my $index = $self->dbPlaceGetIndexByRowCol($xx, $col);
+    if ( exists $self->{FIP}{$index} ) {
+      my $val = $self->{FIP}{$index};
+                if ( $val > 0 ) { push(@fan,$xx); }
+                                       }
+}#for
+return(@fan);
+}#sub dbPlaceGetFanOutPorts
+
+
+sub dbgPlaceGetFanOutPorts {
+my($self,$flop)  = @_;
+my @fan = $self->dbPlaceGetFanOutPorts($flop);
+print join ",", @fan;
+print "\n";
+}#sub dbgPlaceGetFanOutPorts
+
+
+
+
+##################################### commands to print the characteristic map ##################
+
+sub dbgPlacePrintReg2RegMap {
+my($self) = @_;
+   for(my $xx = 1 ; $xx <= $self->{FFCount}; $xx++ ) {
+          my $name = $self->dbPlaceGetNameByNumberRow($xx);
+          print "$name \t";
+      for ( my $yy = 1 ; $yy <= $self->{FFCount}; $yy++ ) {
+            my $val = $self->dbPlaceGetTpathVal($xx, $yy);
+            print "$val ";
+                                                           }# for all flip flop columns
+            print "\n";
+                                                   }# for all flip flop rows
+}#sub dbgPlacePrintReg2RegMap
+
+sub dbgPlacePrintIn2RegMap {
+my($self) = @_;
+my $regOffset = $self->{FFCount};
+
+   for(my $xx = 1 ; $xx <= $self->{FFCount}; $xx++ ) {
+          my $name = $self->dbPlaceGetNameByNumberRow($xx);
+          print "$name \t";
+      for ( my $yy = $regOffset + 1 ; $yy <= $regOffset + $self->{InCount}; $yy++ ) {
+            my $val = $self->dbPlaceGetTpathVal($xx, $yy);
+            print "$val ";
+                                                           }# for all input columns
+            print "\n";
+                                                   }# for all flip flop rows
+}#sub dbgPlacePrintIn2RegMap
+
+sub dbgPlacePrintReg2OutMap {
+my($self) = @_;
+my $regOffset = $self->{FFCount};
+
+   for(my $xx = $regOffset + 1 ; $xx <= $regOffset + $self->{OutCount}; $xx++ ) {
+          my $name = $self->dbPlaceGetNameByNumberRow($xx);
+          print "$name \t";
+      for ( my $yy = 1 ; $yy <= $self->{FFCount}; $yy++ ) {
+            my $val = $self->dbPlaceGetTpathVal($xx, $yy);
+            print "$val ";
+                                                           }# for all flip flop columns
+            print "\n";
+                                                   }# for all output rows
+}#sub dbgPlacePrintReg2OutMap
+##########################################################################################
+
+############################## Reorder Matrix ############################################
+
+sub dbPlaceRowSwap {
+my($self,$y1,$y2) = @_;
+my $id1 = $self->{RowIndex}[$y1];
+my $id2 = $self->{RowIndex}[$y2];
+$self->{RowIndex}[$y1] = $id2;
+$self->{RowIndex}[$y2] = $id1;
+
+if ( $y1 <= $self->{FFCount} ) {
+  my $attr = $self->{FFAttr}{$id1};
+  my @attrList = split(':', $attr);
+  $attrList[$ROW_] = $y2;
+  $attr = join(':', @attrList);
+  $self->{FFAttr}{$id1} = $attr;
+}
+elsif ( $y1 <= $self->{MaxRow} ) { #assert ( $self->{FFCount} < $y1 )
+  my $attr = $self->{PortAttr}{$id1};
+  my @attrList = split(':', $attr);
+  $attrList[$ROW_] = $y2;
+  $attr = join(':', @attrList);
+  $self->{PortAttr}{$id1} = $attr;
+}
+
+if ( $y2 <= $self->{FFCount} ) {
+  my $attr = $self->{FFAttr}{$id2};
+  my @attrList = split(':', $attr);
+  $attrList[$ROW_] = $y1;
+  $attr = join(':', @attrList);
+  $self->{FFAttr}{$id2} = $attr;
+}
+elsif ( $y2 <= $self->{MaxRow} ) { #assert ( $self->{FFCount} < $y2 )
+  my $attr = $self->{PortAttr}{$id2};
+  my @attrList = split(':', $attr);
+  $attrList[$ROW_] = $y1;
+  $attr = join(':', @attrList);
+  $self->{PortAttr}{$id2} = $attr;
+}
+}#sub dbPlaceRowSwap
+
+
+sub dbPlaceColumnSwap {
+my($self,$x1,$x2) = @_;
+my $id1 = $self->{ColumnIndex}[$x1];
+my $id2 = $self->{ColumnIndex}[$x2];
+$self->{ColumnIndex}[$x1] = $id2;
+$self->{ColumnIndex}[$x2] = $id1;
+
+if ( $x1 <= $self->{FFCount} ) {
+  my $attr = $self->{FFAttr}{$id1};
+  my @attrList = split(':', $attr);
+  $attrList[$COL_] = $x2;
+  $attr = join(':', @attrList);
+  $self->{FFAttr}{$id1} = $attr;
+}
+elsif ( $x1 <= $self->{MaxCol} ) { #assert ( $self->{FFCount} < $x1 )
+  my $attr = $self->{PortAttr}{$id1};
+  my @attrList = split(':', $attr);
+  $attrList[$COL_] = $x2;
+  $attr = join(':', @attrList);
+  $self->{PortAttr}{$id1} = $attr;
+}
+
+if ( $x2 <= $self->{FFCount} ) {
+  my $attr = $self->{FFAttr}{$id2};
+  my @attrList = split(':', $attr);
+  $attrList[$COL_] = $x1;
+  $attr = join(':', @attrList);
+  $self->{FFAttr}{$id2} = $attr;
+}
+elsif ( $x2 <= $self->{MaxCol} ) { #assert ( $self->{FFCount} < $x2 )
+  my $attr = $self->{PortAttr}{$id2};
+  my @attrList = split(':', $attr);
+  $attrList[$COL_] = $x1;
+  $attr = join(':', @attrList);
+  $self->{PortAttr}{$id2} = $attr;
+}
+}#sub dbPlaceColumnSwap
+
+##########################################################################################
+
+############################## FanIn and FanOut Hash #####################################
+
+sub dbPlaceConstructFanInFanOutHash {
+my ($self) = @_;
+foreach my $index ( keys %{$self->{FIP}} ) {
+  my $coef = $self->{MaxID};
+  my $sinkID = int($index / $coef);
+  my $srcID = $index % $coef;
+  push(@{$self->{FanIn}{$sinkID}}, $srcID);
+  push(@{$self->{FanOut}{$srcID}}, $sinkID);
+}# foreach $index
+}#sub dbPlaceConstructFanInFanOutHash
+
+sub dbPlaceDestroyFanInFanOutHash {
+my ($self) = @_;
+$self->{FanIn} = ();
+$self->{FanOut} = ();
+}#sub dbPlaceDestroyFanInFanOutHash
+
+
+1;

@@ -1,0 +1,3662 @@
+sub dbgSpiceCompileSpice3Deck {
+
+
+open(WRITE,">TA.spice");
+print "INFO-TE : 001 : writing header\n";
+&dbgSpiceDeckHeader;
+print "INFO-TE : 002 : adding the spice thingi...\n";
+&dbgSpice1PathFromReg ;
+close(WRITE);
+system("/usr/local/spice/bin/spice3 -n -b TA.spice");
+#&dbgSpiceReadSimOutputData;
+$ret_value = &dbgSpiceReadSimOutputData_New;
+if ( $env_stop_commands_on_problems eq "true" ) {
+if ( $ret_value eq "STOP" ) {
+        print "INFO-TE : 003 : returning from calling subroutine\n";
+        return(STOP);
+                            }
+                                               }
+&dbgSpiceReport1PathTiming;
+
+}#sub dbgSpiceCompileSpice3Deck
+
+sub fracture_netlist {
+my $noOfArguments = @_;
+
+if( $noOfArguments < 2 || $_[0] eq '-h') { print "Usage : fracture_netlist -rep_path_cmmd <fileName> \n";
+                           print "                         -outfile     <fileName> \n";
+                         }
+else {
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-rep_path_cmmd"){$PKS_CMD_FILE = $_[$i+1]; $PKS_STA = 1;}
+if($_[$i] eq "-outfile"){$REPORT_FILE = $_[$i+1];}
+                                         } # for
+
+print "INFO-TE-FRCTRE : 001 : Writing timing report to file \"timingReport.rpt\"\n";
+open (WRITE_REPORT,">$REPORT_FILE");
+open (WRITE_PKS_STA,">$PKS_CMD_FILE");
+print WRITE_REPORT "Report of Dynamic Timing Analysis from eQAtor tool\n";
+print WRITE_REPORT "----------------------------------------\n";
+print WRITE_REPORT "\n";
+print WRITE_REPORT "\n";
+#&dbgBuildNetNameMap;
+print "INFO-TE-FRCTRE : 002 : Timing the design ... facturing the netlist\n";
+$ret_value = &dbgSpiceReg2RegTrace;
+if( $ret_value eq "STOP" ) { print "INFO-TE-FRCTRE : 003 : Stoping the command :  fracture_netlist : \n"; }
+close(WRITE_REPORT);
+close(WRITE_PKS_STA);
+      }# if correct arguments
+}#fracture_netlist
+
+sub dbgSpiceDeckHeader {
+
+print WRITE "\.lib $SPICE_MODELS_COND_POINTERS\n";
+foreach my $pointer ( @SPICE_MODELS_POINTERS ) {
+print WRITE "\.include $pointer\n";
+                                             }# all the spice model files read 
+
+########## print the .include statements  ##########
+
+foreach my $pointer ( @SPICE_FILE_POINTERS ) {
+print WRITE "\.include $pointer\n";
+                                             }# all the spice files read 
+
+}# sub dbgSpiceDeckHeader 
+
+sub dbgSpiceReg2RegTrace {
+                                                                                                                                                      
+$count2 = 0;
+$pathNum = 1;
+                                                                                                                                                      
+foreach $instance ( keys %COMP_ALREADY ) {
+        $cellref = $COMP_ATTRIBUTE_ALREADY{$instance}{cellref};
+        if ( $MACROS_ATTRIBUTE_ALREADY{$cellref}{func} eq "reg" ) {
+        @TEMP_PATH=();
+        push(@TEMP_PATH,$instance);
+     $ret_value = &dbgSpiceTraceReg2Reg($instance,$count2);
+ if( $ret_value eq "STOP" ) {
+            # print "Exiting subroutine 1\n";
+             return(STOP);
+                            }
+                 print "INFO-TE : 001 : ended trace from starting flop\n";
+                                                                  }#if instance is a register
+                                                                                                                                                      
+                                         }# foreach component
+                                                                                                                                                      
+                                                                                                                                                      
+}#sub dbgSpiceReg2RegTrace
+                                                                                                                                                      
+sub dbgSpiceTraceReg2Reg  {
+                                                                                                                                                      
+local $instanceName = $_[0];
+local $noOfComponentsBeforeBranch = $_[1];
+local $cellref = $COMP_ATTRIBUTE_ALREADY{$instanceName}{cellref};
+local $fwdNetName;
+
+foreach $pinName ( keys %{$MACROS_ALREADY{$cellref}} ) {
+               if ( $MACROS_ALREADY{$cellref}{$pinName}{direction} eq "output" ) {
+                   if( exists $COMP_ALREADY{$instanceName}{$pinName} ) {
+                   print "INFO-TE : 001 : $instanceName\n";
+                   $fwdNetName = $COMP_ALREADY{$instanceName}{$pinName};
+                   $noOfComponentsOnNet = keys %{$NETS_ALREADY{$fwdNetName}};
+                   if($noOfComponentsOnNet > 2) {
+                   $noOfComponentsBeforeBranch = @TEMP_PATH;
+                                                } else { $noOfComponentsBeforeBranch  = $noOfComponentsBeforeBranch; }
+                   foreach $newInstanceName ( keys %{$NETS_ALREADY{$fwdNetName}} ) {
+                        $newCellref = $COMP_ATTRIBUTE_ALREADY{$newInstanceName}{cellref};
+
+                   if ( $newInstanceName eq $instanceName ) {
+                                                            }
+                   elsif($MACROS_ATTRIBUTE_ALREADY{$newCellref}{func} eq "reg" ) {
+                          push(@TEMP_PATH,"$newInstanceName $fwdNetName");
+###########################################################################################################################################
+# since end flop is reached ; path is complete  
+# call spice to time the path ###
+                                       $pathNum++;
+                                       $presentNoOfComponents = @TEMP_PATH;
+# since end flop is reached check if the begin and end points are the one which we want
+         $instStart = (split(/\s+/, $TEMP_PATH[0]))[0];
+         $instEnd = (split(/\s+/, $TEMP_PATH[$presentNoOfComponents-1]))[0];
+         if ( $instStart eq $instEnd ) {
+         print "INFO-TE : 002 : Found the self loop path ... ignoring\n";
+                                       }
+         else {
+              if ( $PKS_STA == 1 ) { 
+                      print WRITE_PKS_STA "report_timing ";
+                      print WRITE_PKS_STA "-from $instStart ";
+                      print WRITE_PKS_STA "-to $instEnd ";
+                      for ( my $xx = 1 ; $xx < $presentNoOfComponents - 1; $xx++ ) { 
+                                         $throughInst = (split(/\s+/, $TEMP_PATH[$xx]))[0];  
+                                         print WRITE_PKS_STA "-through $throughInst ";
+                                                                                   }#for
+                      print WRITE_PKS_STA "\n";
+                                   }
+print "INFO-TE : 003 : spice deck ready to simulate ...\n";
+$ret_value = &dbgSpiceCompileSpice3Deck;
+if( $ret_value eq "STOP" ) {
+             print "INFO-TE : 004 : Existing from foreach\n";
+             return(STOP);
+                            }
+              }# path found
+###########################################################################################################################################
+                                       $removeNoOfComponents = $presentNoOfComponents - $noOfComponentsBeforeBranch;
+                                        for(my $xx = 0; $xx <= $removeNoOfComponents;$xx++) {
+                                                     my $yy = $presentNoOfComponents - $xx;
+                                                     delete $TEMP_PATH[$yy];
+                                                                                                 }#for
+                                                                              }
+                   else {
+                          push(@TEMP_PATH,"$newInstanceName $fwdNetName");
+                          $ret_value = &dbgSpiceTraceReg2Reg($newInstanceName,$noOfComponentsBeforeBranch);
+                          if( $ret_value eq "STOP" ) {
+#                              print "Existing from nested loop\n";
+                              return(STOP);
+                                                     }
+
+                                       $presentNoOfComponents = @TEMP_PATH;
+                                       $removeNoOfComponents = $presentNoOfComponents - $noOfComponentsBeforeBranch;
+                                        for(my $xx = 0; $xx <= $removeNoOfComponents;$xx++) {
+                                                     my $yy = $presentNoOfComponents - $xx;
+                                                     delete $TEMP_PATH[$yy];
+                                                                                                 }#for
+                        }
+                                                                                                                                                      
+                                                                                                                                                      
+                                                                                   }#foreach
+                                                                       }# if pin has some connectivity
+                                                                                }#if pin is an output pin
+                                                                                                                                                      
+                                                    }# foreach pin of instance
+}# sub dbgSpiceTraceReg2Reg
+
+
+
+sub dbgSpice1PathFromReg {
+
+#############################################################################################################################
+#  writing the spice deck 
+#############################################################################################################################
+                                 print WRITE "\*\.subckt subckt$pathNum \n";
+my @TEMP_PATH2 = ();
+my $temp_count = 0;
+                                 foreach $tag ( @TEMP_PATH ) {
+                                 my $listOfPinsUsed = "";
+                                        my ($inst,$drivingNet) = (split(/\s+/,$tag))[0,1];
+                                        $temp_count++;
+                                      print WRITE "X$temp_count.$inst ";
+#####################################################
+# insert nets
+#####################################################
+   my $cellref = $COMP_ATTRIBUTE_ALREADY{$inst}{cellref};
+
+   if( exists $MACRO_SPICE{$cellref} ){
+   my @pinList = split(/\s+/, $MACRO_SPICE{$cellref}{pinList});
+     while ( defined ( $pin = shift @pinList)) {
+     if( $pin eq "VDD" || $pin eq "VSS" || $pin eq "GND" ) { }
+     elsif ( $MACROS_ALREADY{$cellref}{$pin}{direction} eq "OUTPUT" || $MACROS_ALREADY{$cellref}{$pin}{direction} eq "output" ){ 
+                                                        $netName = $COMP_ALREADY{$inst}{$pin};
+                                                        $temp = "n".$NETS_NAME_MAP{$netName}.__.$pin;
+                                                        print WRITE "$temp ";
+                                                             } else {
+         #print "$pin $COMP_ALREADY{$inst}{$pin}\n";
+         if ( exists $COMP_ALREADY{$inst}{$pin} ) { $netName = $COMP_ALREADY{$inst}{$pin}; 
+                                                    if( $MACROS_ATTRIBUTE_ALREADY{$cellref}{func} eq "reg") { $temp = "n".$NETS_NAME_MAP{$netName}.__.$pin; } else {
+                                                    if( $netName eq $drivingNet) { $listOfPinsUsed = "$pin $listOfPinsUsed";
+                                                          $temp = "n".$NETS_NAME_MAP{$netName}.__.$pin;
+                                                                                 }
+                                                        else { $temp = "i".$COMP_NAME_MAP{$inst}.__.$pin; }
+                                                                                                                     }
+                                                          #$temp = "i".$COMP_NAME_MAP{$inst}.__.$pin;
+                                                    print WRITE "$temp ";
+                                                  }
+         else { }# if Pin has a connectivity        
+                                                                    }# if pin is a signal pin
+                                               }#while
+                                   
+                                  push( @TEMP_PATH2, "$inst $listOfPinsUsed");
+                                   }# if cell exists in the spice subckt
+    else { print "WARN-TE : 001 : the spice subckt for $inst : $cellref does not exist \n"; }
+                                   print WRITE " VDD GND";
+                                   print WRITE " $cellref ";
+                                   print WRITE "\n";
+                                                           }#foreach
+
+my $previousInst = (split(/\s+/,$TEMP_PATH[0]))[0];
+my $drNet = "";
+my $noOfInstinPath = @TEMP_PATH;
+my $yy = 1;
+
+%GATE_CAP = (
+DFFX1 => 2,
+INVX1 => 3,
+NAND2X1 => 4,
+NAND3X1 => 4.6,
+NAND4X1 => 4.7,
+AND2X1 => 2,
+AND3X1 => 2.2,
+AND4X1 => 2.3,
+OR2X1 => 4.1,
+OR3X1 => 4.5,
+OR4X1 => 5,
+NOR2X1 => 4.1,
+NOR3X1 => 4.5,
+NOR4X1 => 5 );
+
+
+for(my $xx=1; $xx < $noOfInstinPath ; $xx++) {
+           my( $inst, $drNet ) = (split(/\s+/,$TEMP_PATH[$xx]))[0,1];
+           $nodeName1 = "n".$NETS_NAME_MAP{$drNet}.__.$NETS_ALREADY{$drNet}{$previousInst};
+           $nodeName2 = "n".$NETS_NAME_MAP{$drNet}.__.$NETS_ALREADY{$drNet}{$inst};
+
+           ##### checking for multiple fanout of the driven net ####
+           my $noOfCompAttachedtoNet = keys %{$NETS_ALREADY{$drNet}};
+           if ( $noOfCompAttachedtoNet > 2 ) {
+              foreach my $tempInst ( keys %{$NETS_ALREADY{$drNet}} ) {
+                 if( $tempInst eq $inst || $tempInst eq $previousInst ) { }
+                 else {
+                 my $tempNode = "n".$COMP_NAME_MAP{$tempInst}."\.".$NETS_ALREADY{$drNet}{$tempInst};
+                 ###  right now i am just approximating it with single RC number ##
+#                 print WRITE "R$yy $nodeName1 $tempNode 0.0001\n";
+                 $cellref = $COMP_ATTRIBUTE_ALREADY{$tempInst}{cellref};
+#                 print WRITE "C$yy $tempNode GND $GATE_CAP{$COMP_ATTRIBUTE_ALREADY{$tempInst}{cellref}}ff\n";
+                 $yy++;
+                 
+                      }
+                                                                    }#foreach
+                                             }# if the fanout is more than 2
+
+           print WRITE "R$yy $nodeName1 $nodeName2 0.0001\n";
+           $yy++;
+                  $previousInst = $inst;
+                                 }#for
+
+
+                                   print WRITE "\*\.ends\n";
+#########################################################
+#  insert testdecks
+#########################################################
+
+print WRITE "Vsupply VDD 0 DC $SPICE_SUPPLY_VOLTAGE\n";
+print WRITE "Vgnd GND 0 DC $SPICE_GND_VOLTAGE\n";
+
+################################## 1st Flop ################################################
+my $tag = $TEMP_PATH2[0];
+        my($inst) = (split(/\s+/,$tag))[0];
+        my $cellref = $COMP_ATTRIBUTE_ALREADY{$inst}{cellref};
+            if( $MACROS_ATTRIBUTE_ALREADY{$cellref}{func} eq "reg" ) {
+   if( exists $MACRO_SPICE{$cellref} ){
+   my @pinList = split(/\s+/, $MACRO_SPICE{$cellref}{pinList});
+     while ( defined ( $pin = shift @pinList)) {
+     if( $pin eq "VDD" || $pin eq "VSS" || $pin eq "GND" ) { } else {
+         if ( $MACROS_ALREADY{$cellref}{$pin}{direction} eq "output" ) { }
+         else {
+              if( $pin eq "CLK" || $pin eq "CK" ) {
+                  $startFlopClkNet = $COMP_ALREADY{$inst}{$pin};
+         print WRITE "V$inst.$pin n$NETS_NAME_MAP{$startFlopClkNet}__$pin 0 pulse $SPICE_VIL $SPICE_VIH $SPICE_CLOCK_INPUT_DELAY $SPICE_RISETIME $SPICE_FALLTIME $SPICE_CLOCK_UPTIME $SPICE_CLOCK_PERIOD\n";
+                                  }
+              if( $pin eq "D" ) {
+         print WRITE "V$inst.$pin n$NETS_NAME_MAP{$COMP_ALREADY{$inst}{$pin}}__$pin 0 pulse $SPICE_VIH $SPICE_VIL $SPICE_INPUT_DELAY $SPICE_RISETIME $SPICE_FALLTIME $SPICE_CLOCK_PERIOD $SPICE_MAX_DELAY\n";
+                                  }
+               }
+                                                                    }#if signal pin
+                                               }# while pin
+                                      }#if cell exists in MACROS_SPICE database
+                                                                     }# if the cell is a reg
+
+################################## 2nd Flop ################################################
+$tag = pop(@TEMP_PATH2);
+        ($inst) = (split(/\s+/,$tag))[0];
+        $cellref = $COMP_ATTRIBUTE_ALREADY{$inst}{cellref};
+            if( $MACROS_ATTRIBUTE_ALREADY{$cellref}{func} eq "reg" ) {
+   if( exists $MACRO_SPICE{$cellref} ){
+   my @pinList = split(/\s+/, $MACRO_SPICE{$cellref}{pinList});
+     while ( defined ( $pin = shift @pinList)) {
+     if( $pin eq "VDD" || $pin eq "VSS" || $pin eq "GND" ) { } else {
+         if ( $MACROS_ALREADY{$cellref}{$pin}{direction} eq "output" ) { }
+         else {
+              if( $pin eq "CLK"  || $pin eq "CK") {
+                  $endFlopClkNet = $COMP_ALREADY{$inst}{$pin};
+                      if ( $endFlopClkNet eq $startFlopClkNet ) { } else {
+                  #$SPICE_CLOCK_INPUT_DELAY = $SPICE_CLOCK_INPUT_DELAY + $SPICE_CLOCK_PERIOD;
+         print WRITE "V$inst.$pin n$NETS_NAME_MAP{$COMP_ALREADY{$inst}{$pin}}__$pin 0 pulse $SPICE_VIL $SPICE_VIH $SPICE_CLOCK_INPUT_DELAY $SPICE_RISETIME $SPICE_FALLTIME $SPICE_CLOCK_UPTIME $SPICE_CLOCK_PERIOD\n";
+                                                                         }
+                                  }
+               }
+                                                                    }#if signal pin
+                                               }# while pin
+                                      }#if cell exists in MACROS_SPICE database
+                                                                     }# if the cell is a reg
+
+
+
+
+
+################################  combinantional cells #####################################
+foreach $tag ( @TEMP_PATH2 ) {
+        my ($inst, $pinName) = (split(/\s+/,$tag))[0,1];
+        $cellref = $COMP_ATTRIBUTE_ALREADY{$inst}{cellref};
+            if( $MACROS_ATTRIBUTE_ALREADY{$cellref}{func} eq "reg" ) {
+                                                                     }
+            else {
+            #print "inst $inst pin $pinName\n";
+        foreach $pin (keys %{$MACROS_ALREADY{$cellref}} ) { 
+            if ( $pin eq VDD || $pin eq VSS || $pin eq GND || $pin eq "vdd!" || $pin eq "gnd!" ) { }
+            elsif ( $MACROS_ALREADY{$cellref}{$pin}{direction} eq "input" ) {
+                    if ( $pinName eq $pin ) { }
+                    else { 
+ if ( $MACROS_ATTRIBUTE_ALREADY{$cellref}{func} eq "nand" ) { print WRITE "V$inst.$pin i$COMP_NAME_MAP{$inst}__$pin 0 DC $SPICE_VIH\n"; }
+ if ( $MACROS_ATTRIBUTE_ALREADY{$cellref}{func} eq "and" ) { print WRITE "V$inst.$pin i$COMP_NAME_MAP{$inst}__$pin 0 DC $SPICE_VIH\n"; }
+ if ( $MACROS_ATTRIBUTE_ALREADY{$cellref}{func} eq "nor" ) { print WRITE "V$inst.$pin i$COMP_NAME_MAP{$inst}__$pin 0 DC $SPICE_VIL\n"; }
+ if ( $MACROS_ATTRIBUTE_ALREADY{$cellref}{func} eq "or" ) { print WRITE "V$inst.$pin i$COMP_NAME_MAP{$inst}__$pin 0 DC $SPICE_VIL\n"; }
+                         }
+                                                                                 }
+            else { }
+                                                           }#foreach
+                 }
+                                }#foreach
+
+##############################  set the initial conditions on the flops ####################
+
+$tag = $TEMP_PATH2[0];
+        ($inst) = (split(/\s+/,$tag))[0];
+        $cellref = $COMP_ATTRIBUTE_ALREADY{$inst}{cellref};
+            if( $MACROS_ATTRIBUTE_ALREADY{$cellref}{func} eq "reg" ) {
+   if( exists $MACRO_SPICE{$cellref} ){
+   my @pinList = split(/\s+/, $MACRO_SPICE{$cellref}{pinList});
+     while ( defined ( $pin = shift @pinList)) {
+     if( $pin eq "VDD" || $pin eq "VSS" || $pin eq "GND" ) { } else {
+         if ( $MACROS_ALREADY{$cellref}{$pin}{direction} eq "output" ) {
+                                                                       }
+         else {
+               }
+                                                                    }#if signal pin
+                                               }# while pin
+                                      }#if cell exists in MACROS_SPICE database
+                                                                     }# if the cell is a reg
+
+
+print WRITE "\.control\n";
+print WRITE "set nobreak\n";
+print WRITE "tran 0.1ps $SPICE_SIM_TIME\n";
+###########################
+# write results to a file #
+###########################
+
+$previousInst = (split(/\s+/,$TEMP_PATH[0]))[0];
+$drNet = "";
+$noOfInstinPath = @TEMP_PATH;
+print WRITE "print v(n$NETS_NAME_MAP{$COMP_ALREADY{$previousInst}{CK}}__CK) >dataFile\n";
+for(my $xx=1; $xx < $noOfInstinPath ; $xx++) {
+           my( $inst, $drNet ) = (split(/\s+/,$TEMP_PATH[$xx]))[0,1];
+           $nodeName1 = "n".$NETS_NAME_MAP{$drNet}.__.$NETS_ALREADY{$drNet}{$previousInst};
+           $nodeName2 = "n".$NETS_NAME_MAP{$drNet}.__.$NETS_ALREADY{$drNet}{$inst};
+           print WRITE "print v($nodeName1) >>dataFile\n";
+           print WRITE "print v($nodeName2) >>dataFile\n";
+                  $previousInst = $inst;
+                                 }#for
+#print WRITE " >dataFile\n";
+
+print WRITE "\.endc\n";
+print WRITE "\.end\n";
+
+#############################  finish ######################################################
+
+                                 print WRITE "\n\n";
+
+
+
+}#sub dbgSpice1PathFromReg
+
+
+
+
+
+
+sub write_spice {
+
+
+my $noOfArguments = @_;
+my $hformat =  "false";
+my $FORMAT = spice3 ;
+my $PROCEED = 1 ;
+
+if ( $noOfArguments < 2 || $_[0] eq '-h') { print "Usage : write_spice  -output < file Name >\n";
+                            print "                     -format < spice3 / hspice >\n";
+                            print "                     -hier < false / true >\n";
+                          } else {
+
+  for ( my $x = 0 ; $x < $noOfArguments ; $x++) {
+        if ( $_[$x] =~ /-output/ ) { $OUTPUT_SPICE_FILE = $_[$x+1]; }
+        elsif ( $_[$x] =~ /-hier/ ) { $hformat = $_[$x+1]; }
+        elsif ( $_[$x] =~ /-format/ ) { $FORMAT = $_[$x+1]; }
+                                                   }# for no of arguments
+if ( $PROCEED == 1 ) { # if it is ok to proceed because all the user provided options are understood
+if ( $FORMAT eq "hspice" ) {
+
+print "INFO-TE-WRTE_SPCE : 001 : Begin writing the netlist in hspice file format : $OUTPUT_SPICE_FILE : \n";
+open ( WRITE, ">$OUTPUT_SPICE_FILE");
+print WRITE "#HSPICE FILE written from eQAtor verion-$TOOL_VERSION\n";
+&hspiceOut;
+close(WRITE);
+print "INFO-TE-WRTE-SPCE : 002 : End writing hspice file\n";
+                           }
+else {
+
+print "INFO-TE-WRTE-SPCE : 003 : Begin writing the netlist in spice3 file format : $OUTPUT_SPICE_FILE : \n";
+open ( WRITE, ">$OUTPUT_SPICE_FILE");
+print WRITE "#SPICE3 FILE written from eQAtor verion-$TOOL_VERSION\n";
+&spice3Out;
+close(WRITE);
+print "INFO-TE-WRTE-SPCE : 004 : End writing spice3 file\n";
+
+
+     }
+
+                      }# if correct user inputs
+
+                          }# if correct no of arguments
+}# sub write_spice
+
+
+
+sub read_spice {
+
+
+use Storable;
+my $noOfArguments = @_;
+
+if ( $noOfArguments < 2 || $_[0] eq '-h') { print "Usage : read_spice   -spc < file Name >\n";
+                          } else {
+
+for ( my $x = 0 ; $x < $noOfArguments ; $x++ ) {
+      if( $_[$x] =~ /-spc/){ $SPICE_FILE_POINTER = $_[$x+1]; }
+                                               }# for all agruments
+
+open ( READ, "$SPICE_FILE_POINTER");
+       
+print "INFO-TE-READ_SPCE : 001 : Begin reading the spice file\n";
+push(@SPICE_FILE_POINTERS,$SPICE_FILE_POINTER);
+my $macroName = "";
+while(<READ>) {
+
+chomp();
+
+$_ =~ s/^\s+//;
+if ( $_ =~ /^\s*$/ ) { next; }
+elsif ( $_ =~ /^\*/ ) { next; }
+elsif( $_ =~ /^\.SUBCKT/ || $_ =~ /^\.subckt/) {
+    my @line = split(/\s+/, $_);
+       shift @line; # flush out .SUBCKT token
+       $macroName = shift @line;
+         if ( exists $PLDB{$macroName} ) { $PLDB{$macroName}->dbMdbSetIsSpiceNetlist(1);
+                                           $SLDB{$macroName} = SpiceDB::new();
+                                           $SLDB{$macroName}->dbSpiceAddNetList($_);
+                                         }
+       $hashTable = MACRO_SPICE.$macroName;
+       $MACRO_SPICE{$macroName} = \%{$hashTable};
+       $pinListbyOrder = "";
+       while ( defined ( $token = shift @line )) {
+             $pinListbyOrder = "$pinListbyOrder $token";
+                                                 }# while
+       $pinListbyOrder =~ s/^\s+//;
+       ${$hashTable}{pinList} = $pinListbyOrder;
+                                               }# if a subckt starts
+else {
+     $SLDB{$macroName}->dbSpiceAddNetList($_);
+     }
+
+}#while
+
+print "INFO-TE-READ_SPCE : 002 : End reading the spice file\n";
+
+
+
+                                 }# if correct no of arguments
+
+}#sub read_spice
+
+
+sub read_spice_models {
+
+my $noOfArguments = @_;
+
+if ( $noOfArguments < 2 || $_[0] eq '-h') { print "Usage : read_spice_models -spice < model file > \n";
+                            print "                          -cond  < condition > \n";
+                          } else {
+for ( my $x = 0; $x < $noOfArguments; $x++ ) { 
+    if ( $_[$x] =~ /-spice/ ){ $SPICE_MODELS_POINTERS = $_[$x+1]; }
+    if ( $_[$x] =~ /-cond/ ){ $SPICE_MODELS_COND_POINTERS = $_[$x+1]; }
+                                       }# for
+      push(@SPICE_MODELS_POINTERS, $SPICE_MODELS_POINTERS);
+                                 }# if correct no of arguments
+
+
+}#sub read_spice_models
+
+
+sub spice3Out {
+
+%ReturnNetNames = ();
+print WRITE "* spice subckt\n";
+
+########## print the .include statements  ##########
+
+
+print WRITE "\*\.subckt $CURRENT_MODULE ";
+
+####### print the top level ports   ########
+
+foreach my $portname ( keys %{$PORTS_ALREADY{$CURRENT_MODULE}}){
+           print WRITE "$portname ";
+                                                                }# for port of module
+print WRITE "\n";
+
+
+####### print the flat component connectivity ######
+foreach $instance ( keys %COMP_ALREADY ) {
+
+$master  = $COMP_ALREADY{$instance}{master};
+$spiceInstance = $instance;
+$spiceInstance =~ s/$master\//X/;
+print WRITE "$spiceInstance ";
+
+my $cellref = $COMP_ATTRIBUTE_ALREADY{$instance}{cellref};
+
+if( exists $MACRO_SPICE{$cellref} ){
+my @pinList = split(/\s+/, $MACRO_SPICE{$cellref}{pinList});
+     while ( defined ( $pin = shift @pinList)) {
+     if( $pin eq "VDD" || $pin eq "VSS" || $pin eq "GND" ) { } else {
+     $netName = $COMP_ALREADY{$instance}{$pin};
+     $netName =~ s/$master\///;
+     print WRITE "$netName ";
+     $ReturnNetNames{$netName}=1; 
+                                                   }
+                                               }#while
+                                   }# if cell exists in the spice subckt
+else {  
+     print "WARN-TE : 001 : spice subckt for $cellref not found\n";
+        foreach $pin ( keys %{$COMP_ALREADY{$instance}} ) {
+        if( $pin eq "master" || $pin eq "cellref" ) {} else {
+        print WRITE "$pin $COMP_ALREADY{$instance}{$pin} ";
+                                                           }# if only pin
+                                                          }
+     }# if spice does not exist
+
+print WRITE " VDD GND ";
+print WRITE " $COMP_ATTRIBUTE_ALREADY{$instance}{cellref}\n";
+
+                                    }# foreach components
+print WRITE "\*\.ends\n";
+}# sub spice3Out
+
+sub hspiceOut {
+
+print WRITE "* spice subckt\n";
+
+########## print the .include statements  ##########
+
+
+print WRITE "\.subckt $CURRENT_MODULE ";
+
+####### print the top level ports   ########
+
+foreach my $portname ( keys %{$PORTS_ALREADY{$CURRENT_MODULE}}){
+           print WRITE "$portname ";
+                                                                }# for port of module
+print WRITE "\n";
+
+
+####### print the flat component connectivity ######
+foreach $instance ( keys %COMP_ALREADY ) {
+
+$master  = $COMP_ALREADY{$instance}{master};
+$spiceInstance = $instance;
+$spiceInstance =~ s/$master\//X/;
+print WRITE "$spiceInstance ";
+
+my $cellref = $COMP_ATTRIBUTE_ALREADY{$instance}{cellref};
+
+if( exists $MACRO_SPICE{$cellref} ){
+my @pinList = split(/\s+/, $MACRO_SPICE{$cellref}{pinList});
+     while ( defined ( $pin = shift @pinList)) {
+     $netName = $COMP_ALREADY{$instance}{$pin};
+     $netName =~ s/$master\///;
+     print WRITE "$netName ";
+                                               }#while
+                                   }# if cell exists in the spice subckt
+else {  
+     print "WARN-TE : 001 : spice subckt for $cellref not found\n";
+        foreach $pin ( keys %{$COMP_ALREADY{$instance}} ) {
+        if( $pin eq "master" || $pin eq "cellref" ) {} else {
+        print WRITE "$pin $COMP_ALREADY{$instance}{$pin} ";
+                                                           }# if only pin
+                                                          }
+     }# if spice does not exist
+
+print WRITE " $COMP_ATTRIBUTE_ALREADY{$instance}{cellref}\n";
+
+                                    }# foreach components
+print WRITE "\.ends\n";
+
+}#sub hspiceOut
+
+
+
+
+
+
+sub dbgBuildNetNameMap {
+my $count = 1;
+foreach my $netName ( keys %NETS_ALREADY) { $NETS_NAME_MAP{$netName} = $count; $count++; }
+}#sub dbgBuildNetNameMap
+sub dbgBuildInstNameMap {
+my $count = 1;
+foreach my $instName ( keys %COMP_ALREADY) { $COMP_NAME_MAP{$instName} = $count; $count++; }
+}#sub dbgBuildInstNameMap
+
+
+
+
+
+sub dbgSpiceReport1PathTiming {
+
+my $tempnodeName = "";
+my $noOfInstinPath = @TEMP_PATH;
+print WRITE_REPORT "Path : $pathNum\n";
+$previousInst = (split(/\s+/,$TEMP_PATH[0]))[0];
+my $startInst = $previousInst;
+
+$tempnodeName = "n".$NETS_NAME_MAP{$COMP_ALREADY{$startInst}{CK}}.__."CK";
+my $clockArrivalTime = $SPICE_RESULT_DATA{$tempnodeName}{dlyAt};
+
+my $stopInst = (split(/\s+/,$TEMP_PATH[$noOfInstinPath - 1]))[0];
+
+print WRITE_REPORT "StartPoint : $startInst\n";
+print WRITE_REPORT "EndPoint : $stopInst\n";
+
+$tempnodeName = "n".$NETS_NAME_MAP{$COMP_ALREADY{$stopInst}{D}}.__."D";
+my $dataArrivalAtTargetFlop = $SPICE_RESULT_DATA{$tempnodeName}{dlyAt};
+
+print WRITE_REPORT "Start at $clockArrivalTime\n";
+print WRITE_REPORT "Arrival at $dataArrivalAtTargetFlop \n";
+my $pathDelay = $dataArrivalAtTargetFlop - $clockArrivalTime;
+print WRITE_REPORT "path delay = $pathDelay\n";
+print WRITE_REPORT "\n";
+
+$drNet = "";
+for(my $xx=1; $xx < $noOfInstinPath ; $xx++) {
+           my( $inst, $drNet ) = (split(/\s+/,$TEMP_PATH[$xx]))[0,1];
+                  my $cellref = $COMP_ATTRIBUTE_ALREADY{$previousInst}{cellref};
+                  print WRITE_REPORT "$previousInst  ($cellref) ";
+
+                  $driverPin = $NETS_ALREADY{$drNet}{$previousInst};
+                  $recieverPin = $NETS_ALREADY{$drNet}{$inst};
+                      $tempnodeName = "n".$NETS_NAME_MAP{$drNet}.__.$driverPin;
+                      print WRITE_REPORT "$tempnodeName ";
+                  $arrivalTime = $SPICE_RESULT_DATA{$tempnodeName}{dlyAt};
+                   print WRITE_REPORT "$arrivalTime \n";
+
+                  print WRITE_REPORT "$drNet \n";
+                  $previousInst = $inst;
+                                 }#for
+                  $cellref = $COMP_ATTRIBUTE_ALREADY{$previousInst}{cellref};
+                  print WRITE_REPORT "$previousInst  ($cellref) \n";
+
+
+print WRITE_REPORT "\n\n";
+}#sub dbgSpiceReport1PathTiming
+#--------------------------------------------------------------------------------------------#
+sub read_spice_new 
+{
+use Benchmark;
+my $t0 = new Benchmark;
+
+  my $noOfArguments = @_;
+  if($noOfArguments < 0 || $_[0] eq "-h"){
+    print "Usage : read_spice_new\n";
+    print "      : -sp <inputspicefile>\n";
+    print "      : --append_file_name\n";
+  }
+  my $INPUT_SPICE_FILE = "";
+  my $moduleName = "";
+  my %MODULE_PORT_DATA = ();
+  my %PARAM_CPCTR_RSSTR_PORT_CREATED = ();
+  my %MODULE_PORT_VS_SPICE_PORT = ();
+  my %MODULE_INST_DATA = ();
+  my %MODULE_NET_DATA = ();
+  my $append_file_name = "";
+  #append file name to subckt name so that same subckt name from
+  #different file do not conflict
+  my $READ_SP;
+  for(my $i=0;$i<$noOfArguments;$i++){
+    if($_[$i] eq "-sp"){$INPUT_SPICE_FILE = $_[$i+1];}
+    if($_[$i] eq "--append_file_name"){$append_file_name = 1;}
+  }
+  if(( -e $INPUT_SPICE_FILE) && (-r $INPUT_SPICE_FILE)){
+    print "INFO : 001 : $INPUT_SPICE_FILE FILE EXISTS AND IS READABLE!\n";
+  }else{
+    print "INFO : 001 : EITHER $INPUT_SPICE_FILE FILE DOES NOT OR IT IS NOT READABLE!\n";
+    return;
+  }
+  if($append_file_name == 1){
+    my @file_with_path = (split(/\//,$INPUT_SPICE_FILE));
+    $append_file_name = pop(@file_with_path);
+    $append_file_name =~ s/\./_/;
+  }
+  $GLOBAL->dbfGlobalSetInputType("spice");
+  open(READ_SP,$INPUT_SPICE_FILE);
+  my $previous_line = "";
+  my $next_line = "";
+  while(<READ_SP>){
+    chomp ($_);
+    if($_ =~ /^\s*\*/){next;}
+    if($_ =~ /^\s*$/){next;}
+    if($_ =~ /^\s*\+/){
+      s/\s+$//;
+      s/^\s*\+\s*//;
+      $previous_line = $previous_line." ".$_;
+      next;
+    }
+    $next_line = $_;
+    $previous_line =~ s/^\s*//;
+    $previous_line =~ s/\s*$//;
+    if($previous_line =~ /^\s*\.\bsubckt\b/i){
+      $previous_line =~ s/^\s*\.(subckt|SUBCKT)\s*//;
+      my @module_port_data = (split(/\s+/,$previous_line));
+      $moduleName = shift (@module_port_data);
+      if($append_file_name ne ""){
+        $moduleName = $moduleName."_".$append_file_name; 
+      }
+      my @temp_val = ();
+      if(exists $MODULE_PORT_DATA{$moduleName}){
+        # $MODULE_PORT_DATA is also populated by the subckt instance
+        # subckt instance actually adds port for parameters
+        # Need to add subckt port before the ports added by subckt instance
+        # handling code
+        # multiple definitions of a subckt is not handled
+        # new definition will overwrite last definition
+        @temp_val = @{$MODULE_PORT_DATA{$moduleName}};
+        delete $MODULE_PORT_DATA{$moduleName};
+      }
+      if ( exists $MODULE_ALREADY{$moduleName} ) {
+        my $class = $MODULE_ALREADY{$moduleName}->dbVNOMGetClass; 
+        # class 11 is for blackbox
+        if($class == 11){
+          #if the code reaches here while reading spice library
+          #then we should remove all the non param ports 
+          #this means remove blackbox ports but keep param ports
+          $MODULE_ALREADY{$moduleName}->dbVNOMSetClass(0);
+          my @inPorts = $MODULE_ALREADY{$moduleName}->dbVNOMGetInput;
+          my @outPorts = $MODULE_ALREADY{$moduleName}->dbVNOMGetOutput;
+          my @bidiPorts = $MODULE_ALREADY{$moduleName}->dbVNOMGetBidi;
+          my @list_of_ports = (@inPorts,@outPorts,@bidiPorts);
+          foreach my $temp_port (@list_of_ports) {
+            if($temp_port !~ /^\d+_tmpslvr_param_/){
+              $MODULE_ALREADY{$moduleName}->dbVNOMRemovePin($temp_port);
+            }
+          }
+        }else{
+          delete $MODULE_PORT_DATA{$moduleName};
+          delete $MODULE_PORT_VS_SPICE_PORT{$moduleName};
+          delete $MODULE_INST_DATA{$moduleName};
+          delete $MODULE_NET_DATA{$moduleName};
+          my @inPorts = $MODULE_ALREADY{$moduleName}->dbVNOMGetInput;
+          my @outPorts = $MODULE_ALREADY{$moduleName}->dbVNOMGetOutput;
+          my @bidiPorts = $MODULE_ALREADY{$moduleName}->dbVNOMGetBidi;
+          my @list_of_ports = (@inPorts,@outPorts,@bidiPorts);
+          $MODULE_ALREADY{$moduleName} = VNOM::new();
+          foreach my $temp_port (@list_of_ports) {
+            if($temp_port =~ /^\d+_tmpslvr_param_/){
+              push(@{$MODULE_PORT_DATA{$moduleName}},$temp_port);
+              my $vnom_port = &vnom_port_from_spice_port($temp_port);
+              $MODULE_PORT_VS_SPICE_PORT{$moduleName}{$vnom_port} = $temp_port;
+              $MODULE_ALREADY{$moduleName}->dbVNOMAddBidi($temp_port);
+              $MODULE_ALREADY{$moduleName}->dbVNOMSetBidiType($temp_port,0);
+              $MODULE_ALREADY{$moduleName}->dbVNOMSetBidiBits($temp_port,1);
+            }
+          }
+        }
+      } else {
+        $MODULE_ALREADY{$moduleName} = VNOM::new();
+      }
+      my %port_data_hash = &check_port_width($moduleName,\@module_port_data);
+      foreach my $portName (keys %port_data_hash){
+        my ($pinToFrom,$pinType) = (split (/\s+/,$port_data_hash{$portName}));
+        $MODULE_ALREADY{$moduleName}->dbVNOMAddBidi($portName);
+        $MODULE_ALREADY{$moduleName}->dbVNOMSetBidiType($portName,$pinType);
+        $MODULE_ALREADY{$moduleName}->dbVNOMSetBidiBits($portName,$pinToFrom);
+        push(@{$MODULE_PORT_DATA{$moduleName}},$portName);
+        my $vnom_port = &vnom_port_from_spice_port($portName);
+        $MODULE_PORT_VS_SPICE_PORT{$moduleName}{$vnom_port} = $portName;
+      }
+      push(@{$MODULE_PORT_DATA{$moduleName}},@temp_val);
+    }elsif($previous_line =~ /^\s*\.(end|END)\s*/i){
+    }elsif($previous_line=~ /^\s*m/i){
+      $previous_line =~ s/\s+=\s+/=/g; 
+      $previous_line =~ s/\s+=/=/g; 
+      $previous_line =~ s/=\s+/=/g; 
+      my $cellref;
+      my @data_list = (split(/\s+/,$previous_line)); 
+      my $inst_Name = (split(/\s+/,$previous_line))[0];
+      push(@{$MODULE_INST_DATA{$moduleName}},$inst_Name);
+      my $trans_data = $previous_line;
+      $trans_data =~ s/$inst_Name\s+//;
+      my $cellref_set = 0; 
+      my $cell_ref_pos = 0;
+      for(my $i=0; $i<=$#data_list;$i++){
+        if($data_list[$i] =~ m/=/){
+          $cellref = $data_list[$i-1];
+          $cellref_set = 1;
+          $cell_ref_pos = $i;
+          last;
+        }
+      }#for
+      if($cellref_set ==0){
+        $cellref = $data_list[-1];
+        $cell_ref_pos = $i;
+      }
+      if(!exists $MODULE_ALREADY{$cellref}){
+        my @temp_port_list = ();
+        $MODULE_ALREADY{$cellref}= VNOM::new();
+        $MODULE_ALREADY{$cellref}->dbVNOMSetClass(11);
+        my @trnsstr_prt_array = ("drain","gate","source","body");
+        for(my $i=0;$i<=3;$i++){
+          my $trnsstr_prt = $i."_tmpslvr_".$trnsstr_prt_array[$i];
+          $MODULE_ALREADY{$cellref}->dbVNOMAddBidi($trnsstr_prt); 
+          $MODULE_ALREADY{$cellref}->dbVNOMSetBidiType($trnsstr_prt,0); 
+          $MODULE_ALREADY{$cellref}->dbVNOMSetBidiBits($trnsstr_prt,1); 
+          push(@temp_port_list,$trnsstr_prt);
+        }#for
+        push(@{$MODULE_PORT_DATA{$cellref}},@temp_port_list);
+      }else {
+        #This will happen only when write_spice_file is called more than once
+        #so $MODULE_ALREADY{$cellref} will exists but $MODULE_PORT_DATA will not be
+        #populated
+        if(!exists $MODULE_PORT_DATA{$cellref}){
+          my @bidi_port = $MODULE_ALREADY{$cellref}->dbVNOMGetBidi;
+          foreach my $port (sort initial_digit_sort @bidi_port){
+            push(@{$MODULE_PORT_DATA{$cellref}},$port);
+          }
+        }
+        if(!exists $PARAM_CPCTR_RSSTR_PORT_CREATED{$cellref}){
+          my @bidi_port = $MODULE_ALREADY{$cellref}->dbVNOMGetBidi;
+          foreach my $port (sort initial_digit_sort @bidi_port){
+            if($port =~ /^\d+_tmpslvr_param_/){
+              push(@{$PARAM_CPCTR_RSSTR_PORT_CREATED{$cellref}},$port);
+            }
+          }
+        }
+      }
+      my $temp_previous_line = $previous_line;
+      $temp_previous_line =~ s/^\s*\Q$inst_Name\E\s+//; 
+      # forward slash '/' found in Koolchip spice
+      $temp_previous_line =~ s/\s+\/\s+/ /;
+      $temp_previous_line =~ s/\s+\Q$cellref\E\b.*$//; 
+      $temp_previous_line =~ s/\s+$//; 
+      my @temp_data = (split(/\s+/,$temp_previous_line));
+      push(@{$MODULE_NET_DATA{$moduleName}{$inst_Name}},@temp_data);
+      #------------------------------------------------------------------------------------------#
+      $MODULE_ALREADY{$cellref}->dbVNOMAddParent($moduleName);
+      $MODULE_ALREADY{$moduleName}->dbVNOMAddHierInst($inst_Name);
+      $MODULE_ALREADY{$moduleName}->dbVNOMSetHierInstCell($inst_Name,$cellref);
+      #--------------------------------------------------temp port---------------------------------#
+      #This code assumes that parameter connection order will be same in all the instantiations
+      #since parameter connection is named mapping,order can vary from instance to instance
+      #it also assumes that number of parameters will be same in all the instantiation
+      #but normal port order will always same for all the instance,since it is positional mapping
+      if(exists $PARAM_CPCTR_RSSTR_PORT_CREATED{$cellref}){
+        #if parameters are already created,then change the port order according to the port order
+        foreach my $param_name (@{$PARAM_CPCTR_RSSTR_PORT_CREATED{$cellref}}){
+          my $orgnl_param_name = $param_name;
+          $orgnl_param_name =~ s/^\d+_tmpslvr_param_//;
+          for(my $i=$cell_ref_pos;$i<=$#data_list;$i++){
+            if($data_list[$i] =~ m/=/){
+              my ($param_name,$value) = (split(/=/,$data_list[$i]))[0,1];
+              if($param_name eq $orgnl_param_name){
+                push(@{$MODULE_NET_DATA{$moduleName}{$inst_Name}},$value);
+                last;
+              }
+            }
+          }
+        }
+      }else{
+        my @temp_port_list = ();
+        my $param_cnt = 0;
+        for(my $i=$cell_ref_pos;$i<=$#data_list;$i++){
+          if($data_list[$i] =~ m/=/){
+            my ($port,$value) = (split(/=/,$data_list[$i]))[0,1];
+            my $new_portName = $param_cnt."_tmpslvr_param_".$port; 
+            push (@temp_port_list,$new_portName);
+            push(@{$MODULE_NET_DATA{$moduleName}{$inst_Name}},$value);
+            $MODULE_ALREADY{$cellref}->dbVNOMAddBidi($new_portName); 
+            $MODULE_ALREADY{$cellref}->dbVNOMSetBidiType($new_portName,0); 
+            $MODULE_ALREADY{$cellref}->dbVNOMSetBidiBits($new_portName,1); 
+            $param_cnt++;
+          }
+        }
+        push(@{$MODULE_PORT_DATA{$cellref}},@temp_port_list);
+        push(@{$PARAM_CPCTR_RSSTR_PORT_CREATED{$cellref}},@temp_port_list);
+      }
+      push(@{$MODULE_NET_DATA{$moduleName}{$inst_Name}},$cellref);
+      #--------------------------------------------------------------------------------------------#
+    }elsif(($previous_line =~ /^\s*x/i)||($previous_line =~ /^\s*d/i)){
+      $previous_line =~ s/\s+=\s+/=/g;
+      $previous_line =~ s/\s+=/=/g;
+      $previous_line =~ s/=\s+/=/g;
+      my $cellref;
+      my $instName;
+      my @data_list = (split(/\s+/,$previous_line));
+      my $temp_instName = (split(/\s+/,$previous_line))[0];
+      if($append_file_name ne ""){
+        $instName = $temp_instName."_".$append_file_name;
+      }else {
+        $instName = $temp_instName;
+      }
+      push(@{$MODULE_INST_DATA{$moduleName}},$instName);
+      my $cellref_set = 0;
+      my $cell_ref_pos = 0;
+      for(my $i=0; $i<=$#data_list; $i++){
+        if($data_list[$i] =~ m/=/){
+           $cellref = $data_list[$i-1];
+           $cellref_set = 1;
+           $cell_ref_pos = $i;
+           last;
+        }
+      }#for
+      if($cellref_set == 0){
+        $cellref = $data_list[-1];
+        $cell_ref_pos = $i;
+      }
+      #-----------------------------------------------------------------------------------------#
+      my $temp_previous_line = $previous_line; 
+      if($append_file_name ne ""){
+        my $temp_inst = $instName;
+        $temp_inst =~s/_$append_file_name//;
+        $temp_previous_line =~ s/^\s*\Q$temp_inst\E\s+//;
+      }else {
+        $temp_previous_line =~ s/^\s*\Q$instName\E\s+//;
+      }
+      # forward slash '/' found in Koolchip spice
+      $temp_previous_line =~ s/\s+\/\s+/ /;
+      $temp_previous_line =~ s/\s+\Q$cellref\E\b.*$//;
+      $temp_previous_line =~ s/\s+$//;
+      my @net_data_array = (split(/\s+/,$temp_previous_line));
+      push(@{$MODULE_NET_DATA{$moduleName}{$instName}},@net_data_array);
+      #-----------------------------------------------------------------------------------------#
+      if($append_file_name ne ""){
+        $cellref = $cellref."_".$append_file_name;
+      }
+      if(!exists $MODULE_ALREADY{$cellref}){
+        if(exists $PLDB{$cellref}){
+          if(!exists $MODULE_PORT_DATA{$cellref}){
+            my @leaf_cell_port_list = &return_temp_port_list_for_leaf_inst($cellref);
+            push(@{$MODULE_PORT_DATA{$cellref}},@leaf_cell_port_list);
+          }
+        }else{
+          $MODULE_ALREADY{$cellref}= VNOM::new();
+          $MODULE_ALREADY{$cellref}->dbVNOMSetClass(11);
+        }
+      }else {
+        #This will happen only when write_spice_file is called more than once
+        #so $MODULE_ALREADY{$cellref} will exists but $MODULE_PORT_DATA will not be
+        #populated
+        if(!exists $MODULE_PORT_DATA{$cellref}){
+          my @bidi_port = $MODULE_ALREADY{$cellref}->dbVNOMGetBidi;
+          foreach my $port (sort initial_digit_sort @bidi_port){
+            push(@{$MODULE_PORT_DATA{$cellref}},$port);
+            my $vnom_port = &vnom_port_from_spice_port($port);
+            $MODULE_PORT_VS_SPICE_PORT{$cellref}{$vnom_port} = $port;
+          }
+        }
+        if(!exists $PARAM_CPCTR_RSSTR_PORT_CREATED{$cellref}){
+          my @bidi_port = $MODULE_ALREADY{$cellref}->dbVNOMGetBidi;
+          foreach my $port (sort initial_digit_sort @bidi_port){
+            if($port =~ /^\d+_tmpslvr_param_/){
+              push(@{$PARAM_CPCTR_RSSTR_PORT_CREATED{$cellref}},$port);
+            }
+          }
+        }
+      }
+      $MODULE_ALREADY{$cellref}->dbVNOMAddParent($moduleName);
+      $MODULE_ALREADY{$moduleName}->dbVNOMAddHierInst($instName);
+      $MODULE_ALREADY{$moduleName}->dbVNOMSetHierInstCell($instName,$cellref);
+      #--------------------------------------temp port------------------------------------------#
+      #This code assumes that parameter connection order will be same in all the instantiations
+      #since parameter connection is named mapping,order can vary from instance to instance
+      #it also assumes that number of parameters will be same in all the instantiation
+      #but normal port order will always same for all the instance,since it is positional mapping
+      if(exists $PARAM_CPCTR_RSSTR_PORT_CREATED{$cellref}){
+        #if parameters are already created,then change the port order according to the port order
+        foreach my $param_name (@{$PARAM_CPCTR_RSSTR_PORT_CREATED{$cellref}}){
+          my $orgnl_param_name = $param_name;
+          $orgnl_param_name =~ s/^\d+_tmpslvr_param_//;
+          for(my $i=$cell_ref_pos;$i<=$#data_list;$i++){
+            if($data_list[$i] =~ m/=/){
+              my ($param_name,$value) = (split(/=/,$data_list[$i]))[0,1];
+              if($param_name eq $orgnl_param_name){
+                push(@{$MODULE_NET_DATA{$moduleName}{$instName}},$value);
+                last;
+              }
+            }
+          }
+        }
+      }else{
+        my @temp_port_list = ();
+        my $param_cnt = 0;
+        for(my $i=$cell_ref_pos;$i<=$#data_list;$i++){
+          if($data_list[$i] =~ m/=/){
+            my ($port,$value) = (split(/=/,$data_list[$i]))[0,1];
+            my $new_portName = $param_cnt."_tmpslvr_param_".$port; 
+            $MODULE_PORT_VS_SPICE_PORT{$cellref}{$port} = $new_portName;
+            push (@temp_port_list,$new_portName);
+            push(@{$MODULE_NET_DATA{$moduleName}{$instName}},$value);
+            $MODULE_ALREADY{$cellref}->dbVNOMAddBidi($new_portName); 
+            $MODULE_ALREADY{$cellref}->dbVNOMSetBidiType($new_portName,0); 
+            $MODULE_ALREADY{$cellref}->dbVNOMSetBidiBits($new_portName,1); 
+            $param_cnt++;
+          }
+        }
+        push(@{$MODULE_PORT_DATA{$cellref}},@temp_port_list);
+        push(@{$PARAM_CPCTR_RSSTR_PORT_CREATED{$cellref}},@temp_port_list);
+      }
+      push(@{$MODULE_NET_DATA{$moduleName}{$instName}},$cellref);
+      #------------------------------------------------------------------------------------------------------------------------#
+    }elsif($previous_line =~ /^\s*c/i){
+      my $cellref = "capacitor";
+      if(!exists $MODULE_ALREADY{$cellref}){
+        $MODULE_ALREADY{$cellref}= VNOM::new();
+        $MODULE_ALREADY{$cellref}->dbVNOMSetClass(11);
+        my @temp_port_list = ();
+        my @cpctr_prt_array = ("input","output","value");
+        for(my $i=0;$i<=2;$i++){
+          my $cpctr_prt = $i."_tmpslvr_".$cpctr_prt_array[$i]; 
+          $MODULE_ALREADY{$cellref}->dbVNOMAddBidi($cpctr_prt); 
+          $MODULE_ALREADY{$cellref}->dbVNOMSetBidiType($cpctr_prt,0); 
+          $MODULE_ALREADY{$cellref}->dbVNOMSetBidiBits($cpctr_prt,1); 
+          push(@temp_port_list,$cpctr_prt);
+        }
+        push(@{$MODULE_PORT_DATA{$cellref}},@temp_port_list,$cellref);
+        push(@{$PARAM_CPCTR_RSSTR_PORT_CREATED{$cellref}},@temp_port_list);
+      }else {
+        #This will happen only when write_spice_file is called more than once
+        #so $MODULE_ALREADY{$cellref} will exists but $MODULE_PORT_DATA will not be
+        #populated
+        if(!exists $MODULE_PORT_DATA{$cellref}){
+          my @bidi_port = $MODULE_ALREADY{$cellref}->dbVNOMGetBidi;
+          foreach my $port (sort initial_digit_sort @bidi_port){
+            push(@{$MODULE_PORT_DATA{$cellref}},$port);
+            push(@{$PARAM_CPCTR_RSSTR_PORT_CREATED{$cellref}},$port);
+          }
+        }
+      }
+      my @data_list = (split(/\s+/,$previous_line)); 
+      my $inst_Name = shift @data_list;
+      push(@{$MODULE_INST_DATA{$moduleName}},$inst_Name);
+      push(@{$MODULE_NET_DATA{$moduleName}{$inst_Name}},@data_list);
+      $MODULE_ALREADY{$cellref}->dbVNOMAddParent($moduleName);
+      $MODULE_ALREADY{$moduleName}->dbVNOMAddHierInst($inst_Name);
+      $MODULE_ALREADY{$moduleName}->dbVNOMSetHierInstCell($inst_Name,$cellref);
+      push(@{$MODULE_NET_DATA{$moduleName}{$inst_Name}},$cellref);
+    }elsif($previous_line =~ /^\s*r/i) {
+      my $cellref = "resistance";
+      if(!exists $MODULE_ALREADY{$cellref}){
+        $MODULE_ALREADY{$cellref}= VNOM::new();
+        $MODULE_ALREADY{$cellref}->dbVNOMSetClass(11);
+        my @temp_port_list = ();
+        my @rsstr_prt_array = ("input","output","value");
+        for(my $i=0;$i<=2;$i++){
+          my $rsstr_prt = $i."_tmpslvr_".$rsstr_prt_array[$i];
+          $MODULE_ALREADY{$cellref}->dbVNOMAddBidi($rsstr_prt); 
+          $MODULE_ALREADY{$cellref}->dbVNOMSetBidiType($rsstr_prt,0); 
+          $MODULE_ALREADY{$cellref}->dbVNOMSetBidiBits($rsstr_prt,1); 
+          push(@temp_port_list,$rsstr_prt);
+        }
+        push(@{$MODULE_PORT_DATA{$cellref}},@temp_port_list,$cellref);
+        push(@{$PARAM_CPCTR_RSSTR_PORT_CREATED{$cellref}},@temp_port_list);
+      }else {
+        #This will happen only when write_spice_file is called more than once
+        #so $MODULE_ALREADY{$cellref} will exists but $MODULE_PORT_DATA will not be
+        #populated
+        if(!exists $MODULE_PORT_DATA{$cellref}){
+          my @bidi_port = $MODULE_ALREADY{$cellref}->dbVNOMGetBidi;
+          foreach my $port (sort initial_digit_sort @bidi_port){
+            push(@{$MODULE_PORT_DATA{$cellref}},$port);
+            push(@{$PARAM_CPCTR_RSSTR_PORT_CREATED{$cellref}},$port);
+          }
+        }
+      }
+      my @data_list = (split(/\s+/,$previous_line)); 
+      my $inst_Name = shift @data_list;
+      push(@{$MODULE_INST_DATA{$moduleName}},$inst_Name);
+      push(@{$MODULE_NET_DATA{$moduleName}{$inst_Name}},@data_list);
+      $MODULE_ALREADY{$cellref}->dbVNOMAddParent($moduleName);
+      $MODULE_ALREADY{$moduleName}->dbVNOMAddHierInst($inst_Name);
+      $MODULE_ALREADY{$moduleName}->dbVNOMSetHierInstCell($inst_Name,$cellref);
+      push(@{$MODULE_NET_DATA{$moduleName}{$inst_Name}},$cellref);
+    }
+    $previous_line = $next_line;
+  }#while
+  #creating ports for blackbox modules which are not transistors capacitors or resistors
+  # and creating conns line
+  foreach my $mod (keys %MODULE_INST_DATA){
+    my @inst_list = @{$MODULE_INST_DATA{$mod}};
+    foreach my $inst (@inst_list){
+      if(exists $MODULE_NET_DATA{$mod}{$inst}){
+        my @net_list = @{$MODULE_NET_DATA{$mod}{$inst}};
+        my $cellref = pop(@net_list);
+        my @port_list = ();
+        if(exists $MODULE_PORT_DATA{$cellref}){
+          @port_list = (sort initial_digit_sort @{$MODULE_PORT_DATA{$cellref}});
+        }
+        if(($#port_list < 0)||($port_list[0] =~ /^\d+_tmpslvr_param_/)){
+          #This means either the mod has no ports or ports are created
+          #only for parameters
+          #this can happen only for blackboxed instance or subckt with no ports (subckt with no ports ??)
+          my $class = $MODULE_ALREADY{$cellref}->dbVNOMGetClass;
+          if($class == 11) {
+            if(($inst =~ /^x/i) ||($inst =~ /^d/i)){
+              #added for black box instances whose subckt will not be found
+              #and thus ports will not be created,though port for parameter
+              #will be created when its instance is found
+              my $no_port_to_be_created = $#net_list - $#port_list; 
+              my @bb_port_list = ();
+              for (my $i=0;$i<$no_port_to_be_created;$i++){
+                my $portName = $i."_tmpslvr_"."bb";
+                push(@bb_port_list,$portName);
+                $MODULE_ALREADY{$cellref}->dbVNOMAddBidi($portName); 
+                $MODULE_ALREADY{$cellref}->dbVNOMSetBidiType($portName,0); 
+                $MODULE_ALREADY{$cellref}->dbVNOMSetBidiBits($portName,1); 
+              }
+              unshift(@port_list,@bb_port_list);
+              delete $MODULE_PORT_DATA{$cellref};
+              push(@{$MODULE_PORT_DATA{$cellref}},@port_list);
+            }
+          }
+        }
+        #my $connLine = &create_conns_line_from_given_input($mod,$cellref,$inst,\@port_list,\@net_list);
+        my $connLine = $cellref." ".$inst." (";
+        for (my $i=0;$i<=$#net_list;$i++){
+          my $portName = $port_list[$i];    
+          my $netName = $MODULE_PORT_VS_SPICE_PORT{$mod}{$net_list[$i]};
+          if ($i != 0){
+            $connLine = $connLine.", ";
+          }
+          $connLine = $connLine.".".$portName."(".$netName.")";
+        }
+        $connLine = $connLine.");";  
+        $MODULE_ALREADY{$mod}->dbVNOMAddConn($connLine);
+      }#if exists inst
+    }#foreach inst
+  }#foreach mod
+  ##################################################################################################
+  ####    finding the top module                                                                ####
+  ##################################################################################################
+  my @TOP = ();
+  foreach my $mod (keys %MODULE_ALREADY) { 
+    my @parents =  $MODULE_ALREADY{$mod}->dbVNOMGetParent;
+    my $np = @parents;
+    if( $np == 0 ){
+      push(@TOP,$mod); 
+    }elsif( $np > 1 ){ 
+      print "INFO : $mod has $np parents \n"; 
+    }
+  }#foreach my $mod
+  my $nT = @TOP;
+  if( $nT == 1 ){
+    print "INFO : Setting top module as $TOP[0]\n"; 
+    $CURRENT_MODULE = $TOP[0];
+    $TOP_MODULE = $TOP[0];
+    $GLOBAL->dbfGlobalSetTOP($TOP_MODULE);
+  }elsif( $nT > 1 ){ 
+    print "WARN : there are more than 1 possible top modules, please pick the correct one from the list below\n";
+    #print join ",", @TOP; #print "\n";
+  }else{
+    print "ERROR : something is wrong with the spice file\n"; 
+  }
+  #returning list of subckt read
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "Command read_spice_new :",timestr($td),"\n";
+my @module_read_list = keys %MODULE_PORT_DATA;
+return (@module_read_list);
+}#sub read_spice_new
+#-----------------------------------------------------------------------------------------------------------------------#
+sub create_conns_line_from_given_input {
+  my $parentCellName = $_[0];
+  my $cellName = $_[1];
+  my $instName = $_[2];
+  my @port_list = @{$_[3]};
+  my @net_list = @{$_[4]};
+  my %INST_CONN = ();
+  my $connLine = "";
+  my $number_of_port_list = @port_list;
+  my $number_of_net_list = @net_list;
+  for (my $i=0;$i<=$#net_list;$i++){
+    if($port_list[$i] =~ /^\d+_tmpslvr_param_/){ 
+      #This is transistor parameter or blackbox parameter
+      #or subckt instance parameter
+      my $portName = $port_list[$i];    
+      my $netName = $net_list[$i];
+      $netName = &spice_port_name_for_param($parentCellName,$netName);
+      my $tempconn = ".".$portName."(".$netName.")";
+      push(@{$INST_CONN{$instName}},$tempconn);
+    }else{
+      #This is a non parameter port
+      my $portName = $port_list[$i];    
+      my $netName = $net_list[$i];
+      $netName = &spice_port_name_for_port($parentCellName,$netName);
+      my $tempconn = ".".$portName."(".$netName.")";
+      push(@{$INST_CONN{$instName}},$tempconn);
+    }
+  }#for    
+  foreach my $inst(keys %INST_CONN){
+    my @conn = @{$INST_CONN{$inst}};
+    my $temp_conn_str = join ", ",@conn;
+    if($inst eq $instName){
+      $connLine = $cellName." ".$instName." (".$temp_conn_str .");";  
+      return ($connLine);
+    }
+  }
+}#sub create_conns_line_from_given_input
+#-----------------------------------------------------------------------------------------------------------------------#
+sub find_port_list_no_lsb_msb {
+my $fileName = $_[0];
+my $cellName = $_[1];
+open (READ_FILE,"$fileName");
+my $previous_line = "";
+my $next_line = "";
+my @module_port_data = ();
+while(<READ_FILE>){
+  chomp($_);
+  if($_ =~ /^\s*\*/){next;}
+  if($_ =~ /^\s*$/){next;}
+  if($_ =~ /^\s*\+/){
+    s/\s+$//;
+    s/^\s*\+\s*//;
+    $previous_line = $previous_line." ".$_;
+    next;
+  }
+  $next_line = $_;
+  $previous_line =~ s/^\s*//;
+  $previous_line =~ s/\s*$//;
+  if($previous_line =~ /^\s*\.\bsubckt\b/i){
+    $previous_line =~ s/^\s*\.(subckt|SUBCKT)\s*//;
+    $previous_line =~ s/(\[|<)\s*[0-9]+\s*\:\s*[0-9]+\s*(\]|>)//;
+    @module_port_data = (split(/\s+/,$previous_line));
+    my $subcktName = shift (@module_port_data);
+    if($cellName eq $subcktName){
+      last;
+    }else {
+      @module_port_data = ();
+    }
+  }
+  $previous_line = $next_line;
+}#while
+close(READ_FILE);
+return (@module_port_data);
+}#sub find_port_list_no_lsb_msb
+#-----------------------------------------------------------------------------------------------------------------------#
+sub find_port_list {
+my $fileName = $_[0];
+my $cellName = $_[1];
+open (READ_FILE,"$fileName");
+my $previous_line = "";
+my $next_line = "";
+my @module_port_data = ();
+while(<READ_FILE>){
+  chomp($_);
+  if($_ =~ /^\s*\*/){next;}
+  if($_ =~ /^\s*$/){next;}
+  if($_ =~ /^\s*\+/){
+    s/\s+$//;
+    s/^\s*\+\s*//;
+    $previous_line = $previous_line." ".$_;
+    next;
+  }
+  $next_line = $_;
+  $previous_line =~ s/^\s*//;
+  $previous_line =~ s/\s*$//;
+  if($previous_line =~ /^\s*\.\bsubckt\b/i){
+    $previous_line =~ s/^\s*\.(subckt|SUBCKT)\s*//;
+    @module_port_data = (split(/\s+/,$previous_line));
+    my $subcktName = shift (@module_port_data);
+    if($cellName eq $subcktName){
+      last;
+    }else {
+      @module_port_data = ();
+    }
+  }
+  $previous_line = $next_line;
+}#while
+close(READ_FILE);
+return (@module_port_data);
+}#sub find_port_list
+#-----------------------------------------------------------------------------------------------------------------------#
+sub check_port_from_spice_file
+{
+  my $inst = $_[0]; 
+  my $cell = $_[1];
+  my $connLine = $_[2];
+  my @port_list_from_subckt = @{$_[3]};
+  #port list from spice library, it will also have size information [16:0]
+  my @nets = split(/\s*\)\s*\,\s*/, $connLine);
+  my $noOfPins = @nets;
+  my %PORT_FROM_SUBCKT = ();
+  my %PORT_FROM_CONN = ();
+  my @unmatched_port_frm_subckt = ();
+  my @unmatched_port_frm_conn = ();
+  my $is_instance_spice_black_box = 0;
+  for(my $i = 1 ; $i < $noOfPins ; $i++){
+    $nets[$i] =~ s/\s*\(\s*/\|/;
+    $nets[$i] =~ s/\s*\)\s*//;
+    my ($pin,$net)=(split(/\s*\|\s*/, $nets[$i]))[0,1];
+    $pin =~ s/\.//;
+    if(($pin =~ /^\d+_tmpslvr_param_/)){
+      #we will not add parameter port to $PORT_FROM_CONN
+      #because parameter port will not be in subckt ports from spice library
+      next;
+    }elsif(($pin =~ /^\d+_tmpslvr_bb$/)){
+      #if one port is \d+_tmpslvr_bb this means this intance is spice blackbox 
+      #for blackbox in spice we will compare number of ports in conn line and spice lib
+      #subckt ports
+      $is_instance_spice_black_box = 1;
+    }else { 
+      $pin =~ s/\d+_tmpslvr_//;
+      #it is subckt port
+    }
+    $PORT_FROM_CONN{$pin} = $net;
+  }
+  foreach my $portName_frm_subckt (@port_list_from_subckt){
+    my $portName_frm_subckt_without_size = $portName_frm_subckt ;
+    $portName_frm_subckt_without_size =~ s/(\[|<).*$//;
+    $PORT_FROM_SUBCKT{$portName_frm_subckt} = $portName_frm_subckt_without_size;
+  }
+  my $subckt_port_number = 0;
+  my @port_list_from_conn = (keys %PORT_FROM_CONN);
+  #we will need this for spice blackbox module 
+  foreach my $portName_frm_subckt (@port_list_from_subckt){
+    my $portName_frm_subckt_without_size = $PORT_FROM_SUBCKT{$portName_frm_subckt} ;
+    if(!exists $PORT_FROM_CONN{$portName_frm_subckt_without_size}){
+      if($is_instance_spice_black_box  != 1){
+        push(@unmatched_port_frm_subckt,$portName_frm_subckt);
+      }elsif($subckt_port_number > $#port_list_from_conn) {
+        push(@unmatched_port_frm_subckt,$portName_frm_subckt);
+      }
+    }
+    $subckt_port_number++;
+  }
+  foreach my $portName_frm_conn (keys %PORT_FROM_CONN){
+    if(!exists $PORT_FROM_SUBCKT{$portName_frm_conn}){
+      push(@unmatched_port_frm_conn,$portName_frm_conn);
+    }
+  }
+  return (\@unmatched_port_frm_conn ,\@unmatched_port_frm_subckt);
+}#sub check_port_from_spice_file
+#-----------------------------------------------------------------------------------------------------------------------#
+sub include_spi {
+  my $spFile = $_[0];
+  my @dir_path = split(/\//,$spFile);
+  my $sp_file_name = pop @dir_path;
+  my $in_file_dir = join "/", @dir_path if(@dir_path > 0); 
+  my $out_file = &write_complete_sp_data($spFile, $in_file_dir, $sp_file_name, 0);
+  return($out_file); 
+}#sub include_spi
+#-----------------------------------------------------------------------------------------------------------------------#
+sub write_complete_sp_data {
+my $in_file = $_[0];
+my $dir_path = $_[1];
+my $out_file = $_[2];
+my $count = $_[3];
+my $hier = 0;
+my $read_fh;
+my $write_fh;
+open($read_fh,"$in_file");
+open($write_fh,">$out_file$count");
+while(<$read_fh>){
+  chomp();
+  if($_ =~ /^\s*\.include\s+/){
+     my $include_file = (split(/\s+/,$_))[1];
+     $include_file =~ s/\"//g;
+     $include_file = $dir_path."/".$include_file if($dir_path ne "");
+     if(-e $include_file){
+           my $next_has_include = &write_sp_data_of_include($write_fh, $include_file);
+           if($next_has_include == 1){
+              $hier = 1;
+           }
+     }else{
+        print "WARN : file  $include_file does not exists\n";
+     }
+  }else{
+     print $write_fh "$_\n";
+  }
+}#while
+close $write_fh;
+close $read_fh;
+if($hier > 0){
+   &write_complete_sp_data($out_file.$count, $dir_path, $out_file, $count+1);
+}else{
+   system("cp $out_file$count $out_file-include.sp");
+   return( $out_file."-include.sp");
+}
+}#sub write_complete_sp_data
+#-----------------------------------------------------------------------------------------------------------------------#
+sub write_sp_data_of_include {
+ my $file_handle = $_[0];
+ my $data_file = $_[1];
+ my $has_include = 0;
+ my $read_fh;
+ open($read_fh, $data_file);
+ while(<$read_fh>){
+   chomp();
+   if($_ =~ /^\s*\.include\s+/){
+      $has_include = 1;
+   }
+   print $file_handle "$_\n";
+ }#while
+ close $read_fh;
+ return $has_include;
+}#sub write_sp_data_of_include
+#-----------------------------------------------------------------------------------------------------------------------#
+sub check_include_found_from_sp {
+  my $file = $_[0];
+  my $read_fh;
+  my $include_found = 0;
+  open($read_fh,$file);
+  while(<$read_fh>){
+    chomp();
+    if($_ =~ /^\s*\.include\s+/){
+      $include_found = 1;
+    }
+  }#while
+  close ($read_fh);
+  return($include_found);
+}#sub check_include_found_from_sp
+#-----------------------------------------------------------------------------------------------------------------------#
+sub check_port_width {
+  #this function will populate size  of port from @module_port_data
+  #if @module_port_data is populated from subckt definition from spice
+  #library,it will size information and $cell_name will be empty
+  #if it is populated from VNOM, size information will need to get from
+  #VNOM and $cell_name will have some value
+  my $parent_module_name = $_[0];
+  my @module_port_data = @{$_[1]};
+  my $cell_name = $_[2];
+  my $do_not_prepend_number_tmpslvr_ = $_[3];
+  #when this subroutine is called for new ports in subckt of spice 
+  #library,\d_tmpslvr_ should not be prepend to the port name
+  my %port_data_hash = ();
+  if(exists $MODULE_ALREADY{$parent_module_name}){
+    my $pcnt = 0;
+    foreach my $portName (@module_port_data){
+      if($portName =~ /(\[|<)\s*[0-9]+\s*\:\s*[0-9]+\s*(\]|>)/){
+        $portName =~ s/\[|</ /;
+        $portName =~ s/\]|>/ /;
+        $portName =~ s/\:/ /;
+        my($port,$from,$to) = (split(/\s+/,$portName))[0,1,2];
+        my $pinToFrom = "[".$from.":".$to."]";
+        my $new_port ;
+        if($do_not_prepend_number_tmpslvr_ eq ""){
+          $new_port =  $pcnt."_tmpslvr_".$port;
+        }elsif($do_not_prepend_number_tmpslvr_ == 1) {
+          $new_port =  $port;
+        }
+        $port_data_hash{$new_port} = $pinToFrom." "."1";
+      }elsif($cell_name ne ""){
+        if($MODULE_ALREADY{$cell_name}->dbVNOMHasInput($portName)){
+          my $type = $MODULE_ALREADY{$cell_name}->dbVNOMGetInputType($portName);
+          if($type ==1){
+            my $busWidth = $MODULE_ALREADY{$cell_name}->dbVNOMGetInputBits($portName);
+            $port_data_hash{$portName} = $busWidth." "."1" ;
+          }else{
+            $port_data_hash{$portName} = "1 0" ;
+          }
+        }elsif($MODULE_ALREADY{$cell_name}->dbVNOMHasOutput($portName)){
+          my $type = $MODULE_ALREADY{$cell_name}->dbVNOMGetOutputType($portName);
+          if($type ==1){
+            my $busWidth = $MODULE_ALREADY{$cell_name}->dbVNOMGetOutputBits($portName);
+            $port_data_hash{$portName} = $busWidth." "."1" ;
+          }else{
+            $port_data_hash{$portName} = "1 0" ;
+          }
+        }elsif($MODULE_ALREADY{$cell_name}->dbVNOMHasBidi($portName)){
+          my $type = $MODULE_ALREADY{$cell_name}->dbVNOMGetBidiType($portName);
+          if($type ==1){
+            my $busWidth = $MODULE_ALREADY{$cell_name}->dbVNOMGetBidiBits($portName);
+            $port_data_hash{$portName} = $busWidth." "."1" ;
+          }else{
+            $port_data_hash{$portName} = "1 0" ;
+          }
+        }
+      }else {
+        my $new_port ;
+        if($do_not_prepend_number_tmpslvr_ eq ""){
+          $new_port =  $pcnt."_tmpslvr_".$portName;
+        }elsif($do_not_prepend_number_tmpslvr_ == 1) {
+          $new_port =  $portName;
+        }
+        $port_data_hash{$new_port} = "1 0";
+      }
+      $pcnt++;
+    }#foreach
+  }#if exists
+  return(%port_data_hash);
+}#sub check_port_width
+#-----------------------------------------------------------------------------------------------------------------------#
+sub bit_list_of_port {
+  my $moduleName = $_[0];
+  my @module_port_data = @{$_[1]};
+  my %bit_list_hash = ();
+  if(exists $MODULE_ALREADY{$moduleName}){
+    foreach my $portName (@module_port_data){
+      if($portName =~ /\[\s*[0-9]+\s*\]/){ 
+        $portName =~ s/\[/ /;
+        $portName =~ s/\]//;
+        my ($port,$bit) = (split(/\s+/,$portName))[0,1]; 
+        push(@{$bit_list_hash{$port}},$bit);
+      }
+    }#foreach
+  }#if exists
+  return(%bit_list_hash);
+}#sub bit_list_of_port
+#-----------------------------------------------------------------------------------------------------------------------#
+sub creating_spice_hash_for_net_from_spice {
+  my $moduleName = $_[0];
+  my %SPICE_DATA = ();
+  my @conns = $MODULE_ALREADY{$moduleName}->dbVNOMGetConn;
+  foreach my $connLine (@conns){
+    $connLine =~ s/\(/\)\,/;
+    $connLine =~ s/\s*\)\s*\)\s*\;?.*$/\)/;
+    my ($cell,$inst) = ( split(/\s+/, $connLine ))[0,1];
+    my @nets = split(/\s*\)\s*\,\s*/, $connLine);
+    my $newdata = "";
+    for(my $i=1; $i<=$#nets;$i++){
+      $nets[$i] =~ s/\s*\(\s*/\|/;
+      $nets[$i] =~ s/\s*\)\s*//;
+      my ($pin,$net)=(split(/\s*\|\s*/, $nets[$i]))[0,1];
+      $pin =~ s/\.//;
+      if($pin =~ /\s*_temp_slvr_/){next;}
+      $newdata = $newdata." ".$net; 
+    }#for
+      $newdata =~s/^\s*//;
+      $SPICE_DATA{$inst} = $newdata;
+  }#foreach
+ return(%SPICE_DATA);
+}#sub creating_spice_hash_for_net_from_spice
+  ########################## Making Drain, Source & Gate hashes ############################
+sub creating_hash_for_net_from_spice {
+  my $moduleName = $_[0];
+  my %DRAIN_HASH = ();
+  my %GATE_HASH = ();
+  my %SOURCE_HASH = ();
+  my %NET_HASH = ();
+  my %SPICE_DATA = &creating_spice_hash_for_net_from_spice($moduleName);
+  foreach my $mdata (keys %SPICE_DATA){
+    my $value = $SPICE_DATA{$mdata}; 
+    my ($drain,$gate,$source) = (split(/\s+/,$value));
+    my @drain_val = ();
+    my @gate_val = ();
+    my @src_val = ();
+    if(exists $DRAIN_HASH{$drain}){
+      @drain_val = @{$DRAIN_HASH{$drain}};
+      push (@drain_val,$mdata);
+    }elsif (exists $DRAIN_HASH{$drain."_"."net"}){
+      @drain_val = @{$DRAIN_HASH{$drain."_"."net"}};
+      push (@drain_val,$mdata);
+    }else{
+      if($drain =~ /(vdd|vss)/){
+        push(@drain_val,$mdata,$drain);
+      }else {
+        push(@drain_val,$mdata);
+      }
+    }
+    if($drain =~ /(vdd|vss)/){
+      @{$DRAIN_HASH{$drain."_"."net"}} = @drain_val;
+    }else{
+      @{$DRAIN_HASH{$drain}} = @drain_val;
+    }
+ #--------------------------------------------------------------------------# 
+    if(exists $GATE_HASH{$gate}){
+      @gate_val = @{$GATE_HASH{$gate}};
+      push (@gate_val,$mdata);
+    }else{
+      push(@gate_val,$mdata);
+    }
+    @{$GATE_HASH{$gate}} = @gate_val;
+ #--------------------------------------------------------------------------# 
+    if(exists $SOURCE_HASH{$source}){
+      @src_val = @{$SOURCE_HASH{$source}};
+      push (@src_val,$mdata);
+    }elsif(exists $SOURCE_HASH{$source."_"."net"}){
+      @src_val = @{$SOURCE_HASH{$source."_"."net"}};
+      push (@src_val,$mdata);
+    }else{
+      if($source =~ /(vdd|vss)/){
+        push(@src_val,$mdata,$source);
+      }else{
+        push(@src_val,$mdata);
+      }
+    }
+    if($source =~ /(vdd|vss)/){
+      @{$SOURCE_HASH{$source."_"."net"}} = @src_val;
+    }else{
+      @{$SOURCE_HASH{$source}} = @src_val;
+    }
+  }#foreach mdata
+  #-------------------------------------------------------------------------#
+  foreach my $g (keys %GATE_HASH){
+    push(@{$NET_HASH{$g}},@{$GATE_HASH{$g}});
+  }
+  foreach my $d (keys %DRAIN_HASH){
+    push(@{$NET_HASH{$d}},@{$DRAIN_HASH{$d}});
+  }
+  foreach my $s (keys %SOURCE_HASH){
+    push(@{$NET_HASH{$s}},@{$SOURCE_HASH{$s}});
+  }
+  #foreach my $net (keys %NET_HASH){
+  #  print "$net => @{$NET_HASH{$net}}\n";
+  #}#foreach
+  return(%NET_HASH);
+}#sub creating_hash_for_net_from_spice
+#-----------------------------------------------------------------------------------------------------------------------#
+
+sub get_net_hash{
+  my $moduleName = $_[0];
+  my %NET_HASH = ();
+  my %SPICE_DATA = &creating_spice_hash_for_net_from_spice($moduleName); 
+  foreach my $inst (keys %SPICE_DATA){
+    my $value = $SPICE_DATA{$inst}; 
+    my ($drain,$gate,$source) = (split(/\s+/,$value))[0,1,2];
+#-------------------------------------------------------------------------------------------#
+      if($drain =~ /(vdd|vss)/i){
+        if(exists $NET_HASH{$drain."_"."net"}){
+          push(@{$NET_HASH{$drain."_"."net"}},[$inst,"drain"]);
+        }else {
+          push(@{$NET_HASH{$drain."_"."net"}},[$inst,"drain"],[$drain,"drain"]);
+        }
+      }else {
+        push(@{$NET_HASH{$drain}},[$inst,"drain"]);
+      }
+#-------------------------------------------------------------------------------------------#      
+      push(@{$NET_HASH{$gate}},[$inst,"gate"]);
+#-------------------------------------------------------------------------------------------#      
+      if($source =~ /(vdd|vss)/i){
+        if(exists $NET_HASH{$source."_"."net"}){
+          push(@{$NET_HASH{$source."_"."net"}},[$inst,"source"]);
+        }else {
+          push(@{$NET_HASH{$source."_"."net"}},[$inst,"source"],[$source,"source"]);
+        }
+      }else{
+        push(@{$NET_HASH{$source}},[$inst,"source"]);
+      }
+#-------------------------------------------------------------------------------------------#
+  }#foreach inst
+  foreach my $net (keys %NET_HASH){
+    #print "$net => @{$NET_HASH{$net}}\n";
+    my @net_data =  @{$NET_HASH{$net}};
+    foreach my $v (@net_data){
+      #print "$net => @$v\n";
+    }  
+  }#foreach
+  return(%NET_HASH);
+}#sub get_net_hash
+#-----------------------------------------------------------------------------------------------------------------------#
+sub write_spice_file 
+{
+  use Benchmark;
+  my $t0 = new Benchmark;
+  my $noOfArguments = @_;
+  if($noOfArguments < 0 || $_[0] eq "-h"){
+    print "Usage : write_spice_file\n";
+    print "      : --hier\n";
+    print "      : --flat\n";
+    print "      : -output <fileName>\n";
+    print "      : -spiceLib <path of the dir>\n";
+    print "      : --complete_spice\n";
+    print "      : --notWriteEmptyModule\n";
+    print "      : --vector_bit_blast\n";
+    print "      : --add_top_instance\n";
+    print "      : --add_design_missing_port\n";
+    print "      : --add_spice_missing_port\n";
+    print "      : --global_change_pin_vss_to_gnd\n";
+    print "      : --add_first_blank_line\n";
+    print "      : --add_global_vdd_and_gnd\n"; 
+    print "      : --overwrite\n";
+    print "      : -in_unit <meter/micron>\n";
+    print "      : -out_unit <meter/micron>\n";
+    #hidden argument from user
+    #print "      : -module_subckt_to_write <module_subckt_name>\n";
+    #print "      : -file_handle <file_handle_to_write>\n";
+   return;
+  }
+  my $moduleName = $TOP_MODULE;
+  my $start_module = $TOP_MODULE;
+  my $no_of_level = -1;
+  my $OUTPUT_FILE = "";
+  my $write_fh;
+  my $hier = 0;
+  my $flat = 0;
+  my $path_of_the_dir = "";
+  my $complete_spice = 0;
+  my $no_write_empty_module = 0;
+  my $vector_bit_blast = 0;
+  my $add_top_instance = 0;
+  my $add_design_missing_port = 0;
+  my $add_spice_missing_port = 0;
+  my $global_change_pin_vss_to_gnd = 0;
+  my $add_first_blank_line = 0;
+  my $add_global_vdd_and_gnd = 0;
+  my $OVERWRITE = 0;
+  my $in_unit = "";
+  my $out_unit = "";
+  my $module_subckt_to_write ="";
+  my $file_handle_to_write ="";
+  my $net_cnt = 0;
+
+  for(my $i=0;$i<$noOfArguments;$i++){
+    if($_[$i] eq "-output"){$OUTPUT_FILE = $_[$i+1];}
+    if($_[$i] eq "--hier"){$hier = 1;$flat = 0;}
+    if($_[$i] eq "--flat"){$flat = 1;$hier = 0;}
+    if($_[$i] eq "-spiceLib"){$path_of_the_dir = $_[$i+1];}
+    if($_[$i] eq "--complete_spice"){$complete_spice = 1;}
+    if($_[$i] eq "--notWriteEmptyModule"){$no_write_empty_module = 1;} 
+    if($_[$i] eq "--vector_bit_blast"){$vector_bit_blast = 1;}
+    if($_[$i] eq "--add_top_instance"){$add_top_instance = 1;}
+    if($_[$i] eq "--add_spice_missing_port"){$add_spice_missing_port = 1;}
+    if($_[$i] eq "--add_design_missing_port"){$add_design_missing_port = 1;}
+    if($_[$i] eq "--global_change_pin_vss_to_gnd"){$global_change_pin_vss_to_gnd = 1;}
+    if($_[$i] eq "--add_first_blank_line"){$add_first_blank_line = 1;}
+    if($_[$i] eq "--add_global_vdd_and_gnd"){$add_global_vdd_and_gnd = 1;} 
+    if($_[$i] eq "--overwrite"){$OVERWRITE = 1;}
+    if($_[$i] eq "-in_unit"){$in_unit = $_[$i+1];}
+    if($_[$i] eq "-out_unit"){$out_unit = $_[$i+1];}
+    if($_[$i] eq "-module_subckt_to_write"){$module_subckt_to_write = $_[$i+1];}
+    if($_[$i] eq "-file_handle"){$file_handle_to_write = $_[$i+1];}
+  }#for
+  if(($OUTPUT_FILE ne "") && ($file_handle_to_write ne "")){
+    #file_handle_to_write will be given precedence
+    print "WARN : output file name and file handle are provided,only file handle will be used";
+    $OUTPUT_FILE = "";
+  }
+  if(($OUTPUT_FILE eq "") && ($file_handle_to_write eq "")){
+    print "WARN : output file name and file handle are not provided,slvrn_proton.sp will be output file";
+    $OUTPUT_FILE = "slvrn_proton.sp";
+  }
+  if($file_handle_to_write eq ""){
+    if (-e $OUTPUT_FILE) {
+      if ($OVERWRITE == 1 ) { 
+        print "WARN-TE-WRITE_SPICE_FILE : 001 : $OUTPUT_FILE exists, overwriting existing file as instructed\n";
+      }else {
+        print "ERR-TE-WRITE_SPICE_FILE : 002 : $OUTPUT_FILE exists, Please change the output name or remove the existing file\n";
+        return;
+      }
+    }# if output file exists
+    open ($write_fh,">$OUTPUT_FILE");
+  }else {
+    $write_fh = $file_handle_to_write; 
+  }
+  my $get_opening_bracket = $GLOBAL->dbfGlobalGetOpeningBracket;
+  my $get_closing_bracket = $GLOBAL->dbfGlobalGetClosingBracket;
+  if($flat == 1){
+    my @port_spice_sorted = ();
+    foreach my $portName (sort initial_digit_sort keys %{$PORTS_ALREADY{$moduleName}} ) {  
+       if($portName =~ /^\d+_tmpslvr_param_\s*/){
+         #incase user has set top_module to some lower level subckt
+         #This lower level subckt may have ports created for parameter
+         next;
+       }else{
+         $portName =~ s/^\d+_tmpslvr_\s*//;
+         $portName =~ s/\[|</$get_opening_bracket/;
+         $portName =~ s/\]|>/$get_closing_bracket/;
+         push(@port_spice_sorted,$portName);
+       }
+     }#foreach
+     print $write_fh ".subckt $moduleName @port_spice_sorted\n";
+     foreach my $instanceName (keys %COMP_ALREADY){
+       my $cellref = $CADB{$instanceName}->dbCadbGetCellref;
+       my @net_list = ();
+       my @net_list_for_parameter = ();
+       my $class;
+       if(exists $MODULE_ALREADY{$cellref}){
+         $class = $MODULE_ALREADY{$cellref}->dbVNOMGetClass;
+       }
+       if(($class == 11) || (exists $PLDB{$cellref})){
+         #only blackbox instances,transistor,capacitors,resistors will be written
+         my $new_inst;
+         foreach my $pinName (sort initial_digit_sort keys %{$COMP_ALREADY{$instanceName}}){
+           my $netName = $COMP_ALREADY{$instanceName}{$pinName};
+           if($pinName =~ /^\d+_tmpslvr_param_/){
+             $pinName =~ s/^\d+_tmpslvr_param_//;
+             #parameter real name is fetched
+             my $net = (split(/\//,$netName))[-1];
+             #while flattening constants are changed to top/x1/x2/x3/1.23e-04
+             $net =~ s/^\d+_tmpslvr_param_//;
+             #if parameter is assigned value of its parent cell parameter
+             my $new_netName = $pinName.""."="."".$net;
+             push(@net_list_for_parameter,$new_netName); 
+           }else{
+             $netName =~ s/^\d+_tmpslvr_//;
+             push(@net_list,$netName); 
+           } 
+         }#foreach pinName
+         if($instanceName =~ /\//){
+            my @arr = (split(/\//,$instanceName));
+            my @rev_arr = reverse (@arr);
+            $new_inst  = join "/",@rev_arr;
+         }else {
+            $new_inst  = $instanceName;
+         }
+         print $write_fh "$new_inst @net_list $cellref @net_list_for_parameter\n";
+       }else {
+         print "Error : Problem in flattening,exitting\n";
+         exit();
+       }
+     }#foreach instanceName
+     print $write_fh ".ends $moduleName\n";
+  }elsif($hier == 1){
+    if($add_global_vdd_and_gnd == 1){
+      print $write_fh ".GLOBAL VDD\n";
+      print $write_fh ".GLOBAL GND\n";
+    }
+    if($add_first_blank_line == 1){
+      print $write_fh "\n";
+    }
+    if($add_design_missing_port == 1){
+      &add_missing_design_port_to_instance_port($TOP_MODULE);
+    }
+    if($add_spice_missing_port == 1){
+      if(-d $path_of_the_dir ){
+        &add_missing_spice_lib_port_to_instance_port($TOP_MODULE,$path_of_the_dir);
+      }else {
+        #print "ERR : spiceLib does not exist\n";
+      } 
+    }
+    %TEMP_MODULE_ALREADY = ();
+    my @temp_module_list = ();
+    if($module_subckt_to_write eq ""){
+      &populate_list_of_modules_in_hierachy_stop_at_given_level_from_start_module($start_module,$no_of_level);
+      @temp_module_list = sort { $TEMP_MODULE_ALREADY{$a} <=> $TEMP_MODULE_ALREADY{$b} } keys %TEMP_MODULE_ALREADY;
+    }else{
+      push(@temp_module_list,$module_subckt_to_write);
+    }
+    my %SUBCKT_PORT_DATA = (); 
+    my %SUBCKT_EXISTS_IN_SPICE_LIB = ();
+    my %SUBCKT_ALREADY_WRITTEN = ();
+    if($add_top_instance == 1){
+      &write_instance_for_top_module($write_fh,$global_change_pin_vss_to_gnd,$vector_bit_blast);
+    }#if add_top_instance
+    #creating port list of all the subckt/modules
+    my %INST_NAME_HASH = ();
+    my %NET_LIST_HASH = ();
+    my %PORT_LIST_HASH = ();
+    foreach my $moduleName (@temp_module_list) {
+      my @conns = $MODULE_ALREADY{$moduleName}->dbVNOMGetConn;
+      my @inPorts = $MODULE_ALREADY{$moduleName}->dbVNOMGetInput;
+      my @outPorts = $MODULE_ALREADY{$moduleName}->dbVNOMGetOutput;
+      my @bidiPorts = $MODULE_ALREADY{$moduleName}->dbVNOMGetBidi;
+      my @allPorts_for_top = ();
+      my $portcnt = 0;
+      my $port_bit_cnt = 0;
+      my @list_of_ports = (); 
+      push(@list_of_ports,@inPorts,@outPorts,@bidiPorts);
+      foreach my $i (sort initial_digit_sort @list_of_ports){
+        if($i =~ /^\d+_tmpslvr_param_/){
+          #We will not write port created for parameters
+          next;
+        }
+        my $type ;
+        my $busWidth ;
+        if($MODULE_ALREADY{$moduleName}->dbVNOMHasInput($i)){
+          $type = $MODULE_ALREADY{$moduleName}->dbVNOMGetInputType($i);
+          $busWidth = $MODULE_ALREADY{$moduleName}->dbVNOMGetInputBits($i)if ( $type == 1 );
+        }elsif($MODULE_ALREADY{$moduleName}->dbVNOMHasOutput($i)){
+          $type = $MODULE_ALREADY{$moduleName}->dbVNOMGetOutputType($i);
+          $busWidth = $MODULE_ALREADY{$moduleName}->dbVNOMGetOutputBits($i)if ( $type == 1 );
+        }elsif($MODULE_ALREADY{$moduleName}->dbVNOMHasBidi($i)){
+          $type = $MODULE_ALREADY{$moduleName}->dbVNOMGetBidiType($i);
+          $busWidth = $MODULE_ALREADY{$moduleName}->dbVNOMGetBidiBits($i)if ( $type == 1 );
+        }
+        if($vector_bit_blast == 1){ 
+          my @port_with_bit_blast = &get_vector_bit_blast($i,$busWidth,$type);
+          foreach my $bit(@port_with_bit_blast){
+            $bit =~ s/^\d+_tmpslvr_//;
+            if($global_change_pin_vss_to_gnd == 1){
+              if($bit =~ /^vss$/i){
+                $bit =~ s/vss/GND/i;
+              }
+            }
+            $bit =~ s/\[|</$get_opening_bracket/;
+            $bit =~ s/\]|>/$get_closing_bracket/;
+            if($port_bit_cnt == 8){
+              push (@allPorts_for_top,"\n+",$bit); 
+              $port_bit_cnt = 0;
+            }else {
+              push (@allPorts_for_top,$bit); 
+            }
+            $port_bit_cnt++;
+          }#foreach bit
+        }else {
+          $i =~ s/^\d+_tmpslvr_//;
+          if($global_change_pin_vss_to_gnd == 1){
+            if($i =~ /^vss$/i){
+              $i =~ s/vss/GND/i;
+            }
+          }
+          if($type ==1){
+            $i = $i.$busWidth;
+          }
+          $i =~ s/\[|</$get_opening_bracket/;
+          $i =~ s/\]|>/$get_closing_bracket/;
+          if($port_bit_cnt == 8){
+            push (@allPorts_for_top,"\n+",$i); 
+            $port_bit_cnt = 0;
+          }else {
+            push (@allPorts_for_top,$i); 
+          }
+        }
+        $port_bit_cnt++;
+      }#foreach
+      my $net_empty_cnt = 0;
+      foreach my $connLine (@conns){
+        $connLine =~ s/\(/\)\,/;
+        $connLine =~ s/\s*\)\s*\)\s*\;?.*$/\)/;
+        my ($cell,$inst) = ( split(/\s+/, $connLine ))[0,1];
+        #get class and check class 11 for svg2spice.pl
+        my $class = $MODULE_ALREADY{$cell}->dbVNOMGetClass;
+        my $instName = "";
+        if($inst =~ /^\s*(m|c|r|x)/i || $class == 11){
+          $instName = $inst;
+        }elsif($inst !~ /^\s*x/i){
+          $instName = "X_$inst";
+        }
+        #added by Mansi 
+        #for svg2spice.pl ignore vdd and vss as an inst 
+        if($inst =~ /vdd/i || $inst =~ /vss/i){next;}
+        push(@{$INST_NAME_HASH{$moduleName}{$cell}},$instName);
+        if($MODULE_ALREADY{$moduleName}->dbVNOMHasLeafInst($inst)){
+          #Leaf instances are populated from lef only
+          #port order will be set according to spice subckt port definition,it spice is present in spice library
+          my @nets = split(/\s*\)\s*\,\s*/, $connLine);
+          my $noOfPins = @nets;
+          @{$SUBCKT_PORT_DATA{$cell}} = &return_temp_port_list_for_leaf_inst($cell); 
+          if( -d $path_of_the_dir){
+            my @spifiles = `find  -L $path_of_the_dir -name \\*\\.spi -o -name \\*\\.sp -o -name \\*\\.spx -o -name \\*\\.spx\\* ! -name \\*\\.pxi ! -name \\*\\.pex`;
+            foreach my $fileName (@spifiles){
+              if($fileName eq "."|| $fileName eq ".."){next;}
+              chomp($fileName);
+              my $temp_full_file_name = $fileName;
+              my $temp_file_name = (split(/\//,$temp_full_file_name))[-1];
+              $temp_file_name =~ s/\..*$//;
+              if($temp_file_name =~ /^$cell$/){
+                my @all_Ports_of_subckt_from_file = &find_port_list_no_lsb_msb($fileName,$cell);
+                @{$SUBCKT_PORT_DATA{$cell}} = @all_Ports_of_subckt_from_file;
+                $SUBCKT_EXISTS_IN_SPICE_LIB{$cell} = 1;
+                last;
+              }#if
+            }#foreach
+          }#if dir path
+          #sorting for svg2spice.pl
+          my @portlist = sort initial_digit_sort @{$SUBCKT_PORT_DATA{$cell}};
+          foreach my $pinName (@portlist){
+            for(my $i = 1 ; $i < $noOfPins ; $i++){
+              $nets[$i] =~ s/\s*\(\s*/\|/;
+              $nets[$i] =~ s/\s*\)\s*//;
+              my ($pin,$net)=(split(/\s*\|\s*/, $nets[$i]))[0,1];
+              $pin =~ s/\.//;
+              #for svg2spice.pl
+              if($pinName !~ /^\d+_tmpslvr_/){
+                $pin =~ s/^\d+_tmpslvr_//g;
+              }
+              if($pinName eq $pin){
+                my $netNameExpr = $net;
+                $netNameExpr =~ s/^\s+//;
+                $netNameExpr =~ s/\s+$//;
+                my @netNameExprBlastedArray = ();
+                if($vector_bit_blast == 1){
+                  @netNameExprBlastedArray = &get_expr_bit_blast($netNameExpr,$moduleName);
+                }else {
+                  @netNameExprBlastedArray = ($netNameExpr);
+                }
+                my @spice_wise_chngd_net_expr_array = &make_net_expr_spice_wise(\@netNameExprBlastedArray,$pinName,$global_change_pin_vss_to_gnd,$in_unit,$out_unit);
+                push(@{$NET_LIST_HASH{$moduleName}{$cell}{$instName}},@spice_wise_chngd_net_expr_array);
+                last;
+              }#if
+            }#for
+          }#foreach
+          #we need to add paramter connection,though leaf instances doesnot normally have parameter connection
+          #but we assume that spice and lef are read together and there is parameter connection in the leaf cell
+          #instance
+          for(my $i = 1 ; $i < $noOfPins ; $i++){
+            $nets[$i] =~ s/\s*\(\s*/\|/;
+            $nets[$i] =~ s/\s*\)\s*//;
+            my ($pin,$net)=(split(/\s*\|\s*/, $nets[$i]))[0,1];
+            $pin =~ s/\.//;
+            if($pin =~ /^\d+_tmpslvr_param_/){
+              my @netNameExprBlastedArray = ($netNameExpr);
+              my @spice_wise_chngd_net_expr_array = &make_net_expr_spice_wise(\@netNameExprBlastedArray,$pinName,$global_change_pin_vss_to_gnd,$in_unit,$out_unit);
+              push(@{$NET_LIST_HASH{$moduleName}{$cell}{$instName}},@spice_wise_chngd_net_expr_array);
+            }
+          }
+        }elsif ($MODULE_ALREADY{$moduleName}->dbVNOMHasHierInst($inst)){
+          #hier insts are populated from verilog module instance
+          #or hier insts are populated from spice subckt instance, in the input spice file and not from spice file in spice library 
+          #port order will be set according to spice subctk port definition,it spice is present in spice library
+          my @portlist_for_module = &get_non_bit_blasted_port_list_for_module($cell); 
+          @{$SUBCKT_PORT_DATA{$cell}} = @portlist_for_module;
+          if( -d $path_of_the_dir){
+            my @spifiles = `find  -L $path_of_the_dir -name \\*\\.spi -o -name \\*\\.sp -o -name \\*\\.spx -o -name \\*\\.spx\\* ! -name \\*\\.pxi ! -name \\*\\.pex`;
+            foreach my $fileName (@spifiles){
+              if($fileName eq "."|| $fileName eq ".."){next;}
+              chomp($fileName);
+              my $temp_full_file_name = $fileName;
+              my $temp_file_name = (split(/\//,$temp_full_file_name))[-1];
+              $temp_file_name =~ s/\..*$//;
+              if($temp_file_name =~ /^$cell$/){
+                my @all_Ports_of_subckt_from_file = &find_port_list_no_lsb_msb($fileName,$cell);
+                @{$SUBCKT_PORT_DATA{$cell}} = @all_Ports_of_subckt_from_file;
+                $SUBCKT_EXISTS_IN_SPICE_LIB{$cell} = 1;
+                last;
+              }
+            }#foreach
+          }#if dir path
+          my @portlist = @{$SUBCKT_PORT_DATA{$cell}};
+          my $class = $MODULE_ALREADY{$cell}->dbVNOMGetClass;
+          if(($class == 11) && ($#portlist < 0)){
+            #Either there is a spice file for the subckt in spice library and in that spice file either subckt is not found or no ports
+            #are there in the subckt.
+            #Or this is a  verilog blackbox module (verilog reader creates module for blackbox but doesn't create any port)
+            #and spice library is not provided by user
+            #Or there are no connection in the instance
+            my @nets = split(/\s*\)\s*\,\s*/, $connLine);
+            my $noOfPins = @nets;
+            for(my $i = 1 ; $i < $noOfPins ; $i++){
+              $nets[$i] =~ s/\s*\(\s*/\|/;
+              $nets[$i] =~ s/\s*\)\s*//;
+              my ($pin,$net)=(split(/\s*\|\s*/, $nets[$i]))[0,1];
+              $pin =~ s/\.//;
+              my $netNameExpr = "";
+              if($net eq ""){ 
+                $netNameExpr = $net_cnt."_"."tmpslvrnet";
+                $net_cnt++; 
+              }else {
+                $netNameExpr = $net;
+              }
+              $netNameExpr =~ s/^\s+//;
+              $netNameExpr =~ s/\s+$//;
+              my @netNameExprBlastedArray = ();
+              if($vector_bit_blast == 1){
+                @netNameExprBlastedArray = &get_expr_bit_blast($netNameExpr,$moduleName);
+              }else {
+                @netNameExprBlastedArray = ($netNameExpr);
+              }
+              my @spice_wise_chngd_net_expr_array = &make_net_expr_spice_wise(\@netNameExprBlastedArray,$pin,$global_change_pin_vss_to_gnd,$in_unit,$out_unit);
+              push(@{$NET_LIST_HASH{$moduleName}{$cell}{$instName}},@spice_wise_chngd_net_expr_array);
+            }#for
+          }elsif($class == 11 && $#portlist >= 0){
+            #this is a  blackbox module
+            #if the code reaches here, it means spice library is provided by user
+            #and there is a spice file in spice library for this blackbox.
+            #This can be a  verilog blackbox module or a spice blackbox module.
+            #If this is a verilog blackbox module,then spice library is provided.
+            #This can also happen for transistor,capacitor,resistor.
+            my @nets = split(/\s*\)\s*\,\s*/, $connLine);
+            my $noOfPins = @nets;
+            my $need_to_add_param_conn = 1 ;
+            my $subckt_port_cnt = 1;
+            foreach my $pinName (@portlist){
+              if($pinName =~ /^\d+_tmpslvr_param_/){
+                $need_to_add_param_conn = 0 ;
+              }
+              for(my $i = 1 ; $i < $noOfPins ; $i++){
+                $nets[$i] =~ s/\s*\(\s*/\|/;
+                $nets[$i] =~ s/\s*\)\s*//;
+                my ($pin,$net)=(split(/\s*\|\s*/, $nets[$i]))[0,1];
+                $pin =~ s/\.//;
+                if(($pinName eq $pin)||(($pin =~ /^\d+_tmpslvr_bb/)&&($i ==  $subckt_port_cnt))){
+                  #this means @portlist is populated from VNOM or
+                  #if @portlist is populated from subckt in spice library then
+                  #it is verilog blackbox
+                  my $netNameExpr = "";
+                  if($net eq ""){
+                    $netNameExpr = $net_cnt."_"."tmpslvrnet";
+                    $net_cnt++; 
+                  }else {
+                    $netNameExpr = $net;
+                  }
+                  $netNameExpr =~ s/^\s+//;
+                  $netNameExpr =~ s/\s+$//;
+                  my @netNameExprBlastedArray = ();
+                  if($vector_bit_blast == 1){
+                    @netNameExprBlastedArray = &get_expr_bit_blast($netNameExpr,$moduleName);
+                  }else {
+                    @netNameExprBlastedArray = ($netNameExpr);
+                  }
+                  my @spice_wise_chngd_net_expr_array = &make_net_expr_spice_wise(\@netNameExprBlastedArray,$pinName,$global_change_pin_vss_to_gnd,$in_unit,$out_unit);
+                  push(@{$NET_LIST_HASH{$moduleName}{$cell}{$instName}},@spice_wise_chngd_net_expr_array);
+                  last;
+                }else{
+                  #in case of spice blackbox port name will always be \d+_tmpslvr_bb, so port name
+                  #will never match with the subckt ports from spice library
+                }
+              }#for
+              $subckt_port_cnt++;
+            }
+            if($need_to_add_param_conn == 1){
+              #we need to add paramter connection if @portlist is populated from subckt from spice library
+              for(my $i = 1 ; $i < $noOfPins ; $i++){
+                $nets[$i] =~ s/\s*\(\s*/\|/;
+                $nets[$i] =~ s/\s*\)\s*//;
+                my ($pin,$net)=(split(/\s*\|\s*/, $nets[$i]))[0,1];
+                $pin =~ s/\.//;
+                if($pin =~ /^\d+_tmpslvr_param_/){
+                  my @netNameExprBlastedArray = ($net);
+                  my @spice_wise_chngd_net_expr_array = &make_net_expr_spice_wise(\@netNameExprBlastedArray,$pinName,$global_change_pin_vss_to_gnd,$in_unit,$out_unit);
+                  push(@{$NET_LIST_HASH{$moduleName}{$cell}{$instName}},@spice_wise_chngd_net_expr_array);
+                }
+              }
+            }
+          }elsif ($class == 0 && $#portlist < 0){
+            my @nets = split(/\s*\)\s*\,\s*/, $connLine);
+            my $noOfPins = @nets;
+            for(my $i = 1 ; $i < $noOfPins ; $i++){
+              $nets[$i] =~ s/\s*\(\s*/\|/;
+              $nets[$i] =~ s/\s*\)\s*//;
+              my ($pin,$net)=(split(/\s*\|\s*/, $nets[$i]))[0,1];
+              $pin =~ s/\.//;
+              my $netNameExpr = "";
+              if($net eq ""){
+                $netNameExpr = $net_cnt."_"."tmpslvrnet";
+                $net_cnt++; 
+              }else {
+                $netNameExpr = $net;
+              }
+              $netNameExpr =~ s/^\s+//;
+              $netNameExpr =~ s/\s+$//;
+              my @netNameExprBlastedArray = ();
+              if($vector_bit_blast == 1){
+                @netNameExprBlastedArray = &get_expr_bit_blast($netNameExpr,$moduleName);
+              }else {
+                @netNameExprBlastedArray = ($netNameExpr);
+              }
+              my @spice_wise_chngd_net_expr_array = &make_net_expr_spice_wise(\@netNameExprBlastedArray,$pin,$global_change_pin_vss_to_gnd,$in_unit,$out_unit);
+              push(@{$NET_LIST_HASH{$moduleName}{$cell}{$instName}},@spice_wise_chngd_net_expr_array);
+            }#for
+          }elsif($class == 0 && $#portlist >= 0){
+            my @nets = split(/\s*\)\s*\,\s*/, $connLine);
+            my $noOfPins = @nets;
+            my $need_to_add_param_conn = 1 ;
+            foreach my $pinName (@portlist){
+              if($pinName =~ /^\d+_tmpslvr_param_/){
+                $need_to_add_param_conn = 0 ;
+              }
+              if($pinName !~ /^\d+_tmpslvr_param_/){
+                #\^\d+_tmpslvr_param_ is need by subroutine make_net_expr_spice_wise to identify
+                #parameter and work on its value
+                $pinName =~ s/^\d+_tmpslvr_//;
+              }
+              for(my $i = 1 ; $i < $noOfPins; $i++){
+                $nets[$i] =~ s/\s*\(\s*/\|/;
+                $nets[$i] =~ s/\s*\)\s*//;
+                my ($pin,$net)=(split(/\s*\|\s*/, $nets[$i]))[0,1];
+                $pin =~ s/\.//;
+                if($pin !~ /^\d+_tmpslvr_param_/){
+                  #\^\d+_tmpslvr_param_ is need by subroutine make_net_expr_spice_wise to identify
+                  #parameter and work on its value
+                  $pin =~ s/^\d+_tmpslvr_//;
+                }
+                if($pinName eq $pin){ 
+                  my $netNameExpr = "";
+                  if($net eq ""){
+                    $netNameExpr = $net_cnt."_"."tmpslvrnet";
+                    $net_cnt++; 
+                  }else {
+                    $netNameExpr = $net;
+                  }
+                  $netNameExpr =~ s/^\s+//;
+                  $netNameExpr =~ s/\s+$//;
+                  my @netNameExprBlastedArray = ();
+                  if($vector_bit_blast == 1){
+                    @netNameExprBlastedArray = &get_expr_bit_blast($netNameExpr,$moduleName);
+                  }else {
+                    @netNameExprBlastedArray = ($netNameExpr);
+                  }
+                  my @spice_wise_chngd_net_expr_array = &make_net_expr_spice_wise(\@netNameExprBlastedArray,$pinName,$global_change_pin_vss_to_gnd,$in_unit,$out_unit);
+                  push(@{$NET_LIST_HASH{$moduleName}{$cell}{$instName}},@spice_wise_chngd_net_expr_array);
+                  last;
+                }#if      
+              }#for      
+            }#foreach      
+            if($need_to_add_param_conn == 1){
+              #we need to add paramter connection if @portlist is populated from subckt from spice library
+              for(my $i = 1 ; $i < $noOfPins ; $i++){
+                $nets[$i] =~ s/\s*\(\s*/\|/;
+                $nets[$i] =~ s/\s*\)\s*//;
+                my ($pin,$net)=(split(/\s*\|\s*/, $nets[$i]))[0,1];
+                $pin =~ s/\.//;
+                if($pin =~ /^\d+_tmpslvr_param_/){
+                  my @netNameExprBlastedArray = ($net);
+                  my @spice_wise_chngd_net_expr_array = &make_net_expr_spice_wise(\@netNameExprBlastedArray,$pinName,$global_change_pin_vss_to_gnd,$in_unit,$out_unit);
+                  push(@{$NET_LIST_HASH{$moduleName}{$cell}{$instName}},@spice_wise_chngd_net_expr_array);
+                }
+              }
+            }
+          }#portName_from_spice == 0       
+        }#if exists is hierInst or trans
+      }#foreach connLine
+      push(@{$PORT_LIST_HASH{$moduleName}},@allPorts_for_top);
+    }#foreach moduleName
+    foreach my $moduleName (@temp_module_list) {
+      if(!exists $SUBCKT_EXISTS_IN_SPICE_LIB{$moduleName}){
+        my @conns = $MODULE_ALREADY{$moduleName}->dbVNOMGetConn;
+        if(@conns <= 0){
+          if($no_write_empty_module == 1){ 
+            next;
+          }
+        }
+        $SUBCKT_ALREADY_WRITTEN{$moduleName} = 1;
+        print $write_fh ".subckt $moduleName ";
+        my @currAllPorts_for_top = @{$PORT_LIST_HASH{$moduleName}};
+        print $write_fh "@currAllPorts_for_top \n";
+        foreach my $subckt (keys %{$INST_NAME_HASH{$moduleName}}){
+            my @inst_list = @{$INST_NAME_HASH{$moduleName}{$subckt}}; 
+            foreach my $inst_Name (@inst_list){
+                print $write_fh "$inst_Name ";
+              if(exists $NET_LIST_HASH{$moduleName}{$subckt}{$inst_Name}){
+                my @net_list = @{$NET_LIST_HASH{$moduleName}{$subckt}{$inst_Name}};
+                my @new_net_list = ();
+                my @net_list_for_equal = ();
+                foreach my $net (@net_list){
+                  if($net =~ /=/){
+                    #parmameter connection
+                    push(@net_list_for_equal,$net) ;
+                  }else{
+                    #port connection
+                    push(@new_net_list,$net);
+                 }
+               }#foreach net
+               if($subckt =~ /capacitor|resistance/){
+                 print $write_fh "@new_net_list \n";
+               }else {
+                 print $write_fh "@new_net_list $subckt @net_list_for_equal\n";
+               }
+              }#if exists  
+            }#foreach
+        }#foreach
+        print $write_fh ".ends $moduleName\n";
+        print $write_fh "\n";
+      }
+    }#foreach moduleName
+    foreach my $subckt (@temp_module_list) {
+      if(exists $SUBCKT_EXISTS_IN_SPICE_LIB{$subckt}){
+        my $class = $MODULE_ALREADY{$subckt}->dbVNOMGetClass;
+        if(($class == 11) || (!exists $MODULE_ALREADY{$subckt})){
+          #if it either blackbox or leaf cell
+          if($complete_spice != 1){
+            #black box or leaf subckt to be written when $complete_spice is 1
+            next;
+          }
+        }
+        my @spifiles = `find  -L $path_of_the_dir -name \\*\\.spi -o -name \\*\\.sp -o -name \\*\\.spx -o -name \\*\\.spx\\* ! -name \\*\\.pxi ! -name \\*\\.pex`;
+        foreach my $fileName (@spifiles){
+          if($fileName eq "." || $fileName eq ".."){next;}
+          chomp($fileName);
+          my $temp_file = $fileName;
+          my $temp_full_file_name = $fileName;
+          my $temp_file_name = (split(/\//,$temp_full_file_name))[-1];
+          $temp_file_name =~ s/\..*$//;
+          if($temp_file_name =~ /^$subckt$/){
+            my @sbckt_lst_file_name = &read_spice_new("-sp",$fileName);
+            my $curr_args = join (" ",@_);
+            $curr_args =~ s/-spiceLib +[^\s]+ / /;
+            $curr_args =~ s/-output +[^\s]+ / /;
+            $curr_args =~ s/--complete_spice/ /;
+            $curr_args =~ s/--add_top_instance/ /;
+            $curr_args =~ s/--add_spice_missing_port/ /;
+            $curr_args =~ s/--add_first_blank_line/ /;
+            $curr_args =~ s/--add_global_vdd_and_gnd/ /;
+            $curr_args =~ s/--overwrite/ /;
+            $curr_args =~ s/-module_subckt_to_write +[^\s]+/ /;
+            $curr_args =~ s/\s+/ /g;
+            my @curr_args_array = (split(/\s+/,$curr_args));
+            foreach my $sbckt_elem(@sbckt_lst_file_name){
+              #$sbckt_elem can be blacbox,we should not write blackbox subckt
+              my $class = $MODULE_ALREADY{$sbckt_elem}->dbVNOMGetClass;
+              if($class != 11){
+                if(!exists $SUBCKT_ALREADY_WRITTEN{$sbckt_elem}){
+                  &write_spice_file(@curr_args_array,"-module_subckt_to_write",$sbckt_elem,"-file_handle",$write_fh);
+                  $SUBCKT_ALREADY_WRITTEN{$sbckt_elem} = 1;
+                }
+              }
+            }
+            last;
+          }
+        }#foreach
+      }
+    }
+  }#if($hier == 1)
+  if($file_handle_to_write eq ""){
+    #if $file_handle_to_write is not empty this means that this file handle
+    #is an argument and it should not be closed here  
+    close($write_fh); 
+  }
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "Command write_spice_file took:",timestr($td),"\n";
+}#sub write_spice_file
+#-----------------------------------------------------------------------------------------------------------------------#
+sub check_portName {
+my @portList = @{$_[0]};  
+my $portName_from_spice = 0;
+foreach my $port (@portList){
+  if($port =~ /_temp_slvr_/){
+    $portName_from_spice = 1;
+    last;
+  }else {
+    $portName_from_spice = 0;
+  }
+}
+return($portName_from_spice);
+}#sub check_portName
+#-----------------------------------------------------------------------------------------------------------------------#
+sub get_non_bit_blasted_port_list_for_module {
+my $moduleName = $_[0];
+my @check_port_list = ();
+my @inPorts = $MODULE_ALREADY{$moduleName}->dbVNOMGetInput if(exists $MODULE_ALREADY{$moduleName});
+my @outPorts = $MODULE_ALREADY{$moduleName}->dbVNOMGetOutput if(exists $MODULE_ALREADY{$moduleName}); 
+my @bidiPorts = $MODULE_ALREADY{$moduleName}->dbVNOMGetBidi if(exists $MODULE_ALREADY{$moduleName});
+my @list_of_ports = (@inPorts,@outPorts,@bidiPorts); 
+my @sorted_list_of_ports = sort initial_digit_sort @list_of_ports;
+return (@sorted_list_of_ports);
+}#sub get_non_bit_blasted_port_list_for_module
+#-----------------------------------------------------------------------------------------------------------------------#
+sub return_temp_port_list_for_leaf_inst {
+my $cellName = $_[0];
+my @pinlist = ();
+if(exists $PLDB{$cellName}){
+  my @pins = $PLDB{$cellName}->dbMdbGetPins;
+  foreach my $pinName (@pins){
+    my $pinType = $PLDB{$cellName}->dbMdbGetPinType($pinName);
+    if($pinType !=  1 && $pinType != 2){push (@pinlist,$pinName);}
+  }#foreach
+  #will push pins of pinType 1 or 2 (power,ground types)at the end
+  foreach my $pinName(@pins){
+    my $pinType = $PLDB{$cellName}->dbMdbGetPinType($pinName);
+    if($pinType == 1 || $pinType == 2){push (@pinlist,$pinName);}
+  }#foreach
+}#if
+  return(@pinlist);
+}#sub return_temp_port_list_for_leaf_inst
+#-----------------------------------------------------------------------------------------------------------------------#
+sub get_vector_bit_blast 
+{
+my $portName = $_[0];
+my $busWidth = $_[1];
+my $type = $_[2];
+my $moduleName = $_[3];
+$busWidth =~ s/\[|<//;
+$busWidth =~ s/\]|>//;
+my @PORT_BIT_BLAST = ();
+if($type ne ""){
+  if($type == 0){
+     push(@PORT_BIT_BLAST,$portName);
+  }elsif($type == 1) {
+    my ($min,$max) = (split(/:/,$busWidth));
+    if($min < $max){
+      for(my $i = $min;$i <=$max;$i++){
+        push(@PORT_BIT_BLAST,$portName."[".$i."]");
+      }#for
+    }elsif($min > $max){
+      for(my $i = $min;$i>=$max;$i--){
+        push(@PORT_BIT_BLAST,$portName."[".$i."]");
+      }#for
+    }elsif($min == $max){
+      $i =  $min;
+      push(@PORT_BIT_BLAST,$portName."[".$i."]");
+    }
+  }
+}elsif($busWidth ne "" ){
+  if($busWidth =~ /:/){
+    $type = 1;
+  }else {
+    $type = 0;
+  }
+  return &get_vector_bit_blast($portName,$busWidth,$type);
+}elsif($moduleName ne ""){
+  my $type = "";
+  my $busWidth = "";
+  if($MODULE_ALREADY{$moduleName}->dbVNOMHasInput($portName)){
+    $type = $MODULE_ALREADY{$moduleName}->dbVNOMGetInputType($portName);
+    if($type == 1){
+      $busWidth = $MODULE_ALREADY{$moduleName}->dbVNOMGetInputBits($portName);
+    }
+  }elsif($MODULE_ALREADY{$moduleName}->dbVNOMHasOutput($portName)){
+    $type = $MODULE_ALREADY{$moduleName}->dbVNOMGetOutputType($portName);
+    if($type == 1){
+      $busWidth = $MODULE_ALREADY{$moduleName}->dbVNOMGetOutputBits($portName);
+    }
+  }elsif($MODULE_ALREADY{$moduleName}->dbVNOMHasBidi($portName)){
+    $type = $MODULE_ALREADY{$moduleName}->dbVNOMGetBidiType($portName);
+    if($type == 1){
+      $busWidth = $MODULE_ALREADY{$moduleName}->dbVNOMGetBidiBits($portName);
+    }
+  }
+  return &get_vector_bit_blast($portName,$busWidth,$type);
+}else{
+  push(@PORT_BIT_BLAST,$portName);
+}
+return(@PORT_BIT_BLAST);
+}#sub get_vector_bit_blast
+#-----------------------------------------------------------------------------------------------------------------------#
+sub write_instance_for_top_module 
+{
+my $filehandle = $_[0];
+my $global_change_pin_vss_to_gnd = $_[1];
+my $vector_bit_blast = $_[2];
+my $moduleName = $TOP_MODULE;
+my @inPorts = $MODULE_ALREADY{$moduleName}->dbVNOMGetInput;
+my @outPorts = $MODULE_ALREADY{$moduleName}->dbVNOMGetOutput;
+my @bidiPorts = $MODULE_ALREADY{$moduleName}->dbVNOMGetBidi;
+my $get_opening_bracket = $GLOBAL->dbfGlobalGetOpeningBracket;
+my $get_closing_bracket = $GLOBAL->dbfGlobalGetClosingBracket;
+my @all_nets_for_top = ();
+my $port_bit_cnt = 0;
+my @list_of_ports = (); 
+#-----------------------------------------------------------------------------------------#
+push(@list_of_ports,@inPorts,@outPorts,@bidiPorts);
+foreach my $i (sort initial_digit_sort @list_of_ports){
+  if($i =~ /^\d+_tmpslvr_param_/){
+    #We will write port created for parameters like wp=wp
+    push (@all_nets_for_top,$i."=".$i); 
+    next;
+  }
+  my $type ;
+  my $busWidth ;
+  if($MODULE_ALREADY{$moduleName}->dbVNOMHasInput($i)){
+    $type = $MODULE_ALREADY{$moduleName}->dbVNOMGetInputType($i);
+    $busWidth = $MODULE_ALREADY{$moduleName}->dbVNOMGetInputBits($i)if ( $type == 1 );
+  }elsif($MODULE_ALREADY{$moduleName}->dbVNOMHasOutput($i)){
+    $type = $MODULE_ALREADY{$moduleName}->dbVNOMGetOutputType($i);
+    $busWidth = $MODULE_ALREADY{$moduleName}->dbVNOMGetOutputBits($i)if ( $type == 1 );
+  }elsif($MODULE_ALREADY{$moduleName}->dbVNOMHasBidi($i)){
+    $type = $MODULE_ALREADY{$moduleName}->dbVNOMGetBidiType($i);
+    $busWidth = $MODULE_ALREADY{$moduleName}->dbVNOMGetBidiBits($i)if ( $type == 1 );
+  }
+  if($vector_bit_blast == 1){ 
+    my @port_with_bit_blast = &get_vector_bit_blast($i,$busWidth,$type);
+    foreach my $bit(@port_with_bit_blast){
+      $bit =~ s/^\d+_tmpslvr_//;
+      if($global_change_pin_vss_to_gnd == 1){
+        if($bit =~ /^vss$/i){
+          $bit =~ s/vss/GND/i;
+        }
+      }
+      $bit =~ s/\[|</$get_opening_bracket/;
+      $bit =~ s/\]|>/$get_closing_bracket/;
+      if($port_bit_cnt == 8){
+        push (@all_nets_for_top,"\n+",$bit); 
+        $port_bit_cnt = 0;
+      }else {
+        push (@all_nets_for_top,$bit); 
+      }
+     $port_bit_cnt++;
+    }#foreach bit
+  }else {
+    $i =~ s/^\d+_tmpslvr_//;
+    if($global_change_pin_vss_to_gnd == 1){
+      if($i =~ /^vss$/i){
+        $i =~ s/vss/GND/i;
+      }
+    }
+    $i =~ s/\[|</$get_opening_bracket/;
+    $i =~ s/\]|>/$get_closing_bracket/;
+    if($port_bit_cnt == 8){
+      push (@all_nets_for_top,"\n+",$i); 
+      $port_bit_cnt = 0;
+    }else {
+      push (@all_nets_for_top,$i); 
+    }
+  }
+  $port_bit_cnt++;
+}#foreach
+print $filehandle "X_$TOP_MODULE @all_nets_for_top $TOP_MODULE\n";
+print $filehandle "\n";
+}#sub write_instance_for_top_module
+#-----------------------------------------------------------------------------------------------------------------------#
+sub add_missing_spice_lib_port_to_instance_port 
+{
+#This subroutine will add port to instance connection 
+#All such cell ports which are not present in instance and
+#present in subckt of spice library
+#Ports will be populated from spice library spice file for that cell
+#ports will also be added to the instance cell and parent cell
+my $moduleName = $_[0];
+my $path_of_the_dir = $_[1];
+my @conns = $MODULE_ALREADY{$moduleName}->dbVNOMGetConn;
+$MODULE_ALREADY{$moduleName}->dbVNOMWipeConn;
+foreach my $connLine (@conns){
+  my $temp_connLine = $connLine; 
+  $connLine =~ s/\s*\)\s*\)\s*\;?.*$/\)/;
+  $temp_connLine =~ s/\(/\)\,/;
+  $temp_connLine =~ s/\s*\)\s*\)\s*\;?.*$/\)/;
+  my %SUBCKT_PORT_HASH = ();
+  my ($cell,$inst) = ( split(/\s+/, $temp_connLine ))[0,1];
+  my $class = $MODULE_ALREADY{$cell}->dbVNOMGetClass;
+  if ($MODULE_ALREADY{$moduleName}->dbVNOMHasHierInst($inst) && ($class != 11)){
+      &add_missing_spice_lib_port_to_instance_port($cell,$path_of_the_dir);
+  }
+  #we are adding those ports to instance connection line which are not present in the instance
+  #but the port is present in a spice library spice file
+  #so if vss is not connected we will add .vss(vss) to the instance
+  #we will also add port vss to parent cell if it is not present
+  #we will also add port vss to instance cell if it is not present
+  my @spifiles = `find  -L $path_of_the_dir -name \\*\\.spi -o -name \\*\\.sp -o -name \\*\\.spx -o -name \\*\\.spx\\* ! -name \\*\\.pxi ! -name \\*\\.pex`;
+  foreach my $fileName (@spifiles){
+    if($fileName eq "."|| $fileName eq ".."){next;}
+    #fileName will never be "." or "..", so above code is useless
+    chomp($fileName);
+    my $temp_full_file_name = $fileName;
+    my $temp_file_name = (split(/\//,$temp_full_file_name))[-1];
+    $temp_file_name =~ s/\..*$//;
+    if($temp_file_name =~ /^$cell$/){
+      my @all_Ports_of_subckt_from_file = &find_port_list($fileName,$cell);
+      @{$SUBCKT_PORT_HASH{$cell}} = @all_Ports_of_subckt_from_file; 
+      last;
+    }#if
+  }#foreach
+  my @port_list = @{$SUBCKT_PORT_HASH{$cell}};
+  #for transistors class will be 11 and  it is a hier inst but port_list will be empty for transistor
+  my ($GET_UNMATCHED_PORT_OF_VERILOG,$GET_UNMATCHED_PORT_OF_SUBCKT) = &check_port_from_spice_file($inst,$cell,$temp_connLine,\@port_list);
+  my @UNMATCHED_PORT_OF_VERILOG = @{$GET_UNMATCHED_PORT_OF_VERILOG};
+  #no use of @UNMATCHED_PORT_OF_VERILOG
+  my @UNMATCHED_PORT_OF_SUBCKT = @{$GET_UNMATCHED_PORT_OF_SUBCKT};
+  my %port_data_hash = &check_port_width($moduleName,\@UNMATCHED_PORT_OF_SUBCKT,"",1);
+  my $input_file_type = $GLOBAL->dbfGlobalGetInputType();
+  foreach my $unmatched_port (keys %port_data_hash){
+    my $spice_port_name_parent_if_exists = $unmatched_port;
+    if($input_file_type eq "spice"){
+      $spice_port_name_parent_if_exists = &spice_port_name_for_port($moduleName,$unmatched_port);
+    }
+    if (!(($MODULE_ALREADY{$moduleName}->dbVNOMHasInput($spice_port_name_parent_if_exists))||
+      ($MODULE_ALREADY{$moduleName}->dbVNOMHasOutput($spice_port_name_parent_if_exists))||
+      ($MODULE_ALREADY{$moduleName}->dbVNOMHasBidi($spice_port_name_parent_if_exists)))){
+      my ($pinToFrom,$pinType) = (split (/\s+/,$port_data_hash{$spice_port_name_parent_if_exists}));
+      if($input_file_type eq "spice"){
+        $spice_port_name_parent_if_exists = &generate_spice_port_name($moduleName,$spice_port_name_parent_if_exists);
+      }
+      $MODULE_ALREADY{$moduleName}->dbVNOMAddBidi($spice_port_name_parent_if_exists);
+      $MODULE_ALREADY{$moduleName}->dbVNOMSetBidiType($spice_port_name_parent_if_exists,$pinType);
+      $MODULE_ALREADY{$moduleName}->dbVNOMSetBidiBits($spice_port_name_parent_if_exists,$pinToFrom);
+    }
+    my $spice_port_name_if_exists = $unmatched_port;
+    if($input_file_type eq "spice"){
+      $spice_port_name_if_exists = &spice_port_name_for_port($cell,$unmatched_port);
+    }
+    if (!$MODULE_ALREADY{$moduleName}->dbVNOMHasLeafInst($inst)){
+      if (!(($MODULE_ALREADY{$cell}->dbVNOMHasInput($spice_port_name_if_exists))||
+        ($MODULE_ALREADY{$cell}->dbVNOMHasOutput($spice_port_name_if_exists))||
+        ($MODULE_ALREADY{$cell}->dbVNOMHasBidi($spice_port_name_if_exists)))){
+        my ($pinToFrom,$pinType) = (split (/\s+/,$port_data_hash{$spice_port_name_if_exists}));
+        if($input_file_type eq "spice"){
+          $spice_port_name_if_exists = &generate_spice_port_name($cell,$spice_port_name_if_exists);
+        }
+        $MODULE_ALREADY{$cell}->dbVNOMAddBidi($spice_port_name_if_exists);
+        $MODULE_ALREADY{$cell}->dbVNOMSetBidiType($spice_port_name_if_exists,$pinType);
+        $MODULE_ALREADY{$cell}->dbVNOMSetBidiBits($spice_port_name_if_exists,$pinToFrom);
+      }
+    }
+    $connLine = $connLine .", .$spice_port_name_if_exists($spice_port_name_parent_if_exists)";
+  }#foreach port_data_hash
+  $connLine = $connLine.");";
+  $MODULE_ALREADY{$moduleName}->dbVNOMAddConn($connLine);  
+}#foreach connLine
+}#sub add_missing_spice_lib_port_to_instance_port
+#-----------------------------------------------------------------------------------------------------------------------#
+sub add_missing_design_port_to_instance_port 
+{
+#this subroutine will add port to instance connection 
+#All such cell ports which are not present in instance will
+#be added to instance
+#For hier cells ports will be populated from VNOM
+#For leaf cells or blackbox cells ports will be populated from 
+#spice library spice file for that cell
+my $moduleName = $_[0];
+my @conns = $MODULE_ALREADY{$moduleName}->dbVNOMGetConn;
+$MODULE_ALREADY{$moduleName}->dbVNOMWipeConn;
+foreach my $connLine (@conns){
+  my $temp_connLine = $connLine; 
+  $connLine =~ s/\s*\)\s*\)\s*\;?.*$/\)/;
+  $temp_connLine =~ s/\(/\)\,/;
+  $temp_connLine =~ s/\s*\)\s*\)\s*\;?.*$/\)/;
+  my %SUBCKT_PORT_HASH = ();
+  my ($cell,$inst) = ( split(/\s+/, $temp_connLine ))[0,1];
+  my $class = $MODULE_ALREADY{$cell}->dbVNOMGetClass;
+  if ($MODULE_ALREADY{$moduleName}->dbVNOMHasHierInst($inst) && ($class != 11)){
+    #if instance cell is hierarchical non black box instance,means it is defined the input file
+    #we are adding those ports to instance connection line which are not present in the instance
+    #so if vss is not connected we will add .vss(vss) to the instance
+    my @port_list = ();
+    &add_missing_design_port_to_instance_port($cell);
+    my @input = $MODULE_ALREADY{$cell}->dbVNOMGetInput;
+    my @output = $MODULE_ALREADY{$cell}->dbVNOMGetOutput;
+    my @bidi = $MODULE_ALREADY{$cell}->dbVNOMGetBidi;
+    push(@port_list,@input,@output,@bidi);
+    my ($GET_UNMATCHED_PORT_OF_VERILOG,$GET_UNMATCHED_PORT_OF_SUBCKT) = &check_port_from_spice_file($inst,$cell,$temp_connLine,\@port_list);
+    my @UNMATCHED_PORT_OF_VERILOG = @{$GET_UNMATCHED_PORT_OF_VERILOG};
+    my @UNMATCHED_PORT_OF_SUBCKT = @{$GET_UNMATCHED_PORT_OF_SUBCKT};
+    my %port_data_hash = &check_port_width($moduleName,\@UNMATCHED_PORT_OF_SUBCKT,$cell);
+    #port_data_hash will not have any size information
+    #adding unmatched port into instance cell
+    foreach my $unmatched_port (keys %port_data_hash){
+      $connLine = $connLine .", .$unmatched_port($unmatched_port)";
+    }
+    $connLine = $connLine.");";
+    $MODULE_ALREADY{$moduleName}->dbVNOMAddConn($connLine);  
+  }elsif($MODULE_ALREADY{$moduleName}->dbVNOMHasLeafInst($inst)){
+    my @port_list = &return_temp_port_list_for_leaf_inst($cell);
+    my ($GET_UNMATCHED_PORT_OF_VERILOG,$GET_UNMATCHED_PORT_OF_SUBCKT) = &check_port_from_spice_file($inst,$cell,$temp_connLine,\@port_list);
+    my @UNMATCHED_PORT_OF_VERILOG = @{$GET_UNMATCHED_PORT_OF_VERILOG};
+    my @UNMATCHED_PORT_OF_SUBCKT = @{$GET_UNMATCHED_PORT_OF_SUBCKT};
+    my %port_data_hash = &check_port_width($moduleName,\@UNMATCHED_PORT_OF_SUBCKT,"",1);
+    foreach my $unmatched_port (keys %port_data_hash){
+      $connLine = $connLine .", .$unmatched_port($unmatched_port)";
+    }
+    $connLine = $connLine.");";
+    $MODULE_ALREADY{$moduleName}->dbVNOMAddConn($connLine);  
+  }
+}#foreach connLine
+}#sub add_missing_design_port_to_instance_port
+#-----------------------------------------------------------------------------------------------------------------------#
+sub set_array_index_delimiter {
+  if($_[0] eq '-h' || $_[0] eq '-help'){
+    print "Usage : set_array_index_delimiter <opening bracket closing bracket>\n";
+    return;
+  }
+  my $opening_bracket = $_[0];
+  my $closing_bracket = $_[1]; 
+  $GLOBAL->dbfGlobalSelectOpeningBracket($opening_bracket);
+  $GLOBAL->dbfGlobalSelectClosingBracket($closing_bracket);
+}#sub set_array_index_delimeter
+#-----------------------------------------------------------------------------------------------------------------------#
+sub get_vector_bit_blast_of_vcd 
+{
+my @sig_list = @{$_[0]};
+my @port_list_with_hier = ();
+foreach my $sig (@sig_list){
+  my @sig_with_hier = (split(/\./,$sig));
+  my $port = pop (@sig_with_hier);
+  if($port =~ /\[\s*[0-9]+\s*\:\s*[0-9]+\s*\]/){
+    my $portName = $port;
+    my $busWidth = $port;
+    $portName =~ s/\[.*//;
+    $busWidth =~ s/.*\[/\[/;
+    my @port_with_bit_blast = &get_vector_bit_blast($portName,$busWidth); 
+    foreach my $port_str (@port_with_bit_blast){
+      my $join_hier_str = join".",@sig_with_hier; 
+      push(@port_list_with_hier,$join_hier_str.".".$port_str); 
+    }#foreach
+  }elsif ($port =~ /\[\s*[0-9]+\s*\]/){
+    my $join_hier_str = join".",@sig_with_hier; 
+    push(@port_list_with_hier,$join_hier_str.".".$port); 
+  }else {
+    my $join_hier_str = join".",@sig_with_hier; 
+    push(@port_list_with_hier,$join_hier_str.".".$port); 
+  }
+}
+return(@port_list_with_hier);
+}#sub get_vector_bit_blast_of_vcd
+#-----------------------------------------------------------------------------------------------------------------------#
+sub return_signal_vs_value_array_in_cmd_format
+{
+my $net = $_[0];
+my $value = $_[1];
+my $net_vs_port_hash_arg = $_[2];
+my $input_sig_hash_arg = $_[3];
+my $output_sig_hash_arg = $_[4];
+my %net_vs_port_hash = %$net_vs_port_hash_arg;
+my %input_sig_hash = %$input_sig_hash_arg;
+my %output_sig_hash = %$output_sig_hash_arg;
+my @net_vs_value_arr = ();
+my $get_opening_bracket = $GLOBAL->dbfGlobalGetOpeningBracket;
+my $get_closing_bracket = $GLOBAL->dbfGlobalGetClosingBracket;
+my @net_hier = (split(/\./,$net));
+$net = pop (@net_hier);
+if($net =~ /\[\s*[0-9]+\s*\:\s*[0-9]+\s*\]/){
+  my $portName = $net;
+  my $busWidth = $net;
+  $portName =~ s/\[.*//;
+  $busWidth =~ s/.*\[/[/;
+  my @port_with_bit_blast = &get_vector_bit_blast($portName,$busWidth); 
+  my @value_list = ();
+  foreach my $val (split //,$value){ 
+    my $cmd_val = &change_vcd_value_to_cmd_value($val);
+    push (@value_list,$cmd_val);
+  }#foreach
+  my $net_is_input = &check_signal_input_or_output($port_with_bit_blast[0],\%net_vs_port_hash,\%input_sig_hash,\%output_sig_hash); 
+  #if one bit of a vector is input all the bits of vector will be input
+  #we check only first bit of the vector
+  my $diff_port_size_value_size = ($#port_with_bit_blast - $#value_list);
+  for(my $i=0;$i < $diff_port_size_value_size;$i++){
+    if($net_is_input == 0){
+      my $cmd_val = &change_vcd_value_to_cmd_value("0");
+      unshift (@value_list,$cmd_val);
+    }elsif($net_is_input ==1){
+      my $cmd_val = &change_vcd_value_to_cmd_value("x");
+      unshift (@value_list,$cmd_val);
+    }
+  }
+  for (my $i =0;$i<=$#port_with_bit_blast;$i++){
+    if(!exists $net_vs_port_hash{$port_with_bit_blast[$i]}){
+      next;
+    }
+    my $port_bit = $net_vs_port_hash{$port_with_bit_blast[$i]};
+    my $port_value = $value_list[$i];
+    push(@net_vs_value_arr,[$port_bit,$port_value]);
+  }#for
+}elsif ($net =~ /\[\s*[0-9]+\s*\]/){
+  $net =~ s/\[|</$get_opening_bracket/;
+  $net =~ s/\]|>/$get_closing_bracket/;
+  if(!exists $net_vs_port_hash{$net}){
+    next;
+  }
+  my $port_bit = $net_vs_port_hash{$net};
+  my $cmd_val = &change_vcd_value_to_cmd_value($value);
+  push(@net_vs_value_arr,[$port_bit,$cmd_val]);
+}else {
+  if(!exists $net_vs_port_hash{$net}){
+    next;
+  }
+  my $port_bit = $net_vs_port_hash{$net};
+  my $cmd_val = &change_vcd_value_to_cmd_value($value);
+  push(@net_vs_value_arr,[$port_bit,$cmd_val]);
+}
+return (@net_vs_value_arr);
+}#sub return_signal_vs_value_array_in_cmd_format
+#-----------------------------------------------------------------------------------------------------------------------#
+sub change_vcd_value_to_cmd_value
+{
+  my $vcd_val = $_[0];
+  my $cmd_val = $vcd_val;
+  if($vcd_val == 1){
+    $cmd_val = "h";
+  }elsif($vcd_val == 0){
+    $cmd_val = "l";
+  }elsif($vcd_val eq "z"){
+    $cmd_val = "z";
+  }elsif($vcd_val eq "x"){
+    $cmd_val = "x";
+  }
+  return $cmd_val;
+}#sub change_vcd_value_to_cmd_value
+#-----------------------------------------------------------------------------------------------------------------------#
+sub get_dir_wire_full_path {
+my @sig_list = @{$_[0]};
+my %all_input_sig = ();
+my %all_output_sig = ();
+if(!%MODULE_ALREADY){print "WARN : We need a VNOM database so, Please read verilog files\n";}
+foreach my $sig (@sig_list){
+  my @sig_with_hier = (split(/\./,$sig));
+  my $join_hier_str = join".",@sig_with_hier; 
+  my @temp_sig_with_hier = @sig_with_hier;
+  my $port = pop (@temp_sig_with_hier);
+  my $scope = pop (@temp_sig_with_hier);
+  my $temp_sig = $port;
+  my $pin = "";
+  my $digit = "";
+  if($temp_sig =~ /\[|</){
+    $temp_sig =~ s/\[|</ /; 
+    $temp_sig =~ s/\]|>/ /; 
+    ($pin,$digit) = (split(/\s+/,$temp_sig))[0,1];
+  }else {
+    $pin = $temp_sig;
+  }
+  if(%MODULE_ALREADY){
+    if($scope eq $TOP_MODULE){
+      if(exists $MODULE_ALREADY{$TOP_MODULE}->{ins}{$pin}){ 
+        $all_input_sig{$join_hier_str} = 1;
+      }elsif(exists $MODULE_ALREADY{$TOP_MODULE}->{outs}{$pin}){ 
+        $all_output_sig{$join_hier_str} = 1;
+      }elsif(exists $MODULE_ALREADY{$TOP_MODULE}->{bidis}{$pin}){ 
+      }else {
+        my @conns = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetConn;
+        my ($input,$output) = &get_in_and_out_from_connLine(\@conns); 
+        my @input_sig = @$input;
+        my @output_sig = @$output;
+        foreach my $in (@input_sig){
+          if($in eq $pin){
+            $all_input_sig{$join_hier_str} = 1;
+          }#if
+        }#foreach
+        foreach my $out (@output_sig){
+          if($out eq $pin){
+            $all_output_sig{$join_hier_str} = 1;
+          }#if
+        }#foreach
+      }#else
+    }elsif($MODULE_ALREADY{$TOP_MODULE}->dbVNOMHasHierInst($scope)){
+      my $cellref = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetHierInstCell($scope);
+      if(exists $MODULE_ALREADY{$cellref}){
+       if(exists $MODULE_ALREADY{$cellref}->{ins}{$pin}){ 
+         $all_input_sig{$join_hier_str} = 1;
+       }elsif(exists $MODULE_ALREADY{$cellref}->{outs}{$pin}){ 
+         $all_output_sig{$join_hier_str} =1;
+       }elsif(exists $MODULE_ALREADY{$cellref}->{bidis}{$pin}){ 
+       }else {
+         print "ERR : $pin is neither input or output of this $cellref\n";
+       } 
+      }
+    }
+  }else {
+    #print "WARN : We need a VNOM database so, Please read verilog files\n";
+  }
+}
+return (\%all_input_sig,\%all_output_sig);
+}#sub get_dir_wire_full_path
+#-----------------------------------------------------------------------------------------------------------------------#
+sub get_in_and_out_from_connLine {
+my @conns = @{$_[0]};
+my @input = ();
+my @output = ();
+foreach my $connLine (@conns){
+  $connLine =~ s/\(/\)\,/;
+  $connLine =~ s/\s*\)\s*\)\s*\;?.*$/\)/;
+  my ($cell,$inst) = ( split(/\s+/, $connLine ))[0,1];
+  if ($MODULE_ALREADY{$TOP_MODULE}->dbVNOMHasHierInst($inst)){
+    my @nets = split(/\s*\)\s*\,\s*/, $connLine);
+    my  $noOfPins = @nets;
+    for(my $i = 1 ; $i < $noOfPins ; $i++){
+      $nets[$i] =~ s/\s*\(\s*/\|/;
+      $nets[$i] =~ s/\s*\)\s*//;
+      my ($pin,$net)=(split(/\s*\|\s*/, $nets[$i]))[0,1];
+      $pin =~ s/\.//;
+      if ( exists $MODULE_ALREADY{$cell}->{ins}{$pin} ) {
+        push(@input,$pin);
+      }elsif ( exists $MODULE_ALREADY{$cell}->{outs}{$pin} ) {
+        push(@output,$pin);
+      }#else {print "ERR : $pin is neither input or output\n";}
+    }#for
+  }#if
+}#foreach
+return(\@input,\@output);
+}#sub get_in_and_out_from_connLine
+#-----------------------------------------------------------------------------------------------------------------------#
+sub populate_in_out_net_vs_port_hashes
+{
+my $tb_module = $_[0];
+my $dut_module = $_[1];
+my @sig_list = @{$_[2]};
+my %net_vs_port_hash = ();
+my %all_input_sig = ();
+my %all_output_sig = ();
+if((%MODULE_ALREADY)&&(($tb_module ne "") && (exists $MODULE_ALREADY{$tb_module}))
+  &&(($dut_module ne "") && (exists $MODULE_ALREADY{$dut_module}))){
+  my @conns = $MODULE_ALREADY{$tb_module}->dbVNOMGetConn;
+  foreach my $connLine (@conns){
+    $connLine =~ s/\(/\)\,/;
+    $connLine =~ s/\s*\)\s*\)\s*\;?.*$/\)/;
+    my ($cell,$inst) = ( split(/\s+/, $connLine ))[0,1];
+    if($cell eq $dut_module){
+      my @nets = split(/\s*\)\s*\,\s*/, $connLine);
+      my  $noOfPins = @nets;
+      for(my $i = 1 ; $i < $noOfPins ; $i++){
+        $nets[$i] =~ s/\s*\(\s*/\|/;
+        $nets[$i] =~ s/\s*\)\s*//;
+        my ($pin,$net)=(split(/\s*\|\s*/, $nets[$i]))[0,1];
+        $pin =~ s/\.//;
+        my @pin_blasted_array = &get_expr_bit_blast($pin,$dut_module);
+        my @net_blasted_array = &get_expr_bit_blast($net,$tb_module);
+        if($#pin_blasted_array != $#net_blasted_array){
+          @net_blasted_array = &find_net_in_sig_list_like_net_blasted_array(\@sig_list,\@net_blasted_array);
+        }
+        my $elem_cnt;
+        for ($elem_cnt =0; $elem_cnt <= $#pin_blasted_array; $elem_cnt++){
+          my $pin_blasted_elem = $pin_blasted_array[$elem_cnt];
+          my $net_blasted_elem = $net_blasted_array[$elem_cnt];
+          $net_vs_port_hash{$net_blasted_elem} = $pin_blasted_elem;
+        }
+      }#for
+    }
+  }#foreach
+}elsif((%MODULE_ALREADY)&&($dut_module ne "") && (exists $MODULE_ALREADY{$dut_module})){
+  my @portlist_for_module = &get_non_bit_blasted_port_list_for_module($dut_module); 
+  foreach my $port_for_module (@portlist_for_module){
+    my @port_array_with_bit_blast = &get_vector_bit_blast($port_for_module,"","",$dut_module);
+    foreach my $port_elem_with_bit_blast(@port_array_with_bit_blast){
+      $net_vs_port_hash{$port_elem_with_bit_blast} = $port_elem_with_bit_blast;
+    }
+  }
+}else{
+  foreach my $sig (@sig_list){
+    my @port_with_hier = (split(/\./,$sig));
+    if(@port_with_hier == 2){
+      my $net = pop @port_with_hier;
+      $net_vs_port_hash{$net} = $net;
+    }
+  }
+}
+foreach my $sig (@sig_list){
+  my @port_with_hier = (split(/\./,$sig));
+  if(@port_with_hier == 2){
+    my $net = pop @port_with_hier;
+    my $scope = pop @port_with_hier;
+    if(($tb_module eq "")||($tb_module eq $scope)){
+      if(exists $net_vs_port_hash{$net}){
+        my $port = $net_vs_port_hash{$net};
+        my $port_name_no_bracket = $port;
+        $port_name_no_bracket =~ s/\[.*$//;
+        if((exists $MODULE_ALREADY{$dut_module}->{ins}{$port_name_no_bracket})||(exists $MODULE_ALREADY{$dut_module}->{ins}{$port})){
+           $all_input_sig{$port} = 1 ;
+        }elsif((exists $MODULE_ALREADY{$dut_module}->{outs}{$port_name_no_bracket})|| (exists $MODULE_ALREADY{$dut_module}->{outs}{$port})){
+           $all_output_sig{$port} = 1 ;
+        }else {
+           $all_input_sig{$port} = 1 ;
+        }
+      }   
+    }else{
+      print "ERR : $scope is not a top module\n";
+    } 
+  }#if port_with_hier==2 
+}#foreach 
+return(\%all_input_sig,\%all_output_sig,\%net_vs_port_hash);
+}#sub populate_in_out_net_vs_port_hashes
+#-----------------------------------------------------------------------------------------------------------------------#
+sub calc_time_diff {
+my @time = @{$_[0]};
+my %temp_time_diff_hash = ();
+for(my $i=0;$i<=$#time;$i++){
+  my $time_diff = $time[$i+1] - $time[$i] ;
+  $temp_time_diff_hash{$time[$i+1]} = $time_diff;
+}#for
+  $temp_time_diff_hash{$time[0]} = $time[0];
+foreach my  $key (keys %temp_time_diff_hash){
+  #print "$key => $temp_time_diff_hash{$key}\n";
+}
+return (\%temp_time_diff_hash);
+}#sub calc_time_diff
+#-----------------------------------------------------------------------------------------------------------------------#
+sub create_cmd_file_from_vcd 
+{
+use Benchmark;
+my $t0 = new Benchmark;
+
+my $noOfArguments = @_;
+if($noOfArguments < 0 || $_[0] eq "-h"){
+  print "Usage : create_cmd_file_from_vcd\n";
+  print "      : -vcd<fileName>\n";
+  print "      : -cmd<output_fileName>\n";
+  print "      : -tb_module <top_module>\n";
+  print "      : -module <{list of moduleName>}\n";
+  print "      : --blio_write\n";
+  print "      : --overwrite\n";
+  return;
+}
+my $cmd_file = $TOP_MODULE;
+my $tb_module = "";
+my $dut_module = "";
+my $blio_write = 0;
+my $vcd_file = "";
+my $OVERWRITE = 0;
+for(my $i =0; $i<$noOfArguments;$i++){
+  if($_[$i] eq "-vcd"){$vcd_file = $_[$i+1];} 
+  if($_[$i] eq "-cmd"){$cmd_file = $_[$i+1];} 
+  if($_[$i] eq "-tb_module"){$tb_module = $_[$i+1];}
+  if($_[$i] eq "-module"){$dut_module = $_[$i+1];}
+  if($_[$i] eq "--blio_write") {$blio_write = 1;}
+  if($_[$i] eq "--overwrite"){$OVERWRITE = 1;}
+}#for
+my %full_vcd_net_vs_code;
+my $mult;
+my @hier;
+my $time = 0;
+my $prev_time = "";
+my %net_vs_port_hash = ();
+my %input_sig_hash = ();
+my %output_sig_hash = ();
+my @input_sig_list = ();
+my @output_sig_list = ();
+my $in_sig_cnt = 0;
+my $out_sig_cnt = 0;
+my @all_input_sig_list = ();
+my @all_output_sig_list = ();
+if(( -e $vcd_file) && (-r $vcd_file)){
+  print "INFO : 001 : $vcd_file FILE EXISTS AND IS READABLE!\n";
+}else{
+  print "INFO : 001 : EITHER $vcd_file FILE DOES NOT EXISTS OR IT IS NOT READABLE!\n";
+  return;
+}
+open(READ_VCD,$vcd_file);
+if (-e $cmd_file) {
+  if ($OVERWRITE == 1 ) { 
+    print "WARN-TE-CREATE_CMD_FILE_FROM_VCD : 001 : $cmd_file exists, overwriting existing file as instructed\n";
+    if (!( -w $cmd_file )){
+      print "WARN-TE-CREATE_CMD_FILE_FROM_VCD : 001 : $cmd_file , do not have write permission\n";
+      return;
+    }
+  }else {
+    print "ERR-TE-CREATE_CMD_FILE_FROM_VCD : 002 : $cmd_file exists, Please change the output name or remove the existing file\n";
+    return;
+  }
+}# if output file exists
+if (!(open(WRITE_CMD,">$cmd_file"))){
+  print "ERR-TE-CREATE_CMD_FILE_FROM_VCD : 002 : cannot write to $cmd_file \n";
+}
+if($blio_write ==1){
+  if(exists $MODULE_ALREADY{$TOP_MODULE}){
+    print WRITE_CMD "blio open $TOP_MODULE.blio.gz\n";
+  }else{
+    print WRITE_CMD "blio open TOP_MODULE.blio.gz\n";
+  }
+}
+print WRITE_CMD "display cmdfile automatic\n";
+my $dumpvars_begin = 0;
+my $get_opening_bracket = $GLOBAL->dbfGlobalGetOpeningBracket;
+my $get_closing_bracket = $GLOBAL->dbfGlobalGetClosingBracket;
+while(<READ_VCD>){
+  chomp();
+  if($_ =~ /^\s*\$timescale\b/){
+    my $statement = $_;
+    my $line = $_;
+    while ($line !~ /^\s*\$end\b/){
+       $line = <READ_VCD>;
+       $statement .= " $line";
+    }
+    $mult = &calc_mult($statement,{timescale => 'ns'});
+  }elsif ($_ =~ /^\s*\$scope\b/) {
+    my $scope = (split(/\s+/,$_))[2];
+    push(@hier,$scope);
+  }elsif ($_ =~ /^\s*\$upscope\b/) {
+   pop @hier;
+  }elsif ($_ =~ /^\s*\$var\b/) {
+    my ($type, $size, $code, $temp_name,$bus) = (split (/\s+/, $_))[1,2,3,4,5];
+    my $name;
+    if($bus =~ /\[/){
+      $name = $temp_name."".$bus;
+    }else {
+      $name = $temp_name;
+    }
+    my $path = join '.', @hier;
+    my $full_name = "$path.$name";
+    push (@{$full_vcd_net_vs_code{$code}},$full_name);
+  }elsif($_ =~ /^\s*\$enddefinitions\b/){
+    my @sigs_list = ();
+    foreach my $code (keys %full_vcd_net_vs_code){
+      push (@sigs_list,@{$full_vcd_net_vs_code{$code}});
+    }
+    my @port_list_with_hier = &get_vector_bit_blast_of_vcd(\@sigs_list);
+    my ($all_input_sig_hash,$all_output_sig_hash,$all_net_vs_port_hash) = &populate_in_out_net_vs_port_hashes($tb_module,$dut_module,\@port_list_with_hier);
+    %input_sig_hash = %$all_input_sig_hash;
+    %output_sig_hash = %$all_output_sig_hash;
+    %net_vs_port_hash = %$all_net_vs_port_hash;
+    @input_sig_list = sort keys %input_sig_hash;
+    @output_sig_list = sort keys %output_sig_hash;
+    foreach my $in_sig (@input_sig_list){
+      $in_sig =~ s/\[|</$get_opening_bracket/g;
+      $in_sig =~ s/\]|>/$get_closing_bracket/g;
+      if($in_sig_cnt == 25){
+        push (@all_input_sig_list,"\nw",$in_sig); 
+        $in_sig_cnt = 0;
+      }else {
+        push (@all_input_sig_list,$in_sig); 
+      } 
+      $in_sig_cnt++;
+    }#foreach
+    foreach my $out_sig (@output_sig_list){
+      $out_sig =~ s/\[|</$get_opening_bracket/g;
+      $out_sig =~ s/\]|>/$get_closing_bracket/g;
+      if($out_sig_cnt == 25){
+        push (@all_output_sig_list,"\nw",$out_sig); 
+        $out_sig_cnt = 0;
+      }else {
+        push (@all_output_sig_list,$out_sig); 
+      } 
+      $out_sig_cnt++;
+    }#foreach
+    if($#all_input_sig_list >=0){
+      print WRITE_CMD "w @all_input_sig_list\n";
+    }#if
+    if($#all_output_sig_list >=0){
+      print WRITE_CMD "w @all_output_sig_list\n";
+    }#if
+     print WRITE_CMD "logfile $cmd_file.log\n";
+    $time = 0 ;
+  }elsif($_ =~ /^\s*\$dumpvars\b/){
+    $dumpvars_begin = 1;
+    $time = 0 ;
+  }elsif($_ =~ /^\s*\$end\b/){
+    $dumpvars_begin = 0;
+  }elsif(($_ =~ /^([01zx])(.+)/i )||($_ =~  /^[br](\S+)\s+(.+)/i)){
+    my $value = lc $1;
+    my $code  = $2;
+    if (exists $full_vcd_net_vs_code{$code}) {
+      my @sigs = @{$full_vcd_net_vs_code{$code}};
+      foreach my $net_str (@sigs){
+        my @net_hier = (split(/\./,$net_str));
+        if(@net_hier == 2){
+          my @value_arr = &return_signal_vs_value_array_in_cmd_format($net_str,$value,\%net_vs_port_hash,\%input_sig_hash,\%output_sig_hash);
+          foreach my $vl (@value_arr){
+            my $net = @$vl[0];
+            my $net_val = @$vl[1];
+            my $net_is_input = &check_signal_input_or_output($net,\%net_vs_port_hash,\%input_sig_hash,\%output_sig_hash); 
+            if($net_is_input == 0){
+              $net =~ s/\[|</$get_opening_bracket/g;
+              $net =~ s/\]|>/$get_closing_bracket/g;
+              print WRITE_CMD "$net_val $net\n";
+            }else{
+              if($dumpvars_begin ==0 ){
+                $net =~ s/\[|</$get_opening_bracket/g;
+                $net =~ s/\]|>/$get_closing_bracket/g;
+                print WRITE_CMD "assert $net $net_val\n";
+              }
+            }
+          }
+        }
+      }
+    }
+  }elsif ($_ =~ /^[#](\d+)/) {
+    $time =  $1;
+    if($time != 0){
+       my $diff = ($time - $prev_time)* $mult;
+       print WRITE_CMD "stepsize $diff\n";
+       print WRITE_CMD "s\n";
+    }
+    $prev_time = $1;
+  }
+}#while
+print WRITE_CMD "exit\n";
+close (WRITE_CMD);
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "Command create_cmd_file_from_vcd took:",timestr($td),"\n";
+}#sub create_cmd_file_from_vcd
+#-----------------------------------------------------------------------------------------------------------------------#
+sub calc_mult {
+  my ($statement, $opt) = @_;
+  my @fields = split /\s+/, $statement;
+  pop   @fields;
+  shift @fields; 
+  my $tscale = join '', @fields;
+  my $new_units;
+  if(exists $opt->{timescale}){
+      $new_units = lc $opt->{timescale};
+      $new_units =~ s/\s//g;
+      $timescale = "1$new_units";
+  }else{
+      $timescale = $tscale;
+      return 1;
+  }
+  my $mult;
+  my $units;
+  if($tscale =~ /(\d+)([a-z]+)/i){
+      $mult  = $1;
+      $units = lc $2;
+  }
+  my %mults = (
+      'fs' => 1e-15,
+      'ps' => 1e-12,
+      'ns' => 1e-09,
+      'us' => 1e-06,
+      'ms' => 1e-03,
+       's' => 1e-00,
+  );
+  my $usage = join '|', sort { $mults{$a} <=> $mults{$b} } keys %mults;
+  my $scale;
+  if(exists $mults{$units}){
+      $scale = $mults{$units};
+  }
+  my $new_scale;
+  if(exists $mults{$new_units}){
+      $new_scale = $mults{$new_units};
+  }
+  return (($mult * $scale) / $new_scale);
+}
+#------------------------------------------------------------------------------------------------------------#
+sub check_signal_input_or_output 
+{
+  my $net_name = $_[0];
+  my $net_vs_port_hash_arg = $_[1];
+  my $input_sig_hash_arg = $_[2];
+  my $output_sig_hash_arg = $_[3];
+  my %net_vs_port_hash = %$net_vs_port_hash_arg;
+  my %input_sig_hash = %$input_sig_hash_arg;
+  my %output_sig_hash = %$output_sig_hash_arg;
+  if(!exists $net_vs_port_hash{$net_name}){
+    print "Warning : VCD signal $net_name doesn't exists in the module\n";
+    return 0;
+  }
+  my $dut_pin_name = $net_vs_port_hash{$net_name};
+  if(exists $input_sig_hash{$dut_pin_name}){
+    return 0;
+  }elsif(exists $output_sig_hash{$dut_pin_name}){
+    return 1;
+  }else{
+    print "Warning : Problem in reading VCD file for dut pin $dut_pin_name\n";
+    return 0;
+  }
+}#sub check_signal_input_or_output
+#------------------------------------------------------------------------------------------------------------#
+sub write_spice_multi_top_module 
+{
+my $noOfArguments = @_;
+if($noOfArguments < 0 || $_[0] eq "-h"){print "Usage : write_spice_multi_top_module\n";
+                                        print "      : -output <fileName>\n";
+                                        print "      : -spiceLib <path of the dir>\n";
+                                        print "      : --complete_spice\n";
+                                        print "      : --notWriteEmptyModule\n";
+                                        print "      : --vector_bit_blast\n";  
+                                        print "      : --add_top_instance\n";
+                                        print "      : --add_spice_missing_port\n";
+                                        print "      : --add_design_missing_port\n";
+                                        print "      : --global_change_pin_vss_to_gnd\n";
+                                        print "      : --add_first_blank_line\n";
+                                        print "      : --add_global_vdd_and_gnd\n"; 
+                                        print "      : --overwrite\n";
+                                        print "      : -in_unit<meter/micron>\n";
+                                        print "      : -out_unit<meter/micron>\n";
+                                       }
+else {
+my $OUTPUT_SPICE_FILE = "";
+my $path_of_the_dir = "";
+my $in_unit = "";
+my $out_unit = "";
+my @arg_list = ();
+  for(my $i=0;$i<$noOfArguments;$i++){
+    if($_[$i] eq "-output"){$OUTPUT_SPICE_FILE = $_[$i+1];}
+    if($_[$i] eq "--hier"){push(@arg_list,$_[$i]);}
+    if($_[$i] eq "--flat"){push(@arg_list,$_[$i]);}
+    if($_[$i] eq "--complete_spice"){push(@arg_list,$_[$i]);}
+    if($_[$i] eq "--notWriteEmptyModule"){push(@arg_list,$_[$i]);}
+    if($_[$i] eq "--vector_bit_blast"){push(@arg_list,$_[$i]);}
+    if($_[$i] eq "--add_top_instance"){push(@arg_list,$_[$i]);}
+    if($_[$i] eq "--add_spice_missing_port"){push(@arg_list,$_[$i]);}
+    if($_[$i] eq "--add_design_missing_port"){push(@arg_list,$_[$i]);}
+    if($_[$i] eq "--global_change_pin_vss_to_gnd"){push(@arg_list,$_[$i]);}
+    if($_[$i] eq "--add_first_blank_line"){push(@arg_list,$_[$i]);}
+    if($_[$i] eq "--add_global_vdd_and_gnd"){push(@arg_list,$_[$i]);}
+    if($_[$i] eq "--overwrite"){push(@arg_list,$_[$i]);}
+    if($_[$i] eq "-in_unit"){$in_unit = $_[$i+1];
+                             push(@arg_list,$_[$i],$_[$i+1]);
+                            }  
+    if($_[$i] eq "-out_unit"){$out_unit = $_[$i+1];
+                              push(@arg_list,$_[$i],$_[$i+1]);
+                             }
+    if($_[$i] eq "-spiceLib"){$path_of_the_dir = $_[$i+1];
+                              push(@arg_list,$_[$i],$_[$i+1]);
+                             }
+  }#for
+foreach my $mod (keys %MODULE_ALREADY) { 
+  my @parents =  $MODULE_ALREADY{$mod}->dbVNOMGetParent;
+  my $np = @parents;
+  if ( $np == 0 ) { push(@TOP,$mod); }
+  elsif ( $np > 1 ) { print "INFO : $mod has $np parents \n"; }
+}#foreach my $mod
+my $nT = @TOP;
+if($nT > 1){
+  if(-e $OUTPUT_SPICE_FILE){
+     system ("rm -rf $OUTPUT_SPICE_FILE");
+  }#if file
+  open(WRITE,">>$OUTPUT_SPICE_FILE");
+  foreach my $top (@TOP){
+    &set_top_module($top);
+    &write_spice_file("-output",$top,@arg_list);
+    open(READ,"$top");
+    while(<READ>){
+      chomp();
+      print WRITE "$_\n";
+    }
+    close(READ);
+    system("rm $top");
+  }#foreach
+  close(WRITE);
+}
+}#else
+}#sub write_spice_multi_top_module
+#------------------------------------------------------------------------------------------------------------#
+
+sub initial_digit_sort 
+{
+  my $ret_val = 0;
+  if (($a =~ /^\d+_tmpslvr_param_/)&&($b =~ /^\d+_tmpslvr_param_/)){
+    my $aa = $a;
+    $aa =~ s/_tmpslvr_param_.*$//;
+    my $bb = $b;
+    $bb =~ s/_tmpslvr_param_.*$//;
+    $ret_val = $aa <=> $bb;
+  }elsif ($a =~ /^\d+_tmpslvr_param_/){
+    $ret_val = 1;
+  }elsif ($b =~ /^\d+_tmpslvr_param_/){
+    $ret_val = -1;
+  }elsif (($a =~ /^\d+_tmpslvr_bb/)&&($b =~ /^\d+_tmpslvr_bb/)){
+    my $aa = $a;
+    $aa =~ s/_tmpslvr_bb.*$//;
+    my $bb = $b;
+    $bb =~ s/_tmpslvr_bb.*$//;
+    $ret_val = $aa <=> $bb;
+  }elsif ($a =~ /^\d+_tmpslvr_bb/){
+    $ret_val = 1;
+  }elsif ($b =~ /^\d+_tmpslvr_bb/){
+    $ret_val = -1;
+  }elsif (($a =~ /^\d+_tmpslvr_/)&&($b =~ /^\d+_tmpslvr_/)){
+    my $aa = $a;
+    $aa =~ s/_tmpslvr_.*$//;
+    my $bb = $b;
+    $bb =~ s/_tmpslvr_.*$//;
+    $ret_val = $aa <=> $bb;
+  }elsif ($a =~ /^\d+_tmpslvr_/){
+    $ret_val = 1;
+  }elsif ($b =~ /^\d+_tmpslvr_/){
+    $ret_val = -1;
+  }else{
+    #Input was verilog and port will not have _tmpslvr_ in its name
+    $ret_val = 0;
+  }
+  return $ret_val;
+}#sub initial_digit_sort 
+
+sub spice_port_name_for_port
+{
+  #we don't need to check in inputs and outputs
+  #because in spice reader all the ports created are
+  #bidi only, they are added just for future code
+  my $cell_name = $_[0];
+  my $full_port_name = $_[1];
+  my $port_name = $full_port_name;
+  my $port_index = "";
+  my @in_port_list = $MODULE_ALREADY{$cell_name}->dbVNOMGetInput;
+  my @out_port_list = $MODULE_ALREADY{$cell_name}->dbVNOMGetOutput;
+  my @bidi_port_list = $MODULE_ALREADY{$cell_name}->dbVNOMGetBidi;
+  my @all_port_list = (@in_port_list,@out_port_list,@bidi_port_list);
+  my $extndd_port_name ;
+  for (my $i=0;$i<=$#all_port_list;$i++){
+    $extndd_port_name = $i."_tmpslvr_".$port_name;
+    if(($MODULE_ALREADY{$cell_name}->dbVNOMHasInput($extndd_port_name))
+      ||($MODULE_ALREADY{$cell_name}->dbVNOMHasOutput($extndd_port_name))
+      ||($MODULE_ALREADY{$cell_name}->dbVNOMHasBidi($extndd_port_name))){
+      return $extndd_port_name;
+    }
+  }
+  if(($full_port_name =~ /\[\s*[0-9]+\s*\]/)||
+    ($full_port_name =~ /\[\s*[0-9]+\s*\:\s*[0-9]+\s*\]/)){
+    $port_name = (split(/\[/,$full_port_name))[0];
+    $port_index = (split(/\[/,$full_port_name))[1];
+    $port_index = "[".$port_index;
+  }elsif(($full_port_name =~ /\<\s*[0-9]+\s*\>/)||
+    ($full_port_name =~ /\<\s*[0-9]+\s*\:\s*[0-9]+\s*\>/)){
+    $port_name = (split(/\</,$full_port_name))[0];
+    $port_index = (split(/\</,$full_port_name))[1];
+    $port_index = "<".$port_index;
+  }else{
+    return $full_port_name;
+  }
+  #we can call this function in recursion
+  for (my $i=0;$i<=$#all_port_list;$i++){
+    $extndd_port_name = $i."_tmpslvr_".$port_name;
+    if(($MODULE_ALREADY{$cell_name}->dbVNOMHasInput($extndd_port_name))
+      ||($MODULE_ALREADY{$cell_name}->dbVNOMHasOutput($extndd_port_name))
+      ||($MODULE_ALREADY{$cell_name}->dbVNOMHasBidi($extndd_port_name))){
+      $extndd_port_name = $extndd_port_name.$port_index;
+      return $extndd_port_name;
+    }
+  }
+  return $full_port_name;
+}# sub spice_port_name_for_port
+
+sub spice_port_name_for_param
+{
+  #we don't need to check in inputs and outputs
+  #because in spice reader all the ports created are
+  #bidi only, they are added just for future code
+  #we don't even need to check the index(or bits)
+  #They are added for future code
+  my $cell_name = $_[0];
+  my $full_port_name = $_[1];
+  my $port_name = $full_port_name;
+  my $port_index = "";
+  my @in_port_list = $MODULE_ALREADY{$cell_name}->dbVNOMGetInput;
+  my @out_port_list = $MODULE_ALREADY{$cell_name}->dbVNOMGetOutput;
+  my @bidi_port_list = $MODULE_ALREADY{$cell_name}->dbVNOMGetBidi;
+  my @all_port_list = (@in_port_list,@out_port_list,@bidi_port_list);
+  my $extndd_port_name ;
+  for (my $i=0;$i<=$#all_port_list;$i++){
+    $extndd_port_name = $i."_tmpslvr_param_".$port_name;
+    if(($MODULE_ALREADY{$cell_name}->dbVNOMHasInput($extndd_port_name))
+      ||($MODULE_ALREADY{$cell_name}->dbVNOMHasOutput($extndd_port_name))
+      ||($MODULE_ALREADY{$cell_name}->dbVNOMHasBidi($extndd_port_name))){
+      return $extndd_port_name;
+    }
+  }
+  if(($full_port_name =~ /\[\s*[0-9]+\s*\]/)||
+    ($full_port_name =~ /\[\s*[0-9]+\s*\:\s*[0-9]+\s*\]/)){
+    $port_name = (split(/\[/,$full_port_name))[0];
+    $port_index = (split(/\[/,$full_port_name))[1];
+    $port_index = "[".$port_index;
+  }elsif(($full_port_name =~ /\<\s*[0-9]+\s*\>/)||
+    ($full_port_name =~ /\<\s*[0-9]+\s*\:\s*[0-9]+\s*\>/)){
+    $port_name = (split(/\</,$full_port_name))[0];
+    $port_index = (split(/\</,$full_port_name))[1];
+    $port_index = "<".$port_index;
+  }else{
+    return $full_port_name;
+  }
+  #we can call this function in recursion
+  for (my $i=0;$i<=$#all_port_list;$i++){
+    $extndd_port_name = $i."_tmpslvr_param_".$port_name;
+    if(($MODULE_ALREADY{$cell_name}->dbVNOMHasInput($extndd_port_name))
+      ||($MODULE_ALREADY{$cell_name}->dbVNOMHasOutput($extndd_port_name))
+      ||($MODULE_ALREADY{$cell_name}->dbVNOMHasBidi($extndd_port_name))){
+      $extndd_port_name = $extndd_port_name.$port_index;
+      return $extndd_port_name;
+    }
+  }
+  return $full_port_name;
+}# sub spice_port_name_for_param
+
+sub generate_spice_port_name
+{
+  my $cell_name = $_[0];
+  my $port_name = $_[1];
+  my @in_port_list = $MODULE_ALREADY{$cell_name}->dbVNOMGetInput;
+  my @out_port_list = $MODULE_ALREADY{$cell_name}->dbVNOMGetOutput;
+  my @bidi_port_list = $MODULE_ALREADY{$cell_name}->dbVNOMGetBidi;
+  my @all_port_list = (@in_port_list,@out_port_list,@bidi_port_list);
+  my $param_port_count = 0;
+  for (my $i=0;$i<=$#all_port_list;$i++){
+    my $curr_port_name = $all_port_list[$i];
+    if($curr_port_name =~ /^\d+_tmpslvr_param_/){
+      $param_port_count++;
+    }
+  }
+  my $not_param_port_count = $#all_port_list - $param_port_count + 1;
+  my $cell_class = $MODULE_ALREADY{$cell_name}->dbVNOMGetClass();
+  my $new_spice_port_name ;
+  if($cell_class == 11){  
+    $new_spice_port_name = $not_param_port_count."_tmpslvr_bb";
+  }else{
+    $new_spice_port_name = $not_param_port_count."_tmpslvr_".$port_name;
+  }
+  return $new_spice_port_name;
+}#sub generate_spice_port_name
+
+
+sub make_net_expr_spice_wise
+{
+  my @net_list_name_array = @{$_[0]};
+  my $pin = $_[1];
+  my $global_change_pin_vss_to_gnd = $_[2];
+  my $in_unit = $_[3];
+  my $out_unit = $_[4];
+  my @net_list_chngd_name_array = ();
+  my $get_opening_bracket = $GLOBAL->dbfGlobalGetOpeningBracket;
+  my $get_closing_bracket = $GLOBAL->dbfGlobalGetClosingBracket;
+  my $cnt = 0 ;
+  foreach my $netName (@net_list_name_array){
+    $netName =~ s/(\[|<)/$get_opening_bracket/g;
+    $netName =~ s/(\]|>)/$get_closing_bracket/g;
+    $netName =~ s/1'b1/vdd/g;
+    $netName =~ s/1'b0/vss/g;
+    if($pin =~ /^\d+_tmpslvr_param_/){
+      $pin =~ s/^\d+_tmpslvr_param_//;
+      if($netName !~ /^\d+_tmpslvr_param_/){
+        #it is a numeric like 1.22e-2
+        if($netName =~ /u$/i){
+          if ($in_unit eq "meter"){
+            print "ERROR : in_unit should be micron\n" 
+          }elsif($in_unit eq "micron"){
+            $netName =~ s/u$//i;
+          }
+        }
+        if(($in_unit =~/micron|meter/) && ($out_unit =~ /micron|meter/)){ 
+          if($in_unit ne $out_unit){
+            if($in_unit eq "micron"){
+              $netName = $netName * 1.0e-6;
+            }
+            if($out_unit eq "micron"){
+              $netName = $netName * 1.0e+6;
+            }
+            $netName = sprintf("%e", $netName);
+          }
+        }
+      }else {
+        #this is parameter of parent cell
+        $netName =~ s/^\d+_tmpslvr_param_//;
+      }
+      $netName = $pin."=".$netName;
+    }else {
+      $netName =~ s/^\d+_tmpslvr_//;
+      if($global_change_pin_vss_to_gnd == 1) {
+        if($netName =~ /^vss$/i){
+          $netName =~ s/vss/GND/i;
+        }
+      }
+    }
+    if($cnt == 8){
+      push(@net_list_chngd_name_array,"\n+");
+      $cnt = 0;
+    }
+    push(@net_list_chngd_name_array,$netName);
+    $cnt++;
+  }
+  return (@net_list_chngd_name_array) ;
+}# sub make_net_expr_spice_wise
+
+sub get_expr_bit_blast 
+{
+  my $conn_expr = $_[0];
+  my $prnt_cll_nm = $_[1];
+  $conn_expr =~ s/\s\+//g;
+  my @expr_blasted_list = ();
+  while($conn_expr =~ /\d\+\{/){
+    my $rep_cnct_beg = $-[0];
+    my $rep_cnct_end = $-[0];
+    my @conn_expr_char_array = (split(//,$conn_expr));
+    my $brckt_status = 0;
+    my $i = 0 ;
+    for($i = $rep_cnct_beg;$i<=$#conn_expr_char_array;$i++){
+      if($conn_expr_char_array[$i] eq "}"){
+        $brckt_status--;
+      }elsif($conn_expr_char_array[$i] eq "{"){
+        $brckt_status++;
+      }
+      if($brckt_status ==0){
+        last;
+      }
+    }
+    $rep_cnct_end = $i;
+    my $rep_cnct_str_length = $rep_cnct_end - $rep_cnct_beg +1 ; 
+    my $rep_cnct_str = substr($conn_expr,$rep_cnct_beg,$rep_cnct_str_length);
+    my $rep_cnct_nmbr = $rep_cnct_str;
+    $rep_cnct_nmbr =~ s/\{.*$//;
+    $rep_cnct_str =~ s/^\d\+//;
+    my $expdd_rep_cnct_str= "";
+    for($i=0;$i<$rep_cnct_nmbr;$i++){
+      if($i >0){
+        $expdd_rep_cnct_str= $expdd_rep_cnct_str.",";
+      }
+      $expdd_rep_cnct_str= $expdd_rep_cnct_str.$rep_cnct_str;
+    }
+    my $conn_expr_pre_rep_cnct = substr($conn_expr,0,$rep_cnct_beg);
+    my $conn_expr_post_rep_cnct = substr($conn_expr,$rep_cnct_end+1);
+    $conn_expr = "{".$conn_expr_pre_rep_cnct.$expdd_rep_cnct_str.$conn_expr_post_rep_cnct."}";
+  }
+  $conn_expr =~ s/\{//g;
+  $conn_expr =~ s/\}//g;
+  my @conn_expr_list = (split(/,/,$conn_expr));
+  foreach my $conn_expr_elem (@conn_expr_list){
+    my @tmp_expr_blasted_list = &get_expr_elem_bit_blast($conn_expr_elem,$prnt_cll_nm);
+    push(@expr_blasted_list,@tmp_expr_blasted_list);
+  }
+  return @expr_blasted_list;
+}# sub get_expr_bit_blast 
+
+sub get_expr_elem_bit_blast 
+{
+  my $conn_expr_elem = $_[0];
+  my $prnt_cll_nm = $_[1];
+  $conn_expr =~ s/\s\+//g;
+  my @expr_blasted_list = ();
+  if($conn_expr_elem =~ /(\[|<)\s*[0-9]+\s*\:\s*[0-9]+\s*(\]|>)/){
+    my $net_name = $conn_expr_elem;
+    $net_name =~ s/(\[|<).*$//g;
+    my $bus_width = $conn_expr_elem;
+    $bus_width =~ s/^$net_name//g;
+    my @blast_expr_elem = &get_vector_bit_blast($net_name,$bus_width,1);
+    push(@expr_blasted_list,@blast_expr_elem);
+  }elsif($conn_expr_elem =~ /(\[|<)\s*[0-9]+\s*(\]|>)/){
+    my @blast_expr_elem = &get_vector_bit_blast($conn_expr_elem," ",0);
+    push(@expr_blasted_list,@blast_expr_elem);
+  }elsif($conn_expr_elem =~ /\s*1'b0\s*/){
+    push(@expr_blasted_list,$conn_expr_elem);
+  }elsif($conn_expr_elem =~ /\s*1'b1\s*/){
+    push(@expr_blasted_list,$conn_expr_elem);
+  }else{ #only name which can be vector or scalar
+    my $type = "";
+    my $bus_width= "";
+    if($MODULE_ALREADY{$prnt_cll_nm}->dbVNOMHasInput($conn_expr_elem)){
+      $type = $MODULE_ALREADY{$prnt_cll_nm}->dbVNOMGetInputType($conn_expr_elem);
+      $bus_width = $MODULE_ALREADY{$prnt_cll_nm}->dbVNOMGetInputBits($conn_expr_elem)if ( $type == 1 );
+    }elsif($MODULE_ALREADY{$prnt_cll_nm}->dbVNOMHasOutput($conn_expr_elem)){
+      $type = $MODULE_ALREADY{$prnt_cll_nm}->dbVNOMGetOutputType($conn_expr_elem);
+      $bus_width = $MODULE_ALREADY{$prnt_cll_nm}->dbVNOMGetOutputBits($conn_expr_elem)if ( $type == 1 );
+    }elsif($MODULE_ALREADY{$prnt_cll_nm}->dbVNOMHasBidi($conn_expr_elem)){
+      $type = $MODULE_ALREADY{$prnt_cll_nm}->dbVNOMGetBidiType($conn_expr_elem);
+      $bus_width = $MODULE_ALREADY{$prnt_cll_nm}->dbVNOMGetBidiBits($conn_expr_elem)if ( $type == 1 );
+    }
+    my @blast_expr_elem = &get_vector_bit_blast($conn_expr_elem,$bus_width,$type);
+    push(@expr_blasted_list,@blast_expr_elem);
+  }
+  return @expr_blasted_list;
+}#sub get_expr_elem_bit_blast
+sub find_net_in_sig_list_like_net_blasted_array
+{
+  my @sig_list = @{$_[0]}; 
+  my @net_blasted_array = @{$_[1]}; 
+  my @net_further_blasted_array = ();
+  my %sig_hash_top_sig_only = ();
+  my %sig_hash_top_sig_only_no_index = ();
+  foreach my $sig_hier_name (@sig_list){
+    my @sig_with_hier = (split(/\./,$sig_hier_name));
+    if(@sig_with_hier == 2){
+      my $sig_name = pop @sig_with_hier;
+      $sig_hash_top_sig_only{$sig_name} = 1;
+      push(@sig_array_top_sig_only,$sig_name);
+      my $sig_name_wo_index = $sig_name;
+      $sig_name_wo_index =~ s/\[.*$//;
+      push(@{$sig_hash_top_sig_only_no_index{$sig_name_wo_index}},$sig_name);
+    }
+  }
+  foreach my $net_name (@net_blasted_array){
+    if(exists $sig_hash_top_sig_only{$net_name}){
+      push(@net_further_blasted_array,$net_name);
+    }elsif(exists $sig_hash_top_sig_only_no_index{$net_name}){
+      push(@net_further_blasted_array,@{$sig_hash_top_sig_only_no_index{$net_name}});
+    }
+  }
+  return @net_further_blasted_array;
+}#sub find_net_in_sig_list_like_net_blasted_array
+
+sub vnom_port_from_spice_port
+{
+  my $spice_port_name = $_[0];
+  $spice_port_name =~ s/^\d+_tmpslvr_param_//;
+  $spice_port_name =~ s/^\d+_tmpslvr_//;
+  return $spice_port_name;
+}#sub vnom_port_from_spice_port
+#----------------------------------------------------------------------------------------------#
+1;

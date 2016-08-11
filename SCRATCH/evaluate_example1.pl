@@ -1,0 +1,215 @@
+#!/usr/bin/perl
+
+use warnings;
+use strict;
+
+# Operators currently supported.
+# %Operators does double duty.
+# It includes functions ie: int() and ops ie: a + b 
+# The difference being that an op takes the form of  VAR1 OP VAR2
+# and functions take the form of OP (EXPRESSION)
+
+# You can add abritrary ops as long as the don't match a-zA-Z
+# Functions can contain letters and numbers.
+
+my $last_value= undef;
+my %Operators = (
+    '+' => sub { @_ = getsymbolval(@_); my $n=0; $n+=$_ foreach @_; $n   },
+    '-' => sub { @_ = getsymbolval(@_); my $n=shift; $n-=$_ foreach @_ ; $n  },
+    '*' => sub { @_ = getsymbolval(@_); my $n= shift; $n*=$_ foreach @ _; $n  },
+    '/' => sub { @_ = getsymbolval(@_); my $n=shift; $n/=$_ foreach @_ ; $n  },
+    '^' => sub { @_ = getsymbolval(@_); my $n=shift; $n = $n ** shift;  $n; },
+    '=' => sub {     no strict; my ($n,$v)=@_;
+                    if ($n!~/^[a-zA-Z_]/){
+                        warn "Attempt to assign to read-only variable.\n";
+                        return;
+                    }
+                    ${'Expression::Evaluate::'.$n} = getsymbolval($v)
+                },
+    '==' => sub { no strict; my ($n,$v)=@_;  getsymbolval($n) == getsymbolval($v)},
+    '<' => sub { no strict; my ($n,$v)=@_; return getsymbolval($n) <getsymbolval($v)  },
+    '<=' => sub { no strict; my ($n,$v)=@_; return getsymbolval($n) <= getsymbolval($v)  },
+    '>' => sub { no strict; my ($n,$v)=@_; return getsymbolval($n) > getsymbolval($v)  },
+    '>=' => sub { no strict; my ($n,$v)=@_; return getsymbolval($n) >= getsymbolval($v)  },
+    '&&' => sub { no strict; my ($n,$v)=@_; return  getsymbolval($n) && getsymbolval($v)  },
+    '||' => sub { no strict; my ($n,$v)=@_; return  getsymbolval($n) || getsymbolval($v)  },
+    '_' => sub {     # Concat
+                    no strict;     
+                    my ($n,$v)= getsymbolval(@_);
+                    $n=~s/['"]$//; $v=~s/^['"]//;    #"
+                    return $n.$v;
+                },
+    # Functions
+    'int'    => sub { return int getsymbolval(shift) },
+    'lc'    => sub { return lc getsymbolval(shift) },
+    'uc'    => sub { return uc getsymbolval(shift) },
+);
+
+# Symbols are for predifined values...
+my %symbols = (
+    ':date'    => sub { scalar localtime},
+    ':id'    => "lee_test",
+    ':last' => sub { return $last_value },
+);
+
+
+{
+
+    print "Enter an expession..\n";
+    my $exp = <STDIN>;
+    chomp($exp);
+    last if $exp=~/^quit$/;
+
+    my $result = parse_expression($exp) ;
+    $result = '' unless $result;    # Silence warning for undefined.
+    print "Result: $result\n";        
+
+    redo;
+}
+
+
+
+# Subs ########################################
+sub parse_expression {
+    my $exp = shift;
+    my @tokens = ();
+    # Strip out invalid ASCII
+    $exp=~s/([^\n\r\x20-\x7f])/ /g;
+
+    # Pad out ops with spaces.
+    my $opsregex =       join("",     grep { !m/[a-zA-Z_]/   } keys %Operators    ) ;
+    $opsregex =~ tr///cs;
+    $opsregex = quotemeta $opsregex;
+    $exp=~s/\s*([$opsregex]+)\s*/ $1 /go;
+    $exp=~s/\s*([()])\s*/ $1 /go;
+    
+    
+    # Get tokens
+    push @tokens, $1 while $exp=~/\G\s*(".*?")/gc or $exp=~/\G\s*('.*?')/gc or $exp=~/\G\s*(\S+)/gc;
+    
+
+    if (@tokens == 1 && $tokens[0]=~/^[:\w]?\w+$/){
+        no strict;
+        return getsymbolval($tokens[0]);
+    }
+    # Find any parens. 
+    my (@lp,@rp) = ();
+    for (my $p =0; $p < @tokens; $p++){
+        if ($tokens[$p] eq '('){
+            push @lp,$p;
+        }elsif($tokens[$p] eq ')'){
+            push @rp,$p;
+        }
+    }
+    
+
+    if ( @lp != @rp){
+        warn "Mismatched parens in expression.\n";
+        $last_value = undef;
+        return;
+
+    }
+
+    
+    my @temp = @tokens;
+    for (my $i=0; $i < @rp; $i++){
+         # Find the match in @lp that is < than.
+         my @wanted;
+         for (my $j = $#lp; $j >= 0 ; $j--){
+            if ( defined $lp[$j] && $lp[$j] < $rp[$i] ){
+                (undef,@wanted) = @tokens[ $lp[$j] ..  ($rp[$i] - 1 )] ;    
+                
+                # Rewrite "functions"
+                if ( exists $Operators{ $tokens[ $lp[$j ]-1 ] } && $tokens[ $lp[$j ]-1 ] =~/[a-zA-Z]/){
+                    @wanted = ( $tokens[ $lp[$j]-1 ], [@wanted]);
+                    $tokens[ $lp[$j]-1 ] = undef;
+                
+                }
+                
+                @tokens[ $lp[$j] ..  ($rp[$i]) ] = \@wanted;
+                push @temp, @wanted;
+                $lp[$j] = $rp[$i] = undef;
+                last;
+            }
+            
+         }
+    }
+
+    my $result = evaluate(\@tokens);
+    
+    if ( ref $result eq 'ARRAY' ){
+        if (@$result == 0 ){
+            $last_value = undef;
+            return;
+        }else{ # It's a list
+            
+            return "(".join(", ",@$result).")";
+        }
+    }
+    $last_value = $result;
+    return $result ;
+
+}
+
+#################################################
+
+sub evaluate {
+    my $ops = shift;
+    @$ops = grep { defined $_ } @$ops;
+    foreach my $op (@$ops){
+        if (ref $op eq 'ARRAY'){
+            $op  = evaluate($op);
+        }
+    }
+
+    # Process tokens right to left so assign propagates. (a = b = c = 3)
+    my %pops = ();
+    for (my $i=$#{$ops}; $i>=0; $i--){
+            push @{$pops{ $ops->[$i]}}, $i if defined $ops->[$i] && exists $Operators{$ops->[$i]};
+    }
+
+    # Order by precedence.
+    my @ordered =  map { @{$pops{$_}} } grep { defined $pops{$_} } qw( ^ * / && || + - > >=  < <= _ == =  ),',';
+    
+    while(my $i = shift @ordered ){
+        my $op = [@$ops[ $i, $i-1,$i+1]];
+        splice @{$ops}, $i - 1, 3 , $op;
+        @ordered = map { $_ > $i ? $_ - 2 : $_} @ordered;
+    }
+    my $operator = shift @$ops;
+    $operator = evaluate($operator) if ref $operator eq 'ARRAY';
+    if (defined $operator){
+        if (defined $Operators{$operator}){
+            $ops = $Operators{$operator}->(@$ops);
+        }elsif($operator && @$ops ){
+
+            warn "Invalid expressions\n";
+            warn "$operator:\n";
+            return;
+        }else{
+            return $operator;
+        }
+    }
+    
+    return $ops;
+
+}
+
+#################################################
+sub getsymbolval{
+    no strict;
+    my @syms = @_;
+    foreach my $symbol (@syms){
+        next unless defined $symbol;
+        if($symbol && exists $symbols{$symbol}){
+
+            $symbol = ref $symbols{$symbol} eq 'CODE' ? $symbols{$symbol}->() : $symbols{$symbol};
+        }elsif ($symbol=~/^\D+$/){
+            unless ($symbol=~/^[\"\'].*[\"\']$/){        #" comment to fix syntax highlighting in my editor
+                $symbol = ${'Expression::Evaluate::'.$symbol} ||  undef ;
+            }
+        }else{
+        }
+    }
+    wantarray ? @syms : $syms[0];    
+}

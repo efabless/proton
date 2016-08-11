@@ -1,0 +1,130 @@
+
+sub extract_bumps {
+use Benchmark;
+my $t0 = new Benchmark;
+my $noOfArguments = @_;
+
+if( $noOfArguments < 2 || $_[0] eq '-h') { print "Usage : extract_bumps \n";
+                           print "                  -minSize {W,H} \n";
+                           print "                  -maxSize {W,H} \n";
+                           print "                  -layer {<layerName>}\n";
+                           print "                  -bndrySpace <float> \n";
+                           print "                  --mergeOverLapShapes\n";
+                           print "                  note : by defaul all sections are written out\n";
+                         }
+else { # if correct no. of inputs
+
+my $LAYER = 0;
+my $minH = 1;
+my $minW = 1;
+my $maxH = 1000;
+my $maxW = 1000;
+my $MERGE = true;
+my $edgeSpace = 0.5;
+
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-layer"){$LAYER = $_[$i+1];}
+if($_[$i] eq "-minSize"){ my $box = $_[$i+1]; $box =~ s/\{(.*)\}/\1/; ($minW,$minH)= (split(/\,/, $box))[0,1]; }
+if($_[$i] eq "-maxSize"){ my $box = $_[$i+1]; $box =~ s/\{(.*)\}/\1/; ($maxW,$maxH)= (split(/\,/, $box))[0,1]; }
+                                         } # for
+
+
+
+foreach $macroName ( keys %PLDB ) {
+print "INFO-LIBLYIS-EXT_BUMPS : 001 : processing cell $macroName \n";
+my @origin = $PLDB{$macroName}->dbMdbGetOrigin;
+
+my @pins = $PLDB{$macroName}->dbMdbGetPins;
+         foreach my $pin ( @pins ) {
+print "INFO-LIBLYIS-EXT_BUMPS : 002 :\t processing pin $pin \n";
+          my @rects = $PLDB{$macroName}->dbMdbGetPinRect($pin);
+              foreach my $rectLine (@rects ) {
+           my ($z, $llx, $lly, $urx, $ury ) = (split(/\s+/,$rectLine))[0,2,3,4,5];
+                   my $xSize = abs($urx - $llx) ;
+                   my $ySize = abs($ury - $lly) ;
+                   if ( $z eq $LAYER ) {
+                        if ( ($minW < $xSize && $xSize < $maxW) && ($minH < $ySize && $ySize < $maxH)) {
+                              my $xOffset = ($llx + $urx)/2;
+                              my $yOffset = ($lly + $ury)/2;
+                        print "INFO-LIBLYIS-EXT_BUMPS : 003 : $macroName $pin $xOffset $yOffset\n";
+                                                                                       }
+                                       }
+                                        }# foreach rect
+                                   }# foreach pin 
+                                  }# for all macros 
+
+
+
+
+}# if correct no. of inputs
+
+}# sub extract bumps
+
+
+
+sub extract_lef_bumps {
+use Benchmark;
+my $t0 = new Benchmark;
+my $noOfArguments = @_;
+
+if( $noOfArguments < 2 || $_[0] eq '-h') { print "Usage : extract_lef_bumps -cell <cellref> \n";
+                           print "                  -minSize {W,H} \n";
+                           print "                  -maxSize {W,H} \n";
+                           print "                  -layer {<layerName>}\n";
+                           print "                  -bndrySpace <float> \n";
+                           print "                  --mergeOverLapShapes\n";
+                           print "                  note : by defaul all sections are written out\n";
+                         }
+else { # if correct no. of inputs
+
+my $LAYER = 0;
+my $macroName = "";
+my $minH = 1;
+my $minW = 1;
+my $maxH = 1000;
+my $maxW = 1000;
+my $MERGE = true;
+my $edgeSpace = 0.5;
+
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-layer"){$LAYER = $_[$i+1];}
+if($_[$i] eq "-cell"){$macroName = $_[$i+1];}
+if($_[$i] eq "-minSize"){ my $box = $_[$i+1]; $box =~ s/\{(.*)\}/\1/; ($minW,$minH)= (split(/\,/, $box))[0,1]; }
+if($_[$i] eq "-maxSize"){ my $box = $_[$i+1]; $box =~ s/\{(.*)\}/\1/; ($maxW,$maxH)= (split(/\,/, $box))[0,1]; }
+                                         } # for
+
+
+
+my @bumps = ();
+if ( exists $PLDB{$macroName} ) {
+print "INFO-LIBLYIS-EXT_LEF_BUMPS : 001 : processing cell $macroName \n";
+my @origin = $PLDB{$macroName}->dbMdbGetOrigin;
+
+my @pins = $PLDB{$macroName}->dbMdbGetPins;
+         foreach my $pin ( @pins ) {
+print "INFO-LIBLYIS-EXT_LEF_BUMPS : 002 :\t processing pin $pin \n";
+          my @rects = $PLDB{$macroName}->dbMdbGetPinRect($pin);
+              foreach my $rectLine (@rects ) {
+           my ($z, $llx, $lly, $urx, $ury ) = (split(/\s+/,$rectLine))[0,2,3,4,5];
+                   my $xSize = abs($urx - $llx) ;
+                   my $ySize = abs($ury - $lly) ;
+                   if ( $z eq $LAYER ) {
+                        if ( ($minW < $xSize && $xSize < $maxW) && ($minH < $ySize && $ySize < $maxH)) {
+                              my $xOffset = ($llx + $urx)/2 ;
+                              my $yOffset = ($lly + $ury)/2 ;
+                              my $str = $pin." ".$xOffset." ".$yOffset." ".$llx." ".$lly." ".$urx." ".$ury;
+                              print "INFO-LIBLYIS-EXT_LEF_BUMPS : 003 : $macroName $pin $xOffset $yOffset $llx $lly $urx $ury\n";
+                              push(@bumps,$str);
+                                                                                       }
+                                       }
+                                        }# foreach rect
+                                   }# foreach pin 
+                                  }# if macro exists in database 
+
+
+
+return(@bumps);
+}# if correct no. of inputs
+
+}# sub extract_lef_bumps
+1;

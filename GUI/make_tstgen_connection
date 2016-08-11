@@ -1,0 +1,3317 @@
+############################################## Source and Sink PopUp for Wires ###########################################
+sub get_pinMatched{
+my $pattern = $_[0];
+my $pins = $_[1];
+my @matchPins = ();
+
+ if($pattern eq ""){
+    @matchPins = @$pins;
+ }else{
+    foreach(@$pins){
+      if($_ =~ m/.*$pattern.*/i){
+         push(@matchPins, $_);
+      }
+    }
+ }
+return(@matchPins);
+}#sub get_pinMatched
+
+sub popup_selectSrcPin_forWire{
+my @arg = @_;
+my $x = $arg[0];
+my $y = $arg[1];
+my @id = @{$arg[2]};
+my $wireType = $arg[3];
+my $inst = $tagList[1];
+my @SELPINS = ();
+my @pins = ();
+my $pinName = "";
+my @tagList = $design_canvas->gettags($id[0]);
+my $inst = $tagList[1];
+my $list;
+
+my $popupgui = MainWindow->new();
+   $popupgui->title ("Select Pins");
+   my $EntryFrame=$popupgui->Frame()->pack(-side => 'top',-anchor=>'n',-expand=>1, -fill=>'x');
+   my $ListFrame =$popupgui->Frame()->pack(-side => 'top',-anchor=>'n');  
+   my $ButtonFrame=$popupgui->Frame()->pack(-side => 'bottom');
+   my $ListFrame1=$ListFrame->Frame()->pack(-side => 'left',-expand=>1, -fill=>'y');
+   my $ListFrame2 =$ListFrame->Frame()->pack(-side => 'left',-expand=>1, -fill=>'y');  
+
+   if($tagList[0] eq "TOP_MODULE"){
+      if(exists $PSEUDO_MODULE_ALREADY{$inst}){
+          @pins = $PSEUDO_MODULE_ALREADY{$inst}->dbaTstgenGetInput;
+#         my @pinArray = $PSEUDO_MODULE_ALREADY{$inst}->dbaTstgenGetInput;
+#         foreach my $pin(@pinArray){
+#              my $type = $PSEUDO_MODULE_ALREADY{$inst}->dbaTstgenGetInputType($pin);
+#              if($type == 0){
+#                 push(@pins, $pin);
+#              }
+#         }
+      }
+   }else{ 
+     if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$inst}){
+        my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$inst}->dbPimDBGetInstCellref;
+        if(exists $PLDB{$cellref}){
+           my @pinArray = $PLDB{$cellref}->dbMdbGetPins; 
+           foreach my $pin(@pinArray){
+                my $pinDir = $PLDB{$cellref}->dbMdbGetPinDir($pin);
+                #my $width = $PLDB{$cellref}->dbMdbGetPinBusWidth($pin);
+                #if(($pinDir == 1) && ($width == 0)){
+                if($pinDir == 1){
+                   push(@pins, $pin);
+                }
+           }
+              
+        }elsif(exists $PSEUDO_MODULE_ALREADY{$cellref}){
+                @pins = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetOutput;
+#               my @pinArray = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetOutput;
+#               foreach my $pin(@pinArray){
+#                    my $type = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetOutputType($pin);
+#                    if($type == 0){
+#                       push(@pins, $pin);
+#                    }
+#               }
+
+      }else { }
+     }#if inst exists
+   }#else
+      @pins = sort@pins; 
+ if($tagList[0] ne "TST_WIRE"){
+         $EntryFrame->Label(-text => "SelectPins :",-font=> "Times 10 italic",)->pack(-side =>'left', -anchor => 'w');
+         my $entry = $EntryFrame->Entry(-textvariable =>\$pinName)->pack(-side =>'left', -anchor => 'w',-expand=>1,-fill=>'x');
+#----------------------------------------------------------------------------#
+         my $path2eq = $GLOBAL->dbfGlobalGetProtonHome;
+         my $search_image = $popupgui->Photo(-file=> "$path2eq/ETC/b5_magnify2.gif");
+         my $searchButton = $EntryFrame->Button(-image=>$search_image, -padx=>0,-pady=>0,-borderwidth=>0,-width=>22,-height=>20,-command=>sub{my @pins = &get_pinMatched($searchStr,\@pins);
+                           $list->configure(-listvariable =>\@pins);
+                           })->pack(-side =>'right');
+
+         my $search_balloon = $popupgui->Balloon();
+         $search_balloon->attach($searchButton, -balloonmsg => 'Search Pin');
+         my $search_entry = $EntryFrame->Entry(-textvariable =>\$searchStr, -width=>8)->pack(-side =>'right');
+         $search_entry->bind('<KeyRelease>',sub {my @pins = &get_pinMatched($searchStr,\@pins);
+                                                 $list->configure(-listvariable =>\@pins);
+                                                 });
+#-----------------------------------------------------------------------------#
+         $ListFrame1->Label(-text => "List of Pins",-font=> "Times 10 italic",)->pack(-side =>'top');
+         $list = $ListFrame1->Scrolled('Listbox',-listvariable => \@pins,-scrollbars=>'osoe',)->pack(-side=>'top');
+         $list->Subwidget("yscrollbar")->configure(-width=>10);
+         $list->bind( '<Button-1>', sub {  
+                                         my $selection =  $_[0]->get( $_[0]->curselection);
+                                         my $entryFound = 0;
+                                         foreach (@SELPINS){if ($_ eq $selection){$entryFound = 1;}}
+                                         if($entryFound == 1){print "you have allready selected pin $selection\n";}
+                                         else { 
+                                            push(@SELPINS,$selection);
+                                            $pinName = "";
+                                            $pinName = join(",",@SELPINS);
+                                         }#else
+                                        });
+         $ListFrame2->Label(-text => "Selected Pins",-font=> "Times 10 italic",)->pack(-side =>'top');
+         my $list1 = $ListFrame2->Scrolled('Listbox',-listvariable => \@SELPINS,-scrollbars=>'osoe',)->pack(-side=>'top');
+            $list1->Subwidget("yscrollbar")->configure(-width=>10);
+            $list1->bind( '<Button-1>', sub {  
+                                           my @temp =();
+                                              $pinName = "";
+                                           my $selection1 =  $_[0]->get( $_[0]->curselection);
+                                           foreach (@SELPINS){
+                                                if($_ eq $selection1){
+                                                }else { push(@temp, $_);
+                                                }
+                                           }  
+                                           @SELPINS = ();
+                                           @SELPINS = @temp;
+                                           $pinName = join (",",@SELPINS);
+                                                });
+         }#if not a wire
+
+my $ProceedButton = $ButtonFrame->Button(-text=>'Proceed',-relief=>'groove',-pady=>0,
+                                          -command =>sub {
+                                                        if($wireType eq "straightWire"){&call_selectSrcPin_forStraightWire($x,$y,\@id,$pinName);
+                                                        }elsif($wireType eq "zWire"){&call_selectSrcPin_forZWire($x,$y,\@id,$pinName);
+                                                        }elsif($wireType eq "routingWire"){&call_selectSrcPin_forRoutingWire($x,$y,\@id,$pinName);
+                                                        }
+                                                        $popupgui->destroy;
+                                         })->pack(-side=>'left');
+my $CancelButton = $ButtonFrame->Button(-text=>'Cancel',-relief=>'groove',-pady=>0,
+                                          -command =>sub {$popupgui->destroy;
+                                         })->pack(-side=>'left');
+}#sub popup_selectSrcPin_forWire
+
+sub popup_selectSinkPin_forWire {
+my @arg = @_;
+my $x = $arg[0];
+my $y = $arg[1];
+my @id = @{$arg[2]};
+my $netPrefix = $arg[3];
+my $netWidth = $arg[4];
+my $wireType = $arg[5];
+my $list;
+
+my @tagList = $design_canvas->gettags($id[0]);
+my $inst = $tagList[1]; 
+my @SELPINS = ();
+my @pins = ();
+my $pinName = "";
+my $popupgui = MainWindow->new();
+   $popupgui->title ("Select Pins");
+   my $EntryFrame=$popupgui->Frame()->pack(-side => 'top',-anchor=>'n',-expand=>1, -fill=>'x');
+   my $ListFrame =$popupgui->Frame()->pack(-side => 'top',-anchor=>'n');  
+   my $ButtonFrame=$popupgui->Frame()->pack(-side => 'bottom');
+   my $ListFrame1=$ListFrame->Frame()->pack(-side => 'left',-expand=>1, -fill=>'y');
+   my $ListFrame2 =$ListFrame->Frame()->pack(-side => 'left',-expand=>1, -fill=>'y');  
+   if($tagList[0] eq "TOP_MODULE"){
+      if(exists $PSEUDO_MODULE_ALREADY{$inst}){
+         @pins = $PSEUDO_MODULE_ALREADY{$inst}->dbaTstgenGetOutput;
+#         my @pinArray = $PSEUDO_MODULE_ALREADY{$inst}->dbaTstgenGetOutput;
+#         foreach my $pin(@pinArray){
+#              my $type = $PSEUDO_MODULE_ALREADY{$inst}->dbaTstgenGetOutputType($pin);
+#              if($type == 0){
+#                 push(@pins, $pin);
+#              }
+#         }
+      }
+   }else{ 
+     if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$inst}){
+        my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$inst}->dbPimDBGetInstCellref;
+        if(exists $PLDB{$cellref}){
+           my @pinArray = $PLDB{$cellref}->dbMdbGetPins; 
+           foreach my $pin(@pinArray){
+                   my $pinDir = $PLDB{$cellref}->dbMdbGetPinDir($pin);
+#                   my $width = $PLDB{$cellref}->dbMdbGetPinBusWidth($pin);
+#                   if(($pinDir == 0) && ($width == 0)){
+                   if($pinDir == 0){
+                      push(@pins, $pin);
+                   }
+           }
+              
+        }elsif(exists $PSEUDO_MODULE_ALREADY{$cellref}){
+               @pins = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetInput;
+#               my @pinArray = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetInput;
+#               foreach my $pin(@pinArray){
+#                    my $type = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetInputType($pin);
+#                    if($type == 0){
+#                       push(@pins, $pin);
+#                    }
+#               }
+      }else { }
+     }#if inst exists
+   }#else
+      @pins = sort@pins; 
+ if($tagList[0] ne "TST_WIRE"){
+      $EntryFrame->Label(-text => "SelectPins :",-font=> "Times 10 italic",)->pack(-side =>'left', -anchor => 'w');
+      my $entry = $EntryFrame->Entry(-textvariable =>\$pinName)->pack(-side =>'left', -anchor => 'w',-expand=>1,-fill=>'x');
+#----------------------------------------------------------------------------#
+      my $path2eq = $GLOBAL->dbfGlobalGetProtonHome;
+      my $search_image = $popupgui->Photo(-file=> "$path2eq/ETC/b5_magnify2.gif");
+      my $searchButton = $EntryFrame->Button(-image=>$search_image, -padx=>0,-pady=>0,-borderwidth=>0,-width=>22,-height=>20,-command=>sub{my @pins = &get_pinMatched($searchStr,\@pins);
+                        $list->configure(-listvariable =>\@pins);
+                        })->pack(-side =>'right');
+
+      my $search_balloon = $popupgui->Balloon();
+      $search_balloon->attach($searchButton, -balloonmsg => 'Search Pin');
+      my $search_entry = $EntryFrame->Entry(-textvariable =>\$searchStr, -width=>8)->pack(-side =>'right');
+      $search_entry->bind('<KeyRelease>',sub {my @pins = &get_pinMatched($searchStr,\@pins);
+                                              $list->configure(-listvariable =>\@pins);
+                                              });
+#-----------------------------------------------------------------------------#
+      $ListFrame1->Label(-text => "List of Pins",-font=> "Times 10 italic",)->pack(-side =>'top');
+      $list = $ListFrame1->Scrolled('Listbox',-listvariable => \@pins,-scrollbars=>'osoe',)->pack(-side=>'top');
+      $list->Subwidget("yscrollbar")->configure(-width=>10);
+      $list->bind( '<Button-1>', sub {  
+                                      my $selection =  $_[0]->get( $_[0]->curselection);
+                                      my $entryFound = 0;
+                                      foreach (@SELPINS){if ($_ eq $selection){$entryFound = 1;}}
+                                      if($entryFound == 1){print "you have allready selected pin $selection\n";}
+                                      else { 
+                                         push(@SELPINS,$selection);
+                                         $pinName = "";
+                                         $pinName = join(",",@SELPINS);
+                                      }#else
+                                     });
+      $ListFrame2->Label(-text => "Selected Pins",-font=> "Times 10 italic",)->pack(-side =>'top');
+      my $list1 = $ListFrame2->Scrolled('Listbox',-listvariable => \@SELPINS,-scrollbars=>'osoe',)->pack(-side=>'top');
+         $list1->Subwidget("yscrollbar")->configure(-width=>10);
+         $list1->bind( '<Button-1>', sub {  
+                                          my @temp =();
+                                             $pinName = "";
+                                          my $selection1 =  $_[0]->get( $_[0]->curselection);
+                                          foreach (@SELPINS){
+                                               if($_ eq $selection1){
+                                               }else { push(@temp, $_);
+                                               }
+                                          }  
+                                          @SELPINS = ();
+                                          @SELPINS = @temp;
+                                          $pinName = join (",",@SELPINS);
+                                         });
+   }#if not a wire
+
+my $ProceedButton = $ButtonFrame->Button(-text=>'Ok',-relief=>'groove',-pady=>0,
+                                          -command =>sub {if($wireType eq "straightWire"){&call_selectSinkPin_forStraightWire($x,$y,\@id,$pinName,$netPrefix, $netWidth);
+                                                          }elsif($wireType eq "zWire"){&call_selectSinkPin_forZWire($x,$y,\@id,$pinName,$netPrefix, $netWidth);                                                    
+                                                          }elsif($wireType eq "routingWire"){&call_selectSinkPin_forRoutingWire($x,$y,\@id,$pinName,$netPrefix, $netWidth);
+                                                          }
+                                                          $popupgui->destroy;
+                                         })->pack(-side=>'left');
+my $CancelButton = $ButtonFrame->Button(-text=>'Cancel',-relief=>'groove',-pady=>0,
+                                          -command =>sub {$popupgui->destroy;
+                                         })->pack(-side=>'left');
+
+}#sub popup_selectSinkPin_forWire 
+
+################################# PopUp Calling Subroutines for StraightWire ###########################################
+sub call_selectSrcPin_forStraightWire{
+my @arg = @_;
+my $x = $arg[0];
+my $y = $arg[1];
+my @id = @{$arg[2]};
+my $pinName = $arg[3];
+
+my ($wireConn,$instConn,$topConn) = (0, 0, 0, 0 , 0);
+my ($mod_llx1,$mod_lly1,$mod_urx1,$mod_ury1,$canx1,$cany1) = (0, 0, 0, 0, 0, 0, 0, 0);
+my $srcMod = "";
+my $wireName = "";
+   @STWIRE_SOURCE_CONN = ();
+my @tagList = $design_canvas->gettags($id[0]);
+##-----------------------------------------------------------------------------------##
+if($pinName ne ""){
+  if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}){
+     my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstCellref;
+     my @loc = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstRelBbox;
+     if(exists $PLDB{$cellref} ) {
+        my @cellSize = $PLDB{$cellref}->dbMdbGetSize;
+        my @pins = $PLDB{$cellref}->dbMdbGetPins;
+        foreach my $p (@pins){
+             if ($p eq $pinName){  
+                 my @pinRect = $PLDB{$cellref}->dbMdbGetPinRect($p);
+                 my ($layer,$pinllx,$pinlly,$pinurx,$pinury) = (split(/\s+/,$pinRect[0])) [0,2,3,4,5];
+                 my @pinCoords = ();
+                 $pinCoords[0] = $loc[0] + $pinllx;
+                 $pinCoords[1] = $loc[1] + $pinlly;
+                 $pinCoords[2] = $loc[0] + $pinurx;
+                 $pinCoords[3] = $loc[1] + $pinury;
+                 my $xcoord = ($pinCoords[0] + $pinCoords[2])/2;
+                 my $ycoord = ($pinCoords[1] + $pinCoords[3])/2;
+                 ($xcoord, $ycoord) = dbfGuiMicron2Gui($xcoord, $ycoord);
+                 $mod_llx1 = $xcoord;
+                 $mod_urx1 = $xcoord;
+                 $mod_lly1 = $ycoord;
+                 $mod_ury1 = $ycoord;   
+                 $canx1 = $xcoord; 
+                 $cany1 = $ycoord; 
+                 $srcMod = $tagList[1];
+                 $instConn = 1;
+             }#if pin found
+        }#foreach pin
+     }else{#if cellref exists 
+       my @coords  = $design_canvas->coords($tagList[1]);
+           $mod_llx1 = $coords[0];
+           $mod_lly1 = $coords[1];
+           $mod_urx1 = $coords[2];
+           $mod_ury1 = $coords[3];   
+           $canx1 = $x;
+           $cany1 = $y;
+           $srcMod = $tagList[1];
+           $instConn = 1;
+     }#if soft/rtl etc (because pinloc is not set for these module)
+  }
+}else{ 
+##-----------------------------------------------------------------------------------##
+   $dx = 0; $dy = 0;
+   my @topCoords = $design_canvas->coords("TOP_MODULE");
+   if(($x <= $topCoords[0]) || ($x >= $topCoords[2]) || ($y <= $topCoords[1]) || ($y >= $topCoords[3])){
+       $mod_llx1 = $topCoords[0];
+       $mod_lly1 = $topCoords[1];
+       $mod_urx1 = $topCoords[2];
+       $mod_ury1 = $topCoords[3];   
+       $canx1 = $x;$cany1 = $y;
+       if($canx1 <= $mod_llx1){$dx = 1;}
+       elsif($canx1 >= $mod_urx1){$dx = -1;}
+       elsif($cany1 <= $mod_lly1){$dy = 1;}
+       elsif($cany1 >= $mod_ury1){$dy = -1;}
+       $srcMod = "PIN";  ### $srcMod = $TOP_MODULE; ###
+       $topConn = 1;
+   }else {
+       if(($tagList[0] ne "TOP_MODULE") && ($tagList[0] ne "TST_WIRE")){
+          my @coords  = $design_canvas->coords($tagList[1]);
+          if($tagList[0] eq "FLOP"){
+             $mod_llx1 = $coords[0];
+             $mod_lly1 = $coords[1];
+             $mod_urx1 = $coords[4];
+             $mod_ury1 = $coords[7];   
+          }elsif($tagList[0] eq "MUX"){
+             $mod_lly1 = $coords[1];
+             $mod_ury1 = $coords[7]; 
+             if($coords[0] < $coords[4]){ 
+                $mod_llx1 = $coords[0];
+                $mod_urx1 = $coords[4];
+             }else {
+                $mod_llx1 = $coords[4];
+                $mod_urx1 = $coords[0];
+             }
+          }else{
+             $mod_llx1 = $coords[0];
+             $mod_lly1 = $coords[1];
+             $mod_urx1 = $coords[2];
+             $mod_ury1 = $coords[3];   
+         }
+             $canx1 = $x;
+             $cany1 = $y;
+             $srcMod = $tagList[1];
+             $instConn = 1;
+       }elsif($tagList[0] eq "TST_WIRE"){
+          my @wire_coords  = $design_canvas->coords($id[0]);
+              $canx1 = $x;
+              $cany1 = ((($wire_coords[3]-$wire_coords[1])*($x - $wire_coords[0]))/($wire_coords[2] - $wire_coords[0])) + $wire_coords[1];
+              $wireConn = 1;
+              if($canx1 == 0 || $cany1 == 0){$wireConn = 0;}
+              $wireName = $tagList[1];
+       }else {$mod_llx1 = ""; $mod_lly1 = "";$mod_urx1 = ""; $mod_ury1 = ""; $canx1 = ""; $cany1 = "";}
+    }
+ }
+
+@STWIRE_SOURCE_CONN = ($canx1,$cany1,$mod_llx1,$mod_lly1,$mod_urx1,$mod_ury1,$srcMod,$wireName,$topConn,$wireConn,$instConn, $dx,$dy,$pinName); 
+}#sub call_selectSrcPin_forStraightWire
+
+
+sub call_selectSinkPin_forStraightWire {
+my @arg = @_;
+my $x = $arg[0];
+my $y = $arg[1];
+my @ids = @{$arg[2]};
+my $sinkPin = $arg[3];
+my $netPrefix = $arg[4];
+my $netWidth = $arg[5];
+if($#STWIRE_SOURCE_CONN <= -1){print "WARN: Select the source Module\n";return;}
+my $canx1 = $STWIRE_SOURCE_CONN[0];
+my $cany1 = $STWIRE_SOURCE_CONN[1];
+my $mod_llx1 = $STWIRE_SOURCE_CONN[2];
+my $mod_lly1 = $STWIRE_SOURCE_CONN[3];
+my $mod_urx1 = $STWIRE_SOURCE_CONN[4];
+my $mod_ury1 = $STWIRE_SOURCE_CONN[5];
+my $srcMod = $STWIRE_SOURCE_CONN[6];
+my $wireName = $STWIRE_SOURCE_CONN[7];
+my $topConn = $STWIRE_SOURCE_CONN[8];
+my $wireConn = $STWIRE_SOURCE_CONN[9];
+my $instConn = $STWIRE_SOURCE_CONN[10];
+my $dx = $STWIRE_SOURCE_CONN[11];
+my $dy = $STWIRE_SOURCE_CONN[12];
+my $srcPin = $STWIRE_SOURCE_CONN[13];
+my @wireCoordInMicron = ();
+my ($srcOpt,$sinkOpt) = ("","");
+
+   if($srcPin eq ""){$srcOpt = "";}
+ else{$srcOpt = "-pin";}
+   if($sinkPin eq ""){$sinkOpt = "";}
+ else{$sinkOpt = "-pin";}
+
+            my @topCoords = $design_canvas->coords("TOP_MODULE");
+            if(($instConn == 1) && (($x <=$topCoords[0]) || ($x >= $topCoords[2]) || ($y <= $topCoords[1]) || ($y >= $topCoords[3]))){
+               $mod_llx2 = $topCoords[0];
+               $mod_lly2 = $topCoords[1];
+               $mod_urx2 = $topCoords[2];
+               $mod_ury2 = $topCoords[3];
+               $canx2 = $x;$cany2 = $y;                      
+               $sinkMod = "PIN";  ### $sinkMod = $TOP_MODULE; ###
+               if($x <= $mod_llx2){
+                  @wireRectCoords = ($mod_llx1, $cany1,$mod_llx2,$cany2);
+               }elsif($x >= $mod_urx2){
+                  @wireRectCoords = ($mod_urx1, $cany1,$mod_urx2,$cany2);
+               }elsif($y <= $mod_lly2){
+                  @wireRectCoords = ($canx1, $mod_lly1,$canx2,$mod_lly2);
+               }elsif($y >= $mod_ury2){
+                  @wireRectCoords = ($canx1, $mod_ury1,$canx2, $mod_ury2);
+               }
+               for(my $i=0; $i<=$#wireRectCoords; $i=$i+2){
+                   my @coord_mic = dbfGuiGui2Micron($wireRectCoords[$i],$wireRectCoords[$i+1]);
+                   push(@wireCoordInMicron,@coord_mic);
+               }
+               my $wireCoords_str = join ",", @wireCoordInMicron; 
+               $wireInst = $design_canvas->createLine(
+                                                @wireRectCoords,
+                                                -fill => 'yellow',
+                                                -arrow => 'last',
+                                                -width => 3,
+                                                    );
+               my $netName = &createPseudoNet("-parentModule","$TOP_MODULE","-type","wire","-source","$srcMod",$srcOpt,$srcPin ,"-sink","$sinkMod",$sinkOpt, "{$sinkPin}","-prefix", $netPrefix, "-wireWidth", $netWidth,"-netCoords",$wireCoords_str);
+               if($netName eq ""){$design_canvas->delete($wireInst);}
+               else{
+                 if($netPrefix eq "" && $netWidth ne ""){
+                    print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                 }elsif($netWidth eq "" && $netPrefix ne ""){
+                    print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -prefix $netPrefix -netCoords $wireCoords_str\n";
+                 }elsif($netWidth eq "" && $netPrefix eq ""){
+                    print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -netCoords $wireCoords_str\n";
+                 }else{
+                    print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -prefix $netPrefix -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                 }
+                $design_canvas->itemconfigure($wireInst, -tags =>'TST_WIRE' );
+                $design_canvas->addtag($netName , "withtag", $wireInst);
+               }
+            }else {
+               my @tagList = $design_canvas->gettags($ids[0]);
+               if (($tagList[0] ne "TOP_MODULE") && ($tagList[0] ne "") && ($tagList[0] ne "current") && ($tagList[1] ne $srcMod) && ($tagList[0] ne "TST_WIRE"))  { 
+                  $sinkMod = $tagList[1];
+                  my @coords1  = $design_canvas->coords($ids[0]);
+                  if($tagList[0] eq "FLOP"){
+                     $mod_llx2 = $coords1[0];
+                     $mod_lly2 = $coords1[1];
+                     $mod_urx2 = $coords1[4];
+                     $mod_ury2 = $coords1[7];
+                     $canx2 = $x;                      
+                     $cany2 = $y;                      
+                  }elsif($tagList[0] eq "MUX"){
+                     $mod_lly2 = $coords1[1];
+                     $mod_ury2 = $coords1[7];
+                     if($coords1[0] < $coords1[4]){ 
+                        $mod_llx2 = $coords1[0];
+                        $mod_urx2 = $coords1[4];
+                     }else {
+                        $mod_llx2 = $coords1[4];
+                        $mod_urx2 = $coords1[0];
+                     }
+                     $canx2 = $x;                      
+                     $cany2 = $y;                      
+##-----------------------------------------------------------------------------------##
+                  }elsif($sinkPin ne ""){
+                      my @sink_pin = split(/\,/,$sinkPin);
+                      if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}){
+                      my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstCellref;
+                      my @loc = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstRelBbox;
+                      if(exists $PLDB{$cellref} ) {
+                         my @cellSize = $PLDB{$cellref}->dbMdbGetSize;
+                         my @pins = $PLDB{$cellref}->dbMdbGetPins;
+                         foreach my $p (@pins){
+                            #if ($p eq $sinkPin){  
+                            if ($p eq $sink_pin[0]){  
+                              my @pinRect = $PLDB{$cellref}->dbMdbGetPinRect($p);
+                              my ($layer,$pinllx,$pinlly,$pinurx,$pinury) = (split(/\s+/,$pinRect[0])) [0,2,3,4,5];
+                              my @pinCoords = ();
+                              $pinCoords[0] = $loc[0] + $pinllx;
+                              $pinCoords[1] = $loc[1] + $pinlly;
+                              $pinCoords[2] = $loc[0] + $pinurx;
+                              $pinCoords[3] = $loc[1] + $pinury;
+                              my $xcoord = ($pinCoords[0] + $pinCoords[2])/2;
+                              my $ycoord = ($pinCoords[1] + $pinCoords[3])/2;
+                              my ($xcoord1, $ycoord1) = dbfGuiMicron2Gui($xcoord, $ycoord);
+                              $mod_llx2 = $xcoord1;
+                              $mod_urx2 = $xcoord1;
+                              $mod_lly2 = $ycoord1;
+                              $mod_ury2 = $ycoord1;   
+                              $canx2 = $xcoord1; 
+                              $cany2 = $ycoord1; 
+                             }#if pin found
+                          }#foreach pin
+                      }else{ 
+                         $mod_llx2 = $coords1[0];
+                         $mod_lly2 = $coords1[1];
+                         $mod_urx2 = $coords1[2];
+                         $mod_ury2 = $coords1[3];
+                         $canx2 = $x;                      
+                         $cany2 = $y; 
+                      }#if soft/rtl etc. (because pin loc for these module is not set)
+                     }#if exists in PSEUDO_VINST_ALREADY
+##-----------------------------------------------------------------------------------##
+                  }else{  
+                     $mod_llx2 = $coords1[0];
+                     $mod_lly2 = $coords1[1];
+                     $mod_urx2 = $coords1[2];
+                     $mod_ury2 = $coords1[3];
+                     $canx2 = $x;                      
+                     $cany2 = $y;                      
+                  }
+                  if($wireConn == 1){ 
+                     if($canx1 < $mod_llx2){
+                        @wireRectCoords = ($canx1, $cany1,$mod_llx2,$cany2);
+                     }elsif($canx1 > $mod_urx2) {
+                        @wireRectCoords = ($canx1, $cany1,$mod_urx2,$cany2);
+                     }elsif($cany1 > $mod_ury2){
+                      @wireRectCoords = ($canx1, $cany1,$canx2,$mod_ury2);
+                     }elsif($cany1 < $mod_lly2){
+                      @wireRectCoords = ($canx1, $cany1,$canx2,$mod_lly2);
+                     }   
+                     for(my $i=0; $i<=$#wireRectCoords; $i=$i+2){
+                         my @coord_mic = dbfGuiGui2Micron($wireRectCoords[$i],$wireRectCoords[$i+1]);
+                         push(@wireCoordInMicron,@coord_mic);
+                     }
+                     my $wireCoords_str = join ",", @wireCoordInMicron; 
+                     $wireInst = $design_canvas->createLine(
+                                                      @wireRectCoords,
+                                                      -fill => 'yellow',
+                                                      -arrow => 'last',
+                                                      -width => 3,
+                                                      );
+                  &updatePseudoNet("-net",$wireName,"-sink",$sinkMod,$sinkOpt,$sinkPin,"-netCoords",$wireCoords_str); 
+                  print"#<CMD> updatePseudoNet -net $wireName -sink $sinkMod $sinkOpt $sinkPin -netCoords $wireCoords_str\n";
+                  $design_canvas->itemconfigure($wireInst, -tags =>'TST_WIRE' );
+                  $design_canvas->addtag($wireName , "withtag", $wireInst);
+                  }elsif($instConn == 1){
+                     if($mod_urx1 < $mod_llx2 && $mod_llx1 != $canx1){
+                        @wireRectCoords = ($mod_urx1, $cany1, $mod_llx2,$cany2);
+                     }elsif($mod_llx1 > $mod_urx2 && $mod_llx1 != $canx1) {
+                        @wireRectCoords = ($mod_llx1, $cany1,$mod_urx2,$cany2);
+                     }elsif($mod_lly1 > $mod_ury2 && $mod_lly1 != $cany1){
+                        @wireRectCoords = ($canx1, $mod_lly1, $canx2,$mod_ury2);
+                     }elsif($mod_ury1 < $mod_lly2 && $mod_lly1 != $cany1){
+                        @wireRectCoords = ($canx1, $mod_ury1, $canx2,$mod_lly2);
+                     }else{
+                        if($canx1 < $canx2 && $cany1 < $cany2){
+                           @wireRectCoords = ($mod_urx1, $cany1, $mod_llx2,$cany2);
+                        }elsif($canx1 < $canx2 && $cany1 > $cany2){
+                           @wireRectCoords = ($canx1, $mod_ury1, $canx2,$mod_lly2);
+                        }elsif($canx1 > $canx2 && $cany1 > $cany2){
+                           @wireRectCoords = ($canx1, $mod_ury1, $canx2,$mod_lly2);
+
+                        }else{ 
+                           @wireRectCoords = ($mod_urx1, $cany1, $mod_llx2,$cany2);
+                        }
+                     }
+                     for(my $i=0; $i<=$#wireRectCoords; $i=$i+2){
+                         my @coord_mic = dbfGuiGui2Micron($wireRectCoords[$i],$wireRectCoords[$i+1]);
+                         push(@wireCoordInMicron,@coord_mic);
+                     }
+                     my $wireCoords_str = join ",", @wireCoordInMicron; 
+                     $wireInst = $design_canvas->createLine(
+                                                           @wireRectCoords,
+                                                           -fill => 'yellow',
+                                                           -arrow => 'last',
+                                                           -width => 3,
+                                                            );
+                      my $netName = &createPseudoNet("-parentModule","$TOP_MODULE","-type","wire","-source","$srcMod",$srcOpt,$srcPin,"-sink","$sinkMod",$sinkOpt,"{$sinkPin}","-prefix", $netPrefix, "-wireWidth", $netWidth, "-netCoords",$wireCoords_str);
+                      if($netName eq ""){$design_canvas->delete($wireInst);}
+                      else{
+                        if($netPrefix eq "" && $netWidth ne ""){
+                           print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                        }elsif($netWidth eq "" && $netPrefix ne ""){
+                           print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -prefix $netPrefix -netCoords $wireCoords_str\n";
+                        }elsif($netWidth eq "" && $netPrefix eq ""){
+                           print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -netCoords $wireCoords_str\n";
+                        }else{
+                           print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -prefix $netPrefix -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                        }
+                        $design_canvas->itemconfigure($wireInst, -tags =>'TST_WIRE' );
+                        $design_canvas->addtag($netName , "withtag", $wireInst);
+                      }
+                  }elsif($topConn == 1){
+                     if($dx == 1){
+                        @wireRectCoords = ($mod_llx1, $cany1, $mod_llx2,$cany2);
+                     }elsif($dx == -1){
+                        @wireRectCoords = ($mod_urx1, $cany1, $mod_urx2,$cany2);
+                     }elsif($dy == 1){
+                        @wireRectCoords = ($canx1, $mod_lly1, $canx2,$mod_lly2);
+                     }elsif($dy == -1){
+                        @wireRectCoords = ($canx1, $mod_ury1, $canx2,$mod_ury2);
+                     }
+                     for(my $i=0; $i<=$#wireRectCoords; $i=$i+2){
+                         my @coord_mic = dbfGuiGui2Micron($wireRectCoords[$i],$wireRectCoords[$i+1]);
+                         push(@wireCoordInMicron,@coord_mic);
+                     }
+                     my $wireCoords_str = join ",", @wireCoordInMicron; 
+                     $wireInst = $design_canvas->createLine(
+                                                        @wireRectCoords,
+                                                        -fill => 'yellow',
+                                                        -arrow => 'last',
+                                                        -width => 3,
+                                                         );
+                  my $netName = &createPseudoNet("-parentModule","$TOP_MODULE","-type","wire","-source","$srcMod",$srcOpt,$srcPin,"-sink","$sinkMod",$sinkOpt,"{$sinkPin}","-prefix", $netPrefix, "-wireWidth", $netWidth, "-netCoords", $wireCoords_str);
+                  if($netName eq ""){$design_canvas->delete($wireInst);}
+                  else{
+                    if($netPrefix eq "" && $netWidth ne ""){
+                       print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                    }elsif($netWidth eq "" && $netPrefix ne ""){
+                       print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -prefix $netPrefix -netCoords $wireCoords_str\n";
+                    }elsif($netWidth eq "" && $netPrefix eq ""){
+                       print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -netCoords $wireCoords_str\n";
+                    }else{
+                       print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -prefix $netPrefix -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                    }
+                  $design_canvas->itemconfigure($wireInst, -tags =>'TST_WIRE' );
+                  $design_canvas->addtag($netName , "withtag", $wireInst);
+                  }
+                  }else {}
+               }else {}
+   }
+($topConn, $instConn, $wireConn) = (0, 0, 0);
+ @STWIRE_SOURCE_CONN = ();
+}#sub call_selectSinkPin_forStraightWire
+
+#################################### PopUp Calling Subroutines for ZWire ###############################################
+sub call_selectSrcPin_forZWire{
+my @arg = @_;
+my $x = $arg[0];
+my $y = $arg[1];
+my @id = @{$arg[2]};
+my $pinName = $arg[3];
+
+my ($canx1,$cany1,$wireConn,$instConn,$topConn) = (0, 0, 0, 0 , 0);
+my ($dx,$dy,$mod_llx1,$mod_lly1,$mod_urx1,$mod_ury1) = (0, 0, 0, 0, 0, 0);
+my $srcMod = "";
+my $wireName = "";
+   @ZWIRE_SOURCE_CONN = ();
+my @tagList = $design_canvas->gettags($id[0]);
+##-----------------------------------------------------------------------------------##
+if($pinName ne ""){
+  if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}){
+     my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstCellref;
+     my @loc = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstRelBbox;
+     if(exists $PLDB{$cellref} ) {
+        my @cellSize = $PLDB{$cellref}->dbMdbGetSize;
+        my @pins = $PLDB{$cellref}->dbMdbGetPins;
+        foreach my $p (@pins){
+             if ($p eq $pinName){  
+                 my @pinRect = $PLDB{$cellref}->dbMdbGetPinRect($p);
+                 my ($layer,$pinllx,$pinlly,$pinurx,$pinury) = (split(/\s+/,$pinRect[0])) [0,2,3,4,5];
+                 my @pinCoords = ();
+                 $pinCoords[0] = $loc[0] + $pinllx;
+                 $pinCoords[1] = $loc[1] + $pinlly;
+                 $pinCoords[2] = $loc[0] + $pinurx;
+                 $pinCoords[3] = $loc[1] + $pinury;
+                 my $xcoord = ($pinCoords[0] + $pinCoords[2])/2;
+                 my $ycoord = ($pinCoords[1] + $pinCoords[3])/2;
+                 ($xcoord, $ycoord) = dbfGuiMicron2Gui($xcoord, $ycoord);
+                 $mod_llx1 = $xcoord;
+                 $mod_urx1 = $xcoord;
+                 $mod_lly1 = $ycoord;
+                 $mod_ury1 = $ycoord;   
+                 $canx1 = $xcoord; 
+                 $cany1 = $ycoord; 
+                 $srcMod = $tagList[1];
+                 $instConn = 1;
+             }#if pin found
+        }#foreach pin
+     }else{
+        my @coords  = $design_canvas->coords($tagList[1]);
+           $mod_llx1 = $coords[0];
+           $mod_lly1 = $coords[1];
+           $mod_urx1 = $coords[2];
+           $mod_ury1 = $coords[3];   
+           $canx1 = $x;
+           $cany1 = $y;
+           $srcMod = $tagList[1];
+           $instConn = 1;
+     }#if soft/rtl etc (because pinloc is not set for these module)
+  }
+}else{ 
+##-----------------------------------------------------------------------------------##
+   $dx = 0; $dy = 0;
+   my @topCoords = $design_canvas->coords("TOP_MODULE");
+   if(($x <= $topCoords[0]) || ($x >= $topCoords[2]) || ($y <= $topCoords[1]) || ($y >= $topCoords[3])){
+       $mod_llx1 = $topCoords[0];
+       $mod_lly1 = $topCoords[1];
+       $mod_urx1 = $topCoords[2];
+       $mod_ury1 = $topCoords[3];   
+       $canx1 = $x;$cany1 = $y;
+       if($canx1 <= $mod_llx1){$dx = 1;}
+       elsif($canx1 >= $mod_urx1){$dx = -1;}
+       elsif($cany1 <= $mod_lly1){$dy = 1;}
+       elsif($cany1 >= $mod_ury1){$dy = -1;}
+       $srcMod = "PIN";  ### $srcMod = $TOP_MODULE; ###
+       $topConn = 1;
+   }else {
+       if(($tagList[0] ne "TOP_MODULE") && ($tagList[0] ne "TST_WIRE")){
+          my @coords  = $design_canvas->coords($tagList[1]);
+          if($tagList[0] eq "FLOP"){
+             $mod_llx1 = $coords[0];
+             $mod_lly1 = $coords[1];
+             $mod_urx1 = $coords[4];
+             $mod_ury1 = $coords[7];   
+          }elsif($tagList[0] eq "MUX"){
+             $mod_lly1 = $coords[1];
+             $mod_ury1 = $coords[7]; 
+             if($coords[0] < $coords[4]){ 
+                $mod_llx1 = $coords[0];
+                $mod_urx1 = $coords[4];
+             }else {
+                $mod_llx1 = $coords[4];
+                $mod_urx1 = $coords[0];
+             }
+          }else{
+             $mod_llx1 = $coords[0];
+             $mod_lly1 = $coords[1];
+             $mod_urx1 = $coords[2];
+             $mod_ury1 = $coords[3];   
+         }
+             $canx1 = $x;
+             $cany1 = $y;
+             $srcMod = $tagList[1];
+             $instConn = 1;
+       }elsif($tagList[0] eq "TST_WIRE"){
+          my @wire_coords  = $design_canvas->coords($id[0]);
+          if($wire_coords[0] == $wire_coords[2]){
+             if(((($y>=$wire_coords[1]) && ($y<=$wire_coords[3])) || (($y<=$wire_coords[1])&& ($y>=$wire_coords[3]))) && (($x> ($wire_coords[0]-1.5)) && ($x < ($wire_coords[0]+1.5)))){$canx1 = $wire_coords[0]; $cany1 = $y;
+             }elsif(((($y>=$wire_coords[5]) && ($y<=$wire_coords[7])) || (($y<=$wire_coords[5])&& ($y>=$wire_coords[7]))) && (($x> ($wire_coords[6]-1.5)) && ($x < ($wire_coords[6]+1.5)))){$canx1 = $wire_coords[6]; $cany1 = $y;
+             }else{$canx1 = $x; $cany1 = $wire_coords[3];}
+          }elsif($wire_coords[1] == $wire_coords[3]){
+             if(((($x>=$wire_coords[0]) && ($x<=$wire_coords[2])) || (($x<=$wire_coords[0]) && ($x>=$wire_coords[2]))) && (($y>= ($wire_coords[1]-1.5)) && ($y <= ($wire_coords[1]+1.5)))){$canx1 = $x; $cany1 = $wire_coords[1];
+             }elsif(((($x>=$wire_coords[4]) && ($x<=$wire_coords[6])) || (($x<=$wire_coords[4]) && ($x>=$wire_coords[6]))) && (($y>= ($wire_coords[5]-1.5)) && ($y <= ($wire_coords[5]+1.5)))){$canx1 = $x; $cany1 = $wire_coords[5];
+             }else{$canx1 = $wire_coords[2]; $cany1 = $y;}
+          }
+              $wireConn = 1;
+              if($canx1 == 0 || $cany1 == 0){$wireConn = 0;}
+              $wireName = $tagList[1];
+        }else {$mod_llx1 = ""; $mod_lly1 = "";$mod_urx1 = ""; $mod_ury1 = ""; $canx1 = ""; $cany1 = "";}
+    }
+ }
+
+@ZWIRE_SOURCE_CONN = ($canx1,$cany1,$mod_llx1,$mod_lly1,$mod_urx1,$mod_ury1,$srcMod,$wireName,$topConn,$wireConn,$instConn, $dx,$dy,$pinName); 
+}#sub call_selectSrcPin_forZWire
+
+sub call_selectSinkPin_forZWire {
+my @arg = @_;
+my $x = $arg[0];
+my $y = $arg[1];
+my @ids = @{$arg[2]};
+my $sinkPin = $arg[3];
+my $netPrefix = $arg[4];
+my $netWidth = $arg[5];
+if($#ZWIRE_SOURCE_CONN <= -1){print "WARN: Select the source Module\n";return;}
+my $canx1 = $ZWIRE_SOURCE_CONN[0];
+my $cany1 = $ZWIRE_SOURCE_CONN[1];
+my $mod_llx1 = $ZWIRE_SOURCE_CONN[2];
+my $mod_lly1 = $ZWIRE_SOURCE_CONN[3];
+my $mod_urx1 = $ZWIRE_SOURCE_CONN[4];
+my $mod_ury1 = $ZWIRE_SOURCE_CONN[5];
+my $srcMod = $ZWIRE_SOURCE_CONN[6];
+my $wireName = $ZWIRE_SOURCE_CONN[7];
+my $topConn = $ZWIRE_SOURCE_CONN[8];
+my $wireConn = $ZWIRE_SOURCE_CONN[9];
+my $instConn = $ZWIRE_SOURCE_CONN[10];
+my $dx = $ZWIRE_SOURCE_CONN[11];
+my $dy = $ZWIRE_SOURCE_CONN[12];
+my $srcPin = $ZWIRE_SOURCE_CONN[13];
+my @wireCoordInMicron = ();
+my ($srcOpt,$sinkOpt) = ("","");
+
+   if($srcPin eq ""){$srcOpt = "";}
+ else{$srcOpt = "-pin";}
+   if($sinkPin eq ""){$sinkOpt = "";}
+ else{$sinkOpt = "-pin";}
+
+            my @topCoords = $design_canvas->coords("TOP_MODULE");
+            if(($instConn == 1) && (($x <=$topCoords[0]) || ($x >= $topCoords[2]) || ($y <= $topCoords[1]) || ($y >= $topCoords[3]))){
+               $mod_llx2 = $topCoords[0];
+               $mod_lly2 = $topCoords[1];
+               $mod_urx2 = $topCoords[2];
+               $mod_ury2 = $topCoords[3];
+               $canx2 = $x;$cany2 = $y;                      
+               $sinkMod = "PIN";  ### $sinkMod = $TOP_MODULE; ###
+               if($x <= $mod_llx2){
+                  my $bend = rand($mod_llx1 - $mod_llx2)+$mod_llx2; 
+                  @wireRectCoords = ($mod_llx1, $cany1, $bend, $cany1, $bend, $cany2, $mod_llx2, $cany2);
+               }elsif($x >= $mod_urx2){
+                  my $bend = rand($mod_urx2 - $mod_urx1)+$mod_urx1;
+                  @wireRectCoords = ($mod_urx1, $cany1, $bend, $cany1, $bend, $cany2, $mod_urx2, $cany2);
+               }elsif($y <= $mod_lly2){
+                  my $bend = rand($mod_lly1 - $mod_lly2)+$mod_lly2; 
+                  @wireRectCoords = ($canx1, $mod_lly1, $canx1, $bend, $canx2, $bend, $canx2, $mod_lly2);
+               }elsif($y >= $mod_ury2){
+                  my $bend = rand($mod_ury2 - $mod_ury1)+$mod_ury1;
+                  @wireRectCoords = ($canx1, $mod_ury1, $canx1, $bend ,$canx2, $bend, $canx2, $mod_ury2);
+               }
+               for(my $i=0; $i<=$#wireRectCoords; $i=$i+2){
+                   my @coord_mic = dbfGuiGui2Micron($wireRectCoords[$i],$wireRectCoords[$i+1]);
+                   push(@wireCoordInMicron,@coord_mic);
+               }
+               my $wireCoords_str = join ",", @wireCoordInMicron; 
+               $wireInst = $design_canvas->createLine(
+                                                @wireRectCoords,
+                                                -fill => 'yellow',
+                                                -arrow => 'last',
+                                                -width => 3,
+                                                    );
+               my $netName = &createPseudoNet("-parentModule","$TOP_MODULE","-type","wire","-source","$srcMod",$srcOpt,$srcPin ,"-sink","$sinkMod",$sinkOpt, "{$sinkPin}","-prefix", $netPrefix, "-wireWidth", $netWidth,"-netCoords",$wireCoords_str);
+               if($netName eq ""){$design_canvas->delete($wireInst);}
+               else{
+                 if($netPrefix eq "" && $netWidth ne ""){
+                    print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                 }elsif($netWidth eq "" && $netPrefix ne ""){
+                    print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -prefix $netPrefix -netCoords $wireCoords_str\n";
+                 }elsif($netWidth eq "" && $netPrefix eq ""){
+                    print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -netCoords $wireCoords_str\n";
+                 }else{
+                    print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -prefix $netPrefix -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                 }
+                $design_canvas->itemconfigure($wireInst, -tags =>'TST_WIRE' );
+                $design_canvas->addtag($netName , "withtag", $wireInst);
+               }
+            }else {
+               my @tagList = $design_canvas->gettags($ids[0]);
+               if (($tagList[0] ne "TOP_MODULE") && ($tagList[0] ne "") && ($tagList[0] ne "current") && ($tagList[1] ne $srcMod) && ($tagList[0] ne "TST_WIRE"))  { 
+                  $sinkMod = $tagList[1];
+                  my @coords1  = $design_canvas->coords($ids[0]);
+                  if($tagList[0] eq "FLOP"){
+                     $mod_llx2 = $coords1[0];
+                     $mod_lly2 = $coords1[1];
+                     $mod_urx2 = $coords1[4];
+                     $mod_ury2 = $coords1[7];
+                     $canx2 = $x;                      
+                     $cany2 = $y;                      
+                  }elsif($tagList[0] eq "MUX"){
+                     $mod_lly2 = $coords1[1];
+                     $mod_ury2 = $coords1[7];
+                     if($coords1[0] < $coords1[4]){ 
+                        $mod_llx2 = $coords1[0];
+                        $mod_urx2 = $coords1[4];
+                     }else {
+                        $mod_llx2 = $coords1[4];
+                        $mod_urx2 = $coords1[0];
+                     }
+                     $canx2 = $x;                      
+                     $cany2 = $y;                      
+##-----------------------------------------------------------------------------------##
+                  }elsif($sinkPin ne ""){
+                      my @sink_pin = split(/\,/,$sinkPin);
+                      if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}){
+                      my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstCellref;
+                      my @loc = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstRelBbox;
+                      if(exists $PLDB{$cellref} ) {
+                         my @cellSize = $PLDB{$cellref}->dbMdbGetSize;
+                         my @pins = $PLDB{$cellref}->dbMdbGetPins;
+                         foreach my $p (@pins){
+                            if ($p eq $sink_pin[0]){  
+                              my @pinRect = $PLDB{$cellref}->dbMdbGetPinRect($p);
+                              my ($layer,$pinllx,$pinlly,$pinurx,$pinury) = (split(/\s+/,$pinRect[0])) [0,2,3,4,5];
+                              my @pinCoords = ();
+                              $pinCoords[0] = $loc[0] + $pinllx;
+                              $pinCoords[1] = $loc[1] + $pinlly;
+                              $pinCoords[2] = $loc[0] + $pinurx;
+                              $pinCoords[3] = $loc[1] + $pinury;
+                              my $xcoord = ($pinCoords[0] + $pinCoords[2])/2;
+                              my $ycoord = ($pinCoords[1] + $pinCoords[3])/2;
+                              my ($xcoord1, $ycoord1) = dbfGuiMicron2Gui($xcoord, $ycoord);
+                              $mod_llx2 = $xcoord1;
+                              $mod_urx2 = $xcoord1;
+                              $mod_lly2 = $ycoord1;
+                              $mod_ury2 = $ycoord1;   
+                              $canx2 = $xcoord1; 
+                              $cany2 = $ycoord1; 
+                             }#if pin found
+                          }#foreach pin
+                      }else{ 
+                         $mod_llx2 = $coords1[0];
+                         $mod_lly2 = $coords1[1];
+                         $mod_urx2 = $coords1[2];
+                         $mod_ury2 = $coords1[3];
+                         $canx2 = $x;                      
+                         $cany2 = $y; 
+                      }#if soft/rtl etc. (because pin loc for these module is not set)
+                     }#if exists in PSEUDO_VINST_ALREADY
+##-----------------------------------------------------------------------------------##
+                  }else{  
+                     $mod_llx2 = $coords1[0];
+                     $mod_lly2 = $coords1[1];
+                     $mod_urx2 = $coords1[2];
+                     $mod_ury2 = $coords1[3];
+                     $canx2 = $x;                      
+                     $cany2 = $y;                      
+                  }
+                  if($wireConn == 1){ 
+                     if($canx1 < $mod_llx2){
+                        my $bend = rand($mod_llx2 - $canx1)+$canx1;
+                        @wireRectCoords = ($canx1, $cany1, $bend, $cany1, $bend, $cany2, $mod_llx2, $cany2);
+                     }elsif($canx1 > $mod_urx2) {
+                        my $bend = rand($canx1 - $mod_urx2)+$mod_urx2;
+                        @wireRectCoords = ($canx1, $cany1, $bend, $cany1, $bend, $cany2, $mod_urx2,$cany2);
+                     }elsif($cany1 > $mod_ury2){
+                        my $bend = rand($cany1 - $mod_ury2)+$mod_ury2;
+                        @wireRectCoords = ($canx1, $cany1, $canx1, $bend, $canx2, $bend, $canx2, $mod_ury2);
+                     }elsif($cany1 < $mod_lly2){
+                        my $bend = rand($mod_lly2 - $cany1)+$cany1;
+                        @wireRectCoords = ($canx1, $cany1, $canx1, $bend, $canx2, $bend, $canx2, $mod_lly2);
+                     }   
+                     for(my $i=0; $i<=$#wireRectCoords; $i=$i+2){
+                         my @coord_mic = dbfGuiGui2Micron($wireRectCoords[$i],$wireRectCoords[$i+1]);
+                         push(@wireCoordInMicron,@coord_mic);
+                     }
+                     my $wireCoords_str = join ",", @wireCoordInMicron; 
+                     $wireInst = $design_canvas->createLine(
+                                                      @wireRectCoords,
+                                                      -fill => 'yellow',
+                                                      -arrow => 'last',
+                                                      -width => 3,
+                                                      );
+                  &updatePseudoNet("-net",$wireName,"-sink",$sinkMod,$sinkOpt,$sinkPin,"-netCoords",$wireCoords_str); 
+                  print"#<CMD> updatePseudoNet -net $wireName -sink $sinkMod $sinkOpt $sinkPin -netCoords $wireCoords_str\n";
+                  $design_canvas->itemconfigure($wireInst, -tags =>'TST_WIRE' );
+                  $design_canvas->addtag($wireName , "withtag", $wireInst);
+                  }elsif($instConn == 1){
+                     if($mod_urx1 < $mod_llx2 && $mod_llx1 != $canx1){
+                        my $bend = rand($mod_llx2-$mod_urx1)+$mod_urx1;
+                        @wireRectCoords = ($mod_urx1, $cany1, ($mod_urx1+$mod_llx2)/2, $cany1,($mod_urx1+$mod_llx2)/2, $cany2, $mod_llx2,$cany2);
+                     }elsif($mod_llx1 > $mod_urx2 && $mod_llx1 != $canx1) {
+                        my $bend = rand($mod_llx1-$mod_urx2)+$mod_urx2; 
+                        @wireRectCoords = ($mod_llx1, $cany1, ($mod_llx1+$mod_urx2)/2, $cany1,($mod_llx1+$mod_urx2)/2, $cany2, $mod_urx2,$cany2);
+                     }elsif($mod_lly1 > $mod_ury2 && $mod_lly1 != $cany1){
+                        my $bend = rand($mod_lly1-$mod_ury2)+$mod_ury2;
+                        @wireRectCoords = ($canx1, $mod_lly1, $canx1, ($mod_lly1+$mod_ury2)/2,$canx2,($mod_lly1+$mod_ury2)/2, $canx2,$mod_ury2);
+                     }elsif($mod_ury1 < $mod_lly2 && $mod_lly1 != $cany1){
+                        my $bend = rand($mod_lly2-$mod_ury1)+$mod_ury1;
+                        @wireRectCoords = ($canx1, $mod_ury1, $canx1, ($mod_ury1+$mod_lly2)/2,$canx2,($mod_ury1+$mod_lly2)/2, $canx2,$mod_lly2);
+                     }else{
+                        if($canx1 < $canx2 && $cany1 < $cany2){
+                           my $bend = rand($mod_llx2 - $mod_urx1)+$mod_urx1;
+                           @wireRectCoords = ($mod_urx1, $cany1, $bend, $cany1, $bend, $cany2, $mod_llx2, $cany2);
+                        }elsif($canx1 < $canx2 && $cany1 > $cany2){
+                           my $bend = rand($mod_ury1 - $mod_lly2)+$mod_lly2;
+                           @wireRectCoords = ($canx1, $mod_ury1, $canx1, $bend,$canx2, $bend, $canx2, $mod_lly2);
+                        }elsif($canx1 > $canx2 && $cany1 > $cany2){
+                           my $bend = rand($mod_ury1 - $mod_lly2)+$mod_lly2;
+                           @wireRectCoords = ($canx1, $mod_ury1, $canx1, $bend, $canx2, $bend, $canx2, $mod_lly2);
+
+                        }else{ 
+                           my $bend = rand($mod_llx2 - $mod_urx1)+$mod_urx1;
+                           @wireRectCoords = ($mod_urx1, $cany1, $bend, $cany1, $bend, $cany2, $mod_llx2, $cany2);
+                        }
+                     }
+                     for(my $i=0; $i<=$#wireRectCoords; $i=$i+2){
+                         my @coord_mic = dbfGuiGui2Micron($wireRectCoords[$i],$wireRectCoords[$i+1]);
+                         push(@wireCoordInMicron,@coord_mic);
+                     }
+                     my $wireCoords_str = join ",", @wireCoordInMicron; 
+                     $wireInst = $design_canvas->createLine(
+                                                           @wireRectCoords,
+                                                           -fill => 'yellow',
+                                                           -arrow => 'last',
+                                                           -width => 3,
+                                                            );
+                      my $netName = &createPseudoNet("-parentModule","$TOP_MODULE","-type","wire","-source","$srcMod",$srcOpt,$srcPin,"-sink","$sinkMod",$sinkOpt,"{$sinkPin}","-prefix", $netPrefix, "-wireWidth", $netWidth, "-netCoords",$wireCoords_str);
+                      if($netName eq ""){$design_canvas->delete($wireInst);}
+                      else{
+                        if($netPrefix eq "" && $netWidth ne ""){
+                           print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                        }elsif($netWidth eq "" && $netPrefix ne ""){
+                           print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -prefix $netPrefix -netCoords $wireCoords_str\n";
+                        }elsif($netWidth eq "" && $netPrefix eq ""){
+                           print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -netCoords $wireCoords_str\n";
+                        }else{
+                           print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -prefix $netPrefix -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                        }
+                        $design_canvas->itemconfigure($wireInst, -tags =>'TST_WIRE' );
+                        $design_canvas->addtag($netName , "withtag", $wireInst);
+                      }
+                  }elsif($topConn == 1){
+                     if($dx == 1){
+                        my $bend = rand($mod_llx2-$mod_llx1)+$mod_llx1;
+                        @wireRectCoords = ($mod_llx1, $cany1, ($mod_llx1+$mod_llx2)/2, $cany1,($mod_llx1+$mod_llx2)/2, $cany2, $mod_llx2,$cany2);
+                     }elsif($dx == -1){
+                        my $bend = rand($mod_urx1-$mod_urx2)+$mod_urx2;
+                        @wireRectCoords = ($mod_urx1, $cany1, ($mod_urx1+$mod_urx2)/2, $cany1,($mod_urx1+$mod_urx2)/2, $cany2, $mod_urx2,$cany2);
+                     }elsif($dy == 1){
+                        my $bend = rand($mod_lly2-$mod_lly1)+$mod_lly1;
+                        @wireRectCoords = ($canx1, $mod_lly1, $canx1, ($mod_lly1+$mod_lly2)/2,$canx2,($mod_lly1+$mod_lly2)/2, $canx2,$mod_lly2);
+                     }elsif($dy == -1){
+                        my $bend = rand($mod_ury1-$mod_ury2)+$mod_ury2;
+                        @wireRectCoords = ($canx1, $mod_ury1, $canx1, ($mod_ury1+$mod_ury2)/2,$canx2,($mod_ury1+$mod_ury2)/2, $canx2,$mod_ury2);
+                     }
+                     for(my $i=0; $i<=$#wireRectCoords; $i=$i+2){
+                         my @coord_mic = dbfGuiGui2Micron($wireRectCoords[$i],$wireRectCoords[$i+1]);
+                         push(@wireCoordInMicron,@coord_mic);
+                     }
+                     my $wireCoords_str = join ",", @wireCoordInMicron; 
+                     $wireInst = $design_canvas->createLine(
+                                                        @wireRectCoords,
+                                                        -fill => 'yellow',
+                                                        -arrow => 'last',
+                                                        -width => 3,
+                                                         );
+                  my $netName = &createPseudoNet("-parentModule","$TOP_MODULE","-type","wire","-source","$srcMod",$srcOpt,$srcPin,"-sink","$sinkMod",$sinkOpt,"{$sinkPin}","-prefix", $netPrefix, "-wireWidth", $netWidth, "-netCoords", $wireCoords_str);
+                  if($netName eq ""){$design_canvas->delete($wireInst);}
+                  else{
+                    if($netPrefix eq "" && $netWidth ne ""){
+                       print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                    }elsif($netWidth eq "" && $netPrefix ne ""){
+                       print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -prefix $netPrefix -netCoords $wireCoords_str\n";
+                    }elsif($netWidth eq "" && $netPrefix eq ""){
+                       print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -netCoords $wireCoords_str\n";
+                    }else{
+                       print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -prefix $netPrefix -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                    }
+                  $design_canvas->itemconfigure($wireInst, -tags =>'TST_WIRE' );
+                  $design_canvas->addtag($netName , "withtag", $wireInst);
+                  }
+                  }else {}
+               }else {}
+   }
+($topConn, $instConn, $wireConn) = (0, 0, 0);
+ @ZWIRE_SOURCE_CONN = ();
+}#sub call_selectSinkPin_forZWire
+
+#################################### PopUp Calling Subroutines for RoutingWire ###########################################
+sub call_selectSrcPin_forRoutingWire {
+my @arg = @_;
+my $x = $arg[0];
+my $y = $arg[1];
+my @id = @{$arg[2]};
+my $pinName = $arg[3];
+my @tagList = $design_canvas->gettags($id[0]);
+
+my @netCoords = ();
+my $instConn = 0;
+my $wireConn = 0;
+my $x1_draw = 0;
+my $y1_draw = 0; 
+@ROUTWIRE_SOURCE_CONN = ();
+
+if($pinName ne ""){
+  if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}){
+     my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstCellref;
+     my @loc = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstRelBbox;
+     if(exists $PLDB{$cellref} ) {
+        my @cellSize = $PLDB{$cellref}->dbMdbGetSize;
+        my @pins = $PLDB{$cellref}->dbMdbGetPins;
+        foreach my $p (@pins){
+             if ($p eq $pinName){  
+                 my @pinRect = $PLDB{$cellref}->dbMdbGetPinRect($p);
+                 my ($layer,$pinllx,$pinlly,$pinurx,$pinury) = (split(/\s+/,$pinRect[0])) [0,2,3,4,5];
+                 my @pinCoords = ();
+                 $pinCoords[0] = $loc[0] + $pinllx;
+                 $pinCoords[1] = $loc[1] + $pinlly;
+                 $pinCoords[2] = $loc[0] + $pinurx;
+                 $pinCoords[3] = $loc[1] + $pinury;
+                 my $xcoord = ($pinCoords[0] + $pinCoords[2])/2;
+                 my $ycoord = ($pinCoords[1] + $pinCoords[3])/2;
+                 ($x1_draw, $y1_draw) = dbfGuiMicron2Gui($xcoord, $ycoord);
+                 push(@netCoords, $x1_draw, $y1_draw);
+                 $srcMod = $tagList[1];
+                 $instConn = 1;
+             }#if pin found
+        }#foreach pin
+     }else{
+        my @coords  = $design_canvas->coords($id[0]);
+        if($tagList[0] eq "FLOP" || $tagList[0] eq "MUX"){
+           $coords[3] = $coords[7]
+        }else{}   
+        my $width   = $coords[2] - $coords[0];
+        my $height  = $coords[3] - $coords[1];
+        if    ($x < $coords[0] + 0.3 * $width) {
+               $x1_draw = $coords[0];
+        }elsif($x > $coords[2] - 0.3 * $width) {
+               $x1_draw = $coords[2];
+        }else{
+               $x1_draw = $x;
+        }
+
+        if    ($y < $coords[1] + 0.3 * $height) {
+               $y1_draw = $coords[1];
+        }elsif($y > $coords[3] - 0.3 * $height) {
+               $y1_draw = $coords[3];
+        }else{
+               $y1_draw = $y;
+              }
+        push(@netCoords, $x1_draw, $y1_draw);
+             $srcMod = $tagList[1];
+             $instConn = 1;
+     }#if soft/rtl etc (because pinloc is not set for these module)
+  }
+}else{ 
+   my @topCoords = $design_canvas->coords("TOP_MODULE");
+   if(($x <= $topCoords[0]) || ($x >= $topCoords[2]) || ($y <= $topCoords[1]) || ($y >= $topCoords[3])){
+       if    ($x<=$topCoords[0] && ($y>$topCoords[1] && $y<$topCoords[3])){$x1_draw = $topCoords[0];$y1_draw = $y; 
+       }elsif($x>=$topCoords[2] && ($y>$topCoords[1] && $y<$topCoords[3])){$x1_draw = $topCoords[2];$y1_draw = $y; 
+       }elsif($y<=$topCoords[1] && ($x>$topCoords[0] && $x<$topCoords[2])){$x1_draw = $x;$y1_draw = $topCoords[1]; 
+       }elsif($y>=$topCoords[3] && ($x>$topCoords[0] && $x<$topCoords[2])){$x1_draw = $x;$y1_draw = $topCoords[3]; 
+       }
+       push(@netCoords, $x1_draw, $y1_draw);
+            $srcMod = "PIN";
+            $instConn = 1;
+   }elsif($tagList[0] ne "TOP_MODULE") {
+       if(($tagList[0] eq "current") || ($tagList[0] eq "TST_WIRE")){
+           my @wire_coords  = $design_canvas->coords($id[0]);
+           for(my $i=0; $i<= $#wire_coords; $i= $i+2){
+               if ($wire_coords[$i] == $wire_coords[$i+2]){
+                   if(((($y>$wire_coords[$i+1])&&($y<$wire_coords[$i+3])) || (($y<$wire_coords[$i+1])&&($y>$wire_coords[$i+3]))) && (($x> ($wire_coords[$i]-1.5)) && ($x < ($wire_coords[$i]+1.5)))){push(@netCoords, $wire_coords[$i], $y);$wireConn = 1; $wireName = $tagList[1];}
+               }elsif($wire_coords[$i+1] == $wire_coords[$i+3]){
+                   if(((($x>$wire_coords[$i])&&($x<$wire_coords[$i+2])) || (($x<$wire_coords[$i])&&($x>$wire_coords[$i+2]))) && (($y> ($wire_coords[$i+1]-1.5)) && ($y < ($wire_coords[$i+1]+1.5)))){push(@netCoords, $x,$wire_coords[$i+1]);$wireConn = 1;$wireName = $tagList[1];}
+               }
+           }#foreach
+       }else{ my @coords  = $design_canvas->coords($id[0]);
+              if($tagList[0] eq "FLOP" || $tagList[0] eq "MUX"){
+                 $coords[3] = $coords[7]
+              }else{}   
+              my $width   = $coords[2] - $coords[0];
+              my $height  = $coords[3] - $coords[1];
+              if      ($x < $coords[0] + 0.3 * $width) {
+                   $x1_draw = $coords[0];
+              } elsif ($x > $coords[2] - 0.3 * $width) {
+                   $x1_draw = $coords[2];
+              } else {
+                   $x1_draw = $x;
+              }
+
+              if      ($y < $coords[1] + 0.3 * $height) {
+                   $y1_draw = $coords[1];
+              } elsif ($y > $coords[3] - 0.3 * $height) {
+                   $y1_draw = $coords[3];
+              } else {
+                   $y1_draw = $y;
+              }
+              push(@netCoords, $x1_draw, $y1_draw);
+              $srcMod = $tagList[1];
+       }#else
+              $instConn = 1;
+   }#if not TopModule
+ }
+@ROUTWIRE_SOURCE_CONN = ($srcMod,$wireName,$wireConn,$instConn,$pinName,\@netCoords);
+}#sub call_selectSrcPin_forRoutingWire
+
+
+sub call_selectSinkPin_forRoutingWire{
+my @arg = @_;
+my $x = $arg[0];
+my $y = $arg[1];
+my @id = @{$arg[2]};
+my $sinkPin = $arg[3];
+my $netPrefix = $arg[4];
+my $netWidth = $arg[5];
+if($#ROUTWIRE_SOURCE_CONN <= -1){print "WARN: Select the source Module\n";return;}
+
+my $srcMod = $ROUTWIRE_SOURCE_CONN[0];
+my $wireName = $ROUTWIRE_SOURCE_CONN[1];
+my $wireConn = $ROUTWIRE_SOURCE_CONN[2];
+my $instConn = $ROUTWIRE_SOURCE_CONN[3];
+my $srcPin = $ROUTWIRE_SOURCE_CONN[4];
+my @netCoords = @{$ROUTWIRE_SOURCE_CONN[5]};
+
+my @tagList = $design_canvas->gettags($id[0]);
+my $sinkMod = $tagList[1];
+my ($srcOpt,$sinkOpt) = ("","");
+
+   if($srcPin eq ""){$srcOpt = "";}
+ else{$srcOpt = "-pin";}
+   if($sinkPin eq ""){$sinkOpt = "";}
+ else{$sinkOpt = "-pin";}
+
+if($sinkPin ne ""){
+  my @sink_pin = split(/\,/,$sinkPin);
+  my @wireCoordInMicron = ();
+  if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}){
+     my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstCellref;
+     my @loc = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstRelBbox;
+     if(exists $PLDB{$cellref} ) {
+        my @cellSize = $PLDB{$cellref}->dbMdbGetSize;
+        my @pins = $PLDB{$cellref}->dbMdbGetPins;
+        foreach my $p (@pins){
+             if ($p eq $sink_pin[0]){  
+                 my @pinRect = $PLDB{$cellref}->dbMdbGetPinRect($p);
+                 my ($layer,$pinllx,$pinlly,$pinurx,$pinury) = (split(/\s+/,$pinRect[0])) [0,2,3,4,5];
+                 my @pinCoords = ();
+                 $pinCoords[0] = $loc[0] + $pinllx;
+                 $pinCoords[1] = $loc[1] + $pinlly;
+                 $pinCoords[2] = $loc[0] + $pinurx;
+                 $pinCoords[3] = $loc[1] + $pinury;
+                 my $xcoord = ($pinCoords[0] + $pinCoords[2])/2;
+                 my $ycoord = ($pinCoords[1] + $pinCoords[3])/2;
+                 ($x1_draw, $y1_draw) = dbfGuiMicron2Gui($xcoord, $ycoord);
+                 if($x1_draw == $netCoords[-2] || $y1_draw == $netCoords[-1]){
+                    push(@netCoords, $x1_draw, $y1_draw);
+                 }else{
+                    my @straightCoords = ();
+                    for(my $i=-2; $i>= -($#netCoords); $i= $i-2){
+                        if($netCoords[$i] == $netCoords[-2]){
+                           push(@straightCoords,$netCoords[$i+1]);
+                        }
+                    }#foreach net coords 
+                    @straightCoords = sort{$a<=>$b}@straightCoords;
+                    if(($y1_draw < $netCoords[-1] && $y1_draw > $straightCoords[0])|| ($y1_draw > $netCoords[-1] && $y1_draw < $straightCoords[-1])){
+                        push(@netCoords, $x1_draw, $netCoords[-1], $x1_draw, $y1_draw); 
+                    }else{
+                        push(@netCoords, $netCoords[-2], $y1_draw,$x1_draw, $y1_draw); 
+                    }
+                 } 
+#--------------------------------------------------------------------------------------------#
+                if($instConn == 1){
+                 for(my $i=0; $i<=$#netCoords; $i=$i+2){
+                     my @coord_mic = dbfGuiGui2Micron($netCoords[$i],$netCoords[$i+1]);
+                     push(@wireCoordInMicron,@coord_mic);
+                 }
+                 my $wireCoords_str = join ",", @wireCoordInMicron;
+                 $design_canvas->delete(WIRETEMP);  
+                 $wireInst = $design_canvas->createLine(
+                                                        @netCoords,
+                                                        -fill => 'yellow',
+                                                        -arrow => 'last',
+                                                        -width => 3,
+                                                          );
+                  if($wireConn == 0){
+                    if($netPrefix eq "" && $netWidth ne ""){
+                       print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                    }elsif($netWidth eq "" && $netPrefix ne ""){
+                       print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -prefix $netPrefix -netCoords $wireCoords_str\n";
+                    }elsif($netWidth eq "" && $netPrefix eq ""){
+                       print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -netCoords $wireCoords_str\n";
+                    }else{
+                       print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -prefix $netPrefix -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                    }
+                    my $netName = &createPseudoNet("-parentModule","$TOP_MODULE","-type","wire","-source","$srcMod",$srcOpt,$srcPin,"-sink","$sinkMod",$sinkOpt,"{$sinkPin}","-prefix", $netPrefix, "-wireWidth", $netWidth, "-netCoords", $wireCoords_str);
+                    $design_canvas->itemconfigure($wireInst, -tags =>'TST_WIRE' );
+                    $design_canvas->addtag($netName , "withtag", $wireInst);
+                  }else{
+                    &updatePseudoNet("-net",$wireName,"-sink",$sinkMod,"-pin",$sinkPin,"-netCoords",$wireCoords_str); 
+                    print"#<CMD> updatePseudoNet -net $wireName -sink $sinkMod -pin $sinkPin -netCoords $wireCoords_str\n";
+                    $design_canvas->itemconfigure($wireInst, -tags =>'TST_WIRE' );
+                    $design_canvas->addtag($wireName , "withtag", $wireInst);
+                  }#else   
+               }#if intConn = 1
+             }#if pin found
+        }#foreach pin
+     }else{
+        my @coords1  = $design_canvas->coords($id[0]);
+        if($tagList[0] eq "FLOP" || $tagList[0] eq "MUX"){
+           $coords1[3] = $coords1[7]
+        }else{}   
+        if(($netCoords[-2] < $coords1[0])&&(($netCoords[-1] > $coords1[1])&&($netCoords[-1] < $coords1[3]))) {push(@netCoords, $coords1[0],$netCoords[-1]);} 
+        if(($netCoords[-2] > $coords1[2]) && (($netCoords[-1] > $coords1[1]) && ($netCoords[-1] < $coords1[3]))) {push(@netCoords, $coords1[2],$netCoords[-1]);} 
+        if(($netCoords[-1] < $coords1[1]) && (($netCoords[-2] > $coords1[0]) && ($netCoords[-2] < $coords1[2]))) {push(@netCoords,$netCoords[-2],$coords1[1]);} 
+        if(($netCoords[-1] > $coords1[3]) && (($netCoords[-2] > $coords1[0]) && ($netCoords[-2] < $coords1[2]))) {push(@netCoords,$netCoords[-2],$coords1[3]);} 
+        if($instConn == 1){
+           for(my $i=0; $i<=$#netCoords; $i=$i+2){
+               my @coord_mic = dbfGuiGui2Micron($netCoords[$i],$netCoords[$i+1]);
+               push(@wireCoordInMicron,@coord_mic);
+           }
+           my $wireCoords_str = join ",", @wireCoordInMicron;
+           $design_canvas->delete(WIRETEMP);  
+           $wireInst = $design_canvas->createLine(
+                                                  @netCoords,
+                                                  -fill => 'yellow',
+                                                  -arrow => 'last',
+                                                  -width => 3,
+                                                   );
+           if($wireConn == 0){
+              if($netPrefix eq "" && $netWidth ne ""){
+                 print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -wireWidth $netWidth -netCoords $wireCoords_str\n";
+              }elsif($netWidth eq "" && $netPrefix ne ""){
+                 print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -prefix $netPrefix -netCoords $wireCoords_str\n";
+              }elsif($netWidth eq "" && $netPrefix eq ""){
+                 print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -netCoords $wireCoords_str\n";
+              }else{
+                 print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -prefix $netPrefix -wireWidth $netWidth -netCoords $wireCoords_str\n";
+              }  
+              my $netName = &createPseudoNet("-parentModule","$TOP_MODULE","-type","wire","-source","$srcMod", "$srcOpt", "$srcPin","-sink","$sinkMod", "$sinkOpt", "{$sinkPin}", "-prefix", $netPrefix, "-wireWidth", $netWidth,"-netCoords", $wireCoords_str);
+              $design_canvas->itemconfigure($wireInst, -tags =>'TST_WIRE' );
+              $design_canvas->addtag($netName , "withtag", $wireInst);
+           }else {
+              &updatePseudoNet("-net",$wireName,"-sink",$sinkMod,"-netCoords",$wireCoords_str); 
+              print"#<CMD> updatePseudoNet -net $wireName -sink $sinkMod -netCoords $wireCoords_str\n";
+              $design_canvas->itemconfigure($wireInst, -tags =>'TST_WIRE' );
+              $design_canvas->addtag($wireName , "withtag", $wireInst);
+           }#if same wire
+        }#if wire is connected with src
+     }
+  }#if exists in VINST
+}else{
+   my @coords1 = ();
+   my @wireCoordInMicron = ();
+   my @topCoords = $design_canvas->coords("TOP_MODULE");
+   if(($tagList[0] ne "TOP_MODULE") && ($tagList[0] ne "TST_WIRE") && ($tagList[1] ne "current") && ($tagList[1] ne $srcMod)){ 
+      if(($x <= $topCoords[0]) || ($x >= $topCoords[2]) || ($y <= $topCoords[1]) || ($y >= $topCoords[3])){
+          if    ($x<=$topCoords[0] && ($y>$topCoords[1] && $y<$topCoords[3])){push(@netCoords,$topCoords[0],$netCoords[-1]); 
+          }elsif($x>=$topCoords[2] && ($y>$topCoords[1] && $y<$topCoords[3])){push(@netCoords,$topCoords[2],$netCoords[-1]); 
+          }elsif($y<=$topCoords[1] && ($x>$topCoords[0] && $x<$topCoords[2])){push(@netCoords,$netCoords[-2],$topCoords[1]); 
+          }elsif($y>=$topCoords[3] && ($x>$topCoords[0] && $x<$topCoords[2])){push(@netCoords,$netCoords[-2],$topCoords[3]); 
+          }
+          @coords1 = @topCoords;
+          $sinkMod = "PIN"; 
+      }else{
+          $sinkMod = $tagList[1];
+          @coords1  = $design_canvas->coords($id[0]);
+          if($tagList[0] eq "FLOP" || $tagList[0] eq "MUX"){
+             $coords1[3] = $coords1[7]
+          }else{}   
+          if(($netCoords[-2] < $coords1[0])&&(($netCoords[-1] > $coords1[1])&&($netCoords[-1] < $coords1[3]))) {push(@netCoords, $coords1[0],$netCoords[-1]);} 
+          elsif(($netCoords[-2] > $coords1[2]) && (($netCoords[-1] > $coords1[1]) && ($netCoords[-1] < $coords1[3]))) {push(@netCoords, $coords1[2],$netCoords[-1]);} 
+          elsif(($netCoords[-1] < $coords1[1]) && (($netCoords[-2] > $coords1[0]) && ($netCoords[-2] < $coords1[2]))) {push(@netCoords,$netCoords[-2],$coords1[1]);} 
+          elsif(($netCoords[-1] > $coords1[3]) && (($netCoords[-2] > $coords1[0]) && ($netCoords[-2] < $coords1[2]))) {push(@netCoords,$netCoords[-2],$coords1[3]);} 
+          elsif(($netCoords[-1] < $coords1[1])&&($netCoords[-1] < $coords1[3])) {push(@netCoords, $x,$netCoords[-1],$x,$coords1[1]);} 
+          elsif(($netCoords[-1] > $coords1[1])&&($netCoords[-1] > $coords1[3])) {push(@netCoords, $x,$netCoords[-1],$x,$coords1[3]);} 
+      }#if not connected with TOP_MODULE
+          if($instConn == 1){
+                          for(my $i=0; $i<=$#netCoords; $i=$i+2){
+                              my @coord_mic = dbfGuiGui2Micron($netCoords[$i],$netCoords[$i+1]);
+                              push(@wireCoordInMicron,@coord_mic);
+                          }
+                          my $wireCoords_str = join ",", @wireCoordInMicron;
+                          $design_canvas->delete(WIRETEMP);  
+                          $wireInst = $design_canvas->createLine(
+                                                                 @netCoords,
+                                                                 -fill => 'yellow',
+                                                                 -arrow => 'last',
+                                                                 -width => 3,
+                                                                 );
+             if($wireConn == 0){
+                if($netPrefix eq "" && $netWidth ne ""){
+                   print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod $srcOpt $srcPin -sink $sinkMod -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                }elsif($netWidth eq "" && $netPrefix ne ""){
+                   print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod $srcOpt $srcPin -sink $sinkMod -prefix $netPrefix -netCoords $wireCoords_str\n";
+                }elsif($netWidth eq "" && $netPrefix eq ""){
+                   print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod $srcOpt $srcPin -sink $sinkMod -netCoords $wireCoords_str\n";
+                }else{
+                   print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type wire -source $srcMod $srcOpt $srcPin -sink $sinkMod -prefix $netPrefix -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                }  
+                my $netName = &createPseudoNet("-parentModule","$TOP_MODULE","-type","wire","-source","$srcMod", "$srcOpt", "$srcPin","-sink","$sinkMod", "-prefix", $netPrefix, "-wireWidth", $netWidth,"-netCoords", $wireCoords_str);
+                $design_canvas->itemconfigure($wireInst, -tags =>'TST_WIRE' );
+                $design_canvas->addtag($netName , "withtag", $wireInst);
+             }else {
+                &updatePseudoNet("-net",$wireName,"-sink",$sinkMod, $sinkOpt,$sinkPin,"-netCoords",$wireCoords_str); 
+                print"#<CMD> updatePseudoNet -net $wireName -sink $sinkMod $sinkOpt $sinkPin -netCoords $wireCoords_str\n";
+                $design_canvas->itemconfigure($wireInst, -tags =>'TST_WIRE' );
+                $design_canvas->addtag($wireName , "withtag", $wireInst);
+             }#if same wire
+          }#if wire is connected with src
+   }#if neither wire nor top module
+   else{$design_canvas->delete(WIRETEMP);}
+}
+$instConn = 0;
+@ROUTWIRE_SOURCE_CONN = (); 
+}#sub call_selectSinkPin_forRoutingWire
+
+############################################## Source and Sink PopUp for Buses ###########################################
+sub popup_selectSrcPin_forBus {
+my @arg = @_;
+my $x = $arg[0];
+my $y = $arg[1];
+my @id = @{$arg[2]};
+my $busType = $arg[3];
+my @tagList = $design_canvas->gettags($id[0]);
+my $inst = $tagList[1];
+my @SELPINS = ();
+my @pins = ();
+my @pinfound = ();
+my @temp = ();
+my $pinName = "";
+my $list;
+   @ZBUS_SOURCE_CONN = ();
+my $popupgui_src = MainWindow->new();
+   $popupgui_src->title ("Select Pins");
+   my $EntryFrame=$popupgui_src->Frame()->pack(-side => 'top',-anchor=>'n',-expand=>1, -fill=>'x');
+   my $ListFrame =$popupgui_src->Frame()->pack(-side => 'top',-anchor=>'n');  
+   my $ButtonFrame=$popupgui_src->Frame()->pack(-side => 'bottom');
+   my $ListFrame1=$ListFrame->Frame()->pack(-side => 'left',-expand=>1, -fill=>'y');
+   my $ListFrame2 =$ListFrame->Frame()->pack(-side => 'left',-expand=>1, -fill=>'y');  
+##------------------------------------------------------------------------------------------------##   
+   if($tagList[0] eq "TOP_MODULE"){
+      if(exists $PSEUDO_MODULE_ALREADY{$inst}){
+         my @pinArray = $PSEUDO_MODULE_ALREADY{$inst}->dbaTstgenGetInput;
+         foreach my $pin(@pinArray){
+           my $type = $PSEUDO_MODULE_ALREADY{$inst}->dbaTstgenGetInputType($pin);
+           if($type == 1){
+              my $bits = $PSEUDO_MODULE_ALREADY{$inst}->dbaTstgenGetInputBits($pin);
+              push(@pins, $pin.$bits);
+           }
+         }
+      }
+   }else{ 
+     if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$inst}){
+        my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$inst}->dbPimDBGetInstCellref;
+        if(exists $PLDB{$cellref}){
+           my @pinArray = $PLDB{$cellref}->dbMdbGetPins; 
+           foreach my $pin(@pinArray){
+                   my $pinDir = $PLDB{$cellref}->dbMdbGetPinDir($pin);
+                   if($pinDir == 1){
+                      push(@pinfound, $pin);
+                   }
+           }
+           foreach(sort@pinfound){
+              my $width = $PLDB{$cellref}->dbMdbGetPinBusWidth($_);
+              if($width == 1){
+                my $baseName = $PLDB{$cellref}->dbMdbGetPinBusBaseName($_);
+                if($#temp >= -1){ 
+                  if($temp[-1] ne $baseName){
+                     my $bits = $PLDB{$cellref}->dbMdbGetPinBusBits($baseName);
+                     push(@pins, $baseName.$bits);
+                     push(@temp, $baseName);
+                  }
+                }else{
+                     my $bits = $PLDB{$cellref}->dbMdbGetPinBusBits($baseName);
+                     push(@pins, $baseName.$bits);
+                     push(@temp, $baseName);
+                }
+              }else{}
+           } 
+              
+        }elsif(exists $PSEUDO_MODULE_ALREADY{$cellref}){
+               my @pinArray = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetOutput;
+               foreach my $pin(@pinArray){
+                    my $type = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetOutputType($pin);
+                    if($type == 1){
+                       my $bits = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetOutputBits($pin);
+                       push(@pins, $pin.$bits);
+                     }
+               }
+        }else { }
+     }#if inst exists
+   }#else
+##-------------------------------------------------------------------------------------------------------------##
+         @pins = sort@pins;  
+   if($tagList[0] ne "TST_BUS"){ 
+         $EntryFrame->Label(-text => "SelectPins :",-font=> "Times 10 italic",)->pack(-side =>'left', -anchor => 'w');
+         my $entry = $EntryFrame->Entry(-textvariable =>\$pinName)->pack(-side =>'left', -anchor => 'w',-expand=>1,-fill=>'both');
+#----------------------------------------------------------------------------#
+         my $path2eq = $GLOBAL->dbfGlobalGetProtonHome;
+         my $search_image = $popupgui_src->Photo(-file=> "$path2eq/ETC/b5_magnify2.gif");
+         my $searchButton = $EntryFrame->Button(-image=>$search_image, -padx=>0,-pady=>0,-borderwidth=>0,-width=>22,-height=>20,-command=>sub{my @pins = &get_pinMatched($searchStr,\@pins);
+                           $list->configure(-listvariable =>\@pins);
+                           })->pack(-side =>'right');
+
+         my $search_balloon = $popupgui_src->Balloon();
+         $search_balloon->attach($searchButton, -balloonmsg => 'Search Pin');
+         my $search_entry = $EntryFrame->Entry(-textvariable =>\$searchStr, -width=>8)->pack(-side =>'right');
+         $search_entry->bind('<KeyRelease>',sub {my @pins = &get_pinMatched($searchStr,\@pins);
+                                                 $list->configure(-listvariable =>\@pins);
+                                                 });
+#-----------------------------------------------------------------------------#
+         $ListFrame1->Label(-text => "List of Pins",-font=> "Times 10 italic",)->pack(-side =>'top');
+         $list = $ListFrame1->Scrolled('Listbox',-listvariable => \@pins,-scrollbars=>'osoe',)->pack(-side=>'top');
+         $list->Subwidget("yscrollbar")->configure(-width=>10);
+         $list->bind( '<Button-1>', sub {  
+                                       my $selection =  $_[0]->get( $_[0]->curselection);
+                                       my $entryFound = 0;
+                                       foreach (@SELPINS){if ($_ eq $selection){$entryFound = 1;}}
+                                       if($entryFound == 1){print "you have allready selected pin $selection\n";}
+                                       else { 
+                                          push(@SELPINS,$selection);
+                                          $pinName = "";
+                                          $pinName = join(",",@SELPINS);
+                                       }#else
+                                      });
+         $ListFrame2->Label(-text => "Selected Pins",-font=> "Times 10 italic",)->pack(-side =>'top');
+         my $list1 = $ListFrame2->Scrolled('Listbox',-listvariable => \@SELPINS,-scrollbars=>'osoe',)->pack(-side=>'top');
+            $list1->Subwidget("yscrollbar")->configure(-width=>10);
+            $list1->bind( '<Button-1>', sub {  
+                                           my @temp =();
+                                              $pinName = "";
+                                           my $selection1 =  $_[0]->get( $_[0]->curselection);
+                                           foreach (@SELPINS){
+                                                if($_ eq $selection1){
+                                                }else { push(@temp, $_);
+                                                }
+                                           }  
+                                           @SELPINS = ();
+                                           @SELPINS = @temp;
+                                           $pinName = join (",",@SELPINS);
+                                                });
+   }#if not wire
+my $ProceedButton = $ButtonFrame->Button(-text=>'Proceed',-relief=>'groove',-pady=>0,
+                                          -command =>sub {if($busType eq "straightBus"){&call_selectSrcPin_forStraightBus($x,$y,\@id,$pinName);
+                                                          }elsif($busType eq "zBus"){&call_selectSrcPin_forZBus($x,$y,\@id,$pinName); 
+                                                          }elsif($busType eq "routingBus"){&call_selectSrcPin_forRoutingBus($x,$y,\@id,$pinName);   
+                                                          }
+                                                          $popupgui_src->destroy;
+                                         })->pack(-side=>'left');
+my $CancelButton = $ButtonFrame->Button(-text=>'Cancel',-relief=>'groove',-pady=>0,
+                                          -command =>sub {$popupgui_src->destroy;
+                                         })->pack(-side=>'left');
+}#sub popup_selectSrcPin_forBus
+
+sub popup_selectSinkPin_forBus {
+my @arg = @_;
+my $x = $arg[0];
+my $y = $arg[1];
+my @id = @{$arg[2]};
+my $netPrefix = $arg[3];
+my $netWidth = $arg[4];
+my $busType = $arg[5];
+
+my @tagList = $design_canvas->gettags($id[0]);
+my $inst = @tagList[1]; 
+
+my $list;
+my @SELPINS = ();
+my @pins = ();
+my @pinfound = ();
+my @temp = ();
+my $pinName = "";
+my $popupgui_sink = MainWindow->new();
+   $popupgui_sink->title ("Select Pins");
+   my $EntryFrame=$popupgui_sink->Frame()->pack(-side => 'top',-anchor=>'n',-expand=>1, -fill=>'x');
+   my $ListFrame =$popupgui_sink->Frame()->pack(-side => 'top',-anchor=>'n');  
+   my $ButtonFrame=$popupgui_sink->Frame()->pack(-side => 'bottom');
+   my $ListFrame1=$ListFrame->Frame()->pack(-side => 'left',-expand=>1, -fill=>'y');
+   my $ListFrame2 =$ListFrame->Frame()->pack(-side => 'left',-expand=>1, -fill=>'y');  
+   if($tagList[0] eq "TOP_MODULE"){
+      if(exists $PSEUDO_MODULE_ALREADY{$inst}){
+         my @pinArray = $PSEUDO_MODULE_ALREADY{$inst}->dbaTstgenGetOutput;
+         foreach my $pin(@pinArray){
+              my $type = $PSEUDO_MODULE_ALREADY{$inst}->dbaTstgenGetOutputType($pin);
+              if($type == 1){
+                 my $bits = $PSEUDO_MODULE_ALREADY{$inst}->dbaTstgenGetOutputBits($pin);
+                 push(@pins, $pin.$bits);
+              }
+         }
+      }
+   }else{ 
+     if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$inst}){
+        my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$inst}->dbPimDBGetInstCellref;
+        if(exists $PLDB{$cellref}){
+           my @pinArray = $PLDB{$cellref}->dbMdbGetPins; 
+           foreach my $pin(@pinArray){
+                   my $pinDir = $PLDB{$cellref}->dbMdbGetPinDir($pin);
+                   if($pinDir == 0){
+                      push(@pinfound, $pin);
+                   }
+           }
+           foreach(sort@pinfound){
+              my $width = $PLDB{$cellref}->dbMdbGetPinBusWidth($_);
+              if($width == 1){
+                my $baseName = $PLDB{$cellref}->dbMdbGetPinBusBaseName($_);
+                if($#temp >= -1){ 
+                  if($temp[-1] ne $baseName){
+                     my $bits = $PLDB{$cellref}->dbMdbGetPinBusBits($baseName);
+                     push(@pins, $baseName.$bits);
+                     push(@temp, $baseName);
+                  }
+                }else{
+                     my $bits = $PLDB{$cellref}->dbMdbGetPinBusBits($baseName);
+                     push(@pins, $baseName.$bits);
+                     push(@temp, $baseName);
+                }
+              }else{}
+           } 
+              
+        }elsif(exists $PSEUDO_MODULE_ALREADY{$cellref}){
+               my @pinArray = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetInput;
+               foreach my $pin(@pinArray){
+                    my $type = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetInputType($pin);
+                    if($type == 1){
+                       my $bits = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetInputBits($pin);
+                       push(@pins, $pin.$bits);
+                    }
+               }
+      }else {
+      } 
+     }#if inst exists
+   }#else
+ if($tagList[0] ne "TST_BUS"){
+      @pins = sort@pins;
+      $EntryFrame->Label(-text => "SelectPins :",-font=> "Times 10 italic",)->pack(-side =>'left', -anchor => 'w');
+      my $entry = $EntryFrame->Entry(-textvariable =>\$pinName)->pack(-side =>'left', -anchor => 'w',-expand=>1,-fill=>'both');
+#----------------------------------------------------------------------------#
+      my $path2eq = $GLOBAL->dbfGlobalGetProtonHome;
+      my $search_image = $popupgui_sink->Photo(-file=> "$path2eq/ETC/b5_magnify2.gif");
+      my $searchButton = $EntryFrame->Button(-image=>$search_image, -padx=>0,-pady=>0,-borderwidth=>0,-width=>22,-height=>20,-command=>sub{my @pins = &get_pinMatched($searchStr,\@pins);
+                        $list->configure(-listvariable =>\@pins);
+                        })->pack(-side =>'right');
+
+      my $search_balloon = $popupgui_sink->Balloon();
+      $search_balloon->attach($searchButton, -balloonmsg => 'Search Pin');
+      my $search_entry = $EntryFrame->Entry(-textvariable =>\$searchStr, -width=>8)->pack(-side =>'right');
+      $search_entry->bind('<KeyRelease>',sub {my @pins = &get_pinMatched($searchStr,\@pins);
+                                              $list->configure(-listvariable =>\@pins);
+                                              });
+#-----------------------------------------------------------------------------#
+      $ListFrame1->Label(-text => "List of Pins",-font=> "Times 10 italic",)->pack(-side =>'top');
+      $list = $ListFrame1->Scrolled('Listbox',-listvariable => \@pins,-scrollbars=>'osoe',)->pack(-side=>'top');
+      $list->Subwidget("yscrollbar")->configure(-width=>10);
+      $list->bind( '<Button-1>', sub {  
+                                      my $selection =  $_[0]->get( $_[0]->curselection);
+                                      my $entryFound = 0;
+                                      foreach (@SELPINS){if ($_ eq $selection){$entryFound = 1;}}
+                                        if($entryFound == 1){print "you have allready selected pin $selection\n";}
+                                        else { 
+                                          push(@SELPINS,$selection);
+                                          $pinName = "";
+                                          $pinName = join(",",@SELPINS);
+                                        }#else
+                                      });
+      $ListFrame2->Label(-text => "Selected Pins",-font=> "Times 10 italic",)->pack(-side =>'top');
+      my $list1 = $ListFrame2->Scrolled('Listbox',-listvariable => \@SELPINS,-scrollbars=>'osoe',)->pack(-side=>'top');
+         $list1->Subwidget("yscrollbar")->configure(-width=>10);
+         $list1->bind( '<Button-1>', sub {  
+                                          my @temp =();
+                                             $pinName = "";
+                                          my $selection1 =  $_[0]->get( $_[0]->curselection);
+                                          foreach (@SELPINS){
+                                               if($_ eq $selection1){
+                                               }else { push(@temp, $_);
+                                               }
+                                          }  
+                                          @SELPINS = ();
+                                          @SELPINS = @temp;
+                                          $pinName = join (",",@SELPINS);
+                                         });
+   }#if not bus
+
+my $ProceedButton = $ButtonFrame->Button(-text=>'Ok',-relief=>'groove',-pady=>0,
+                                          -command =>sub {if($busType eq "straightBus"){&call_selectSinkPin_forStraightBus($x,$y,\@id,$pinName,$netPrefix, $netWidth); 
+                                                          }elsif($busType eq "zBus"){&call_selectSinkPin_forZBus($x,$y,\@id,$pinName,$netPrefix, $netWidth);
+                                                          }elsif($busType eq "routingBus"){&call_selectSinkPin_forRoutingBus($x,$y,\@id,$pinName,$netPrefix, $netWidth);
+                                                          }
+                                                          $popupgui_sink->destroy;
+                                         })->pack(-side=>'left');
+my $CancelButton = $ButtonFrame->Button(-text=>'Cancel',-relief=>'groove',-pady=>0,
+                                          -command =>sub {$popupgui_sink->destroy;
+                                         })->pack(-side=>'left');
+
+}#sub popup_selectSinkPin_forBus 
+
+################################ Subroutine PopUp Calling for StraightBus #########################################
+sub call_selectSrcPin_forStraightBus{
+my @arg = @_;
+my $x = $arg[0];
+my $y = $arg[1];
+my @id = @{$arg[2]};
+my $pinName = $arg[3];
+
+my ($wireConn,$instConn,$topConn) = (0, 0, 0, 0 , 0);
+my ($mod_llx1,$mod_lly1,$mod_urx1,$mod_ury1,$canx1,$cany1) = (0, 0, 0, 0, 0, 0, 0, 0);
+my $srcMod = "";
+my $wireName = "";
+   @STBUS_SOURCE_CONN = ();
+my @tagList = $design_canvas->gettags($id[0]);
+##-----------------------------------------------------------------------------------##
+if($pinName ne ""){
+  if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}){
+     my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstCellref;
+     my @loc = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstRelBbox;
+     if(exists $PLDB{$cellref} ) {
+        my @cellSize = $PLDB{$cellref}->dbMdbGetSize;
+        my @pins = $PLDB{$cellref}->dbMdbGetPins;
+        my ($pinbase) = (split(/\[/,$pinName))[0];
+        foreach my $p (@pins){
+             if ($p eq $pinbase."[0]"){  
+                 my @pinRect = $PLDB{$cellref}->dbMdbGetPinRect($p);
+                 my ($layer,$pinllx,$pinlly,$pinurx,$pinury) = (split(/\s+/,$pinRect[0])) [0,2,3,4,5];
+                 my @pinCoords = ();
+                 $pinCoords[0] = $loc[0] + $pinllx;
+                 $pinCoords[1] = $loc[1] + $pinlly;
+                 $pinCoords[2] = $loc[0] + $pinurx;
+                 $pinCoords[3] = $loc[1] + $pinury;
+                 my $xcoord = ($pinCoords[0] + $pinCoords[2])/2;
+                 my $ycoord = ($pinCoords[1] + $pinCoords[3])/2;
+                 ($xcoord, $ycoord) = dbfGuiMicron2Gui($xcoord, $ycoord);
+                 $mod_llx1 = $xcoord;
+                 $mod_urx1 = $xcoord;
+                 $mod_lly1 = $ycoord;
+                 $mod_ury1 = $ycoord;   
+                 $canx1 = $xcoord; 
+                 $cany1 = $ycoord; 
+                 $srcMod = $tagList[1];
+                 $instConn = 1;
+             }#if pin found
+        }#foreach pin
+     }else{#if cellref exists 
+       my @coords  = $design_canvas->coords($tagList[1]);
+           $mod_llx1 = $coords[0];
+           $mod_lly1 = $coords[1];
+           $mod_urx1 = $coords[2];
+           $mod_ury1 = $coords[3];   
+           $canx1 = $x;
+           $cany1 = $y;
+           $srcMod = $tagList[1];
+           $instConn = 1;
+     }#if soft/rtl etc (because pinloc is not set for these module)
+  }
+}else{ 
+##-----------------------------------------------------------------------------------##
+   $dx = 0; $dy = 0;
+   my @topCoords = $design_canvas->coords("TOP_MODULE");
+   if(($x <= $topCoords[0]) || ($x >= $topCoords[2]) || ($y <= $topCoords[1]) || ($y >= $topCoords[3])){
+       $mod_llx1 = $topCoords[0];
+       $mod_lly1 = $topCoords[1];
+       $mod_urx1 = $topCoords[2];
+       $mod_ury1 = $topCoords[3];   
+       $canx1 = $x;$cany1 = $y;
+       if($canx1 <= $mod_llx1){$dx = 1;}
+       elsif($canx1 >= $mod_urx1){$dx = -1;}
+       elsif($cany1 <= $mod_lly1){$dy = 1;}
+       elsif($cany1 >= $mod_ury1){$dy = -1;}
+       $srcMod = "PIN";  ### $srcMod = $TOP_MODULE; ###
+       $topConn = 1;
+   }else {
+       if(($tagList[0] ne "TOP_MODULE") && ($tagList[0] ne "TST_BUS")){
+          my @coords  = $design_canvas->coords($tagList[1]);
+          if($tagList[0] eq "FLOP"){
+             $mod_llx1 = $coords[0];
+             $mod_lly1 = $coords[1];
+             $mod_urx1 = $coords[4];
+             $mod_ury1 = $coords[7];   
+          }elsif($tagList[0] eq "MUX"){
+             $mod_lly1 = $coords[1];
+             $mod_ury1 = $coords[7]; 
+             if($coords[0] < $coords[4]){ 
+                $mod_llx1 = $coords[0];
+                $mod_urx1 = $coords[4];
+             }else {
+                $mod_llx1 = $coords[4];
+                $mod_urx1 = $coords[0];
+             }
+          }else{
+             $mod_llx1 = $coords[0];
+             $mod_lly1 = $coords[1];
+             $mod_urx1 = $coords[2];
+             $mod_ury1 = $coords[3];   
+         }
+             $canx1 = $x;
+             $cany1 = $y;
+             $srcMod = $tagList[1];
+             $instConn = 1;
+       }elsif($tagList[0] eq "TST_BUS"){
+          my @wire_coords  = $design_canvas->coords($id[0]);
+              $canx1 = $x;
+              $cany1 = ((($wire_coords[3]-$wire_coords[1])*($x - $wire_coords[0]))/($wire_coords[2] - $wire_coords[0])) + $wire_coords[1];
+              $wireConn = 1;
+              if($canx1 == 0 || $cany1 == 0){$wireConn = 0;}
+              $wireName = $tagList[1];
+       }else {$mod_llx1 = ""; $mod_lly1 = "";$mod_urx1 = ""; $mod_ury1 = ""; $canx1 = ""; $cany1 = "";}
+    }
+ }
+
+@STBUS_SOURCE_CONN = ($canx1,$cany1,$mod_llx1,$mod_lly1,$mod_urx1,$mod_ury1,$srcMod,$wireName,$topConn,$wireConn,$instConn, $dx,$dy,$pinName); 
+}#sub call_selectSrcPin_forStraightBus
+
+sub call_selectSinkPin_forStraightBus {
+my @arg = @_;
+my $x = $arg[0];
+my $y = $arg[1];
+my @ids = @{$arg[2]};
+my $sinkPin = $arg[3];
+my $netPrefix = $arg[4];
+my $netWidth = $arg[5];
+if($#STBUS_SOURCE_CONN <= -1){print "WARN: Select the source Module\n";return;}
+my $canx1 = $STBUS_SOURCE_CONN[0];
+my $cany1 = $STBUS_SOURCE_CONN[1];
+my $mod_llx1 = $STBUS_SOURCE_CONN[2];
+my $mod_lly1 = $STBUS_SOURCE_CONN[3];
+my $mod_urx1 = $STBUS_SOURCE_CONN[4];
+my $mod_ury1 = $STBUS_SOURCE_CONN[5];
+my $srcMod = $STBUS_SOURCE_CONN[6];
+my $wireName = $BUSRE_SOURCE_CONN[7];
+my $topConn = $STBUS_SOURCE_CONN[8];
+my $wireConn = $STBUS_SOURCE_CONN[9];
+my $instConn = $STBUS_SOURCE_CONN[10];
+my $dx = $STBUS_SOURCE_CONN[11];
+my $dy = $STBUS_SOURCE_CONN[12];
+my $srcPin = $STBUS_SOURCE_CONN[13];
+my @wireCoordInMicron = ();
+my ($srcOpt,$sinkOpt) = ("","");
+
+   if($srcPin eq ""){$srcOpt = "";}
+ else{$srcOpt = "-pin";}
+   if($sinkPin eq ""){$sinkOpt = "";}
+ else{$sinkOpt = "-pin";}
+
+            my @topCoords = $design_canvas->coords("TOP_MODULE");
+            if(($instConn == 1) && (($x <=$topCoords[0]) || ($x >= $topCoords[2]) || ($y <= $topCoords[1]) || ($y >= $topCoords[3]))){
+               $mod_llx2 = $topCoords[0];
+               $mod_lly2 = $topCoords[1];
+               $mod_urx2 = $topCoords[2];
+               $mod_ury2 = $topCoords[3];
+               $canx2 = $x;$cany2 = $y;                      
+               $sinkMod = "PIN";  ### $sinkMod = $TOP_MODULE; ###
+               if($x <= $mod_llx2){
+                  @wireRectCoords = ($mod_llx1, $cany1,$mod_llx2,$cany2);
+               }elsif($x >= $mod_urx2){
+                  @wireRectCoords = ($mod_urx1, $cany1,$mod_urx2,$cany2);
+               }elsif($y <= $mod_lly2){
+                  @wireRectCoords = ($canx1, $mod_lly1,$canx2,$mod_lly2);
+               }elsif($y >= $mod_ury2){
+                  @wireRectCoords = ($canx1, $mod_ury1,$canx2, $mod_ury2);
+               }
+               for(my $i=0; $i<=$#wireRectCoords; $i=$i+2){
+                   my @coord_mic = dbfGuiGui2Micron($wireRectCoords[$i],$wireRectCoords[$i+1]);
+                   push(@wireCoordInMicron,@coord_mic);
+               }
+               my $wireCoords_str = join ",", @wireCoordInMicron; 
+               $wireInst = $design_canvas->createLine(
+                                                @wireRectCoords,
+                                                -fill => 'blue',
+                                                -arrow => 'last',
+                                                -width => 5,
+                                                    );
+               my $netName = &createPseudoNet("-parentModule","$TOP_MODULE","-type","bus","-source","$srcMod",$srcOpt,$srcPin ,"-sink","$sinkMod",$sinkOpt, "{$sinkPin}","-prefix", $netPrefix, "-wireWidth", $netWidth,"-netCoords",$wireCoords_str);
+               if($netName eq ""){$design_canvas->delete($wireInst);}
+               else{
+                 if($netPrefix eq "" && $netWidth ne ""){
+                    print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                 }elsif($netWidth eq "" && $netPrefix ne ""){
+                    print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -prefix $netPrefix -netCoords $wireCoords_str\n";
+                 }elsif($netWidth eq "" && $netPrefix eq ""){
+                    print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -netCoords $wireCoords_str\n";
+                 }else{
+                    print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -prefix $netPrefix -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                 }
+                $design_canvas->itemconfigure($wireInst, -tags =>'TST_BUS' );
+                $design_canvas->addtag($netName , "withtag", $wireInst);
+               }
+            }else {
+               my @tagList = $design_canvas->gettags($ids[0]);
+               if (($tagList[0] ne "TOP_MODULE") && ($tagList[0] ne "") && ($tagList[0] ne "current") && ($tagList[1] ne $srcMod) && ($tagList[0] ne "TST_BUS"))  { 
+                  $sinkMod = $tagList[1];
+                  my @coords1  = $design_canvas->coords($ids[0]);
+                  if($tagList[0] eq "FLOP"){
+                     $mod_llx2 = $coords1[0];
+                     $mod_lly2 = $coords1[1];
+                     $mod_urx2 = $coords1[4];
+                     $mod_ury2 = $coords1[7];
+                     $canx2 = $x;                      
+                     $cany2 = $y;                      
+                  }elsif($tagList[0] eq "MUX"){
+                     $mod_lly2 = $coords1[1];
+                     $mod_ury2 = $coords1[7];
+                     if($coords1[0] < $coords1[4]){ 
+                        $mod_llx2 = $coords1[0];
+                        $mod_urx2 = $coords1[4];
+                     }else {
+                        $mod_llx2 = $coords1[4];
+                        $mod_urx2 = $coords1[0];
+                     }
+                     $canx2 = $x;                      
+                     $cany2 = $y;                      
+##-----------------------------------------------------------------------------------##
+                  }elsif($sinkPin ne ""){
+                      if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}){
+                      my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstCellref;
+                      my @loc = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstRelBbox;
+                      if(exists $PLDB{$cellref} ) {
+                         my @cellSize = $PLDB{$cellref}->dbMdbGetSize;
+                         my @pins = $PLDB{$cellref}->dbMdbGetPins;
+                         my ($pinbase) = (split(/\[/,$sinkPin))[0];
+                         foreach my $p (@pins){
+                            if ($p eq $pinbase."[0]"){  
+                              my @pinRect = $PLDB{$cellref}->dbMdbGetPinRect($p);
+                              my ($layer,$pinllx,$pinlly,$pinurx,$pinury) = (split(/\s+/,$pinRect[0])) [0,2,3,4,5];
+                              my @pinCoords = ();
+                              $pinCoords[0] = $loc[0] + $pinllx;
+                              $pinCoords[1] = $loc[1] + $pinlly;
+                              $pinCoords[2] = $loc[0] + $pinurx;
+                              $pinCoords[3] = $loc[1] + $pinury;
+                              my $xcoord = ($pinCoords[0] + $pinCoords[2])/2;
+                              my $ycoord = ($pinCoords[1] + $pinCoords[3])/2;
+                              my ($xcoord1, $ycoord1) = dbfGuiMicron2Gui($xcoord, $ycoord);
+                              $mod_llx2 = $xcoord1;
+                              $mod_urx2 = $xcoord1;
+                              $mod_lly2 = $ycoord1;
+                              $mod_ury2 = $ycoord1;   
+                              $canx2 = $xcoord1; 
+                              $cany2 = $ycoord1; 
+                             }#if pin found
+                          }#foreach pin
+                      }else{ 
+                         $mod_llx2 = $coords1[0];
+                         $mod_lly2 = $coords1[1];
+                         $mod_urx2 = $coords1[2];
+                         $mod_ury2 = $coords1[3];
+                         $canx2 = $x;                      
+                         $cany2 = $y; 
+                      }#if soft/rtl etc. (because pin loc for these module is not set)
+                     }#if exists in PSEUDO_VINST_ALREADY
+##-----------------------------------------------------------------------------------##
+                  }else{  
+                     $mod_llx2 = $coords1[0];
+                     $mod_lly2 = $coords1[1];
+                     $mod_urx2 = $coords1[2];
+                     $mod_ury2 = $coords1[3];
+                     $canx2 = $x;                      
+                     $cany2 = $y;                      
+                  }
+                  if($wireConn == 1){ 
+                     if($canx1 < $mod_llx2){
+                        @wireRectCoords = ($canx1, $cany1,$mod_llx2,$cany2);
+                     }elsif($canx1 > $mod_urx2) {
+                        @wireRectCoords = ($canx1, $cany1,$mod_urx2,$cany2);
+                     }elsif($cany1 > $mod_ury2){
+                      @wireRectCoords = ($canx1, $cany1,$canx2,$mod_ury2);
+                     }elsif($cany1 < $mod_lly2){
+                      @wireRectCoords = ($canx1, $cany1,$canx2,$mod_lly2);
+                     }   
+                     for(my $i=0; $i<=$#wireRectCoords; $i=$i+2){
+                         my @coord_mic = dbfGuiGui2Micron($wireRectCoords[$i],$wireRectCoords[$i+1]);
+                         push(@wireCoordInMicron,@coord_mic);
+                     }
+                     my $wireCoords_str = join ",", @wireCoordInMicron; 
+                     $wireInst = $design_canvas->createLine(
+                                                      @wireRectCoords,
+                                                      -fill => 'blue',
+                                                      -arrow => 'last',
+                                                      -width => 5,
+                                                      );
+                  &updatePseudoNet("-net",$wireName,"-sink",$sinkMod,$sinkOpt,$sinkPin,"-netCoords",$wireCoords_str); 
+                  print"#<CMD> updatePseudoNet -net $wireName -sink $sinkMod $sinkOpt $sinkPin -netCoords $wireCoords_str\n";
+                  $design_canvas->itemconfigure($wireInst, -tags =>'TST_BUS' );
+                  $design_canvas->addtag($wireName , "withtag", $wireInst);
+                  }elsif($instConn == 1){
+                     if($mod_urx1 < $mod_llx2 && $mod_llx1 != $canx1){
+                        @wireRectCoords = ($mod_urx1, $cany1, $mod_llx2,$cany2);
+                     }elsif($mod_llx1 > $mod_urx2 && $mod_llx1 != $canx1) {
+                        @wireRectCoords = ($mod_llx1, $cany1,$mod_urx2,$cany2);
+                     }elsif($mod_lly1 > $mod_ury2 && $mod_lly1 != $cany1){
+                        @wireRectCoords = ($canx1, $mod_lly1, $canx2,$mod_ury2);
+                     }elsif($mod_ury1 < $mod_lly2 && $mod_lly1 != $cany1){
+                        @wireRectCoords = ($canx1, $mod_ury1, $canx2,$mod_lly2);
+                     }else{
+                        if($canx1 < $canx2 && $cany1 < $cany2){
+                           @wireRectCoords = ($mod_urx1, $cany1, $mod_llx2,$cany2);
+                        }elsif($canx1 < $canx2 && $cany1 > $cany2){
+                           @wireRectCoords = ($canx1, $mod_ury1, $canx2,$mod_lly2);
+                        }elsif($canx1 > $canx2 && $cany1 > $cany2){
+                           @wireRectCoords = ($canx1, $mod_ury1, $canx2,$mod_lly2);
+
+                        }else{ 
+                           @wireRectCoords = ($mod_urx1, $cany1, $mod_llx2,$cany2);
+                        }
+                     }
+                     for(my $i=0; $i<=$#wireRectCoords; $i=$i+2){
+                         my @coord_mic = dbfGuiGui2Micron($wireRectCoords[$i],$wireRectCoords[$i+1]);
+                         push(@wireCoordInMicron,@coord_mic);
+                     }
+                     my $wireCoords_str = join ",", @wireCoordInMicron; 
+                     $wireInst = $design_canvas->createLine(
+                                                           @wireRectCoords,
+                                                           -fill => 'blue',
+                                                           -arrow => 'last',
+                                                           -width => 5,
+                                                            );
+                      my $netName = &createPseudoNet("-parentModule","$TOP_MODULE","-type","bus","-source","$srcMod",$srcOpt,$srcPin,"-sink","$sinkMod",$sinkOpt,"{$sinkPin}","-prefix", $netPrefix, "-wireWidth", $netWidth, "-netCoords",$wireCoords_str);
+                      if($netName eq ""){$design_canvas->delete($wireInst);}
+                      else{
+                        if($netPrefix eq "" && $netWidth ne ""){
+                           print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                        }elsif($netWidth eq "" && $netPrefix ne ""){
+                           print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -prefix $netPrefix -netCoords $wireCoords_str\n";
+                        }elsif($netWidth eq "" && $netPrefix eq ""){
+                           print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -netCoords $wireCoords_str\n";
+                        }else{
+                           print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -prefix $netPrefix -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                        }
+                        $design_canvas->itemconfigure($wireInst, -tags =>'TST_BUS' );
+                        $design_canvas->addtag($netName , "withtag", $wireInst);
+                      }
+                  }elsif($topConn == 1){
+                     if($dx == 1){
+                        @wireRectCoords = ($mod_llx1, $cany1, $mod_llx2,$cany2);
+                     }elsif($dx == -1){
+                        @wireRectCoords = ($mod_urx1, $cany1, $mod_urx2,$cany2);
+                     }elsif($dy == 1){
+                        @wireRectCoords = ($canx1, $mod_lly1, $canx2,$mod_lly2);
+                     }elsif($dy == -1){
+                        @wireRectCoords = ($canx1, $mod_ury1, $canx2,$mod_ury2);
+                     }
+                     for(my $i=0; $i<=$#wireRectCoords; $i=$i+2){
+                         my @coord_mic = dbfGuiGui2Micron($wireRectCoords[$i],$wireRectCoords[$i+1]);
+                         push(@wireCoordInMicron,@coord_mic);
+                     }
+                     my $wireCoords_str = join ",", @wireCoordInMicron; 
+                     $wireInst = $design_canvas->createLine(
+                                                        @wireRectCoords,
+                                                        -fill => 'blue',
+                                                        -arrow => 'last',
+                                                        -width => 5,
+                                                         );
+                  my $netName = &createPseudoNet("-parentModule","$TOP_MODULE","-type","bus","-source","$srcMod",$srcOpt,$srcPin,"-sink","$sinkMod",$sinkOpt,"{$sinkPin}","-prefix", $netPrefix, "-wireWidth", $netWidth, "-netCoords", $wireCoords_str);
+                  if($netName eq ""){$design_canvas->delete($wireInst);}
+                  else{
+                    if($netPrefix eq "" && $netWidth ne ""){
+                       print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                    }elsif($netWidth eq "" && $netPrefix ne ""){
+                       print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -prefix $netPrefix -netCoords $wireCoords_str\n";
+                    }elsif($netWidth eq "" && $netPrefix eq ""){
+                       print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -netCoords $wireCoords_str\n";
+                    }else{
+                       print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -prefix $netPrefix -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                    }
+                  $design_canvas->itemconfigure($wireInst, -tags =>'TST_BUS' );
+                  $design_canvas->addtag($netName , "withtag", $wireInst);
+                  }
+                  }else {}
+               }else {}
+   }
+($topConn, $instConn, $wireConn) = (0, 0, 0);
+ @STBUS_SOURCE_CONN = ();
+}#sub call_selectSinkPin_forStraightBus
+
+#################################### Subroutine PopUp Calling for ZBus ############################################
+sub call_selectSrcPin_forZBus{
+my @arg = @_;
+my $x = $arg[0];
+my $y = $arg[1];
+my @id = @{$arg[2]};
+my $pinName = $arg[3];
+my @tagList = $design_canvas->gettags($id[0]);
+my ($canx1,$cany1,$wireConn,$instConn,$topConn) = (0, 0, 0, 0 , 0);
+my ($dx,$dy,$mod_llx1,$mod_lly1,$mod_urx1,$mod_ury1) = (0, 0, 0, 0, 0, 0);
+my $srcMod = "";
+my $wireName = "";
+   @ZBUS_SOURCE_CONN = ();
+##-----------------------------------------------------------------------------------##
+if($pinName ne ""){
+  if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}){
+     my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstCellref;
+     my @loc = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstRelBbox;
+     if(exists $PLDB{$cellref} ) {
+        my @cellSize = $PLDB{$cellref}->dbMdbGetSize;
+        my @pins = $PLDB{$cellref}->dbMdbGetPins;
+        my ($pinbase) = (split(/\[/,$pinName))[0];
+        foreach my $p (@pins){
+             if ($p eq $pinbase."[0]"){  
+                 my @pinRect = $PLDB{$cellref}->dbMdbGetPinRect($p);
+                 my ($layer,$pinllx,$pinlly,$pinurx,$pinury) = (split(/\s+/,$pinRect[0])) [0,2,3,4,5];
+                 my @pinCoords = ();
+                 $pinCoords[0] = $loc[0] + $pinllx;
+                 $pinCoords[1] = $loc[1] + $pinlly;
+                 $pinCoords[2] = $loc[0] + $pinurx;
+                 $pinCoords[3] = $loc[1] + $pinury;
+                 my $xcoord = ($pinCoords[0] + $pinCoords[2])/2;
+                 my $ycoord = ($pinCoords[1] + $pinCoords[3])/2;
+                 my($xcoord1, $ycoord1) = dbfGuiMicron2Gui($xcoord, $ycoord);
+                 $mod_llx1 = $xcoord1;
+                 $mod_urx1 = $xcoord1;
+                 $mod_lly1 = $ycoord1;
+                 $mod_ury1 = $ycoord1;   
+                 $canx1 = $xcoord1; 
+                 $cany1 = $ycoord1; 
+                 $srcMod = $tagList[1];
+                 $instConn = 1;
+             }#if pin found
+        }#foreach pin
+     }else{
+        my @coords  = $design_canvas->coords($tagList[1]); 
+           $mod_llx1 = $coords[0];
+           $mod_lly1 = $coords[1];
+           $mod_urx1 = $coords[2];
+           $mod_ury1 = $coords[3];   
+           $canx1 = $x;
+           $cany1 = $y;
+           $srcMod = $tagList[1];
+           $instConn = 1;
+     }#if soft/rtl etc.
+  }
+}else{ 
+##-----------------------------------------------------------------------------------##
+   $dx = 0; $dy = 0;
+   my @topCoords = $design_canvas->coords("TOP_MODULE");
+   if(($x <= $topCoords[0]) || ($x >= $topCoords[2]) || ($y <= $topCoords[1]) || ($y >= $topCoords[3])){
+       $mod_llx1 = $topCoords[0];
+       $mod_lly1 = $topCoords[1];
+       $mod_urx1 = $topCoords[2];
+       $mod_ury1 = $topCoords[3];   
+       $canx1 = $x;$cany1 = $y;
+       if($canx1 <= $mod_llx1){$dx = 1;}
+       elsif($canx1 >= $mod_urx1){$dx = -1;}
+       elsif($cany1 <= $mod_lly1){$dy = 1;}
+       elsif($cany1 >= $mod_ury1){$dy = -1;}
+       $srcMod = "PIN";  ### $srcMod = $TOP_MODULE; ###
+       $topConn = 1;
+   }else {
+       if(($tagList[0] ne "TOP_MODULE") && ($tagList[0] ne "TST_BUS")){
+          my @coords  = $design_canvas->coords($tagList[1]);
+          if($tagList[0] eq "FLOP"){
+             $mod_llx1 = $coords[0];
+             $mod_lly1 = $coords[1];
+             $mod_urx1 = $coords[4];
+             $mod_ury1 = $coords[7];   
+          }elsif($tagList[0] eq "MUX"){
+             $mod_lly1 = $coords[1];
+             $mod_ury1 = $coords[7]; 
+             if($coords[0] < $coords[4]){ 
+                $mod_llx1 = $coords[0];
+                $mod_urx1 = $coords[4];
+             }else {
+                $mod_llx1 = $coords[4];
+                $mod_urx1 = $coords[0];
+             }
+          }else{
+             $mod_llx1 = $coords[0];
+             $mod_lly1 = $coords[1];
+             $mod_urx1 = $coords[2];
+             $mod_ury1 = $coords[3];   
+         }
+             $canx1 = $x;
+             $cany1 = $y;
+             $srcMod = $tagList[1];
+             $instConn = 1;
+       }elsif($tagList[0] eq "TST_BUS"){
+          my @wire_coords  = $design_canvas->coords($id[0]);
+          if($wire_coords[0] == $wire_coords[2]){
+             if(((($y>=$wire_coords[1]) && ($y<=$wire_coords[3])) || (($y<=$wire_coords[1])&& ($y>=$wire_coords[3]))) && (($x> ($wire_coords[0]-2.5)) && ($x < ($wire_coords[0]+2.5)))){$canx1 = $wire_coords[0]; $cany1 = $y;
+             }elsif(((($y>=$wire_coords[5]) && ($y<=$wire_coords[7])) || (($y<=$wire_coords[5])&& ($y>=$wire_coords[7]))) && (($x> ($wire_coords[6]-2.5)) && ($x < ($wire_coords[6]+2.5)))){$canx1 = $wire_coords[6]; $cany1 = $y;
+             }else{$canx1 = $x; $cany1 = $wire_coords[3];}
+          }elsif($wire_coords[1] == $wire_coords[3]){
+             if(((($x>=$wire_coords[0]) && ($x<=$wire_coords[2])) || (($x<=$wire_coords[0]) && ($x>=$wire_coords[2]))) && (($y>= ($wire_coords[1]-2.5)) && ($y <= ($wire_coords[1]+2.5)))){$canx1 = $x; $cany1 = $wire_coords[1];
+             }elsif(((($x>=$wire_coords[4]) && ($x<=$wire_coords[6])) || (($x<=$wire_coords[4]) && ($x>=$wire_coords[6]))) && (($y>= ($wire_coords[5]-2.5)) && ($y <= ($wire_coords[5]+2.5)))){$canx1 = $x; $cany1 = $wire_coords[5];
+             }else{$canx1 = $wire_coords[2]; $cany1 = $y;}
+          }
+              $wireConn = 1;
+              if($canx1 == 0 || $cany1 == 0){$wireConn = 0;}
+              #my ($count) = (split(/BD0_net/,$tagList[1]))[1]; 
+              #$wireName = "BD0_netB".$count; ## if connection from a net   
+              $wireName = $tagList[1];   
+        }else {$mod_llx1 = ""; $mod_lly1 = "";$mod_urx1 = ""; $mod_ury1 = ""; $canx1 = ""; $cany1 = "";}
+   }
+ }
+
+@ZBUS_SOURCE_CONN = ($canx1,$cany1,$mod_llx1,$mod_lly1,$mod_urx1,$mod_ury1,$srcMod,$wireName,$topConn,$wireConn,$instConn, $dx,$dy,$pinName); 
+}#sub call_selectSrcPin_forZBus
+
+sub call_selectSinkPin_forZBus{ # the verilog written from GUI is not same as from tcl generated by GUI. 
+my @arg = @_;
+my $x = $arg[0];
+my $y = $arg[1];
+my @ids = @{$arg[2]};
+my $sinkPin = $arg[3];
+my $netPrefix = $arg[4];
+my $netWidth = $arg[5];
+
+if($#ZBUS_SOURCE_CONN <= -1){print "WARN: Select the source Module\n";return;}
+my $canx1 = $ZBUS_SOURCE_CONN[0];
+my $cany1 = $ZBUS_SOURCE_CONN[1];
+my $mod_llx1 = $ZBUS_SOURCE_CONN[2];
+my $mod_lly1 = $ZBUS_SOURCE_CONN[3];
+my $mod_urx1 = $ZBUS_SOURCE_CONN[4];
+my $mod_ury1 = $ZBUS_SOURCE_CONN[5];
+my $srcMod = $ZBUS_SOURCE_CONN[6];
+my $wireName = $ZBUS_SOURCE_CONN[7];
+my $topConn = $ZBUS_SOURCE_CONN[8];
+my $wireConn = $ZBUS_SOURCE_CONN[9];
+my $instConn = $ZBUS_SOURCE_CONN[10];
+my $dx = $ZBUS_SOURCE_CONN[11];
+my $dy = $ZBUS_SOURCE_CONN[12];
+my $srcPin = $ZBUS_SOURCE_CONN[13];
+my @wireCoordInMicron = ();
+my ($srcOpt,$sinkOpt) = ("","");
+
+   if($srcPin eq ""){$srcOpt = "";}
+ else{$srcOpt = "-pin";}
+   if($sinkPin eq ""){$sinkOpt = "";}
+ else{$sinkOpt = "-pin";}
+
+            my @topCoords = $design_canvas->coords("TOP_MODULE");
+            if(($instConn == 1) && (($x <=$topCoords[0]) || ($x >= $topCoords[2]) || ($y <= $topCoords[1]) || ($y >= $topCoords[3]))){
+               $mod_llx2 = $topCoords[0];
+               $mod_lly2 = $topCoords[1];
+               $mod_urx2 = $topCoords[2];
+               $mod_ury2 = $topCoords[3];
+               $canx2 = $x;$cany2 = $y;                      
+               $sinkMod = "PIN";  ### $sinkMod = $TOP_MODULE; ###
+               if($x <= $mod_llx2){
+                  my $bend = rand($mod_llx1 - $mod_llx2)+$mod_llx2;
+                  @wireRectCoords = ($mod_llx1, $cany1, $bend, $cany1, $bend, $cany2, $mod_llx2,$cany2);
+               }elsif($x >= $mod_urx2){
+                  my $bend = rand($mod_urx2 - $mod_urx1)+$mod_urx1;
+                  @wireRectCoords = ($mod_urx1, $cany1, $bend , $cany1, $bend, $cany2, $mod_urx2,$cany2);
+               }elsif($y <= $mod_lly2){
+                  my $bend = rand($mod_lly1 - $mod_lly2)+$mod_lly2; 
+                  @wireRectCoords = ($canx1, $mod_lly1, $canx1,  $bend, $canx2, $bend, $canx2, $mod_lly2);
+               }elsif($y >= $mod_ury2){
+                  my $bend = rand($mod_ury2 - $mod_ury1)+$mod_ury1;
+                  @wireRectCoords = ($canx1, $mod_ury1, $canx1,  $bend, $canx2, $bend, $canx2, $mod_ury2);
+               }
+               for(my $i=0; $i<=$#wireRectCoords; $i=$i+2){
+                   my @coord_mic = dbfGuiGui2Micron($wireRectCoords[$i],$wireRectCoords[$i+1]);
+                   push(@wireCoordInMicron,@coord_mic);
+               }
+               my $wireCoords_str = join ",", @wireCoordInMicron; 
+               $wireInst = $design_canvas->createLine(
+                                                @wireRectCoords,
+                                                -fill => 'blue',
+                                                -arrow => 'last',
+                                                -width => 5,
+                                                    );
+                my $netName = &createPseudoNet("-parentModule","$TOP_MODULE","-type","bus","-source","$srcMod",$srcOpt,$srcPin ,"-sink","$sinkMod",$sinkOpt, "{$sinkPin}","-prefix", $netPrefix, "-wireWidth", $netWidth,"-netCoords",$wireCoords_str);
+                if($netName eq ""){$design_canvas->delete($wireInst);}
+                else{
+                  if($netPrefix eq "" && $netWidth ne ""){
+                     print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                  }elsif($netWidth eq "" && $netPrefix ne ""){
+                     print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -prefix $netPrefix -netCoords $wireCoords_str\n";
+                  }elsif($netWidth eq "" && $netPrefix eq ""){
+                     print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -netCoords $wireCoords_str\n";
+                  }else{
+                     print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -prefix $netPrefix -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                  }  
+                  $design_canvas->itemconfigure($wireInst, -tags =>'TST_BUS' );
+                  $design_canvas->addtag($netName , "withtag", $wireInst);
+                }
+            }else {
+               my @tagList = $design_canvas->gettags($ids[0]);
+               if (($tagList[0] ne "TOP_MODULE") && ($tagList[0] ne "") && ($tagList[0] ne "current") && ($tagList[1] ne $srcMod) && ($tagList[0] ne "TST_WIRE"))  { 
+                  $sinkMod = $tagList[1];
+                  my @coords1  = $design_canvas->coords($ids[0]);
+                  if($tagList[0] eq "FLOP"){
+                     $mod_llx2 = $coords1[0];
+                     $mod_lly2 = $coords1[1];
+                     $mod_urx2 = $coords1[4];
+                     $mod_ury2 = $coords1[7];
+                     $canx2 = $x;                      
+                     $cany2 = $y;                      
+                  }elsif($tagList[0] eq "MUX"){
+                     $mod_lly2 = $coords1[1];
+                     $mod_ury2 = $coords1[7];
+                     if($coords1[0] < $coords1[4]){ 
+                        $mod_llx2 = $coords1[0];
+                        $mod_urx2 = $coords1[4];
+                     }else {
+                        $mod_llx2 = $coords1[4];
+                        $mod_urx2 = $coords1[0];
+                     }
+                     $canx2 = $x;                      
+                     $cany2 = $y;                      
+##-----------------------------------------------------------------------------------##
+                  }elsif($sinkPin ne ""){
+                      if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}){
+                      my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstCellref;
+                      my @loc = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstRelBbox;
+                      if(exists $PLDB{$cellref} ) {
+                         my @cellSize = $PLDB{$cellref}->dbMdbGetSize;
+                         my @pins = $PLDB{$cellref}->dbMdbGetPins;
+                         my ($pinbase) = (split(/\[/,$sinkPin))[0];   
+                         foreach my $p (@pins){
+                            if ($p eq $pinbase."[0]"){  
+                              my @pinRect = $PLDB{$cellref}->dbMdbGetPinRect($p);
+                              my ($layer,$pinllx,$pinlly,$pinurx,$pinury) = (split(/\s+/,$pinRect[0])) [0,2,3,4,5];
+                              my @pinCoords = ();
+                              $pinCoords[0] = $loc[0] + $pinllx;
+                              $pinCoords[1] = $loc[1] + $pinlly;
+                              $pinCoords[2] = $loc[0] + $pinurx;
+                              $pinCoords[3] = $loc[1] + $pinury;
+                              my $xcoord = ($pinCoords[0] + $pinCoords[2])/2;
+                              my $ycoord = ($pinCoords[1] + $pinCoords[3])/2;
+                              my ($xcoord1, $ycoord1) = dbfGuiMicron2Gui($xcoord, $ycoord);
+                              $mod_llx2 = $xcoord1;
+                              $mod_urx2 = $xcoord1;
+                              $mod_lly2 = $ycoord1;
+                              $mod_ury2 = $ycoord1;   
+                              $canx2 = $xcoord1; 
+                              $cany2 = $ycoord1; 
+                             }#if pin found
+                          }#foreach pin
+                       }else{
+                         $mod_llx2 = $coords1[0];
+                         $mod_lly2 = $coords1[1];
+                         $mod_urx2 = $coords1[2];
+                         $mod_ury2 = $coords1[3];
+                         $canx2 = $x;                      
+                         $cany2 = $y;                      
+                       }#if soft/rtl etc. 
+                      } 
+##-----------------------------------------------------------------------------------##
+                  }else{  
+                     $mod_llx2 = $coords1[0];
+                     $mod_lly2 = $coords1[1];
+                     $mod_urx2 = $coords1[2];
+                     $mod_ury2 = $coords1[3];
+                     $canx2 = $x;                      
+                     $cany2 = $y;                      
+                  }
+                  if($wireConn == 1){ 
+                     if($canx1 < $mod_llx2){
+                        my $bend = rand($mod_llx2 - $canx1)+$canx1;
+                        @wireRectCoords = ($canx1, $cany1, $bend, $cany1, $bend, $cany2, $mod_llx2, $cany2);
+                     }elsif($canx1 > $mod_urx2) {
+                        my $bend = rand($canx1 - $mod_urx2)+$mod_urx2;
+                        @wireRectCoords = ($canx1, $cany1, $bend, $cany1, $bend, $cany2, $mod_urx2, $cany2);
+                     }elsif($cany1 > $mod_ury2){
+                        my $bend = rand($cany1 - $mod_ury2)+$mod_ury2;
+                        @wireRectCoords = ($canx1, $cany1, $canx1, $bend,$canx2, $bend, $canx2, $mod_ury2);
+                     }elsif($cany1 < $mod_lly2){
+                        my $bend = rand($mod_lly2 - $cany1)+$cany1;
+                        @wireRectCoords = ($canx1, $cany1, $canx1, $bend, $canx2, $bend, $canx2, $mod_lly2);
+                     }   
+                     for(my $i=0; $i<=$#wireRectCoords; $i=$i+2){
+                         my @coord_mic = dbfGuiGui2Micron($wireRectCoords[$i],$wireRectCoords[$i+1]);
+                         push(@wireCoordInMicron,@coord_mic);
+                     }
+                     my $wireCoords_str = join ",", @wireCoordInMicron; 
+                     $wireInst = $design_canvas->createLine(
+                                                      @wireRectCoords,
+                                                      -fill => 'blue',
+                                                      -arrow => 'last',
+                                                      -width => 5,
+                                                      );
+                     &updatePseudoNet("-net",$wireName,"-sink",$sinkMod,$sinkOpt,$sinkPin,"-netCoords",$wireCoords_str); 
+                     print"#<CMD> updatePseudoNet -net $wireName -sink $sinkMod $sinkOpt $sinkPin -netCoords $wireCoords_str\n";
+                     $design_canvas->itemconfigure($wireInst, -tags =>'TST_BUS' );
+                     $design_canvas->addtag($wireName , "withtag", $wireInst);
+                  }elsif($instConn == 1){
+                     if($mod_urx1 < $mod_llx2 && $mod_llx1 != $canx1){
+                        my $bend = rand($mod_llx2-$mod_urx1)+$mod_urx1;
+                        @wireRectCoords = ($mod_urx1, $cany1, $bend, $cany1, $bend, $cany2, $mod_llx2, $cany2);
+                     }elsif($mod_llx1 > $mod_urx2 && $mod_llx1 != $canx1) {
+                        my $bend = rand($mod_llx1-$mod_urx2)+$mod_urx2;
+                        @wireRectCoords = ($mod_llx1, $cany1, $bend, $cany1, $bend, $cany2, $mod_urx2, $cany2);
+                     }elsif($mod_lly1 > $mod_ury2 && $mod_lly1 != $cany1){
+                        my $bend = rand($mod_lly1-$mod_ury2)+$mod_ury2;
+                        @wireRectCoords = ($canx1, $mod_lly1, $canx1, $bend, $canx2, $bend, $canx2, $mod_ury2);
+                     }elsif($mod_ury1 < $mod_lly2 && $mod_lly1 != $cany1){
+                        my $bend = rand($mod_lly2-$mod_ury1)+$mod_ury1;
+                        @wireRectCoords = ($canx1, $mod_ury1, $canx1, $bend, $canx2, $bend, $canx2, $mod_lly2);
+                     }else{
+                        if($canx1 < $canx2 && $cany1 < $cany2){
+                           my $bend = rand($mod_llx2 - $mod_urx1)+$mod_urx1;
+                           @wireRectCoords = ($canx1, $mod_ury1, $canx1, $bend, $canx2, $bend, $canx2,$mod_lly2);
+                        }elsif($canx1 < $canx2 && $cany1 > $cany2){
+                           my $bend = rand($mod_ury1 - $mod_lly2)+$mod_lly2;
+                           @wireRectCoords = ($mod_urx1, $cany1, $bend, $cany1, $bend, $cany2, $mod_llx2,$cany2);
+                        }elsif($canx1 > $canx2 && $cany1 > $cany2){
+                           my $bend = rand($mod_ury1 - $mod_lly2)+$mod_lly2;
+                           @wireRectCoords = ($canx1, $mod_ury1, $canx1, $bend, $canx2, $bend, $canx2, $mod_lly2);
+                        }else{ 
+                           my $bend = rand($mod_llx2 - $mod_urx1)+$mod_urx1;
+                           @wireRectCoords = ($mod_urx1, $cany1, $bend, $cany1, $bend, $cany2, $mod_llx2, $cany2);
+                        }
+                     }
+                     for(my $i=0; $i<=$#wireRectCoords; $i=$i+2){
+                         my @coord_mic = dbfGuiGui2Micron($wireRectCoords[$i],$wireRectCoords[$i+1]);
+                         push(@wireCoordInMicron,@coord_mic);
+                     }
+                     my $wireCoords_str = join ",", @wireCoordInMicron; 
+                     $wireInst = $design_canvas->createLine(
+                                                @wireRectCoords,
+                                                -fill => 'blue',
+                                                -arrow => 'last',
+                                                -width => 5,
+                                                );
+                        my $netName = &createPseudoNet("-parentModule","$TOP_MODULE","-type","bus","-source","$srcMod",$srcOpt,$srcPin,"-sink","$sinkMod",$sinkOpt,"{$sinkPin}","-prefix", $netPrefix, "-wireWidth", $netWidth, "-netCoords", $wireCoords_str);
+                        if($netName eq ""){$design_canvas->delete($wireInst);}
+                        else{
+                          if($netPrefix eq "" && $netWidth ne ""){
+                             print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                          }elsif($netWidth eq "" && $netPrefix ne ""){
+                             print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -prefix $netPrefix -netCoords $wireCoords_str\n";
+                          }elsif($netWidth eq "" && $netPrefix eq ""){
+                             print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -netCoords $wireCoords_str\n";
+                          }else{
+                             print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -prefix $netPrefix -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                          }
+                          $design_canvas->itemconfigure($wireInst, -tags =>'TST_BUS' );
+                          $design_canvas->addtag($netName , "withtag", $wireInst);
+                         }
+                  }elsif($topConn == 1){
+                     if($dx == 1){
+                        my $bend = rand($mod_llx2-$mod_llx1)+$mod_llx1; 
+                        @wireRectCoords = ($mod_llx1, $cany1, $bend, $cany1, $bend, $cany2, $mod_llx2,$cany2);
+                     }elsif($dx == -1){
+                        my $bend = rand($mod_urx1-$mod_urx2)+$mod_urx2;
+                        @wireRectCoords = ($mod_urx1, $cany1, $bend, $cany1, $bend, $cany2, $mod_urx2, $cany2);
+                     }elsif($dy == 1){
+                        my $bend = rand($mod_lly2-$mod_lly1)+$mod_lly1;
+                        @wireRectCoords = ($canx1, $mod_lly1, $canx1, $bend, $canx2, $bend, $canx2, $mod_lly2);
+                     }elsif($dy == -1){
+                        my $bend = rand($mod_ury1-$mod_ury2)+$mod_ury2;
+                        @wireRectCoords = ($canx1, $mod_ury1, $canx1, $bend, $canx2, $bend, $canx2, $mod_ury2);
+                     }
+                     for(my $i=0; $i<=$#wireRectCoords; $i=$i+2){
+                         my @coord_mic = dbfGuiGui2Micron($wireRectCoords[$i],$wireRectCoords[$i+1]);
+                         push(@wireCoordInMicron,@coord_mic);
+                     }
+                     my $wireCoords_str = join ",", @wireCoordInMicron; 
+                     $wireInst = $design_canvas->createLine(
+                                                @wireRectCoords,
+                                                -fill => 'blue',
+                                                -arrow => 'last',
+                                                -width => 5,
+                                                );
+                  my $netName = &createPseudoNet("-parentModule","$TOP_MODULE","-type","bus","-source","$srcMod",$srcOpt,$srcPin,"-sink","$sinkMod",$sinkOpt,"{$sinkPin}","-prefix", $netPrefix, "-wireWidth", $netWidth, "-netCoords",$wireCoords_str);
+                  if($netName eq ""){$design_canvas->delete($wireInst);}
+                  else{
+                    if($netPrefix eq "" && $netWidth ne ""){
+                       print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                    }elsif($netWidth eq "" && $netPrefix ne ""){
+                       print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -prefix $netPrefix -netCoords $wireCoords_str\n";
+                    }elsif($netWidth eq "" && $netPrefix eq ""){
+                       print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -netCoords $wireCoords_str\n";
+                    }else{
+                       print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -prefix $netPrefix -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                    }
+                    $design_canvas->itemconfigure($wireInst, -tags =>'TST_BUS' );
+                    $design_canvas->addtag($netName , "withtag", $wireInst);
+                  } 
+                  }else {}
+               }else {}
+   }
+($topConn, $instConn, $wireConn) = (0, 0, 0);
+ @ZBUS_SOURCE_CONN = ();
+}#sub call_selectSinkPin_forZBus
+
+################################ Subroutine PopUp Calling for RoutingBus #########################################
+sub call_selectSrcPin_forRoutingBus {
+my @arg = @_;
+my $x = $arg[0];
+my $y = $arg[1];
+my @id = @{$arg[2]};
+my $pinName = $arg[3];
+my @tagList = $design_canvas->gettags($id[0]);
+
+my @netCoords = ();
+my $instConn = 0;
+my $wireConn = 0;
+my $x1_draw = 0;
+my $y1_draw = 0; 
+@ROUTBUS_SOURCE_CONN = ();
+
+if($pinName ne ""){
+  if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}){
+     my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstCellref;
+     my @loc = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstRelBbox;
+     if(exists $PLDB{$cellref}){
+        my @cellSize = $PLDB{$cellref}->dbMdbGetSize;
+        my @pins = $PLDB{$cellref}->dbMdbGetPins;
+        my ($pinbase) = (split(/\[/,$pinName))[0];
+        foreach my $p (@pins){
+             if ($p eq $pinbase."[0]"){  
+                 my @pinRect = $PLDB{$cellref}->dbMdbGetPinRect($p);
+                 my ($layer,$pinllx,$pinlly,$pinurx,$pinury) = (split(/\s+/,$pinRect[0])) [0,2,3,4,5];
+                 my @pinCoords = ();
+                 $pinCoords[0] = $loc[0] + $pinllx;
+                 $pinCoords[1] = $loc[1] + $pinlly;
+                 $pinCoords[2] = $loc[0] + $pinurx;
+                 $pinCoords[3] = $loc[1] + $pinury;
+                 my $xcoord = ($pinCoords[0] + $pinCoords[2])/2;
+                 my $ycoord = ($pinCoords[1] + $pinCoords[3])/2;
+                 ($x1_draw, $y1_draw) = dbfGuiMicron2Gui($xcoord, $ycoord);
+                 push(@netCoords, $x1_draw, $y1_draw);
+                 $srcMod = $tagList[1];
+                 $instConn = 1;
+             }#if pin found
+        }#foreach pin
+     }else{
+        my @coords  = $design_canvas->coords($id[0]);
+        if($tagList[0] eq "FLOP" || $tagList[0] eq "MUX"){
+           $coords[3] = $coords[7]
+        }else{}   
+        my $width   = $coords[2] - $coords[0];
+        my $height  = $coords[3] - $coords[1];
+        if    ($x < $coords[0] + 0.3 * $width) {
+               $x1_draw = $coords[0];
+        }elsif($x > $coords[2] - 0.3 * $width) {
+               $x1_draw = $coords[2];
+        }else{
+               $x1_draw = $x;
+        }
+
+        if    ($y < $coords[1] + 0.3 * $height) {
+               $y1_draw = $coords[1];
+        }elsif($y > $coords[3] - 0.3 * $height) {
+               $y1_draw = $coords[3];
+        }else{
+               $y1_draw = $y;
+              }
+        push(@netCoords, $x1_draw, $y1_draw);
+             $srcMod = $tagList[1];
+             $instConn = 1;
+     }#if soft/rtl etc (because pinloc is not set for these module)
+  }
+}else{ 
+   my @topCoords = $design_canvas->coords("TOP_MODULE");
+   if(($x <= $topCoords[0]) || ($x >= $topCoords[2]) || ($y <= $topCoords[1]) || ($y >= $topCoords[3])){
+       if    ($x<=$topCoords[0] && ($y>$topCoords[1] && $y<$topCoords[3])){$x1_draw = $topCoords[0];$y1_draw = $y; 
+       }elsif($x>=$topCoords[2] && ($y>$topCoords[1] && $y<$topCoords[3])){$x1_draw = $topCoords[2];$y1_draw = $y; 
+       }elsif($y<=$topCoords[1] && ($x>$topCoords[0] && $x<$topCoords[2])){$x1_draw = $x;$y1_draw = $topCoords[1]; 
+       }elsif($y>=$topCoords[3] && ($x>$topCoords[0] && $x<$topCoords[2])){$x1_draw = $x;$y1_draw = $topCoords[3]; 
+       }
+       push(@netCoords, $x1_draw, $y1_draw);
+            $srcMod = "PIN";
+            $instConn = 1;
+   }elsif($tagList[0] ne "TOP_MODULE") {
+       if(($tagList[0] eq "current") || ($tagList[0] eq "TST_BUS")){
+           my @wire_coords  = $design_canvas->coords($id[0]);
+           for(my $i=0; $i<= $#wire_coords; $i= $i+2){
+               if ($wire_coords[$i] == $wire_coords[$i+2]){
+                   if(((($y>$wire_coords[$i+1])&&($y<$wire_coords[$i+3])) || (($y<$wire_coords[$i+1])&&($y>$wire_coords[$i+3]))) && (($x> ($wire_coords[$i]-1.5)) && ($x < ($wire_coords[$i]+1.5)))){push(@netCoords, $wire_coords[$i], $y);$wireConn = 1; $wireName = $tagList[1];}
+               }elsif($wire_coords[$i+1] == $wire_coords[$i+3]){
+                   if(((($x>$wire_coords[$i])&&($x<$wire_coords[$i+2])) || (($x<$wire_coords[$i])&&($x>$wire_coords[$i+2]))) && (($y> ($wire_coords[$i+1]-1.5)) && ($y < ($wire_coords[$i+1]+1.5)))){push(@netCoords, $x,$wire_coords[$i+1]);$wireConn = 1;$wireName = $tagList[1];}
+               }
+           }#foreach
+       }else{ my @coords  = $design_canvas->coords($id[0]);
+              if($tagList[0] eq "FLOP" || $tagList[0] eq "MUX"){
+                 $coords[3] = $coords[7]
+              }else{}   
+              my $width   = $coords[2] - $coords[0];
+              my $height  = $coords[3] - $coords[1];
+              if      ($x < $coords[0] + 0.3 * $width) {
+                   $x1_draw = $coords[0];
+              } elsif ($x > $coords[2] - 0.3 * $width) {
+                   $x1_draw = $coords[2];
+              } else {
+                   $x1_draw = $x;
+              }
+
+              if      ($y < $coords[1] + 0.3 * $height) {
+                   $y1_draw = $coords[1];
+              } elsif ($y > $coords[3] - 0.3 * $height) {
+                   $y1_draw = $coords[3];
+              } else {
+                   $y1_draw = $y;
+              }
+              push(@netCoords, $x1_draw, $y1_draw);
+              $srcMod = $tagList[1];
+       }#else
+              $instConn = 1;
+   }#if not TopModule
+ }
+@ROUTBUS_SOURCE_CONN = ($srcMod,$wireName,$wireConn,$instConn,$pinName,\@netCoords);
+}#sub call_selectSrcPin_forRoutingBus
+
+
+sub call_selectSinkPin_forRoutingBus{
+my @arg = @_;
+my $x = $arg[0];
+my $y = $arg[1];
+my @id = @{$arg[2]};
+my $sinkPin = $arg[3];
+my $netPrefix = $arg[4];
+my $netWidth = $arg[5];
+if($#ROUTBUS_SOURCE_CONN <= -1){print "WARN: Select the source Module\n";return;}
+
+my $srcMod = $ROUTBUS_SOURCE_CONN[0];
+my $wireName = $ROUTBUS_SOURCE_CONN[1];
+my $wireConn = $ROUTBUS_SOURCE_CONN[2];
+my $instConn = $ROUTBUS_SOURCE_CONN[3];
+my $srcPin = $ROUTBUS_SOURCE_CONN[4];
+my @netCoords = @{$ROUTBUS_SOURCE_CONN[5]};
+
+my @tagList = $design_canvas->gettags($id[0]);
+my $sinkMod = $tagList[1];
+my ($srcOpt,$sinkOpt) = ("","");
+
+   if($srcPin eq ""){$srcOpt = "";}
+ else{$srcOpt = "-pin";}
+   if($sinkPin eq ""){$sinkOpt = "";}
+ else{$sinkOpt = "-pin";}
+if($sinkPin ne ""){
+  my @wireCoordInMicron = ();
+  if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}){
+     my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstCellref;
+     my @loc = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstRelBbox;
+     if(exists $PLDB{$cellref} ) {
+        my @cellSize = $PLDB{$cellref}->dbMdbGetSize;
+        my @pins = $PLDB{$cellref}->dbMdbGetPins;
+        my ($pinbase) = (split(/\[/,$sinkPin))[0];
+        foreach my $p (@pins){
+             if ($p eq $pinbase."[0]"){  
+                 my @pinRect = $PLDB{$cellref}->dbMdbGetPinRect($p);
+                 my ($layer,$pinllx,$pinlly,$pinurx,$pinury) = (split(/\s+/,$pinRect[0])) [0,2,3,4,5];
+                 my @pinCoords = ();
+                 $pinCoords[0] = $loc[0] + $pinllx;
+                 $pinCoords[1] = $loc[1] + $pinlly;
+                 $pinCoords[2] = $loc[0] + $pinurx;
+                 $pinCoords[3] = $loc[1] + $pinury;
+                 my $xcoord = ($pinCoords[0] + $pinCoords[2])/2;
+                 my $ycoord = ($pinCoords[1] + $pinCoords[3])/2;
+                 ($x1_draw, $y1_draw) = dbfGuiMicron2Gui($xcoord, $ycoord);
+                 if($x1_draw == $netCoords[-2] || $y1_draw == $netCoords[-1]){
+                    push(@netCoords, $x1_draw, $y1_draw);
+                 }else{
+                    my @straightCoords = ();
+                    for(my $i=-2; $i>= -($#netCoords); $i= $i-2){
+                        if($netCoords[$i] == $netCoords[-2]){
+                           push(@straightCoords,$netCoords[$i+1]);
+                        }
+                    }#foreach net coords 
+                    @straightCoords = sort{$a<=>$b}@straightCoords;
+                    if(($y1_draw < $netCoords[-1] && $y1_draw > $straightCoords[0])|| ($y1_draw > $netCoords[-1] && $y1_draw < $straightCoords[-1])){
+                        push(@netCoords, $x1_draw, $netCoords[-1], $x1_draw, $y1_draw); 
+                    }else{
+                        push(@netCoords, $netCoords[-2], $y1_draw,$x1_draw, $y1_draw); 
+                    }
+                 } 
+                if($instConn == 1){
+                   for(my $i=0; $i<=$#netCoords; $i=$i+2){
+                       my @coord_mic = dbfGuiGui2Micron($netCoords[$i],$netCoords[$i+1]);
+                       push(@wireCoordInMicron,@coord_mic);
+                   }
+                   my $wireCoords_str = join ",", @wireCoordInMicron;
+                   $design_canvas->delete(WIRETEMP);  
+                   $wireInst = $design_canvas->createLine(
+                                                        @netCoords,
+                                                        -fill => 'blue',
+                                                        -arrow => 'last',
+                                                        -width => 5,
+                                                          );
+                   if($wireConn == 0){
+                      if($netPrefix eq "" && $netWidth ne ""){
+                         print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                      }elsif($netWidth eq "" && $netPrefix ne ""){
+                         print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -prefix $netPrefix -netCoords $wireCoords_str\n";
+                      }elsif($netWidth eq "" && $netPrefix eq ""){
+                         print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -netCoords $wireCoords_str\n";
+                      }else{
+                         print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -prefix $netPrefix -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                      }
+                      my $netName = &createPseudoNet("-parentModule","$TOP_MODULE","-type","bus","-source","$srcMod",$srcOpt,$srcPin,"-sink","$sinkMod",$sinkOpt,"{$sinkPin}","-prefix", $netPrefix, "-wireWidth", $netWidth, "-netCoords", $wireCoords_str);
+                      $design_canvas->itemconfigure($wireInst, -tags =>'TST_BUS' );
+                      $design_canvas->addtag($netName , "withtag", $wireInst);
+                   }else{
+                      &updatePseudoNet("-net",$wireName,"-sink",$sinkMod,$sinkOpt,$sinkPin,"-netCoords",$wireCoords_str); 
+                      print"#<CMD> updatePseudoNet -net $wireName -sink $sinkMod $sinkOpt $sinkPin -netCoords $wireCoords_str\n";
+                      $design_canvas->itemconfigure($wireInst, -tags =>'TST_BUS' );
+                      $design_canvas->addtag($wireName , "withtag", $wireInst);
+                   }#else   
+               }#if intConn = 1
+             }#if pin found
+        }#foreach pin
+     }else{
+        my @coords1  = $design_canvas->coords($id[0]);
+        if($tagList[0] eq "FLOP" || $tagList[0] eq "MUX"){
+           $coords1[3] = $coords1[7]
+        }else{}   
+        if(($netCoords[-2] < $coords1[0])&&(($netCoords[-1] > $coords1[1])&&($netCoords[-1] < $coords1[3]))) {push(@netCoords, $coords1[0],$netCoords[-1]);} 
+        if(($netCoords[-2] > $coords1[2]) && (($netCoords[-1] > $coords1[1]) && ($netCoords[-1] < $coords1[3]))) {push(@netCoords, $coords1[2],$netCoords[-1]);} 
+        if(($netCoords[-1] < $coords1[1]) && (($netCoords[-2] > $coords1[0]) && ($netCoords[-2] < $coords1[2]))) {push(@netCoords,$netCoords[-2],$coords1[1]);} 
+        if(($netCoords[-1] > $coords1[3]) && (($netCoords[-2] > $coords1[0]) && ($netCoords[-2] < $coords1[2]))) {push(@netCoords,$netCoords[-2],$coords1[3]);} 
+        if($instConn == 1){
+           for(my $i=0; $i<=$#netCoords; $i=$i+2){
+               my @coord_mic = dbfGuiGui2Micron($netCoords[$i],$netCoords[$i+1]);
+               push(@wireCoordInMicron,@coord_mic);
+           }
+           my $wireCoords_str = join ",", @wireCoordInMicron;
+           $design_canvas->delete(WIRETEMP);  
+           $wireInst = $design_canvas->createLine(
+                                                  @netCoords,
+                                                  -fill => 'blue',
+                                                  -arrow => 'last',
+                                                  -width => 5,
+                                                   );
+           if($wireConn == 0){
+              if($netPrefix eq "" && $netWidth ne ""){
+                 print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -wireWidth $netWidth -netCoords $wireCoords_str\n";
+              }elsif($netWidth eq "" && $netPrefix ne ""){
+                 print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -prefix $netPrefix -netCoords $wireCoords_str\n";
+              }elsif($netWidth eq "" && $netPrefix eq ""){
+                 print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -netCoords $wireCoords_str\n";
+              }else{
+                 print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod $srcOpt $srcPin -sink $sinkMod $sinkOpt {$sinkPin} -prefix $netPrefix -wireWidth $netWidth -netCoords $wireCoords_str\n";
+              }  
+              my $netName = &createPseudoNet("-parentModule","$TOP_MODULE","-type","bus","-source","$srcMod", "$srcOpt", "$srcPin","-sink","$sinkMod", "$sinkOpt", "{$sinkPin}", "-prefix", $netPrefix, "-wireWidth", $netWidth,"-netCoords", $wireCoords_str);
+              $design_canvas->itemconfigure($wireInst, -tags =>'TST_BUS' );
+              $design_canvas->addtag($netName , "withtag", $wireInst);
+           }else {
+              &updatePseudoNet("-net",$wireName,"-sink",$sinkMod,$sinkOpt,$sinkPin,"-netCoords",$wireCoords_str); 
+              print"#<CMD> updatePseudoNet -net $wireName -sink $sinkMod $sinkOpt $sinkPin -netCoords $wireCoords_str\n";
+              $design_canvas->itemconfigure($wireInst, -tags =>'TST_BUS' );
+              $design_canvas->addtag($wireName , "withtag", $wireInst);
+           }#if same wire
+        }#if wire is connected with src
+     }#if cellref not in PLDB
+  }#if exists in VINST
+}else{
+   my @coords1 = ();
+   my @wireCoordInMicron = ();
+   my @topCoords = $design_canvas->coords("TOP_MODULE");
+   if(($tagList[0] ne "TOP_MODULE") && ($tagList[0] ne "TST_BUS") && ($tagList[1] ne "current") && ($tagList[1] ne $srcMod)){ 
+      if(($x <= $topCoords[0]) || ($x >= $topCoords[2]) || ($y <= $topCoords[1]) || ($y >= $topCoords[3])){
+          if    ($x<=$topCoords[0] && ($y>$topCoords[1] && $y<$topCoords[3])){push(@netCoords,$topCoords[0],$netCoords[-1]); 
+          }elsif($x>=$topCoords[2] && ($y>$topCoords[1] && $y<$topCoords[3])){push(@netCoords,$topCoords[2],$netCoords[-1]); 
+          }elsif($y<=$topCoords[1] && ($x>$topCoords[0] && $x<$topCoords[2])){push(@netCoords,$netCoords[-2],$topCoords[1]); 
+          }elsif($y>=$topCoords[3] && ($x>$topCoords[0] && $x<$topCoords[2])){push(@netCoords,$netCoords[-2],$topCoords[3]); 
+          }
+          @coords1 = @topCoords;
+          $sinkMod = "PIN"; 
+      }else{
+          $sinkMod = $tagList[1];
+          @coords1  = $design_canvas->coords($id[0]);
+          if($tagList[0] eq "FLOP" || $tagList[0] eq "MUX"){
+             $coords1[3] = $coords1[7]
+          }else{}   
+          if(($netCoords[-2] < $coords1[0])&&(($netCoords[-1] > $coords1[1])&&($netCoords[-1] < $coords1[3]))) {push(@netCoords, $coords1[0],$netCoords[-1]);} 
+          elsif(($netCoords[-2] > $coords1[2]) && (($netCoords[-1] > $coords1[1]) && ($netCoords[-1] < $coords1[3]))) {push(@netCoords, $coords1[2],$netCoords[-1]);} 
+          elsif(($netCoords[-1] < $coords1[1]) && (($netCoords[-2] > $coords1[0]) && ($netCoords[-2] < $coords1[2]))) {push(@netCoords,$netCoords[-2],$coords1[1]);} 
+          elsif(($netCoords[-1] > $coords1[3]) && (($netCoords[-2] > $coords1[0]) && ($netCoords[-2] < $coords1[2]))) {push(@netCoords,$netCoords[-2],$coords1[3]);} 
+          elsif(($netCoords[-1] < $coords1[1])&&($netCoords[-1] < $coords1[3])) {push(@netCoords, $x,$netCoords[-1],$x,$coords1[1]);} 
+          elsif(($netCoords[-1] > $coords1[1])&&($netCoords[-1] > $coords1[3])) {push(@netCoords, $x,$netCoords[-1],$x,$coords1[3]);} 
+      }#if not connected with TOP_MODULE
+          if($instConn == 1){
+                          for(my $i=0; $i<=$#netCoords; $i=$i+2){
+                              my @coord_mic = dbfGuiGui2Micron($netCoords[$i],$netCoords[$i+1]);
+                              push(@wireCoordInMicron,@coord_mic);
+                          }
+                          my $wireCoords_str = join ",", @wireCoordInMicron;
+                          $design_canvas->delete(WIRETEMP);  
+                          $wireInst = $design_canvas->createLine(
+                                                                 @netCoords,
+                                                                 -fill => 'blue',
+                                                                 -arrow => 'last',
+                                                                 -width => 5,
+                                                                 );
+             if($wireConn == 0){
+                if($netPrefix eq "" && $netWidth ne ""){
+                   print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod $srcOpt $srcPin -sink $sinkMod -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                }elsif($netWidth eq "" && $netPrefix ne ""){
+                   print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod $srcOpt $srcPin -sink $sinkMod -prefix $netPrefix -netCoords $wireCoords_str\n";
+                }elsif($netWidth eq "" && $netPrefix eq ""){
+                   print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod $srcOpt $srcPin -sink $sinkMod -netCoords $wireCoords_str\n";
+                }else{
+                   print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcMod $srcOpt $srcPin -sink $sinkMod -prefix $netPrefix -wireWidth $netWidth -netCoords $wireCoords_str\n";
+                }  
+                my $netName = &createPseudoNet("-parentModule","$TOP_MODULE","-type","bus","-source","$srcMod", "$srcOpt", "$srcPin","-sink","$sinkMod", "-prefix", $netPrefix, "-wireWidth", $netWidth,"-netCoords", $wireCoords_str);
+                $design_canvas->itemconfigure($wireInst, -tags =>'TST_BUS' );
+                $design_canvas->addtag($netName , "withtag", $wireInst);
+             }else {
+                &updatePseudoNet("-net",$wireName,"-sink",$sinkMod,"-netCoords",$wireCoords_str); 
+                print"#<CMD> updatePseudoNet -net $wireName -sink $sinkMod -netCoords $wireCoords_str\n";
+                $design_canvas->itemconfigure($wireInst, -tags =>'TST_BUS' );
+                $design_canvas->addtag($wireName , "withtag", $wireInst);
+             }#if same wire
+          }#if wire is connected with src
+   }#if neither wire nor top module
+   else{$design_canvas->delete(WIRETEMP);}
+}
+$instConn = 0;
+@ROUTBUS_SOURCE_CONN = (); 
+}#sub call_selectSinkPin_forRoutingBus
+
+##################################### Subroutine to create Power Connection ######################################
+sub popup_selectPin_forTieHi{
+my @arg = @_;
+my $x = $arg[0];
+my $y = $arg[1];
+my @tagList = @{$arg[2]};
+my $netPrefix = $arg[3];
+my $netWidth = $arg[4];
+
+my $inst = @tagList[1]; 
+my @pins = ();
+#my $pinName = "Select Pin";
+my $pinName = "";
+my $popupgui = MainWindow->new();
+   $popupgui->title ("Select Pin");
+   my $EntryFrame=$popupgui->Frame()->pack(-side => 'top',-anchor=>'n',-expand=>1, -fill=>'both');
+   my $ButtonFrame=$popupgui->Frame()->pack(-side => 'bottom');
+   if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$inst}){
+      my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$inst}->dbPimDBGetInstCellref;
+      if(exists $PLDB{$cellref}){
+         my @pinArray = $PLDB{$cellref}->dbMdbGetPins; 
+         foreach my $pin(@pinArray){
+                 my $pinDir = $PLDB{$cellref}->dbMdbGetPinDir($pin);
+                 if($pinDir == 0){
+                    push(@pins, $pin);
+                 }
+         }
+              
+      }elsif(exists $PSEUDO_MODULE_ALREADY{$cellref}){
+               @pins = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetInput;
+      }else { }
+   }#if inst exists
+
+      @pins = sort@pins; 
+ if($tagList[0] eq "TST_MODULE"){
+    my $entry =   $EntryFrame->BrowseEntry(-label => "Pin",-textvariable =>\$pinName)->pack(-side =>'left', -anchor => 'w');
+    foreach(@pins){
+            $entry->insert('end',$_);
+    }#foreach
+ }#if not a wire
+
+my $ConnctButton = $ButtonFrame->Button(-text=>'Connect',-relief=>'groove',-pady=>0,-padx=>0,
+                                        -command =>sub {&create_tieHi_connection($x,$y,\@tagList,$pinName,$netPrefix,$netWidth);
+                                                        $popupgui->destroy;
+                                                      }
+                                         )->pack(-side=>'left');
+my $CancelButton = $ButtonFrame->Button(-text=>'Cancel',-relief=>'groove',-pady=>0,
+                                        -command =>sub {$popupgui->destroy;
+                                         })->pack(-side=>'left');
+}#sub popup_selectPin_forTieHi
+
+sub create_tieHi_connection {
+my @arg = @_;
+my $x = $arg[0];
+my $y = $arg[1];
+my @tagList = @{$arg[2]};
+my $sinkPin = $arg[3];
+my $netPrefix = $arg[4];
+my $netWidth = $arg[5];
+
+my $sinkMod = $tagList[1];
+my ($llx,$lly,$urx,$ury) = $design_canvas->coords($tagList[1]);
+
+if($sinkPin ne ""){
+   if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}){
+   my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstCellref;
+   my @loc = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstRelBbox;
+   if(exists $PLDB{$cellref}) {
+      my @cellSize = $PLDB{$cellref}->dbMdbGetSize;
+      my @pins = $PLDB{$cellref}->dbMdbGetPins;
+      foreach my $p (@pins){
+           if($p eq $sinkPin){  
+              my @pinRect = $PLDB{$cellref}->dbMdbGetPinRect($p);
+              my ($layer,$pinllx,$pinlly,$pinurx,$pinury) = (split(/\s+/,$pinRect[0])) [0,2,3,4,5];
+              my @pinCoords = ();
+              $pinCoords[0] = $loc[0] + $pinllx;
+              $pinCoords[1] = $loc[1] + $pinlly;
+              $pinCoords[2] = $loc[0] + $pinurx;
+              $pinCoords[3] = $loc[1] + $pinury;
+              my $xcoord = ($pinCoords[0] + $pinCoords[2])/2;
+              my $ycoord = ($pinCoords[1] + $pinCoords[3])/2;
+              my ($net_llx, $net_lly) = dbfGuiMicron2Gui($xcoord, $ycoord);
+              my $xlDiff = $net_llx - $llx; 
+              my $xrDiff = $urx - $net_llx;
+              my $ylDiff = $net_lly - $lly; 
+              my $yrDiff = $ury - $net_lly;
+              $DIR_HASH{xl} = $xlDiff;
+              $DIR_HASH{xr} = $xrDiff;
+              $DIR_HASH{yl} = $ylDiff;
+              $DIR_HASH{yr} = $yrDiff;
+              my @side = sort hashValueAscendingOrd (keys(%DIR_HASH));
+              my ($net_urx, $net_ury);
+              if($side[0] eq "xl"){$net_urx = $net_llx - 30; $net_ury = $net_lly;
+              }elsif($side[0] eq "xr"){$net_urx = $net_llx + 30; $net_ury = $net_lly;
+              }elsif($side[0] eq "yl"){$net_urx = $net_llx; $net_ury = $net_lly - 30;
+              }elsif($side[0] eq "yr"){$net_urx = $net_llx; $net_ury = $net_lly + 30;
+              } 
+         my @wireRectCoords = ($net_llx,$net_lly,$net_urx,$net_ury);
+         my @wireCoordInMicron = ();   
+         for(my $i=0; $i<=$#wireRectCoords; $i=$i+2){
+               my @coord_mic = dbfGuiGui2Micron($wireRectCoords[$i],$wireRectCoords[$i+1]);
+               push(@wireCoordInMicron,@coord_mic);
+         }
+         my $wireCoords_str = join ",", @wireCoordInMicron;
+         my $wireInst = $design_canvas->createLine(@wireRectCoords,
+                                                  -fill => 'red',
+                                                  -arrow => 'last',
+                                                  -arrowshape => [10, 5, 5],
+                                                  -width => 5, );
+         if($netPrefix eq "" && $netWidth ne ""){
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -tieHi $sinkMod -pin $sinkPin -wireWidth $netWidth -netCoords $wireCoords_str\n";
+         }elsif($netWidth eq "" && $netPrefix ne ""){
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -tieHi $sinkMod -pin $sinkPin -prefix $netPrefix -netCoords $wireCoords_str\n";
+         }elsif($netWidth eq "" && $netPrefix eq ""){
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -tieHi $sinkMod -pin $sinkPin -netCoords $wireCoords_str\n";
+         }else{
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -tieHi $sinkMod -pin $sinkPin -prefix $netPrefix -wireWidth $netWidth -netCoords $wireCoords_str\n";
+         }
+         my $netName = &createPseudoNet("-parentModule","$TOP_MODULE","-type","bus","-tieHi","$sinkMod","-pin", $sinkPin, "-prefix", $netPrefix, "-wireWidth", $netWidth,"-netCoords",$wireCoords_str);
+            $design_canvas->itemconfigure($wireInst, -tags =>'TST_POWER');
+            $design_canvas->addtag($netName , "withtag", $wireInst);
+           }#if pin found
+      }#foreach pin
+   }#if cellref exists
+  }#if instance found
+}else {
+      my $width   = $urx - $llx;
+      my $height  = $ury - $lly;
+      my ($net_llx,$net_lly,$net_urx,$net_ury);
+         if    ($x <= $llx + 0.3 * $width){$net_llx = $llx; $net_lly = $y; $net_urx = $llx - 30; $net_ury = $y;
+         }elsif($x >= $urx - 0.3 * $width){$net_llx = $urx; $net_lly = $y; $net_urx = $urx + 30; $net_ury = $y; 
+         }elsif($y <= $lly + 0.3 * $height){$net_llx = $x; $net_lly = $lly; $net_urx = $x; $net_ury = $lly - 30;
+         }elsif($y >= $ury - 0.3 * $height){$net_llx = $x; $net_lly = $ury; $net_urx = $x; $net_ury = $ury + 30;
+         }else{$net_llx = $x; $net_lly = $lly; $net_urx = $x; $net_ury = $lly - 30;}
+
+         my @wireRectCoords = ($net_llx,$net_lly,$net_urx,$net_ury);
+         my @wireCoordInMicron = ();   
+         for(my $i=0; $i<=$#wireRectCoords; $i=$i+2){
+               my @coord_mic = dbfGuiGui2Micron($wireRectCoords[$i],$wireRectCoords[$i+1]);
+               push(@wireCoordInMicron,@coord_mic);
+         }
+         my $wireCoords_str = join ",", @wireCoordInMicron;
+         my $wireInst = $design_canvas->createLine(@wireRectCoords,
+                                                  -fill => 'red',
+                                                  -arrow => 'last',
+                                                  -arrowshape => [10, 5, 5],
+                                                  -width => 5, );
+         if($netPrefix eq "" && $netWidth ne ""){
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -tieHi $sinkMod -pin $sinkPin -wireWidth $netWidth -netCoords $wireCoords_str\n";
+         }elsif($netWidth eq "" && $netPrefix ne ""){
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -tieHi $sinkMod -pin $sinkPin -prefix $netPrefix -netCoords $wireCoords_str\n";
+         }elsif($netWidth eq "" && $netPrefix eq ""){
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -tieHi $sinkMod -pin $sinkPin -netCoords $wireCoords_str\n";
+         }else{
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -tieHi $sinkMod -pin $sinkPin -prefix $netPrefix -wireWidth $netWidth -netCoords $wireCoords_str\n";
+         }
+         my $netName = &createPseudoNet("-parentModule","$TOP_MODULE","-type","bus","-tieHi","$sinkMod","-pin", $sinkPin, "-prefix", $netPrefix, "-wireWidth", $netWidth,"-netCoords",$wireCoords_str);
+            $design_canvas->itemconfigure($wireInst, -tags =>'TST_POWER');
+            $design_canvas->addtag($netName , "withtag", $wireInst);
+}
+}#sub create_tieHi_connection 
+
+##################################### Subroutine to create Ground Connection ######################################
+sub popup_selectPin_forTieLo{
+my @arg = @_;
+my $x = $arg[0];
+my $y = $arg[1];
+my @tagList = @{$arg[2]};
+my $netPrefix = $arg[3];
+my $netWidth = $arg[4];
+
+my $inst = @tagList[1]; 
+my @pins = ();
+#my $pinName = "Select Pin";
+my $pinName = "";
+my $popupgui = MainWindow->new();
+   $popupgui->title ("Select Pin");
+   my $EntryFrame=$popupgui->Frame()->pack(-side => 'top',-anchor=>'n',-expand=>1, -fill=>'both');
+   my $ButtonFrame=$popupgui->Frame()->pack(-side => 'bottom');
+   if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$inst}){
+      my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$inst}->dbPimDBGetInstCellref;
+      if(exists $PLDB{$cellref}){
+         my @pinArray = $PLDB{$cellref}->dbMdbGetPins; 
+         foreach my $pin(@pinArray){
+                 my $pinDir = $PLDB{$cellref}->dbMdbGetPinDir($pin);
+                 if($pinDir == 0){
+                    push(@pins, $pin);
+                 }
+         }
+              
+      }elsif(exists $PSEUDO_MODULE_ALREADY{$cellref}){
+               @pins = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetInput;
+      }else { }
+   }#if inst exists
+
+      @pins = sort@pins; 
+ if($tagList[0] eq "TST_MODULE"){
+    my $entry =   $EntryFrame->BrowseEntry(-label => "Pin",-textvariable =>\$pinName)->pack(-side =>'left', -anchor => 'w');
+    foreach(@pins){
+            $entry->insert('end',$_);
+    }#foreach
+ }#if not a wire
+
+my $ConnctButton = $ButtonFrame->Button(-text=>'Connect',-relief=>'groove',-pady=>0,-padx=>0,
+                                        -command =>sub {&create_tieLo_connection($x,$y,\@tagList,$pinName,$netPrefix,$netWidth);
+                                                        $popupgui->destroy;
+                                                      }
+                                         )->pack(-side=>'left');
+my $CancelButton = $ButtonFrame->Button(-text=>'Cancel',-relief=>'groove',-pady=>0,
+                                        -command =>sub {$popupgui->destroy;
+                                         })->pack(-side=>'left');
+}#sub popup_selectPin_forTieLo
+
+sub create_tieLo_connection {
+my @arg = @_;
+my $x = $arg[0];
+my $y = $arg[1];
+my @tagList = @{$arg[2]};
+my $sinkPin = $arg[3];
+my $netPrefix = $arg[4];
+my $netWidth = $arg[5];
+
+my $sinkMod = $tagList[1];
+my ($llx,$lly,$urx,$ury) = $design_canvas->coords($tagList[1]);
+
+if($sinkPin ne ""){
+   if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}){
+   my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstCellref;
+   my @loc = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstRelBbox;
+   if(exists $PLDB{$cellref}) {
+      my @cellSize = $PLDB{$cellref}->dbMdbGetSize;
+      my @pins = $PLDB{$cellref}->dbMdbGetPins;
+      foreach my $p (@pins){
+           if($p eq $sinkPin){  
+              my @pinRect = $PLDB{$cellref}->dbMdbGetPinRect($p);
+              my ($layer,$pinllx,$pinlly,$pinurx,$pinury) = (split(/\s+/,$pinRect[0])) [0,2,3,4,5];
+              my @pinCoords = ();
+              $pinCoords[0] = $loc[0] + $pinllx;
+              $pinCoords[1] = $loc[1] + $pinlly;
+              $pinCoords[2] = $loc[0] + $pinurx;
+              $pinCoords[3] = $loc[1] + $pinury;
+              my $xcoord = ($pinCoords[0] + $pinCoords[2])/2;
+              my $ycoord = ($pinCoords[1] + $pinCoords[3])/2;
+              my ($net_llx, $net_lly) = dbfGuiMicron2Gui($xcoord, $ycoord);
+              my $xlDiff = $net_llx - $llx; 
+              my $xrDiff = $urx - $net_llx;
+              my $ylDiff = $net_lly - $lly; 
+              my $yrDiff = $ury - $net_lly;
+              $DIR_HASH{xl} = $xlDiff;
+              $DIR_HASH{xr} = $xrDiff;
+              $DIR_HASH{yl} = $ylDiff;
+              $DIR_HASH{yr} = $yrDiff;
+              my @side = sort hashValueAscendingOrd (keys(%DIR_HASH));
+              my ($net_urx, $net_ury);
+              if($side[0] eq "xl"){$net_urx = $net_llx - 30; $net_ury = $net_lly;
+              }elsif($side[0] eq "xr"){$net_urx = $net_llx + 30; $net_ury = $net_lly;
+              }elsif($side[0] eq "yl"){$net_urx = $net_llx; $net_ury = $net_lly - 30;
+              }elsif($side[0] eq "yr"){$net_urx = $net_llx; $net_ury = $net_lly + 30;
+              } 
+         my @wireRectCoords = ($net_llx,$net_lly,$net_urx,$net_ury);
+         my @wireCoordInMicron = ();   
+         for(my $i=0; $i<=$#wireRectCoords; $i=$i+2){
+               my @coord_mic = dbfGuiGui2Micron($wireRectCoords[$i],$wireRectCoords[$i+1]);
+               push(@wireCoordInMicron,@coord_mic);
+         }
+         my $wireCoords_str = join ",", @wireCoordInMicron;
+         my $wireInst = $design_canvas->createLine(@wireRectCoords,
+                                                  -fill => 'green',
+                                                  -arrow => 'last',
+                                                  -arrowshape => [7, 0, 8],
+                                                  -width => 5, );
+         if($netPrefix eq "" && $netWidth ne ""){
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -tieLo $sinkMod -pin $sinkPin -wireWidth $netWidth -netCoords $wireCoords_str\n";
+         }elsif($netWidth eq "" && $netPrefix ne ""){
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -tieLo $sinkMod -pin $sinkPin -prefix $netPrefix -netCoords $wireCoords_str\n";
+         }elsif($netWidth eq "" && $netPrefix eq ""){
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -tieLo $sinkMod -pin $sinkPin -netCoords $wireCoords_str\n";
+         }else{
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -tieLo $sinkMod -pin $sinkPin -prefix $netPrefix -wireWidth $netWidth -netCoords $wireCoords_str\n";
+         }
+         my $netName = &createPseudoNet("-parentModule","$TOP_MODULE","-type","bus","-tieLo","$sinkMod","-pin", $sinkPin, "-prefix", $netPrefix, "-wireWidth", $netWidth,"-netCoords",$wireCoords_str);
+            $design_canvas->itemconfigure($wireInst, -tags =>'TST_GROUND');
+            $design_canvas->addtag($netName , "withtag", $wireInst);
+           }#if pin found
+      }#foreach pin
+   }#if cellref exists
+  }#if instance found
+}else {
+      my $width   = $urx - $llx;
+      my $height  = $ury - $lly;
+      my ($net_llx,$net_lly,$net_urx,$net_ury);
+         if    ($x <= $llx + 0.3 * $width){$net_llx = $llx; $net_lly = $y; $net_urx = $llx - 30; $net_ury = $y;
+         }elsif($x >= $urx - 0.3 * $width){$net_llx = $urx; $net_lly = $y; $net_urx = $urx + 30; $net_ury = $y; 
+         }elsif($y <= $lly + 0.3 * $height){$net_llx = $x; $net_lly = $lly; $net_urx = $x; $net_ury = $lly - 30;
+         }elsif($y >= $ury - 0.3 * $height){$net_llx = $x; $net_lly = $ury; $net_urx = $x; $net_ury = $ury + 30;
+         }else{$net_llx = $x; $net_lly = $lly; $net_urx = $x; $net_ury = $lly - 30;}
+
+         my @wireRectCoords = ($net_llx,$net_lly,$net_urx,$net_ury);
+         my @wireCoordInMicron = ();   
+         for(my $i=0; $i<=$#wireRectCoords; $i=$i+2){
+               my @coord_mic = dbfGuiGui2Micron($wireRectCoords[$i],$wireRectCoords[$i+1]);
+               push(@wireCoordInMicron,@coord_mic);
+         }
+         my $wireCoords_str = join ",", @wireCoordInMicron;
+         my $wireInst = $design_canvas->createLine(@wireRectCoords,
+                                                  -fill => 'green',
+                                                  -arrow => 'last',
+                                                  -arrowshape => [7, 0, 8],
+                                                  -width => 5, );
+         if($netPrefix eq "" && $netWidth ne ""){
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -tieLo $sinkMod -pin $sinkPin -wireWidth $netWidth -netCoords $wireCoords_str\n";
+         }elsif($netWidth eq "" && $netPrefix ne ""){
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -tieLo $sinkMod -pin $sinkPin -prefix $netPrefix -netCoords $wireCoords_str\n";
+         }elsif($netWidth eq "" && $netPrefix eq ""){
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -tieLo $sinkMod -pin $sinkPin -netCoords $wireCoords_str\n";
+         }else{
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -tieLo $sinkMod -pin $sinkPin -prefix $netPrefix -wireWidth $netWidth -netCoords $wireCoords_str\n";
+         }
+         my $netName = &createPseudoNet("-parentModule","$TOP_MODULE","-type","bus","-tieLo","$sinkMod","-pin", $sinkPin, "-prefix", $netPrefix, "-wireWidth", $netWidth,"-netCoords",$wireCoords_str);
+            $design_canvas->itemconfigure($wireInst, -tags =>'TST_GROUND');
+            $design_canvas->addtag($netName , "withtag", $wireInst);
+}
+}#sub create_tieLo_connection 
+
+sub hashValueAscendingOrd {
+   $DIR_HASH{$a} <=> $DIR_HASH{$b};
+}#sub hashValueAscendingOrd
+
+##################################### Subroutine to create Pwr/Ground Bus Connection ######################################
+sub popup_selectPin_forTieLoTieHi_BusConn{
+my @arg = @_;
+my $x = $arg[0];
+my $y = $arg[1];
+my @tagList = @{$arg[2]};
+my $netPrefix = $arg[3];
+my $netWidth = $arg[4];
+
+my $inst = @tagList[1]; 
+my @pins = ();
+my @pinfound = ();
+my $pinName = "";
+my $SrcConnections = "";
+
+my $popupgui = MainWindow->new();
+   $popupgui->title ("Select Pin");
+   my $topFrame=$popupgui->Frame()->pack(-side => 'top',-expand=>1, -fill=>'x');
+   my $EntryFrame=$popupgui->Frame()->pack(-side => 'top',-expand=>1, -fill=>'x');
+   my $ButtonFrame=$popupgui->Frame()->pack(-side => 'bottom');
+
+   if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$inst}){
+      my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$inst}->dbPimDBGetInstCellref;
+      if(exists $PLDB{$cellref}){
+         my @pinArray = $PLDB{$cellref}->dbMdbGetPins; 
+         foreach my $pin(@pinArray){
+                 my $pinDir = $PLDB{$cellref}->dbMdbGetPinDir($pin);
+                 if($pinDir == 0){
+                    push(@pinfound, $pin);
+                 }
+         }
+         foreach(sort@pinfound){
+            my $width = $PLDB{$cellref}->dbMdbGetPinBusWidth($_);
+            if($width == 1){
+               my $baseName = $PLDB{$cellref}->dbMdbGetPinBusBaseName($_);
+               if($#temp >= -1){ 
+                  if($temp[-1] ne $baseName){
+                     my $bits = $PLDB{$cellref}->dbMdbGetPinBusBits($baseName);
+                     push(@pins, $baseName.$bits);
+                     push(@temp, $baseName);
+                  }
+               }else{
+                  my $bits = $PLDB{$cellref}->dbMdbGetPinBusBits($baseName);
+                  push(@pins, $baseName.$bits);
+                  push(@temp, $baseName);
+               }
+            }
+         } 
+              
+      }elsif(exists $PSEUDO_MODULE_ALREADY{$cellref}){
+         my @pinArray = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetInput;
+         foreach my $pin(@pinArray){
+           my $type = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetInputType($pin);
+           if($type == 1){
+              my $bits = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetInputBits($pin);
+              push(@pins, $pin.$bits);
+           }
+         }
+      }else {}
+   }#if inst exists
+
+      @pins = sort@pins; 
+ if($tagList[0] eq "TST_MODULE"){
+    my $label = $topFrame->Label(-text=>"Source")->pack(-side=>'left');
+    my $srcEntry = $topFrame->Entry(-textvariable=>\$SrcConnections)->pack(-side=>'left',-expand=>1,-fill=>'x');
+    my $label1 = $EntryFrame->Label(-text=>"pin        ")->pack(-side=>'left');
+    my $entry =   $EntryFrame->BrowseEntry(-textvariable =>\$pinName)->pack(-side =>'left',-expand=>1,-fill=>'x');
+    foreach(@pins){
+            $entry->insert('end',$_);
+    }#foreach
+ }#if not a wire
+
+my $ConnctButton = $ButtonFrame->Button(-text=>'Connect',-relief=>'groove',-pady=>0,-padx=>0,
+                                        -command =>sub {&create_tieLo_tieHi_BusConn($x,$y,\@tagList,$pinName,$SrcConnections,$netPrefix,$netWidth);
+                                                        $popupgui->destroy;
+                                                      }
+                                         )->pack(-side=>'left');
+my $CancelButton = $ButtonFrame->Button(-text=>'Cancel',-relief=>'groove',-pady=>0,
+                                        -command =>sub {$popupgui->destroy;
+                                         })->pack(-side=>'left');
+}#sub popup_selectPin_forTieLoTieHi_BusConn
+
+sub create_tieLo_tieHi_BusConn {
+my @arg = @_;
+my $x = $arg[0];
+my $y = $arg[1];
+my @tagList = @{$arg[2]};
+my $sinkPin = $arg[3];
+my $SrcConnections = $arg[4];
+my $netPrefix = $arg[5];
+my $netWidth = $arg[6];
+
+my $sinkMod = $tagList[1];
+my ($llx,$lly,$urx,$ury) = $design_canvas->coords($tagList[1]);
+
+my @bits = split(//,$SrcConnections);
+my $busWidth = @bits;
+my $srcInst = $busWidth."'b".$SrcConnections; 
+
+if($sinkPin ne ""){
+   if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}){
+   my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstCellref;
+   my @loc = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$tagList[1]}->dbPimDBGetInstRelBbox;
+   if(exists $PLDB{$cellref}) {
+      my @cellSize = $PLDB{$cellref}->dbMdbGetSize;
+      my @pins = $PLDB{$cellref}->dbMdbGetPins;
+      my ($pinbase) = (split(/\[/,$sinkPin))[0];
+      foreach my $p (@pins){
+           if($p eq $pinbase."[0]"){  
+              my @pinRect = $PLDB{$cellref}->dbMdbGetPinRect($p);
+              my ($layer,$pinllx,$pinlly,$pinurx,$pinury) = (split(/\s+/,$pinRect[0])) [0,2,3,4,5];
+              my @pinCoords = ();
+              $pinCoords[0] = $loc[0] + $pinllx;
+              $pinCoords[1] = $loc[1] + $pinlly;
+              $pinCoords[2] = $loc[0] + $pinurx;
+              $pinCoords[3] = $loc[1] + $pinury;
+              my $xcoord = ($pinCoords[0] + $pinCoords[2])/2;
+              my $ycoord = ($pinCoords[1] + $pinCoords[3])/2;
+              my ($net_llx, $net_lly) = dbfGuiMicron2Gui($xcoord, $ycoord);
+              my $xlDiff = $net_llx - $llx; 
+              my $xrDiff = $urx - $net_llx;
+              my $ylDiff = $net_lly - $lly; 
+              my $yrDiff = $ury - $net_lly;
+              $DIR_HASH{xl} = $xlDiff;
+              $DIR_HASH{xr} = $xrDiff;
+              $DIR_HASH{yl} = $ylDiff;
+              $DIR_HASH{yr} = $yrDiff;
+              my @side = sort hashValueAscendingOrd (keys(%DIR_HASH));
+              my ($net_urx, $net_ury);
+              if($side[0] eq "xl"){$net_urx = $net_llx - 30; $net_ury = $net_lly;
+              }elsif($side[0] eq "xr"){$net_urx = $net_llx + 30; $net_ury = $net_lly;
+              }elsif($side[0] eq "yl"){$net_urx = $net_llx; $net_ury = $net_lly - 30;
+              }elsif($side[0] eq "yr"){$net_urx = $net_llx; $net_ury = $net_lly + 30;
+              } 
+         my @wireRectCoords = ($net_llx,$net_lly,$net_urx,$net_ury);
+         my @wireCoordInMicron = ();   
+         for(my $i=0; $i<=$#wireRectCoords; $i=$i+2){
+               my @coord_mic = dbfGuiGui2Micron($wireRectCoords[$i],$wireRectCoords[$i+1]);
+               push(@wireCoordInMicron,@coord_mic);
+         }
+         my $wireCoords_str = join ",", @wireCoordInMicron;
+         my $wireInst = $design_canvas->createLine(@wireRectCoords,
+                                                  -fill => 'maroon4',
+                                                  -arrow => 'last',
+                                                  -arrowshape => [10, 5, 5],
+                                                  -width => 5, );
+         if($netPrefix eq "" && $netWidth ne ""){
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcInst -sink $sinkMod -pin $sinkPin -wireWidth $netWidth -netCoords $wireCoords_str\n";
+         }elsif($netWidth eq "" && $netPrefix ne ""){
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcInst -sink $sinkMod -pin $sinkPin -prefix $netPrefix -netCoords $wireCoords_str\n";
+         }elsif($netWidth eq "" && $netPrefix eq ""){
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcInst -sink $sinkMod -pin $sinkPin -netCoords $wireCoords_str\n";
+         }else{
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcInst -sink $sinkMod -pin $sinkPin -prefix $netPrefix -wireWidth $netWidth -netCoords $wireCoords_str\n";
+         }
+         my $netName = &createPseudoNet("-parentModule","$TOP_MODULE","-type","bus","-source",$srcInst,"-sink","$sinkMod","-pin", $sinkPin, "-prefix", $netPrefix, "-wireWidth", $netWidth,"-netCoords",$wireCoords_str);
+            $design_canvas->itemconfigure($wireInst, -tags =>'TST_TIE');
+            $design_canvas->addtag($netName , "withtag", $wireInst);
+           }#if pin found
+      }#foreach pin
+   }else{
+#--------------------------------------------------------------------------------------------------------------#   
+      my $width   = $urx - $llx;
+      my $height  = $ury - $lly;
+      my ($net_llx,$net_lly,$net_urx,$net_ury);
+         if    ($x <= $llx + 0.3 * $width){$net_llx = $llx; $net_lly = $y; $net_urx = $llx - 30; $net_ury = $y;
+         }elsif($x >= $urx - 0.3 * $width){$net_llx = $urx; $net_lly = $y; $net_urx = $urx + 30; $net_ury = $y; 
+         }elsif($y <= $lly + 0.3 * $height){$net_llx = $x; $net_lly = $lly; $net_urx = $x; $net_ury = $lly - 30;
+         }elsif($y >= $ury - 0.3 * $height){$net_llx = $x; $net_lly = $ury; $net_urx = $x; $net_ury = $ury + 30;
+         }else{$net_llx = $x; $net_lly = $lly; $net_urx = $x; $net_ury = $lly - 30;}
+
+         my @wireRectCoords = ($net_llx,$net_lly,$net_urx,$net_ury);
+         my @wireCoordInMicron = ();   
+         for(my $i=0; $i<=$#wireRectCoords; $i=$i+2){
+               my @coord_mic = dbfGuiGui2Micron($wireRectCoords[$i],$wireRectCoords[$i+1]);
+               push(@wireCoordInMicron,@coord_mic);
+         }
+         my $wireCoords_str = join ",", @wireCoordInMicron;
+         my $wireInst = $design_canvas->createLine(@wireRectCoords,
+                                                  -fill => 'maroon4',
+                                                  -arrow => 'last',
+                                                  -arrowshape => [10, 5, 5],
+                                                  -width => 5, );
+         if($netPrefix eq "" && $netWidth ne ""){
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcInst -sink $sinkMod -pin $sinkPin -wireWidth $netWidth -netCoords $wireCoords_str\n";
+         }elsif($netWidth eq "" && $netPrefix ne ""){
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcInst -sink $sinkMod -pin $sinkPin -prefix $netPrefix -netCoords $wireCoords_str\n";
+         }elsif($netWidth eq "" && $netPrefix eq ""){
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcInst -sink $sinkMod -pin $sinkPin -netCoords $wireCoords_str\n";
+         }else{
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcInst -sink $sinkMod -pin $sinkPin -prefix $netPrefix -wireWidth $netWidth -netCoords $wireCoords_str\n";
+         }
+         my $netName = &createPseudoNet("-parentModule","$TOP_MODULE","-type","bus","-source",$srcInst,"-sink","$sinkMod","-pin", $sinkPin, "-prefix", $netPrefix, "-wireWidth", $netWidth,"-netCoords",$wireCoords_str);
+            $design_canvas->itemconfigure($wireInst, -tags =>'TST_TIE');
+            $design_canvas->addtag($netName , "withtag", $wireInst);
+#-----------------------------------------------------------------------------------------------------------------#
+   }
+  }#if instance found
+}else {
+      my $width   = $urx - $llx;
+      my $height  = $ury - $lly;
+      my ($net_llx,$net_lly,$net_urx,$net_ury);
+         if    ($x <= $llx + 0.3 * $width){$net_llx = $llx; $net_lly = $y; $net_urx = $llx - 30; $net_ury = $y;
+         }elsif($x >= $urx - 0.3 * $width){$net_llx = $urx; $net_lly = $y; $net_urx = $urx + 30; $net_ury = $y; 
+         }elsif($y <= $lly + 0.3 * $height){$net_llx = $x; $net_lly = $lly; $net_urx = $x; $net_ury = $lly - 30;
+         }elsif($y >= $ury - 0.3 * $height){$net_llx = $x; $net_lly = $ury; $net_urx = $x; $net_ury = $ury + 30;
+         }else{$net_llx = $x; $net_lly = $lly; $net_urx = $x; $net_ury = $lly - 30;}
+
+         my @wireRectCoords = ($net_llx,$net_lly,$net_urx,$net_ury);
+         my @wireCoordInMicron = ();   
+         for(my $i=0; $i<=$#wireRectCoords; $i=$i+2){
+               my @coord_mic = dbfGuiGui2Micron($wireRectCoords[$i],$wireRectCoords[$i+1]);
+               push(@wireCoordInMicron,@coord_mic);
+         }
+         my $wireCoords_str = join ",", @wireCoordInMicron;
+         my $wireInst = $design_canvas->createLine(@wireRectCoords,
+                                                  -fill => 'maroon4',
+                                                  -arrow => 'last',
+                                                  -arrowshape => [10, 5, 5],
+                                                  -width => 5, );
+         if($netPrefix eq "" && $netWidth ne ""){
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcInst -sink $sinkMod  -wireWidth $netWidth -netCoords $wireCoords_str\n";
+         }elsif($netWidth eq "" && $netPrefix ne ""){
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcInst -sink $sinkMod  -prefix $netPrefix -netCoords $wireCoords_str\n";
+         }elsif($netWidth eq "" && $netPrefix eq ""){
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcInst -sink $sinkMod  -netCoords $wireCoords_str\n";
+         }else{
+            print"#<CMD> createPseudoNet -parentModule $TOP_MODULE -type bus -source $srcInst -sink $sinkMod  -prefix $netPrefix -wireWidth $netWidth -netCoords $wireCoords_str\n";
+         }
+         my $netName = &createPseudoNet("-parentModule","$TOP_MODULE","-type","bus","-source",$srcInst,"-sink","$sinkMod","-pin", $sinkPin, "-prefix", $netPrefix, "-wireWidth", $netWidth,"-netCoords",$wireCoords_str);
+            $design_canvas->itemconfigure($wireInst, -tags =>'TST_TIE');
+            $design_canvas->addtag($netName , "withtag", $wireInst);
+}
+}#sub create_tieLo_tieHi_BusConn 
+#############################################################################################################
+
+1;

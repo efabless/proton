@@ -1,0 +1,425 @@
+sub hardenPartition {
+
+my $noOfArguments = @_;
+my $TYPE = 'BLOCK';
+if($noOfArguments < 1 || $_[0] eq '-h'){ print "Usage : hardenPartition \n";
+                        print "                 -type < one of PAD | BLOCK | CORE>\n";
+                      }else{
+for(my $x = 0; $x < $noOfArguments; $x++){
+if($_[$x] =~ /-type/){ $TYPE = $_[$x+1];}
+                                         }#for correct no of Arguments
+
+
+my $cellName = $TOP_MODULE;
+           if ( exists $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$cellName/_self_"}} ) {
+my @size = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetSize;
+           my $width = $size[2] - $size[0];  
+           my $height = $size[3] - $size[1];  
+           my $dbu = $GLOBAL->dbfGlobalGetDBU;
+           my $fpdbu = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetDBUnit;
+              $width = $width / $fpdbu ;
+              $height = $height / $fpdbu ;
+           $PLDB{$cellName} = MacroDB::new();
+           $PLDB{$cellName}->dbMdbSetSize($width,$height);
+           $PLDB{$cellName}->dbMdbSetClass($TYPE);
+           foreach my $pinName ( keys %{$PORTS_ALREADY{$cellName}} ) {
+                   my $pinDir = $PORTS_ALREADY{$cellName}{$pinName}->dbPortGetDir;
+                   print "INFO-TST-HRDN_PART : 001 : pinName $pinName\n";
+                               $PLDB{$cellName}->dbMdbAddPin($pinName);
+                               $PLDB{$cellName}->dbMdbAddPinBusWidth($pinName,0);
+                               $PLDB{$cellName}->dbMdbSetPinDir($pinName,$pinDir);
+                               $PLDB{$cellName}->dbMdbSetPinIsSignal($pinName);
+                   my $pinLayer = $PORTS_ALREADY{$cellName}{$pinName}->dbPortGetLayer;
+                   print "INFO-TST-HRDN_PART : 002 : pinLayer $pinLayer\n";
+                   if ( exists $PTDB{$pinLayer} ) {
+                        my $layerMinWidth = $PTDB{$pinLayer}->dbTechGetLayerWidth;
+                        my @pinBox = (0,0,$layerMinWidth,$layerMinWidth);
+			###Added by Prachi for 'pad' pin###
+			if ($pinName eq 'pad') {
+				my $pad_size = $width - 2;
+				@pinBox = (0,0,$pad_size,$pad_size);
+			}
+			###################################
+                        my $pinAbsLoc = ();
+                        my @pinLoc = $PORTS_ALREADY{$cellName}{$pinName}->dbPortGetLoc;
+                        my $pinSide = $PORTS_ALREADY{$cellName}{$pinName}->dbPortGetSide;
+                      #  print join",", @pinBox; print "\n";
+                        print join",",  @pinLoc; print "\n";
+                        if ( $pinSide eq 'E' ) {
+                        $pinAbsLoc[0] = $pinLoc[0]/$dbu - $pinBox[0];
+                        $pinAbsLoc[1] = $pinLoc[1]/$dbu + $pinBox[1];
+                        $pinAbsLoc[2] = $pinLoc[0]/$dbu + $pinBox[2];
+                        $pinAbsLoc[3] = $pinLoc[1]/$dbu + $pinBox[3];
+                      #  print join",", @pinAbsLoc; print "\n";
+                                               }
+                        elsif ( $pinSide eq 'W' ) {
+                        $pinAbsLoc[0] = $pinLoc[0]/$dbu + $pinBox[0];
+                        $pinAbsLoc[1] = $pinLoc[1]/$dbu + $pinBox[1];
+                        $pinAbsLoc[2] = $pinLoc[0]/$dbu + $pinBox[2];
+                        $pinAbsLoc[3] = $pinLoc[1]/$dbu + $pinBox[3];
+                      #  print join",", @pinAbsLoc; print "\n";
+                                               }
+                        elsif ( $pinSide eq 'N' ) {
+                        $pinAbsLoc[0] = $pinLoc[0]/$dbu + $pinBox[0];
+                        $pinAbsLoc[1] = $pinLoc[1]/$dbu - $pinBox[1];
+                        $pinAbsLoc[2] = $pinLoc[0]/$dbu + $pinBox[2];
+                        $pinAbsLoc[3] = $pinLoc[1]/$dbu - $pinBox[3];
+                      #  print join",", @pinAbsLoc; print "\n";
+                                               }
+                        elsif ( $pinSide eq 'S' ) {
+                        $pinAbsLoc[0] = $pinLoc[0]/$dbu + $pinBox[0];
+                        $pinAbsLoc[1] = $pinLoc[1]/$dbu + $pinBox[1];
+                        $pinAbsLoc[2] = $pinLoc[0]/$dbu + $pinBox[2];
+                        $pinAbsLoc[3] = $pinLoc[1]/$dbu + $pinBox[3];
+                      #  print join",", @pinAbsLoc; print "\n";
+                                               }
+                        my $rect = join" ",@pinAbsLoc;
+                        my $rectL = $pinLayer." RECT ".$rect;
+                        print "INFO-TST-HRDN_PART : 003 : $rectL\n";
+                        $PLDB{$cellName}->dbMdbAddPinRect($pinName,$rectL);
+                                                  }
+
+                                                                   }#foreach port of the module
+                                                         }
+}# if correct arguments
+}#sub hardenPartition
+
+
+sub hardenPartitionForAllModule{
+my $noOfArguments = @_;
+my $TYPE = 'BLOCK';
+my $topModule = $TOP_MODULE;
+   if($noOfArguments < 1 || $_[0] eq '-h'){ 
+      print "Usage : hardenPartitionForAllModule \n";
+      print "                 -type < one of PAD | BLOCK | CORE>\n";
+   }else{
+      for(my $x = 0; $x < $noOfArguments; $x++){
+          if($_[$x] =~ /-type/){ $TYPE = $_[$x+1];}
+      }#for correct no of Arguments
+      foreach my $module (keys %PSEUDO_MODULE_ALREADY){
+         if($module ne $topModule){
+            &editModule("-module", $module);
+            &hardenPartition("-type", $TYPE);
+         }
+      }
+      #&editModule("-module", $topModule);
+   }#if correct arguments
+}#sub hardenPartitionForAllModule
+
+
+#****f* /setPseudoFloorplan
+#  setPseudoFloorplan
+# FUNCTION
+#
+#
+#
+#
+# SYNOPSIS
+#  setPseudoFloorplan
+#
+#
+#
+#
+# INPUTS
+#
+#
+#
+#
+#	options :
+#
+#
+#
+#
+#	switches :
+#
+#
+#
+#
+# OUTPUTS
+#
+#
+#
+#
+#****
+sub setPseudoFloorplan {
+my $noOfArguments = @_;
+#----------------- Defaults --------------------#
+my $moduleName = $TOP_MODULE;
+my $flplanName;
+my $pinName;
+my $layerName = "";
+my $status;
+my @bbox = ();
+my $clear = 0;
+
+if ($noOfArguments < 1 || $_[0] eq '-h') { print "Usage : set_pseudo_floorplan -module <module name>\n";
+                           print "                        -floorplan <floorplan name>\n";
+                           print "                        -pin <pin name>\n";
+                           print "                        -layer <pin layer>\n";
+                           print "                        -status <pin status>\n";
+                           print "                        -bbox <{llx,lly,urx,ury}>\n";
+                           print "                        --clear\n";
+}
+else {
+for (my $i = 0; $i < $noOfArguments; $i++) {
+if ($_[$i] eq "-module") {$moduleName = $_[$i+1];}
+elsif ($_[$i] eq "-floorplan") {$flplanName = $_[$i+1];}
+elsif ($_[$i] eq "-pin") {$pinName = $_[$i+1];}
+elsif ($_[$i] eq "-layer") {$layerName = $_[$i+1];}
+elsif ($_[$i] eq "-status") {$status = $_[$i+1];}
+elsif ($_[$i] eq "-bbox") { my $rect = $_[$i+1]; $rect =~ s/\{\s*//;
+                            $rect =~ s/\s*\}//; @bbox = split(/\,/,$rect);}
+elsif ($_[$i] eq "--clear") {$clear = 1;}
+elsif ( $_[$i] =~ m/^-+\w/) { print "WARN-TST-SET_PSUDO_FLP : 001 : invalid option $_[$i]\n"; }
+} # for
+}
+
+my $topFlplan = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetFloorplan;
+if ( defined $flplanName && $flplanName ne "" && $flplanName ne $topFlplan ) {
+  $flplanName =~ s(^/*(.*)/*$)(\1);    # remove leading and trailing slashes
+  unless ( $flplanName =~ m(/) ) {
+    $flplanName .= "/_self_";
+  }
+  $topFlplan = $flplanName;
+  $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetFloorplan($topFlplan);
+}
+elsif ( ! defined $topFlplan || $topFlplan eq "" ) {
+  $topFlplan = $moduleName . "/_self_";
+  $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetFloorplan($topFlplan);
+}
+
+if ( defined $pinName && $pinName ne "" ) {
+  if ( $clear ) {
+    $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenWipePinRect($pinName);
+  }
+  else {  #<!-- modify pin data -->
+    if ( defined $layerName && $layerName ne "" ) {
+      &dbfTstgenAddPinShape($moduleName, $pinName, $layerName, @bbox);
+      print "INFO-TST-SET_PSUDO_FLP : 002 : Set pin $pinName on module $moduleName \($layerName \[@bbox\]\)\n"
+            if ($DEBUG == 330);
+    }
+    else {
+      print "ERR-TST-SET_PSUDO_FLP : 003 : layer is required for pin $pinName\n";
+      return;
+    }
+
+    if ( defined $status && $status ne "" ) {
+      $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetPinStatus($pinName, $status);
+      print "DBG-TST-SET_PSUDO_FLP : 004 : Set pin $moduleName/$pinName status \"$status\"\n" if ($DEBUG == 330);
+    }
+  }# modify pin data
+}
+elsif ( @bbox == 4 && $layerName eq "" ) {  #<!-- modify module bbox -->
+  $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetSize(@bbox);
+  print "INFO-TST-SET_PSUDO_FLP : 005 : Set module $moduleName floorplan $topFlplan bbox to \[@bbox\]\n";
+}
+
+$PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetPhysicalDirty(1);
+}# sub setPseudoFloorplan
+
+
+#****f* /createPinGuide
+#  createPinGuide
+# FUNCTION
+#
+#
+#
+#
+# SYNOPSIS
+#  createPinGuide
+#
+#
+#
+#
+# INPUTS
+#
+#
+#
+#
+#	options :
+#               -guide <name> : name of pin guide to be created
+#
+#
+#
+#	switches :
+#
+#
+#
+#
+# OUTPUTS
+#
+#
+#
+#
+#****
+sub createPinGuide {
+my $noOfArguments = @_;
+#----------------- Defaults --------------------#
+my $guideName;
+my $module = $TOP_MODULE;
+my $guideType;
+my $layer;
+my @bbox = ();
+
+if( $noOfArguments < 1 || $_[0] eq '-h') { print "Usage : create_pin_guide -guide <new pin guide name> \n";
+                           print "                        -module <top module name>\n";
+
+                           print "                        -type <one of keepout|soft>\n";
+                           print "                        -layer <metal layer name>\n";
+                           print "                        -bbox <{llx,lly,urx,ury}>\n";
+}
+else {
+for (my $i = 0; $i < $noOfArguments; $i++) {
+   if ($_[$i] eq "-guide") {$guideName = $_[$i+1];}
+elsif ($_[$i] eq "-module") {$module = $_[$i+1];}
+elsif ($_[$i] eq "-type") {$guideType = $_[$i+1];}
+elsif ($_[$i] eq "-layer") {$layer = $_[$i+1];}
+elsif ($_[$i] eq "-bbox") { my $box = $_[$i+1]; $box =~ s/\{(.*)\}/\1/; @bbox = split(/\,/, $box); }
+elsif ($_[$i] =~ m/^-\w/) { print "WARN-TST-CR_PN_GUIDE : 001 : invalid option $_[$i]\n"; }
+} # for
+
+$guideName = &dbfTstgenCreatePinGuide($module, $guideName, $guideType, $layer, @bbox);
+return ($guideName);
+
+     }#if correct arguments
+}# sub createPinGuide
+
+
+#****f* /guidePin
+#  guidePin
+# FUNCTION
+#
+#
+#
+#
+# SYNOPSIS
+#  guidePin
+#
+#
+#
+#
+# INPUTS
+#
+#
+#
+#
+#	options :
+#               -guide <name> : name of pin guide for pins to be associated
+#
+#
+#
+#	switches :
+#
+#
+#
+#
+# OUTPUTS
+#
+#
+#
+#
+#****
+sub guidePin {
+my $noOfArguments = @_;
+#----------------- Defaults --------------------#
+my $guideName;
+my $module = $TOP_MODULE;
+my @pinList = ();
+my $undo = 0;
+
+if( $noOfArguments < 1 || $_[0] eq '-h') { print "Usage : guide_pin -guide <pin guide name> \n";
+                           print "                        -module <top module name>\n";
+
+                           print "                        -pin <pin | {pin,...}>\n";
+                           print "                        --undo\n";
+}
+else {
+for (my $i = 0; $i < $noOfArguments; $i++) {
+   if ($_[$i] eq "-guide") {$guideName = $_[$i+1];}
+elsif ($_[$i] eq "-module") {$module = $_[$i+1];}
+elsif ($_[$i] eq "-pin") {my $pinArg = $_[$i+1];
+			  if ( $pinArg !~ m/\{.*\}/ ) { push(@pinList, $pinArg); }
+                          else { $pinArg =~ s/\{(.*)\}/\1/;
+                                 @pinList = split(/\,/, $pinArg); }}
+elsif ($_[$i] eq "--undo") {$undo = 1;}
+elsif ($_[$i] =~ m/^-\w/) { print "WARN-TST-GUIDE_PN : 001 : invalid option $_[$i]\n"; }
+} # for
+
+unless ( $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenHasPinGuide($guideName) ) {
+  print "WARN-TST-GUIDE_PN : 002 : pin guide $guideName does not exist, ";
+  if ( $undo == 0 ) {
+    print "MSG-TST-GUIDE_PN : 003 : create it before attaching pins.\n";
+  }
+  else {
+    print "ERR-TST-GUIDE_PN : 004 : no pin is detached from guide.\n";
+  }
+  return;
+}
+foreach my $pin ( @pinList ) {
+  if ( $undo == 0 ) {
+    $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenPinGuideAddPin($guideName, $pin);
+  }
+  else {
+    $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenPinGuideRemovePin($guideName, $pin);
+  }
+}
+     }#if correct arguments
+}# sub guidePin
+#---------------------------------------------------------------------------------------------------------------------------#
+sub create_lef_cell {
+ my $noOfArguments = @_;
+ use Benchmark;
+ my $t0 = new Benchmark;
+ if($noOfArguments < 1 || $_[0] eq '-h' || $_[0] eq '-H' || $_[0] eq '-help' || $_[0] eq '-HELP') { 
+    print "Usage : create_lef_cell -cell <cell name>\n";
+    print "                        -class <cell type (default is CORE>\n";
+    print "	                   -size <{width,height}>\n"; 
+    print "                        -pinData <{p1,dir,layerName,llx,lly,urx,ury}>\n";
+    print "                        -obs <{layerName,llx,lly,urx,ury}>\n";
+ }else {
+    my ($cell, $class, $width, $height) = ("", "CORE", 0, 0);
+    my @pinData = ();
+    my %TEMP_PIN_HASH = ();
+    for(my $i=0; $i < $noOfArguments;$i++){
+        if($_[$i] eq "-cell"){$cell = $_[$i+1];}
+        if($_[$i] eq "-class"){$class = $_[$i+1];}
+        if($_[$i] eq "-size"){
+           my $size = $_[$i+1];
+           $size =~ s/\s*{\s*//;
+           $size =~ s/\s*}\s*//;
+           ($width,$height) = (split(/\s*,\s*/,$size))[0,1];
+        }
+        if($_[$i] eq "-pinData"){
+           my $pinData = $_[$i+1];
+           $pinData =~ s/\s*{\s*//;
+           $pinData =~ s/\s*}\s*//;
+           my ($pinName, $pinDir, @pinRects) = split(/\s*\,\s*/,$pinData);
+           $TEMP_PIN_HASH{$pinName}{dir} = $pinDir;
+           $TEMP_PIN_HASH{$pinName}{rect} = \@pinRects;
+        }
+    }#for 
+    if(exists $PLDB{$cell}){
+       print "WARN : create_lef_cell : 001 : $cell exists in PLDB\n";
+    }else {
+       $PLDB{$cell} = MacroDB::new();
+       $PLDB{$cell}->dbMdbSetSize($width,$height);
+       $PLDB{$cell}->dbMdbSetClass($class);
+       foreach my $pin (keys %TEMP_PIN_HASH){
+          my $pinDir = $TEMP_PIN_HASH{$pin}{dir};
+          my @pinRects = @{$TEMP_PIN_HASH{$pin}{rect}};
+          $PLDB{$cell}->dbMdbAddPin($pin);
+          $PLDB{$cell}->dbMdbSetPinDir($pin, $pinDir);
+         
+          if(@pinRects == 0){push(@pinRects, "M1", 0, 0, 0, 0);}
+          for(my $j=0; $j<=$#pinRects; $j=$j+5){ 
+              my $rect_line = "$pinRects[$j] RECT $pinRects[$j+1] $pinRects[$j+2] $pinRects[$j+3] $pinRects[$j+4]";
+              $PLDB{$cell}->dbMdbAddPinRect($pin,$rect_line);
+          }#for each rectangle
+       }#for each pin
+    }#else
+ }#else
+ my $t1 = new Benchmark;
+ my $td = timediff($t1, $t0);
+ print "Command create_lef_cell took:",timestr($td),"\n";
+}#sub create_lef_cell
+1;

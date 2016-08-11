@@ -1,0 +1,513 @@
+## This function extracts a part of a design within 
+## a given (x0,y0) and (x1,y1) coordinates
+
+## Algo:
+##Step 1: Foreach cell check coordinates{
+##   If inside the extracted design { then:
+##        a) copy cell into new netlist
+##        b) update location  } }
+##
+##Step 2: Foreach cell in new netlist {
+##            Foreach new pin {  
+##                      a) find_net 
+##                      b) determine in/out
+##                      c) for in -> find source & conn cell
+##                      d) for out -> find sink & conn cell
+##                      e) if connCell is in new verilog then same conn
+##                       else { add port $thisNet}
+##                      }
+###################################################
+%compsCookie = ();
+%blockageCookie = ();
+%cookieInfo = ();
+%portsCookie = ();
+%netsCookie = () ;
+@rowsInside = ();
+%tracksInside = ();
+$COOKIE_NAME = "Cookie1";
+
+sub extractDesign() {
+  my $debug =0;
+  my $addBlkg =0;
+ 
+ %compsCookie = ();
+ %blockageCookie = ();
+ %cookieInfo = ();
+ %portsCookie = ();
+ %netsCookie = () ;
+ @rowsInside = ();
+ %tracksInside = ();
+ $COOKIE_NAME = "Cookie1";
+
+
+  my $noOfArguments = @_;
+  my @cookiesize = ();
+  if( $noOfArguments < 1 || $_[0] eq '-h') { 
+ print "Usage : extractDesign\n";
+        print "                           -bbox <{llx,lly,urx,ury}>\n";
+        print "                           <-keepOrigDie>\n";
+        print "                           <-addRtBlk {m1,m2,..}>\n";
+        print "                           <-debug>\n";
+	
+  }
+  else {
+  for(my $i = 0; $i < $noOfArguments; $i++){ 
+  if($_[$i] eq "-bbox"){  
+   my $rect = $_[$i+1]; 
+   $rect =~ s/\{\s*//; 
+   $rect =~ s/\s*\}//; 
+   @cookiesize = split(/\,/,$rect);
+  }
+  elsif ($_[$i] eq "-debug") {
+   $debug = 1;
+  }
+  elsif ($_[$i] eq "-keepOrigDie")  {
+   $addBlkg = 1;
+	
+  }
+	elsif ($_[$i] eq "-addRtBlk") {
+		my $rtblkg = $_[$i+1]; 
+   		$rtblkg =~ s/\{\s*//; 
+   		$rtblkg =~ s/\s*\}//; 
+  	 	@rtblkg_mt = split(/\,/,$rtblkg);
+	}
+  } # for
+print "INFO-TST_GEOM-EXTRT_DES : 001 : Extracting the design for bbox: @cookiesize\n";
+  my ($llx_cut, $lly_cut, $urx_cut, $ury_cut);
+  $llx_cut = $cookiesize[0] * 2000;
+  $lly_cut = $cookiesize[1] * 2000;
+  $urx_cut = $cookiesize[2] * 2000;
+  $ury_cut = $cookiesize[3] * 2000;
+  
+  
+  my (@loc,@loc_mod, $instName,$size);
+  my ($xorigin, $yorigin, $llx, $lly, $urx,$ury);
+#  $DBSCALEFACTOR = $DEF_DATABASE_UNIT;
+
+
+                             
+  foreach $instName ( keys %COMP_ALREADY ) {
+        my $status = $CADB{$instName}->dbCadbGetStatus;
+        my $cellref =  $CADB{$instName}->dbCadbGetCellref;
+        my $orient = $CADB{$instance}->dbCadbGetOrient;
+       # print "Orient: $orient\n" if ($debug);
+        (@loc) =  $CADB{$instName}->dbCadbGetLoc;
+       # $xorigin = $loc[0]/$DBSCALEFACTOR;
+       # $yorigin = $loc[1]/$DBSCALEFACTOR;
+
+        $xorigin = $loc[0];
+        $yorigin = $loc[1];
+
+        #$xorigin = $xorigin*$MICRONFACTOR;
+        #$yorigin = $yorigin*$MICRONFACTOR;
+
+  if( exists $MACROS_ATTRIBUTE_ALREADY{$cellref} ) {
+    $size = $MACROS_ATTRIBUTE_ALREADY{$cellref}{size};
+    ($width,$height)=(split(/\s+/,$size))[0,1];
+
+    $width = $width*2000;
+    $height = $height*2000;  
+        } 
+  else { 
+   print "WARN-TST_GEOM-EXTRT_DES : 002 : $InstanceName : $cellref at $location size not found\n"; 
+                                                     next ;
+        }
+
+  if( $orient eq "N") {
+    $llx = $xorigin;
+    $lly = $yorigin;
+    $urx = $xorigin+$width;
+    $ury = $yorigin+$height;
+        }
+  elsif( $orient eq "FN")
+ {
+    $llx = $xorigin;
+    $lly = $yorigin+$height;
+    $urx = $xorigin+$width;
+    $ury = $yorigin;
+        }
+ elsif( $orient eq "FS") {
+  $llx = $xorigin;
+  $lly = $yorigin;
+  $urx = $xorigin+$width;
+  $ury = $yorigin+$height;
+        }
+ elsif( $orient eq "S") {
+  $llx = $xorigin;
+  $lly = $yorigin;
+  $urx = $xorigin+$width;
+  $ury = $yorigin+$height;
+        }
+ elsif( $orient eq "W") {
+  $llx = $xorigin;
+  $lly = $yorigin;
+  $urx = $xorigin+$height;
+  $ury = $yorigin+$width;
+        }
+ elsif( $orient eq "FW") {
+  $llx = $xorigin;
+  $lly = $yorigin;
+  $urx = $xorigin+$height;
+  $ury = $yorigin+$width;
+        }
+ elsif( $orient eq "E") {
+  $llx = $xorigin;
+  $lly = $yorigin;
+  $urx = $xorigin+$height;
+  $ury = $yorigin+$width;
+        }
+ elsif( $orient eq "FE") {
+  $llx = $xorigin;
+  $lly = $yorigin;
+  $urx = $xorigin+$height;
+  $ury = $yorigin+$width;
+         }
+        if (($llx >= $llx_cut) && ($lly >= $lly_cut) && ($urx<=$urx_cut) &&($ury<=$ury_cut)) {
+	  @loc_mod = ($loc[0]-$llx_cut, $loc[1]-$lly_cut);
+
+	  $compsCookie{$instName}{inside} = 1;
+          $compsCookie{$instName}{status} = $status;
+          $compsCookie{$instName}{orient} = $orient;
+          $compsCookie{$instName}{cellref} = $cellref;
+          $compsCookie{$instName}{size} = $size;
+          @{$compsCookie{$instName}{loc_pre_cut}} = @loc;
+          @{$compsCookie{$instName}{loc_post_cut}} = @loc_mod;
+          if ($addBlkg == 1) {
+          	@{$compsCookie{$instName}{loc}} = @loc;
+	  }  else {
+          	@{$compsCookie{$instName}{loc}} = @loc_mod;
+	  }
+
+}
+        
+
+}# foreach component
+
+##############################
+##Specify blockageCookies##
+##############################
+
+@{$cookieInfo{dieArea}}=(0,0,$urx_cut-$llx_cut,$ury_cut-$lly_cut);
+$cookieInfo{blkg} = 0;
+
+if ($addBlkg == 1) {
+	@{$cookieInfo{dieArea}}=@{$DIE_ALREADY{dieArea}};
+	$cookieInfo{blkg} = 1;
+	@{$blockageCookie{place}{blkg1}}=($DIE_ALREADY{dieArea}[0],$DIE_ALREADY{dieArea}[1],$urx_cut,$lly_cut);
+	@{$blockageCookie{place}{blkg2}}=($urx_cut,$DIE_ALREADY{dieArea}[1],$DIE_ALREADY{dieArea}[2],$ury_cut);
+	@{$blockageCookie{place}{blkg3}}=($DIE_ALREADY{dieArea}[0],$lly_cut,$llx_cut,$DIE_ALREADY{dieArea}[3]);
+	@{$blockageCookie{place}{blkg4}}=($llx_cut,$ury_cut,$DIE_ALREADY{dieArea}[2],$DIE_ALREADY{dieArea}[3]);
+
+	$cookieInfo{num_blkg} = 1;
+	
+	foreach (@rtblkg_mt) {
+		$cookieInfo{num_blkg} += 1;
+		@{$blockageCookie{$_}{blkg1}}=($DIE_ALREADY{dieArea}[0],$DIE_ALREADY{dieArea}[1],$urx_cut,$lly_cut);
+		@{$blockageCookie{$_}{blkg2}}=($urx_cut,$DIE_ALREADY{dieArea}[1],$DIE_ALREADY{dieArea}[2],$ury_cut);
+		@{$blockageCookie{$_}{blkg3}}=($DIE_ALREADY{dieArea}[0],$lly_cut,$llx_cut,$DIE_ALREADY{dieArea}[3]);
+		@{$blockageCookie{$_}{blkg4}}=($llx_cut,$ury_cut,$DIE_ALREADY{dieArea}[2],$DIE_ALREADY{dieArea}[3]);
+	} #foreach
+
+
+}
+#----------------------------------------#
+##Adding the nets section database##
+#----------------------------------------#
+
+foreach my $inst (%compsCookie) {
+        foreach my $pin (keys %{$COMP_ALREADY{$inst}} ) {
+                my $net = $COMP_ALREADY{$inst}{$pin};
+   	        print "DBG-TST_GEOM-EXTRT_DES : 003 : $inst : $pin : $net\n"  if ($debug);
+                if ( exists $NETS_ALREADY{$net} ) {
+                     foreach $netInst ( keys %{$NETS_ALREADY{$net}} ) {
+                     	print "\tDBG-TST_GEOM-EXTRT_DES : 004 : $net : $netInst : $NETS_ALREADY{$net}{$netInst} \n"  if ($debug);
+		     	if ( exists $compsCookie{$netInst}) {
+				$netsCookie{$net}{$netInst} = $NETS_ALREADY{$net}{$netInst};
+			 	my $temp = $net;
+				$temp =~ s/\//_/g;	
+				if ($compsCookie{$inst}{pins}{$pin} ne 'port_'.$temp) {
+					print "DBG-TST_GEOM-EXTRT_DES : 005 : Assigning a net \n" if ($debug) ;
+					$compsCookie{$inst}{pins}{$pin} = $net; 
+				} else  { print "DBG-TST_GEOM-EXTRT_DES : 006 : Already set to the port \n" if ($debug) ;}	
+		     }
+		     else { 
+			my $temp = $net;
+			$temp =~ s/\//_/g;
+			$netsCookie{$net}{PIN} = 'port_'.$temp ;
+			print "DBG-TST_GEOM-EXTRT_DES : 007 : Setting the connection to port\n" if ($debug);
+			$compsCookie{$inst}{pins}{$pin} = 'port_'.$temp ;
+                        $portsCookie{$COOKIE_NAME}{'port_'.$temp}{net_conn} = $net;
+			my $macroName = $CADB{$inst}->dbCadbGetCellref;
+			#my $pinName = $NETS_ALREADY{$net}{$netInst};
+			print "DBG-TST_GEOM-EXTRT_DES : 008 : $macroName : $pin \n " if ($debug);
+			$portsCookie{$COOKIE_NAME}{'port_'.$temp}{direction} =  $PLDB{$macroName}->dbMdbGetPinDir($pin) ;
+			$portsCookie{$COOKIE_NAME}{'port_'.$temp}{signal} =  $PLDB{$macroName}->dbMdbGetPinType($pin) ;
+			
+	             }#end else
+                     }
+                 }
+           }
+}
+
+#### Do Rows and Tracks now
+  if ($addBlkg) {
+      ## rows and track information doesnt change for the cookie
+      @rowsInside   = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetRows;
+      %tracksInside = %DEF_TRACKS_ALREADY;
+
+  } else {
+      ## Rows: (a) keep rows inside the cookie
+      ##       (b) offset OrigX and OrigY to new base
+      ##       (c) update numY based on STEP
+      ##       (d) keep rowName, rowType, orient and other properties
+
+      $rowCount = 0;
+      foreach $rowStr ($FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetRows) {
+	  @row = split(/ /,$rowStr);
+	  $rowProp{y0}     = $row[3];
+	  if ( ($rowProp{y0} <= $ury_cut) && ($rowProp{y0} >= $lly_cut)) {
+	      $rowProp{name}   = "COOKIE_ROW_".$rowCount;
+	      $rowProp{site}   = $row[1];
+	      $rowProp{x0}     = $row[2];
+	      $rowProp{y0}     = $rowProp{y0} - $lly_cut;
+	      $rowProp{orient} = $row[4];
+	      $rowProp{numY}   = $row[6];
+	      $rowProp{spaceX} = $row[7];
+	      $rowProp{spaceY} = $row[8];
+	      
+	      if ($rowProp{numY} != 1) {
+		  print ("INFO-TST_GEOM-EXTRT_DES : 009 : Cookie Error: Rows with numY > 1 not supported\n");
+	      } else {
+		  $rowProp{numX}   = int($row[5] * ($urx_cut - $llx_cut) / ($DIE_ALREADY{dieArea}[2]-$DIE_ALREADY{dieArea}[0]));
+	      }
+
+	      $rowStr = "$rowProp{name} $rowProp{site} $rowProp{x0} $rowProp{y0} $rowProp{orient} $rowProp{numX} $rowProp{numY} $rowProp{spaceX} $rowProp{spaceY}";
+	      push(@rowsInside, $rowStr);
+	      $rowCount++;
+	  } #if
+      } #foreach
+
+
+
+      ## Tracks: for each metal layer 
+      ##       (a) keep tracks inside the cookie
+      ##       (b) offset to new START
+      ##       (c) change numtracks inside cookie based on step
+      ##       (d) keep STEP and layers the same
+
+      foreach $metal (keys %DEF_TRACKS_ALREADY) {
+	  foreach $dir (keys %{$DEF_TRACKS_ALREADY{$metal}}) {
+	      %trackProp = %{$DEF_TRACKS_ALREADY{$metal}{$dir}};
+	      if ($dir eq "Horizontal") {
+		  if ($trackProp{start} < $ury_cut) {
+		      $newDoStart = ceil( ($lly_cut - $trackProp{start} ) /$trackProp{step});
+		      if ($newDoStart < 0) {$newDoStart = 0;} #if track starts from inside the cookie
+		      $newStart = $trackProp{start} + ($newDoStart * $trackProp{step}) - $lly_cut;
+
+		      $newDoStop = floor( ($ury_cut - $trackProp{start} ) /$trackProp{step});
+		      $newDo = $newDoStop - $newDoStart + 1;
+		      
+		      $newTrackProp{start} = $newStart;
+		      $newTrackProp{do}    = $newDo;
+		      $newTrackProp{step}  = $trackProp{step};
+
+		      %{$tracksInside{$metal}{$dir}} = %newTrackProp;
+		  } # else Track starts outside cookie $ury_cut
+		  
+	      } else {#dir is vertical
+		  if ($trackProp{start} < $urx_cut) {
+		      $newDoStart = ceil( ($llx_cut - $trackProp{start} ) /$trackProp{step});
+		      if ($newDoStart < 0) {$newDoStart = 0;} #if track starts from inside the cookie
+		      $newStart = $trackProp{start} + ($newDoStart * $trackProp{step}) - $llx_cut;
+
+		      $newDoStop = floor( ($urx_cut - $trackProp{start} ) /$trackProp{step});
+		      $newDo = $newDoStop - $newDoStart + 1;
+		      
+		      $newTrackProp{start} = $newStart;
+		      $newTrackProp{do}    = $newDo;
+		      $newTrackProp{step}  = $trackProp{step};
+
+		      %{$tracksInside{$metal}{$dir}} = %newTrackProp;
+		  }#if
+
+	      } #else
+	  } #foreach $dir 
+      } #foreach $metal
+
+
+      
+  } #else
+
+print "DBG-TST_GEOM-EXTRT_DES : 010 : Line to test\n" if ($debug);
+print "DBG-TST_GEOM-EXTRT_DES : 011 : End extracting design\n";
+} # end else
+} #sub extractDesign
+
+########################################################
+##Write the extracted def
+########################################################
+
+sub write_def_cookie() {
+
+my $noOfArguments = @_;
+
+if( $noOfArguments < 2 || $_[0] eq '-h') { print "Usage : write_def_cookie -output <output def file> \n";
+                           print "                  -comp \n";
+                           print "                  -nets \n";
+                           print "                  -pins \n";
+                           print "                  note : by default all is written \n";
+                         }
+else { # if correct no. of inputs
+
+ $OUTPUT_NETLIST_COOKIE = 0;
+ $OUTPUT_COMP_CCOKIE = 0;
+ $OUTPUT_PORTS_COOKIE = 0;
+ $DEFAULT = 1;
+ $debug = 0;
+ 
+print "INFO-TST_GEOM-WR_DEF_COOKE : 001 : Writing cookie def\n";
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-output"){$OUTPUT_DEF_COOKIE = $_[$i+1];}
+if($_[$i] eq "-comp"){$OUTPUT_COMP_COOKIE = 1; $DEFAULT = 0;}
+if($_[$i] eq "-nets"){$OUTPUT_NETLIST_COOKIE = 1; $DEFAULT = 0;}
+if($_[$i] eq "-pins"){$OUTPUT_PORTS_COOKIE = 1; $DEFAULT = 0;}
+if($_[$i] eq "-debug") {$debug = 1;}
+
+                                         } # for
+
+
+
+  open (WRITE, ">$OUTPUT_DEF_COOKIE");
+  print WRITE "#DEF written from proton verion-$TOOL_VERSION\n";
+  print WRITE "\n";
+  print WRITE "VERSION 5.6 \;\n";
+  print WRITE "NAMESCASESENSITIVE ON \;\n";
+  print WRITE "DIVIDERCHAR \"\/\" \;\n";
+  print WRITE "BUSBITCHARS \"\[ \]\" \;\n";
+  print WRITE "DESIGN $COOKIE_NAME \;\n";
+  print WRITE "UNITS DISTANCE MICRONS 2000 \;\n";  
+  
+  
+  print WRITE "DIEAREA ( $cookieInfo{dieArea}[0] $cookieInfo{dieArea}[1] ) ( $cookieInfo{dieArea}[2] $cookieInfo{dieArea}[3] ) \;\n";
+  print WRITE "\n";
+
+
+#### Do Rows and Tracks now
+foreach $row (@rowsInside) {
+    @rowStr = split(/ /,$row);
+    print WRITE "ROW $rowStr[0] $rowStr[1] $rowStr[2] $rowStr[3] $rowStr[4] DO $rowStr[5] BY $rowStr[6] STEP $rowStr[7] $rowStr[8] \;\n";
+}
+print WRITE "\n";
+
+foreach $metal (keys %tracksInside) {
+    foreach $dir (keys %{$tracksInside{$metal}}) {
+	%trackProp = %{$tracksInside{$metal}{$dir}};
+	if ($dir eq "Horizontal") {
+	    print WRITE "TRACKS Y $trackProp{start} DO $trackProp{do} STEP $trackProp{step} LAYER $metal \;\n";
+	} else {
+	    print WRITE "TRACKS X $trackProp{start} DO $trackProp{do} STEP $trackProp{step} LAYER $metal \;\n";
+	} #else
+    } #foreach $dir 
+} #foreach $metal
+
+print WRITE "\n";
+
+
+
+#########PINS SECTION##################
+if ( $OUTPUT_PORTS == 1 || $DEFAULT == 1) {
+my $temp = keys %{$portsCookie{$COOKIE_NAME}};
+print WRITE "PINS $temp \;\n";
+
+foreach $pinName ( keys %{$portsCookie{$COOKIE_NAME}} ) {
+        my $netName = $portsCookie{$COOKIE_NAME}{$pinName}{net_conn};
+        my $dir = $portsCookie{$COOKIE_NAME}{$pinName}{direction};
+	if ($dir == 0 ) { $direction  = "INPUT" ; }
+	elsif ($dir == 1 ) { $direction  = "OUTPUT" ; }
+	elsif ($dir == 2 ) { $direction  = "INOUT" ; }
+
+        my $sig = $portsCookie{$COOKIE_NAME}{$pinName}{signal};
+	if ($sig == 0 ) { $signal  = "SIGNAL" ; }
+	elsif ($sig == 1 ) { $signal  = "POWER" ; }
+	elsif ($sig == 2 ) { $signal  = "GROUND" ; }
+	
+        print WRITE "\- $pinName \+ NET $netName \+ DIRECTION $direction \+ USE $signal \;\n";
+}#foreach
+
+
+print WRITE "END PINS\n\n";
+}# if pins have to be output
+
+
+#########COMPONENTS SECTION##################
+if ( $OUTPUT_COMP_COOKIE  || $DEFAULT ) {
+my $temp = keys %compsCookie;
+print WRITE "COMPONENTS $temp \;\n";
+#&get_componentDb_cookie;
+
+foreach $instName ( keys %compsCookie) {
+          print  WRITE "- $instName $compsCookie{$instName}{cellref} \n"; 
+     	  if ( ($compsCookie{$instName}{status} eq "PLACED") || 
+               ($compsCookie{$instName}{status} eq "FIXED"  )) {
+		my @loc = @{$compsCookie{$instName}{loc}}; 
+      	 	print WRITE "\+ $compsCookie{$instName}{status} \( $loc[0] $loc[1] \) $compsCookie{$instName}{orient} "; 
+     	  }
+          print WRITE "\;\n";
+} #foreach
+
+print WRITE "END COMPONENTS\n\n";
+  }# if components have to be output
+
+#########NETS SECTION##################
+
+$temp = keys %netsCookie;
+print WRITE "NETS $temp \;\n";
+
+foreach my $netName (keys %netsCookie){
+        print WRITE "- $netName\n";
+        foreach $instance ( keys %{$netsCookie{$netName}} ){
+            print WRITE "\( $instance $netsCookie{$netName}{$instance} \)";
+        }# for each instance attached
+        print WRITE " \;\n";
+              
+}
+
+print WRITE "END NETS\n\n";
+
+
+#########BLOCKAGE SECTION##################
+
+
+
+if ($cookieInfo{blkg} ) {
+	print WRITE "BLOCKAGES $cookieInfo{num_blkg} \;\n";
+	foreach (keys %blockageCookie) {
+	if ($_ eq "place") {
+	print WRITE "- PLACEMENT\n";
+	}
+	elsif ($_ eq "m1") {
+	print WRITE "- LAYER metal1\n";
+	}
+	elsif ($_ eq "m2") {
+	print WRITE "- LAYER metal2\n";
+	}
+
+	print WRITE "  RECT \( $blockageCookie{$_}{blkg1}[0] $blockageCookie{$_}{blkg1}[1] \) \( $blockageCookie{$_}{blkg1}[2] $blockageCookie{$_}{blkg1}[3] \) \;\n"; 
+	print WRITE "  RECT \( $blockageCookie{$_}{blkg2}[0] $blockageCookie{$_}{blkg2}[1] \) \( $blockageCookie{$_}{blkg2}[2] $blockageCookie{$_}{blkg2}[3] \) \;\n"; 
+	print WRITE "  RECT \( $blockageCookie{$_}{blkg3}[0] $blockageCookie{$_}{blkg3}[1] \) \( $blockageCookie{$_}{blkg3}[2] $blockageCookie{$_}{blkg3}[3] \) \;\n"; 
+	print WRITE "  RECT \( $blockageCookie{$_}{blkg4}[0] $blockageCookie{$_}{blkg4}[1] \) \( $blockageCookie{$_}{blkg4}[2] $blockageCookie{$_}{blkg4}[3] \) \;\n"; 
+
+	}#foreach
+	print WRITE "END BLOCKAGES\n\n";
+}
+	
+
+print WRITE "END DESIGN\n";
+close(WRITE);
+print "INFO-TST_GEOM-WR_DEF_COOKE : 002 : $OUTPUT_DEF_COOKIE written out\n";
+
+} #end else
+} # sub write_def_cookie
+
+
+1;

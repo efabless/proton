@@ -1,0 +1,376 @@
+#!/bin/perl -w
+
+%TEMP_COVG_DB = ();
+%covgInstances = ();
+@covg_instances=();
+$spacing =0;
+$grid_place =0;
+
+sub remove_congestion {
+
+#****f* /remove_congestion 
+# NAME
+#   remove_congestion
+# FUNCTION
+#    reads the placed database which has been snapped to row and removes the congestion in the selescted area.
+#    Also removes overlap in the selected area as well as the whole design.
+#    remove_congestion has the following command line options and switches.
+# SYNOPSIS
+# remove_congestion [-spacing <spacing in microns>] [-target_util <bbox utilization>] [-bbox <{llx,lly,urx,ury}>] <-debug>
+#
+# INPUTS
+#      options :
+#      	-spacing <spacing in microns needed between overlapping cells> : by default spacing is taken to be 0. 
+#       -gridsize <placement grid in microns> : by default gridsize is taken to be 0
+#       -target_util <maximum filled percentage in the desired area specified by bbox>  : by default filled percentage is taken to be 80.
+#       -bbox <{llx,lly,urx,ury}>\n"  : Black box coordinates, by default the whole die area is taken;
+#       -debug : This is optional to run the program in debug mode
+# OUTPUTS
+#      The selected area will have desired utilization and the database will have no overlapping cells 
+#****
+
+
+
+$grid_place=0;
+$spacing =0;
+%TEMP_COVG_DB = ();
+%covgInstances = ();
+@covg_instances=();
+@temp_array = ();
+my $debug = 0;
+my $noOfArguments = @_;
+my $target_util = 100;
+$DBU = $GLOBAL->dbfGlobalGetDBU;
+
+if( $noOfArguments < 2 || $_[0] eq '-h') { 
+	print "Usage : remove_congestion\n";
+        print "                           -bbox <{llx,lly,urx,ury}>\n";
+        print "                       	  -gridsize <placement grid in microns>\n";
+        print "                  		note : by default gridsize is taken to be 0\n";
+        print "                           -target_util <target_util>\n";
+	print "                           -spacing <spacing> \n";
+        print "                           <-debug>\n";
+	
+}
+else {
+	for(my $i = 0; $i < $noOfArguments; $i++){ 
+		if($_[$i] eq "-bbox"){  
+			my $rect = $_[$i+1]; 
+			$rect =~ s/\{\s*//; 
+			$rect =~ s/\s*\}//; 
+			@covg_area = split(/\,/,$rect);
+		}
+		elsif ($_[$i] eq "-target_util") {
+			$target_util = $_[$i+1];
+		}
+		elsif ($_[$i] eq "-gridsize") {
+   			$grid_place = $_[$i+1] * $DBU ;
+  		}
+		elsif ($_[$i] eq "-spacing") {
+			$spacing = $_[$i+1];
+		}
+		elsif ($_[$i] eq "-debug") {
+			$debug = 1;
+		}
+	} # for
+
+@tgt_area = @covg_area;
+$covg_area[0] *= $DBU;
+$covg_area[1] *= $DBU;
+$covg_area[2] *= $DBU;
+$covg_area[3] *= $DBU;
+
+	my $cellHeight = $GLOBAL->dbGlobalGetRowHeight;
+	$cellHeight *= $DBU;
+	$covg_area[1] = (floor($covg_area[1]/$cellHeight))*$cellHeight;
+	$covg_area[3] = (ceil($covg_area[3]/$cellHeight))*$cellHeight;
+&dbPlaceCreateRowInstDB(@covg_area);
+%TEMP_COVG_DB = %TEMP_DB;
+&make_connectivity_hash();
+
+my @Sorted_covg_instances = sort {
+		$covgInstances{$a}{conn_out} <=> $covgInstances{$b}{conn_out} 
+		} keys %covgInstances ;
+@temp_array = sort { $a <=> $b } keys %temp;
+##############################################
+###Store fp of the rows#######################
+##############################################
+foreach $rowName ( keys %TEMP_COVG_DB ) { 
+	$fp = &calculateFp_covg($rowName,@covg_area);
+}
+
+my $covg_util = &avgfp_covg($temp_array[0]-$cellHeight,@covg_area);
+print "DBG-ALGO_PL_NW-RM_CONG : 001 : Average utilization: $covg_util\n" if ($debug);
+
+while($covg_util > $target_util) {
+	my $inst = pop(@Sorted_covg_instances );
+	#print "Moved instance $inst\n" if ($debug);
+	my $side = $covgInstances{$inst}{side};
+	my @loc = $CADB{$inst}->dbCadbGetLoc;
+	my @loc_new;
+	my $rowName = $covgInstances{$inst}{rowName};
+	my $size = $MACROS_ATTRIBUTE_ALREADY{$cellref}{size};
+	($width,$height)=(split(/\s+/,$size))[0,1];
+	$width *= $DBU;
+	$height *= $DBU;
+	
+	if ($side eq "left") {
+		$loc_new[0] = $covg_area[0]-$width;
+		$loc_new[1]= $loc[1];
+	}
+	elsif ($side eq "right") {
+		$loc_new[0] = $covg_area[2];
+		$loc_new[1]= $loc[1];
+	}
+	elsif ($side eq "top") {
+		$loc_new[0] = $loc[0];
+		$loc_new[1]= $covg_area[3];
+	}
+	elsif ($side eq "bottom") {
+		$loc_new[0] = $loc[0];
+		$loc_new[1]= $covg_area[1]-$height;
+	}
+
+	$TEMP_COVG_DB{$rowName}->dbPlaceDeleteInstInRow($inst);
+	$CADB{$inst}->dbCadbSetLoc($loc_new[0],$loc_new[1]);
+	$fp= &calculateFp_covg($rowName,@covg_area);
+	$covg_util = &avgfp_covg($temp_array[0]-$cellHeight,@covg_area);
+
+}
+
+print "DBG-ALGO_PL_NW-RM_CONG : 002 : Die Size: @{$DIE_ALREADY{dieArea}}\n" if ($debug);
+print "DBG-ALGO_PL_NW-RM_CONG : 003 : Covg area: @covg_area \n" if ($debug);
+my @die_microns = ($DIE_ALREADY{dieArea}[0]/$DBU,$DIE_ALREADY{dieArea}[1]/$DBU,$DIE_ALREADY{dieArea}[2]/$DBU,$DIE_ALREADY{dieArea}[3]/$DBU );
+$bbox[0] = "{$die_microns[0],$die_microns[1],$die_microns[2],$tgt_area[1]}";
+$bbox[1] = "{$die_microns[0],$tgt_area[1],$tgt_area[0],$tgt_area[3]}";
+$bbox[2] = "{$tgt_area[2],$tgt_area[1],$die_microns[2],$tgt_area[3]}";
+$bbox[3] = "{$die_microns[0],$tgt_area[3],$die_microns[2],$die_microns[3]}";
+$bbox[4] = "{$tgt_area[0],$tgt_area[1],$tgt_area[2],$tgt_area[3]}";
+print "DBG-ALGO_PL_NW-RM_CONG : 004 : @bbox \n" if ($debug);
+
+
+print "MSG-ALGO_PL_NW-RM_CONG : 005 : Running overlap removal in individual parts\n";	
+&remove_overlap("-bbox","$bbox[4]","-gridsize","$grid_place","-spacing","$spacing","-maxfp","$target_util");
+&remove_overlap_block("-hardblock","$bbox[4]","-gridsize","$grid_place", "-spacing","$spacing","-maxfp","80");
+
+print "DBG-ALGO_PL_NW-RM_CONG : 006 : End of remove_congestion program\n" if ($debug);
+%TEMP_DB=();
+%covgInstances = ();
+@covg_instances=();
+@temp_array = ();
+} # end else
+&set_inst_box;
+} #sub remove_congestion
+
+sub totalCellWidthInRow_covg { 
+	my ($rowName,@instList) = @_;
+	my $Swc =0;
+	foreach $inst(@instList) {
+		my $cellref =  $CADB{$inst}->dbCadbGetCellref;
+		$size = $MACROS_ATTRIBUTE_ALREADY{$cellref}{size};
+		($width,$height)=(split(/\s+/,$size))[0,1];
+		$width = ($width *$DBU) + $spacing ;
+		$Swc += $width ;
+}
+return($Swc);
+} #sub 	totalCellWidthInRow_covg
+
+sub calculateFp_covg {
+	my ($rowName,@covg_area)=@_;
+	my @instList = $TEMP_COVG_DB{$rowName}->dbPlaceGetInstInRow;
+	$Swc=totalCellWidthInRow_covg($rowName,@instList)-$spacing;
+	$Rw = $covg_area[2] - $covg_area[0];
+	$fp = sprintf("%.2f",($Swc / $Rw) * 100);
+	$TEMP_COVG_DB{$rowName}->dbPlaceSetRowFP($fp);
+	return($fp);
+} # sub calculateFp_covg
+
+sub avgfp_covg {
+	my $cellHeight = $GLOBAL->dbGlobalGetRowHeight;
+	$cellHeight *= $DBU;
+	my ($rowNum,@covg_area) = @_;
+	$sum= 0;
+	my $avg =0;
+	$Rw = $covg_area[2] - $covg_area[0];
+	my $count =0;
+	my $row_name;
+	$no_of_rows = @temp_array;
+	if ($rowNum == $temp_array[$no_of_rows - 1]) {
+		$rowNum = $rowNum - $cellHeight;
+	} 
+	$no_of_rows = @temp_array;
+	for ($i = $TEMP_COVG_DB{$temp{$rowNum+$cellHeight}}->dbPlaceGetRowY ; $i<=$temp_array[$no_of_rows-1] ; $i = $i+$cellHeight) {
+		$row_name = $temp{$i};
+		my @instList = $TEMP_COVG_DB{$row_name}->dbPlaceGetInstInRow;
+		$Swc=totalCellWidthInRow_covg($row_name,@instList) - $spacing;
+		$sum += $Swc;		
+		$count++;
+	}
+	if ($count != 0) {
+		$avg = ($sum/($count*$Rw))*100 ;
+		return($avg);
+	}
+} #sub avgfp_covg
+
+
+
+
+
+sub make_connectivity_hash {
+	my @covg_instances = ();
+	foreach $rowName (keys %TEMP_COVG_DB) {
+		push(@covg_instances,$TEMP_COVG_DB{$rowName}->dbPlaceGetInstInRow);
+	}
+	foreach $rowName (keys %TEMP_COVG_DB) {
+	foreach $inst( $TEMP_COVG_DB{$rowName}->dbPlaceGetInstInRow ) {
+		$covgInstances{$inst}{side}=&get_side($inst,@covg_area);
+		print "DBG-ALGO_PL_NW : 001 : Side : $covgInstances{$inst}{side} \n" if ($debug);
+		$covgInstances{$inst}{conn_out}=0;
+		$covgInstances{$inst}{rowName}=$rowName;
+		foreach my $pin (keys %{$COMP_ALREADY{$inst}} ) {
+			my $net = $COMP_ALREADY{$inst}{$pin};
+   	     		#print "$inst : $pin : $net\n"  if ($debug);
+			foreach $netInst ( keys %{$NETS_ALREADY{$net}} ) {
+				$flag =0;
+   	     			print "DBG-ALGO_PL_NW : 002 : $inst : $pin : $net : $netInst\n"  if ($debug);
+			       	foreach (@covg_instances) {
+					if ($_ eq $netInst) {$flag=1}; 
+				} 
+				if ($flag ==1) {
+					#print "$netInst in database\n"; 
+				} else { 
+					print "DBG-ALGO_PL_NW : 003 : $netInst not in database\n" if ($debug);
+					$covgInstances{$inst}{conn_out} += 1; }		
+			}
+
+		}#end foreach
+	}#end foreach 
+	}#end foreach 
+	
+} #sub make_connectivity_hash
+
+sub get_side {
+	my ($instName,@area) = @_;
+	my @loc = $CADB{$instName}->dbCadbGetLoc;
+	my $cellref =  $CADB{$instName}->dbCadbGetCellref;
+	my $orient = $CADB{$instName}->dbCadbGetOrient;
+	my $side;
+
+	my $size = $MACROS_ATTRIBUTE_ALREADY{$cellref}{size};
+	($width,$height)=(split(/\s+/,$size))[0,1];
+	$width *= $DBU;
+	$height *= $DBU;
+	if( $orient eq "N") {
+    		$llx = $loc[0];
+    		$lly = $loc[1];
+    		$urx = $loc[0]+$width;
+    		$ury = $loc[1]+$height;
+        }
+  	elsif( $orient eq "FN")
+ 	{
+    		$llx = $loc[0];
+    		$lly = $loc[1]+$height;
+    		$urx = $loc[0]+$width;
+    		$ury = $loc[1];
+        }
+ 	elsif( $orient eq "FS") {
+  		$llx = $loc[0];
+  		$lly = $loc[1];
+  		$urx = $loc[0]+$width;
+  		$ury = $loc[1]+$height;
+        }
+ 	elsif( $orient eq "S") {
+  		$llx = $loc[0];
+  		$lly = $loc[1];
+  		$urx = $loc[0]+$width;
+  		$ury = $loc[1]+$height;
+        }
+ 	elsif( $orient eq "W") {
+  		$llx = $loc[0];
+  		$lly = $loc[1];
+  		$urx = $loc[0]+$height;
+  		$ury = $loc[1]+$width;
+        }
+ 	elsif( $orient eq "FW") {
+  		$llx = $loc[0];
+  		$lly = $loc[1];
+  		$urx = $loc[0]+$height;
+  		$ury = $loc[1]+$width;
+        }
+ 	elsif( $orient eq "E") {
+  		$llx = $loc[0];
+  		$lly = $loc[1];
+  		$urx = $loc[0]+$height;
+  		$ury = $loc[1]+$width;
+        }
+ 	elsif( $orient eq "FE") {
+  		$llx = $loc[0];
+  		$lly = $loc[1];
+  		$urx = $loc[0]+$height;
+  		$ury = $loc[1]+$width;
+         }	
+	
+	$diff_l=$llx-$area[0];
+	$diff_r=$area[2]-$urx;
+	$diff_t=$area[3]-$ury;
+	$diff_b=$lly-$area[1];
+	print "DBG-ALGO_PL_NW : 001 : left: $diff_l, Right: $diff_r, Top: $diff_t, Bottom: $diff_b\n" if ($debug);
+	
+	my @diff = ($diff_l,$diff_r,$diff_t,$diff_b);
+	my @sorted_diff = (sort {$a <=> $b} @diff);
+	if ($sorted_diff[0] == $diff_l) {
+	if ((${$DIE_ALREADY{dieArea}}[0]+$width) <= $area[0]) {
+		$side = "left";
+	} else {
+		if ($sorted_diff[1] == $top) {
+			if (($area[3]+$height) <= ${$DIE_ALREADY{dieArea}}[3]) {
+			$side = "top";
+			}
+		} else { if ($sorted_diff[2] ==$bottom) {$side = "bottom";}
+			else {$side = "right";}
+		}
+	}
+	return($side);
+	} elsif ($sorted_diff[0] == $diff_r) {
+	if (($area[2]+$width) <= ${$DIE_ALREADY{dieArea}}[2]) {
+		$side = "right";
+	} else {
+		if ($sorted_diff[1] == $top) {
+			if (($area[3]+$height) <= ${$DIE_ALREADY{dieArea}}[3]) {
+			$side = "top";
+			}
+		} else { if ($sorted_diff[2] ==$bottom) {$side = "bottom";}
+			else {$side = "left";}
+		}
+	}
+	return($side);
+	} elsif ($sorted_diff[0] == $diff_t) {
+	if (($area[3]+$height)<= ${$DIE_ALREADY{dieArea}}[3]) {
+		$side = "top";
+	} else {
+		if ($sorted_diff[1] == $left) {
+			if ((${$DIE_ALREADY{dieArea}}[0]+$width) <= $area[0]) {
+			$side = "left"
+			}
+		}else { if ($sorted_diff[2] ==$bottom) {$side = "bottom";}
+			else {$side = "right";}
+		}
+	}
+	return("top");
+	} elsif ($sorted_diff[0] == $diff_b) {
+	if (($area[1]-$height)>=${$DIE_ALREADY{dieArea}}[1]) {
+		$side = "bottom";
+	} else {
+		if ($sorted_diff[1] == $left) {
+			if ((${$DIE_ALREADY{dieArea}}[0]+$width) <= $area[0]) {
+			$side = "left"
+			}
+		}else { if ($sorted_diff[2] ==$top) {$side = "top";}
+			else {$side = "right";}
+		}
+	}
+	return("top");
+	}
+} #sub get_side
+
+1;

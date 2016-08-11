@@ -1,0 +1,1814 @@
+
+sub read_verilog {
+
+#use Term::ProgressBar;
+use Benchmark;
+my $t0 = new Benchmark;
+my $noOfArguments = @_;
+
+if ($noOfArguments == 0)  {
+    print "Usage: read_verilog -v <input_file> {[-modify <none / buffers_only / inverters_only / all>] \
+                   [-list <buffer/inverter name>]} [-sanity <false/true>] [-output <output_file>]\n"; 
+return (1);
+}
+
+if ($noOfArguments < 2 || $_[0] eq '-h')   {
+    print "Usage: read_verilog -v <input_file> {[-modify <none / buffers_only / inverters_only / all>]\
+                   [-list <buffer/inverter name>]} [-sanity <false/true>] [-output <output_file>]\n";
+return (1);
+}
+
+if ($noOfArguments > 8 || $_[0] eq '-h')  {
+    print "Usage: read_verilog -v <input_file> {[-modify <none / buffers_only / inverters_only / all>]\
+                   [-list <buffer/inverter name>]} [-sanity <false/true>] [-output <output_file>]\n"; 
+return (1);
+}
+
+
+############################################################################################
+####  check the input data and set the defaults                                         ####
+############################################################################################
+
+### DEFAULTS #####
+
+my $SANITY = "false";
+my $MODIFY = "none";
+my $SANITY_VERILOG_FILE = sanityVerilog;
+my $OUTPUT_VERILOG_FILE = modifyVerilog;
+
+for(my $yy = 0; $yy < $noOfArguments; $yy++){
+#Following comment wil be needed if user enters the data from keyboard
+#chomp($_[$yy]);
+if($_[$yy] =~ /-v/){ if ($_[$yy + 1] =~ /\{.+\}/){ print "INFO-PAR-VERI : 001 : list of verilog files given\n";
+                                                             } else {
+							     $INPUT_VERILOG_FILE = $_[$yy + 1];}}
+
+if($_[$yy] =~ /-modify/){ $MODIFY = $_[$yy + 1];}
+if($_[$yy] =~ /-sanity/){ $SANITY = $_[$yy + 1];}
+if($_[$yy] =~ /-output/){ $OUTPUT_VERILOG_FILE = $_[$yy + 1];}
+
+} # for
+if(( -e $INPUT_VERILOG_FILE) && (-r $INPUT_VERILOG_FILE)){
+print "INFO-PAR-VERI : 002 : $INPUT_VERILOG_FILE FILE EXISTS AND IS READABLE!\n";
+
+print "INFO-PAR-VERI : 003 : read_verilog -v $INPUT_VERILOG_FILE -modify $MODIFY -sanity $SANITY\n";
+
+############################################################################################
+####       Choosing which one to run                                                    ####
+############################################################################################
+ if($SANITY eq "false"){$SANITY_VERILOG_FILE = ""; 
+ sanityVerilogFalseII($INPUT_VERILOG_FILE, $SANITY_VERILOG_FILE);
+ }
+
+ if($SANITY eq "true"){ 
+ sanityVerilogTrue($INPUT_VERILOG_FILE, $SANITY_VERILOG_FILE);
+ }
+
+if($MODIFY eq "none"){
+
+}
+
+if($MODIFY eq "buffer_only"){
+modifyVerilog($INPUT_VERILOG_FILE, $OUTPUT_VERILOG_FILE);
+}
+}#if file exists
+else{
+print "WARN-PAR-VERI : 004 : $INPUT_VERILOG_FILE FILE DOES NOT EXISTS OR IS NOT READABLE.\n";
+}#else
+
+my$t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "Command read_verilog took:",timestr($td),"\n";
+} # sub read_verilog
+
+############################################################################################
+####      defining all the subroutines                                                  #### 
+############################################################################################
+
+sub sanityVerilogTrue{
+
+################################################################################################
+#### global variables                                                                       ####
+################################################################################################
+%moduleArea = ();
+%moduleHierarchyPointer = ();
+@COMPONENTS = (\%COMP_ALREADY, \%COMP_NEW_ADDED, \%COMP_NEW_NO_LOGIC);
+@MODULES = (\%MODULE_ALREADY, \%MODULE_NEW_ADDED, \%MODULE_NEW_NO_LOGIC);
+@NETS = (\%NET_ALREADY, \%NET_NEW_ADDED, \%NET_NEW_NO_LOGIC);
+%COMP_ALREADY = ();
+%NET_ALREADY = ();
+%MODULE_ALREADY = ();
+
+################################################################################################
+#### local  variables                                                                       ####
+################################################################################################
+my $noOfArguments = @_;
+my $INPUT_VERILOG_FILE = $_[0];
+my $OUTPUT_VERILOG_FILE = $_[1];
+my $referToPlef = \%MACROS_ALREADY;
+my $referToPlefInputPins = \%macroInputPins;
+my $referToPlefOutputPins = \%macroOutputPins;
+
+open (READ_INPUT_VERILOG, "$INPUT_VERILOG_FILE");
+open (WRITE_OUTPUT_VERILOG, ">$OUTPUT_VERILOG_FILE");
+
+my $count = 0;
+my $scaled_count = 0;
+my $line_count = 0;
+my $verilogModuleCount = 0;
+my $line = "";
+my $i = 0;
+my $list_of_lm_pointers = "";
+my $cellref = "";
+my $remainder = "";
+my @nets = ();
+my $NON_UNIQUE_INSTANCE_NAME = 0;
+my $pinDirection = "";
+my $pinName = "";
+my $pinToFrom = "";
+my $progBarMax = `wc -l $INPUT_VERILOG_FILE`;
+#my $progress = Term::ProgressBar->new(MAX);
+
+while(<READ_INPUT_VERILOG>) {
+
+$count = $count + 1;
+if ($count == 10000){
+$count = 0;
+$scaled_count = $scaled_count + 1;
+$line_count = $scaled_count*10000;
+print "INFO-PAR-VERI : 001 : $line_count ...\n";
+#$progress->update($line_count);
+}
+
+chomp($_);
+if($_ =~ /^\/\//){
+                } else {
+if($_ =~ /\bendmodule\b *$/){print WRITE_OUTPUT_VERILOG  "$_\n";
+                             $list_of_lm_pointers = "";
+                            } else {
+if($_ =~ /\;\s*$/){ $line = $line.$_;
+                print WRITE_OUTPUT_VERILOG  "$line\n";
+
+##################################################################################################
+####       make array for geting the top level module                                         ####
+##################################################################################################
+
+if($line =~ /\bmodule\b/){$module_line = $line; $module_line =~ s/^\s*//; $module_line =~ s/\((.*)\)\;//;
+                         ($moduleName) = (split(/\s+/,$module_line))[1];
+			 %{$moduleName} = ();
+                         ${$moduleName}{'area'} = 0;
+                         $listOfPorts = PORTS_.$moduleName;
+                         $PORTS_ALREADY{$moduleName} = \%{$listOfPorts};
+                         $MODULE_ALREADY{$moduleName} = \%{$moduleName};
+			} else {
+if($line =~ /\bassign\b/) {
+                        } else {
+if($line =~ /endmodule/){
+                            } else {
+#### assumption that input and output lines will have only one pin / bus entry
+if($line =~ /[i,o][n,u]t*p*o*ut\b/){  $line =~ s/^\s+//;
+                                  if($line =~ /\[\s*[0-9]+\s*\:\s*[0-9]+\s*\]/){ # if the pin is a BUS
+#-------------------- added extra space after the closing bracket --------------------- OASYS #
+                                    $line =~ s/\]/ /; $line =~ s/\[/ /; $line =~ s/\:/ /; $line =~ s/\,/ /g; $line =~ s/\;//;
+                                    my @tempStringList =(split(/\s+/, $line));
+                                    ($pinDirection,$pinTo,$pinFrom) = @tempStringList[0,1,2];
+                                    foreach $pinName (@tempStringList[3 .. $#tempStringList]) {
+                                    my $busWidth = $pinTo - $pinFrom;
+                                     if ( $busWidth < 0 ) { $busWidth = 0 - $busWidth; } else { }
+                                     for ( my $x = $busWidth ; $x > 0 ; $x-- ) {
+                                         my $BPpinName = $pinName."[".$x."]";
+                                         my $pinNumber = $x;
+                                         my $netName = $moduleName."/".$pinName."_".$pinNumber;
+
+                            if ( exists $PORTS_ALREADY{$moduleName}{$BPpinName} ) { 
+                                   print "WARN-PAR-VERI : 002 : multiple definition of the same pin ... keeping previous\n"; 
+                                                                                }
+                            else { $PORTS_ALREADY{$moduleName}{$BPpinName} = PortDB::new(); 
+                                   $PORTS_ALREADY{$moduleName}{$BPpinName}->dbPortSetDir($pinDirection);
+                                   $PORTS_ALREADY{$moduleName}{$BPpinName}->dbPortSetConn($netName);
+                                   $PORTS_ALREADY{$moduleName}{$BPpinName}->dbPortSetSignal(SIGNAL);
+                                   $PORTS_ALREADY{$moduleName}{$BPpinName}->dbPortSetBus($pinNumber);
+                                 }
+                                                                               }#for
+                                                                                          }#foreach comma separated pinName
+                                    } # if the input is a bus
+                                  else {
+                                     $line =~ s/\,/ /g; $line =~ s/\;//;
+                                    my @tempStringList =(split(/\s+/, $line));
+                                    $pinDirection = $tempStringList[0];
+                                    foreach $pinName (@tempStringList[1 .. $#tempStringList]){
+                                    my $netName = $moduleName."/".$pinName;
+                                                                 if ( exists $PORTS_ALREADY{$moduleName}{$pinName} ) { 
+                                   print "WARN-PAR-VERI : 003 : multiple definition of the same pin ... keeping previous\n"; 
+                                                                                }
+                            else { $PORTS_ALREADY{$moduleName}{$pinName} = PortDB::new(); 
+                                   $PORTS_ALREADY{$moduleName}{$pinName}->dbPortSetDir($pinDirection);
+                                   $PORTS_ALREADY{$moduleName}{$pinName}->dbPortSetConn($netName);
+                                   $PORTS_ALREADY{$moduleName}{$pinName}->dbPortSetSignal(SIGNAL);
+                                 }
+
+                                                                                          }#foreach comma separated pinName
+                                     } # if bit
+                            #${$listOfPorts}{$pinName} = \%{$portModule};
+                            } else {
+if($line =~ /\bwire\b/){
+                        } else {
+if($line =~ /^$/){
+		} else {
+$line =~ s/^\s*//;
+
+$line =~ s/\(/ \(/;
+($cellref, $instance) = (split(/\s+/, $line))[0,1];
+
+my $instance_orig = $instance;
+$instance = $moduleName."/".$instance;
+
+%{$instance} = ();
+
+${$instance}{'cellref'} = $cellref;
+${$instance}{'master'} = $moduleName;
+${$instance}{'connections'} = $line;
+${$moduleName}{$instance_orig} = \%{$instance};
+$COMP_ALREADY{$instance} = \%{$instance};
+
+if( exists $PLDB{$cellref}) {
+          ($width,$height) = (split(/\s+/, $MACROS_ATTRIBUTE_ALREADY{$cellref}{size} ))[0,1];
+          $nowarea = $width*$height;
+          ${$moduleName}{'area'} = ${$moduleName}{'area'} + $nowarea;
+                                     }
+          else {
+          $list_of_lm_pointers = "$list_of_lm_pointers $cellref";
+	  $list_of_lm_pointers =~ s/^\s//;
+          $moduleHierarchyPointer{$moduleName} = $list_of_lm_pointers;}
+} # empty lines loop
+} # wire loop
+} # input output loop
+} # endmodule loop
+} # assign loop
+} # module loop
+#############################
+## reset the line variable ##
+#############################
+$line = "";
+               } else {
+$line = $line.$_; } # if line does not end loop
+                        } # endmodule line loop
+			} # commented line loop
+} # while
+#$progress->update($progBarMax);
+close(READ_INPUT_VERILOG);
+close(WRITE_OUTPUT_VERILOG);
+print "INFO-PAR-VERI : 004 : Finished reading the verilog file\n";
+
+##################################################################################################
+####    extract connectivity                                                                  ####
+##################################################################################################
+my %verilogModules = ();
+my %modules = ();
+print "INFO-PAR-VERI : 005 : Extacrting connectivity information\n";
+foreach(keys %COMP_ALREADY){ $modules{$COMP_ALREADY{$_}{cellref}}++; }# foreach instance
+
+##################################################################################################
+####    generate frequency distribution                                                       ####
+##################################################################################################
+
+foreach(keys %MODULE_ALREADY) { $verilogModules{$_}++;}
+foreach(keys %verilogModules) { if(exists $modules{$_}) { } else { print "INFO-PAR-VERI : 006 : Setting top module as $_\n"; 
+                                                                   $CURRENT_MODULE = $_;
+                                                                   $TOP_MODULE = $_;
+								   $GLOBAL->dbfGlobalSetTOP($TOP_MODULE);}}
+foreach(keys %modules) { if( exists $PLDB{$_}) { } else { 
+                         if( exists $verilogModules{$_}){ } else {print "WARN-PAR-VERI : 007 : $_ referd $modules{$_} times has no physical representation\n";}}}
+
+&summaryVerilog($NON_UNIQUE_INSTANCE_NAME);
+
+
+
+
+} #sub sanityVerilogTrue
+
+
+sub sanityVerilogFalse{
+
+################################################################################################
+#### global variables                                                                       ####
+################################################################################################
+%moduleArea = ();
+%moduleHierarchyPointer = ();
+@COMPONENTS = (\%COMP_ALREADY, \%COMP_NEW_ADDED, \%COMP_NEW_NO_LOGIC);
+@MODULES = (\%MODULE_ALREADY, \%MODULE_NEW_ADDED, \%MODULE_NEW_NO_LOGIC);
+@NETS = (\%NET_ALREADY, \%NET_NEW_ADDED, \%NET_NEW_NO_LOGIC);
+%COMP_ALREADY = ();
+%NET_ALREADY = ();
+%MODULE_ALREADY = ();
+
+################################################################################################
+#### local  variables                                                                       ####
+################################################################################################
+my $noOfArguments = @_;
+my $INPUT_VERILOG_FILE = $_[0];
+my $OUTPUT_VERILOG_FILE = $_[1];
+my $referToPlef = \%MACROS_ALREADY;
+my $referToPlefInputPins = \%macroInputPins;
+my $referToPlefOutputPins = \%macroOutputPins;
+
+open (READ_INPUT_VERILOG, "$INPUT_VERILOG_FILE");
+
+my $count = 0;
+my $scaled_count = 0;
+my $line_count = 0;
+my $verilogModuleCount = 0;
+my $line = "";
+my $i = 0;
+my $list_of_lm_pointers = "";
+my $cellref = "";
+my $remainder = "";
+my @nets = ();
+my $NON_UNIQUE_INSTANCE_NAME = 0;
+my $pinDirection = "";
+my $pinName = "";
+my $pinToFrom = "";
+
+
+while(<READ_INPUT_VERILOG>) {
+
+$count = $count + 1;
+if ($count == 10000){
+$count = 0;
+$scaled_count = $scaled_count + 1;
+$line_count = $scaled_count*10000;
+print "INFO-PAR-VERI : 001 : $line_count ...\n";
+}
+
+chomp($_);
+if($_ =~ /^\/\//){
+                } else {
+if($_ =~ /\bendmodule\b *$/){
+                             $list_of_lm_pointers = "";
+                            } else {
+if($_ =~ /\;\s*$/){ $line = $line.$_;
+                
+
+##################################################################################################
+####       make array for geting the top level module                                         ####
+##################################################################################################
+
+if($line =~ /\bmodule\b/){$module_line = $line; $module_line =~ s/^\s*//; $module_line =~ s/\((.*)\)\;//;
+                         ($moduleName) = (split(/\s+/,$module_line))[1];
+			 %{$moduleName} = ();
+                         ${$moduleName}{'area'} = 0;
+                         $listOfPorts = PORTS_.$moduleName;
+                         ${$moduleName}{'ports'} = \@{$listOfPorts};
+                         $MODULE_ALREADY{$moduleName} = \%{$moduleName};
+			} else {
+if($line =~ /\bassign\b/) {
+                        } else {
+if($line =~ /endmodule/){
+                            } else {
+#### assumption that input and output lines will have only one pin / bus entry
+if($line =~ /[i,o][n,u]t*p*o*ut\b/){  $line =~ s/^\s+//;
+                                  if($line =~ /\[\s*[0-9]+\s*\:\s*[0-9]+\s*\]/){ # if the pin is a BUS
+                                    $line =~ s/\]/ /; $line =~ s/\[/ /; $line =~ s/\:/ /; $line =~ s/\,/ /g; $line =~ s/\;//;
+                                    my @tempStringList =(split(/\s+/, $line));
+                                    ($pinDirection,$pinFrom,$pinTo) = @tempStringList[0,1,2];
+                                    $pinToFrom = "[".$pinFrom.":".$pinTo."]" ;
+                                    foreach $pinName (@tempStringList[3 .. $#tempStringList]) {
+                                    $portModule = $pinName._.$moduleName;
+                                       ${$portModule}{'name'} = $pinName;
+                                       ${$portModule}{'direction'} = $pinDirection;
+                                       ${$portModule}{'width'} = $pinToFrom;
+                                       ${$portModule}{'use'} = SIGNAL;
+                                       ${$portModule}{'type'} = BUS;
+                                    }
+                                                                                           }#foreach comma separated pin names
+                                  else {
+                                     $line =~ s/\,/ /g; $line =~ s/\;//;
+                                    my @tempStringList =(split(/\s+/, $line));
+                                    $pinDirection = $tempStringList[0];
+                                    foreach $pinName (@tempStringList[1 .. $#tempStringList]){
+                                    $portModule = $pinName._.$moduleName;
+                                       ${$portModule}{'name'} = $pinName;
+                                       ${$portModule}{'direction'} = $pinDirection;
+                                       ${$portModule}{'use'} = SIGNAL;
+                                       ${$portModule}{'type'} = SINGLE;
+                                                                                          }#foreach comma separated pinName
+                                     } # if bit
+                       $port = \%{$portModule};
+                       push(@{$listOfPorts}, $port);
+                            } else {
+if($line =~ /\bwire\b/){
+                        } else {
+if($line =~ /^$/){
+		} else {
+$line =~ s/^\s*//;
+
+$line =~ s/\(/ \(/;
+($cellref, $instance) = (split(/\s+/, $line))[0,1];
+
+my $instance_orig = $instance;
+$instance = $moduleName."/".$instance;
+
+%{$instance} = ();
+
+${$instance}{'cellref'} = $cellref;
+${$instance}{'master'} = $moduleName;
+${$instance}{'connections'} = $line;
+${$moduleName}{$instance_orig} = \%{$instance};
+$COMP_ALREADY{$instance} = \%{$instance};
+
+if( exists $$referToPlef{$cellref}) {
+          ${$moduleName}{'area'} = ${$moduleName}{'area'} + $$referToPlef{$cellref}{area};}
+          else {
+          $list_of_lm_pointers = "$list_of_lm_pointers $cellref";
+	  $list_of_lm_pointers =~ s/^\s//;
+          $moduleHierarchyPointer{$moduleName} = $list_of_lm_pointers;}
+} # empty lines loop
+} # wire loop
+} # input output loop
+} # endmodule loop
+} # assign loop
+} # module loop
+#############################
+## reset the line variable ##
+#############################
+$line = "";
+               } else {
+$line = $line.$_; } # if line does not end loop
+                        } # endmodule line loop
+			} # commented line loop
+} # while
+
+close(READ_INPUT_VERILOG);
+print "INFO-PAR-VERI : 002 : Finished reading the verilog file\n";
+
+##################################################################################################
+####    extract connectivity                                                                  ####
+##################################################################################################
+my %verilogModules = ();
+my %modules = ();
+print "INFO-PAR-VERI : 003 : Extacrting connectivity information\n";
+foreach(keys %COMP_ALREADY){ $modules{$COMP_ALREADY{$_}{cellref}}++; }# foreach instance
+
+##################################################################################################
+####    generate frequency distribution                                                       ####
+##################################################################################################
+
+foreach(keys %MODULE_ALREADY) { $verilogModules{$_}++;}
+foreach(keys %verilogModules) { if(exists $modules{$_}) { } else { print "INFO-PAR-VERI : 004 : Setting top module as $_\n"; 
+                                                                   $CURRENT_MODULE = $_;
+                                                                   $TOP_MODULE = $_;
+								   $GLOBAL->dbfGlobalSetTOP($TOP_MODULE);}}
+foreach(keys %modules) { if( exists $$referToPlef{$_}) { } else { 
+                         if( exists $verilogModules{$_}){ } else {print "WARN-PAR-VERI : 005 : $_ referd $modules{$_} times has no physical representation\n";}}}
+
+&summaryVerilog($NON_UNIQUE_INSTANCE_NAME);
+
+
+
+
+} #sub sanityVerilogFalse
+
+
+sub summaryVerilog {
+
+if($_[0] == 1){print "INFO-PAR-VERI : 001 : The Netlist has non unique instances. Autochanging the instance names\n";}
+
+
+}# sub summaryVerilog
+
+
+
+
+sub write_verilog {
+
+use Benchmark;
+my $t0 = new Benchmark;
+my $OVERWRITE = 0;
+my $noOfArguments = @_;
+my $OUTPUT_VERILOG = "";
+my $moduleName = $TOP_MODULE;
+my $hier = 0; my $flat = 1;
+my $no_of_level = -1;
+my $start_module = $TOP_MODULE;
+my $no_write_empty_module = 0;
+
+if ($noOfArguments < 1 || $_[0] eq '-h'){print "Usage : write_verilog -output <fileName>\n";
+                                         print "      : --overwrite\n";
+                                         print "      : --hier\n";
+                                         print "      : --flat (default mode)\n";
+                                         print "      : --notWriteEmptyModule\n";
+                                         print "      : -no_of_level <no_of_level>\n";
+                                         print "      : -start_module <start_module>\n";
+                                        }
+else {
+      for (my $i =0;$i< $noOfArguments; $i++){
+      if($_[$i] eq "-output"){$OUTPUT_VERILOG = $_[$i+1];}
+      if($_[$i] eq "--overwrite"){$OVERWRITE = 1;}
+      if($_[$i] eq "--hier"){$hier = 1; $flat = 0;}
+      if($_[$i] eq "--flat"){$flat = 1; $hier = 0;}
+      if($_[$i] eq "--notWriteEmptyModule"){$no_write_empty_module = 1;}
+      if($_[$i] eq "-start_module"){$start_module = $_[$i+1];}
+      if($_[$i] eq "-no_of_level"){$no_of_level = $_[$i+1];}
+                                              }#for
+if( -e $OUTPUT_VERILOG){
+   if ($OVERWRITE == 1){
+print "WARN-PAR-VERI : 001 : $OUTPUT_VERILOG exists, overwriting existing file as instructed\n";
+                        } else {
+print "ERROR-PAR-VERI : 002 : $OUTPUT_VERILOG exists, Please change the output name or remove the existing file\n";
+return;
+                               }#else overwrite
+                       }#if output verilog file exists
+open (WRITE,">$OUTPUT_VERILOG");
+print "INFO-PAR-VERI : 003 : Begin writing the Verilog in file $OUTPUT_VERILOG !\n";
+print WRITE "/* VERILOG written from proton version-$TOOL_VERSION */\n";
+#------------------------------------------------ flat : begin : writing from the DEF database  ---------------------------------------------------------------------#
+if ( $flat == 1 ) {
+  print WRITE "module $moduleName\(";
+  my $referToPortsAdded = \%PORTS_ALREADY;
+  my @temp = ();
+  foreach $portName ( keys %{$PORTS_ALREADY{$moduleName}} ) { push(@temp,$portName); }
+  print WRITE join ",",@temp;
+  print WRITE "\)\;\n\n";
+  foreach $portName ( keys %{$PORTS_ALREADY{$moduleName}} ) { 
+    $dir = $PORTS_ALREADY{$moduleName}{$portName}->dbPortGetDir;
+    print WRITE "$dir $portName\;\n"; 
+  }#foreach portName
+  print WRITE "\n\n";
+  foreach my $instance (keys %COMP_ALREADY) {
+    my $cellref = $CADB{$instance}->dbCadbGetCellref;
+    print WRITE "$cellref $instance\( ";
+    @temp = ();
+    my $class;
+    if(exists $MODULE_ALREADY{$cellref}){
+      $class = $MODULE_ALREADY{$cellref}->dbVNOMGetClass;
+    }
+    if($class == 11){
+      foreach my $pinName (keys %{$COMP_ALREADY{$instance}}){
+        push(@temp, "\.$pinName\($COMP_ALREADY{$instance}{$pinName}\)"); 
+      }
+    }else {
+      my @pins = $PLDB{$cellref}->dbMdbGetPins;
+      foreach my $pinName ( @pins ) { 
+        my $flag = $PLDB{$cellref}->dbMdbGetPinType($pinName);
+        if ( $flag == 1 || $flag == 2 ) { } else {
+        #print WRITE "\.$pinName\($COMP_ALREADY{$instance}{$pinName}\)\, " 
+          if ( exists $COMP_ALREADY{$instance}{$pinName} ) {
+            push(@temp, "\.$pinName\($COMP_ALREADY{$instance}{$pinName}\)"); 
+          }else {
+            push(@temp, "\.$pinName\(\)"); 
+          }#else
+        }#else
+      }#foreach pinName
+    }#else
+    print WRITE join ", ", @temp;
+    print WRITE " \)\;\n";
+  }#foreach instance
+  print WRITE "\nendmodule\n";
+#------------------------------------------------ flat : end : writing from the DEF database  ---------------------------------------------------------------------#
+}#if flat verilog has to be written from proton
+elsif ( $hier == 1 ) {
+%TEMP_MODULE_ALREADY = ();
+&populate_list_of_modules_in_hierachy_stop_at_given_level_from_start_module($start_module,$no_of_level);
+@temp_module_list = sort { $TEMP_MODULE_ALREADY{$a} <=> $TEMP_MODULE_ALREADY{$b} } keys %TEMP_MODULE_ALREADY;
+#------------------------------------------------ hier : begin : writing from the VERILOG database  ---------------------------------------------------------------------#
+foreach $moduleName (@temp_module_list) {
+    my @conns = $MODULE_ALREADY{$moduleName}->dbVNOMGetConn;
+    #my @conns = @{$MODULE_ALREADY{$moduleName}->{conn}};
+    if($no_write_empty_module == 1){ 
+       if(@conns <= 0){next;}
+    }
+        print WRITE "module $moduleName (";
+        my @allPorts = ();
+    my @inPorts = $MODULE_ALREADY{$moduleName}->dbVNOMGetInput;
+    my @outPorts = $MODULE_ALREADY{$moduleName}->dbVNOMGetOutput;
+    my @bidiPorts = $MODULE_ALREADY{$moduleName}->dbVNOMGetBidi;
+       foreach my $i ( @inPorts ) { if ( $i =~ /\\/ ){$i = $i." "}; push ( @allPorts, $i); }
+       foreach my $i ( @outPorts ) { if ( $i =~ /\\/ ){$i = $i." "}; push ( @allPorts, $i); }
+       foreach my $i ( @bidiPorts ) { if ( $i =~ /\\/ ){$i = $i." "}; push ( @allPorts, $i); }
+       my $line = join ",", @allPorts ;
+       print WRITE "$line";
+       print WRITE ") \;\n";
+       print WRITE "\n\n";
+       foreach my $i ( @inPorts )  {  
+                                      my $busWidth = "";
+                                      my $type = $MODULE_ALREADY{$moduleName}->dbVNOMGetInputType($i);
+                                      if ( $type == 1 ) {
+                                         $busWidth = $MODULE_ALREADY{$moduleName}->dbVNOMGetInputBits($i); 
+                                                          }
+                                     if ( $i =~ /\\/ ){$i = $i." "};
+                                     print WRITE "input $busWidth $i \;\n";
+                                   }
+       foreach my $i ( @outPorts )  { 
+                                      my $busWidth = "";
+                                      my $type = $MODULE_ALREADY{$moduleName}->dbVNOMGetOutputType($i);
+                                      if ( $type == 1 ) {
+                                         $busWidth = $MODULE_ALREADY{$moduleName}->dbVNOMGetOutputBits($i);
+                                                          }
+                                    if ( $i =~ /\\/ ){$i = $i." "};
+                                    print WRITE "output $busWidth $i \;\n"; 
+                                    }
+       foreach my $i ( @bidiPorts ) { 
+                                      my $busWidth = "";
+                                      my $type = $MODULE_ALREADY{$moduleName}->dbVNOMGetBidiType($i);
+                                      if ( $type == 1 ) {
+                                         $busWidth = $MODULE_ALREADY{$moduleName}->dbVNOMGetBidiBits($i);
+                                                          }
+                                    if ( $i =~ /\\/ ){$i = $i." "};
+                                    print WRITE  "inout $busWidth $i \;\n"; 
+                                    }
+       print WRITE "\n\n";
+       #--------------- process the conn line to figure out busses -------------#
+my $netNameExpr ;
+my %wires = ();
+my %assignList = ();
+foreach $connLine ( @conns ) {
+$connLine =~ s/\(/\)\,/;
+#$connLine =~ s/\)\s*\;//;
+$connLine =~ s/\s*\)\s*\)\s*\;?.*$/\)/;
+my ($cell,$inst) = ( split(/\s+/, $connLine ))[0,1];
+#----------------------------check assign instance-------------------------------#
+      if(($GLOBAL->dbfGlobalGetWriteAssignAsBuffer ==0) && $GLOBAL->dbfGlobalCheckAssignInstance($inst)){
+        my $temp_line = "";
+        my @nets = split(/\s*\)\s*\,\s*/, $connLine);
+        my  $noOfPins = @nets;
+        for(my $i = 1 ; $i < $noOfPins ; $i++){
+          $nets[$i] =~ s/\s*\(\s*/\|/;
+          $nets[$i] =~ s/\s*\)\s*//;
+          my ($pin,$net)=(split(/\s*\|\s*/, $nets[$i]))[0,1];
+          my $temp_net = $net;
+          $temp_net =~ s/\[\d//;$temp_net =~ s/\]//;
+          if(exists $MODULE_ALREADY{$moduleName}->{ins}{$temp_net}){
+            $temp_line = $temp_line." = ".$net;
+          }elsif(exists $MODULE_ALREADY{$moduleName}->{outs}{$temp_net}){
+            $temp_line = $temp_line." = ".$net;
+          }
+        }#for
+        $temp_line =~ s/\s*=//;
+        $assignList{$inst} = $temp_line; 
+      }#if exists 
+#---------------------------------------------------------------------------------------------------------#
+         if (( $MODULE_ALREADY{$moduleName}->dbVNOMHasHierInst($inst) ) 
+            || ( $MODULE_ALREADY{$moduleName}->dbVNOMHasLeafInst($inst) )) {
+               my @nets = split(/\s*\)\s*\,\s*/, $connLine);
+               my  $noOfPins = @nets;
+               for(my $i = 1 ; $i < $noOfPins ; $i++){
+               $nets[$i] =~ s/\s*\(\s*/\|/;
+               $nets[$i] =~ s/\s*\)\s*//;
+               my ($pin,$net)=(split(/\s*\|\s*/, $nets[$i]))[0,1];
+               $pin =~ s/\.//;
+               $netNameExpr = $net;
+if ( exists $MODULE_ALREADY{$cell} ) {
+   print "DBG-PAR-VERI : 004 : $inst is hierarchcal cell of module $cell .. processing its pins now\n" if($DEBUG == 300);
+               # check if the hier pin for this connection is  bus
+               print "DBG-PAR-VERI : 005 : checking type of $pin\n" if($DEBUG == 300);
+               my $pinType = 0 ; # signal by default
+               my $pinDir = 0 ; # signal by default
+               if ( exists $MODULE_ALREADY{$cell}->{ins}{$pin} ) {
+               $pinType = $MODULE_ALREADY{$cell}->dbVNOMGetInputType($pin);
+               $widthStr = $MODULE_ALREADY{$cell}->dbVNOMGetInputBits($pin);
+               $pinDir = 1;
+                                                                 }
+               elsif ( exists $MODULE_ALREADY{$cell}->{outs}{$pin} ) {
+               $pinType = $MODULE_ALREADY{$cell}->dbVNOMGetOutputType($pin);
+               $widthStr = $MODULE_ALREADY{$cell}->dbVNOMGetOutputBits($pin);
+               $pinDir = 2;
+                                                                    }
+               elsif ( exists $MODULE_ALREADY{$cell}->{bidis}{$pin} ) {
+               $pinType = $MODULE_ALREADY{$cell}->dbVNOMGetBidiType($pin);
+               $widthStr = $MODULE_ALREADY{$cell}->dbVNOMGetBidiBits($pin);
+               $pinDir = 3;
+                                                                    }
+               else {
+               print "DBG-PAR-VERI : 006 : $pin on $cell for instance $instance is neither input nor output\n" if($DEBUG == 300);
+                    }
+               my $class = $MODULE_ALREADY{$cell}->dbVNOMGetClass;
+               if ( $pinType == 1 || $class == 11 ) { print "DBG-PAR-VERI : 007 : it is a bus\n" if($DEBUG == 300); 
+                                      $netNameExpr =~ s/^\s+//;
+                                      $netNameExpr =~ s/\s+$//;
+                                      my $isConcat = 0 ;
+                                      my @netNameExprList = ($netNameExpr) ;
+                                      if ( $netNameExpr =~ /\{.*\}/ ) {
+                                        $isConcat = 1 ;
+                                        $netNameExpr =~ s/\{/ /g;
+                                        $netNameExpr =~ s/\}/ /g;
+                                        $netNameExpr =~ s/\,/ /g;
+                                        $netNameExpr =~ s/^\s+//;
+                                        $netNameExpr =~ s/\s+$//;
+                                        @netNameExprList = (split(/\s+/,$netNameExpr));
+                                      }
+                                      foreach my $netName ( @netNameExprList ) {
+                                      if ( $netName =~ /\[\s*[0-9]+\s*\:\s*[0-9]+\s*\]/ ) {# part select
+                                        $netName =~ s/^\s+//;
+                                        $netName =~ s/\s+$//;
+                                        $netName =~ s/\[/ /; $netName =~ s/\]//; $netName =~ s/\:/ /;
+                                        my ($name,$from,$to) = (split(/\s+/,$netName))[0,1,2];
+                                        if ( exists $wires{$name} ) {
+                                          my $exstng_widthStr = $wires{$name} ;
+                                          $exstng_widthStr =~ s/\[//; $exstng_widthStr =~ s/\]//; $exstng_widthStr =~ s/\:/ /;
+                                          my ($exstng_from,$exstng_to) = (split(/\s+/,$exstng_widthStr))[0,1];
+                                          my $new_widthStr = "[".$exstng_from.":".$exstng_to."]";
+                                          if(($from > $exstng_from) || ($to < $exstng_to)){
+                                            if($from > $exstng_from){
+                                              $new_widthStr = "[".$from.":";
+                                            }else {
+                                              $new_widthStr = "[".$exstng_from.":";
+                                            }
+                                            if($to < $exstng_to){
+                                              $new_widthStr = $new_widthStr.$to."]";
+                                            }else {
+                                              $new_widthStr = $new_widthStr.$exstng_to."]";
+                                            }
+                                            if (!( exists $MODULE_ALREADY{$moduleName}->{ins}{$name} || exists $MODULE_ALREADY{$moduleName}->{outs}{$name} || exists $MODULE_ALREADY{$moduleName}->{bidis}{$name} ))
+                                            {$wires{$name} = $new_widthStr;}
+                                          }
+                                        }else{
+                                          my $new_widthStr = "[".$from.":".$to."]";
+                                          if (!( exists $MODULE_ALREADY{$moduleName}->{ins}{$name} || exists $MODULE_ALREADY{$moduleName}->{outs}{$name} || exists $MODULE_ALREADY{$moduleName}->{bidis}{$name} ))
+                                          {$wires{$name} = $new_widthStr;}
+                                        }
+                                      }elsif ( $netName =~ /\[\s*[0-9]+\s*\]/ ) {# bit select
+                                        if ( $netName =~ /\\/ ) {# escaped identifier
+                                          if ( $netName =~ /\s+\[\s*[0-9]+\s*\]/ ) {# bit select
+                                          }else {
+                                            next ;
+                                          }
+                                        }
+                                        $netName =~ s/^\s+//;
+                                        $netName =~ s/\s+$//;
+                                        $netName =~ s/\[/ /; $netName =~ s/\]//; 
+                                        my ($name,$from) = (split(/\s+/,$netName))[0,1];
+                                        if ( exists $wires{$name} ) { 
+                                          my $exstng_widthStr = $wires{$name} ;
+                                          $exstng_widthStr =~ s/\[//; $exstng_widthStr =~ s/\]//; $exstng_widthStr =~ s/\:/ /;
+                                          my ($exstng_from,$exstng_to) = (split(/\s+/,$exstng_widthStr))[0,1];
+                                          my $new_widthStr = "[".$exstng_from.":".$exstng_to."]";
+                                          if($from > $exstng_from){
+                                              $new_widthStr = "[".$from.":";
+                                              $new_widthStr = $new_widthStr.$exstng_to."]";
+                                              if (!( exists $MODULE_ALREADY{$moduleName}->{ins}{$name} || exists $MODULE_ALREADY{$moduleName}->{outs}{$name} || exists $MODULE_ALREADY{$moduleName}->{bidis}{$name} ))
+                                              {$wires{$name} = $new_widthStr;}
+                                          }
+                                        }else{
+                                          my $new_widthStr = "[".$from.":"."0"."]";
+                                          if (!( exists $MODULE_ALREADY{$moduleName}->{ins}{$name} || exists $MODULE_ALREADY{$moduleName}->{outs}{$name} || exists $MODULE_ALREADY{$moduleName}->{bidis}{$name} ))
+                                          {$wires{$name} = $new_widthStr;}
+                                        }
+                                      }elsif ( $netName ne "" && $netName !~ /'b/ && $netName !~ /\{.*\}/ ) {
+                                      if($isConcat ==1) {next;} #assuming all the bit will be flattened in a concat
+                                      if ( exists $wires{$netName} ) { }
+                                      elsif ( exists $MODULE_ALREADY{$moduleName}->{ins}{$netName} || exists $MODULE_ALREADY{$moduleName}->{outs}{$netName} || exists $MODULE_ALREADY{$moduleName}->{bidis}{$netName} ) { }
+                                      else { 
+                                      if (!( exists $MODULE_ALREADY{$moduleName}->{ins}{$netName} || exists $MODULE_ALREADY{$moduleName}->{outs}{$netName} || exists $MODULE_ALREADY{$moduleName}->{bidis}{$netName} ))
+                                      {$wires{$netName} = $widthStr;}
+                                      print "DBG-PAR-VERI : 008 : it is a $widthStr\n" if($DEBUG == 300);
+                                           }
+                                                        } # if the netname is either empty or tieHi or TieLo
+                                      }#foreach netNameExprList
+ 
+                                    } else { print "DBG-PAR-VERI : 009 : it is a single\n" if($DEBUG == 300); 
+                                      if ( $netNameExpr =~ /\[\s*[0-9]+\s*\]/ ) {# bit select
+                                        if ( $netNameExpr =~ /\\/ ) {# escaped identifier
+                                          if ( $netNameExpr =~ /\s+\[\s*[0-9]+\s*\]/ ) {# bit select
+                                          }else {
+                                            next ;
+                                          }
+                                        }
+                                        $netNameExpr =~ s/^\s+//;
+                                        $netNameExpr =~ s/\s+$//;
+                                        $netNameExpr =~ s/\[/ /; $netNameExpr =~ s/\]//; 
+                                        my ($name,$from) = (split(/\s+/,$netNameExpr))[0,1];
+                                        if ( exists $wires{$name} ) {
+                                          my $exstng_widthStr = $wires{$name} ;
+                                          $exstng_widthStr =~ s/\[//; $exstng_widthStr =~ s/\]//; $exstng_widthStr =~ s/\:/ /;
+                                          my ($exstng_from,$exstng_to) = (split(/\s+/,$exstng_widthStr))[0,1];
+                                          my $new_widthStr = "[".$exstng_from.":".$exstng_to."]";
+                                          if($from > $exstng_from){
+                                              $new_widthStr = "[".$from.":";
+                                              $new_widthStr = $new_widthStr.$exstng_to."]";
+                                              if (!( exists $MODULE_ALREADY{$moduleName}->{ins}{$name} || exists $MODULE_ALREADY{$moduleName}->{outs}{$name} || exists $MODULE_ALREADY{$moduleName}->{bidis}{$name} ))
+                                              {$wires{$name} = $new_widthStr;}
+                                          }
+                                        }else{
+                                          my $new_widthStr = "[".$from.":"."0"."]";
+                                          if (!( exists $MODULE_ALREADY{$moduleName}->{ins}{$name} || exists $MODULE_ALREADY{$moduleName}->{outs}{$name} || exists $MODULE_ALREADY{$moduleName}->{bidis}{$name} ))
+                                          {$wires{$name} = $new_widthStr;}
+                                        }
+                                     }
+                                           }
+                                      }# if the conn line is for a hierarchical instance
+elsif ( exists $PLDB{$cell}) {
+    print "DBG-PAR-VERI : 010 : $inst is leaf instance of cell $cell .. processing its pins now\n" if ($DEBUG == 300);
+               # check if the hier pin for this connection is  bus
+               print "DBG-PAR-VERI : 011 : checking type of $pin\n" if($DEBUG == 300);
+               my $pinType = 0 ; # signal by default
+               my $pinDir = 0 ; # signal by default
+               $pinType = $PLDB{$cell}->dbMdbIsPinBus($pin); 
+               if ( $pinType == 1 ) { print "DBG-PAR-VERI : 012 : $pin is a bus connected with $netNameExpr \n" if($DEBUG == 300); 
+                                      my $widthStr = $PLDB{$cell}->dbMdbGetPinBusBits($pin);
+                                      $netNameExpr =~ s/^\s+//;
+                                      $netNameExpr =~ s/\s+$//;
+                                      my $isConcat = 0 ;
+                                      my @netNameExprList = ($netNameExpr) ;
+                                      if ( $netNameExpr =~ /\{.*\}/ ) {
+                                        $isConcat = 1 ;
+                                        $netNameExpr =~ s/\{/ /g;
+                                        $netNameExpr =~ s/\}/ /g;
+                                        $netNameExpr =~ s/\,/ /g;
+                                        $netNameExpr =~ s/^\s+//;
+                                        $netNameExpr =~ s/\s+$//;
+                                        @netNameExprList = (split(/\s+/,$netNameExpr));
+                                      }
+                                      foreach my $netName ( @netNameExprList ) {
+                                      if ( $netName =~ /\[\s*[0-9]+\s*\:\s*[0-9]+\s*\]/ ) {# part select
+                                        $netName =~ s/^\s+//;
+                                        $netName =~ s/\s+$//;
+                                        $netName =~ s/\[/ /; $netName =~ s/\]//; $netName =~ s/\:/ /;
+                                        my ($name,$from,$to) = (split(/\s+/,$netName))[0,1,2];
+                                        if ( exists $wires{$name} ) { 
+                                          my $exstng_widthStr = $wires{$name} ;
+                                          $exstng_widthStr =~ s/\[//; $exstng_widthStr =~ s/\]//; $exstng_widthStr =~ s/\:/ /;
+                                          my ($exstng_from,$exstng_to) = (split(/\s+/,$exstng_widthStr))[0,1];
+                                          my $new_widthStr = "[".$exstng_from.":".$exstng_to."]";
+                                          if(($from > $exstng_from) || ($to < $exstng_to)){
+                                            if($from > $exstng_from){
+                                              $new_widthStr = "[".$from.":";
+                                            }else {
+                                              $new_widthStr = "[".$exstng_from.":";
+                                            }
+                                            if($to < $exstng_to){
+                                              $new_widthStr = $new_widthStr.$to."]";
+                                            }else {
+                                              $new_widthStr = $new_widthStr.$exstng_to."]";
+                                            }
+                                            if (!( exists $MODULE_ALREADY{$moduleName}->{ins}{$name} || exists $MODULE_ALREADY{$moduleName}->{outs}{$name} || exists $MODULE_ALREADY{$moduleName}->{bidis}{$name} ))
+                                            {$wires{$name} = $new_widthStr;}
+                                          }
+                                        }else{
+                                          my $new_widthStr = "[".$from.":".$to."]";
+                                          if (!( exists $MODULE_ALREADY{$moduleName}->{ins}{$name} || exists $MODULE_ALREADY{$moduleName}->{outs}{$name} || exists $MODULE_ALREADY{$moduleName}->{bidis}{$name} ))
+                                          {$wires{$name} = $new_widthStr;}
+                                        }
+                                      }elsif ( $netName =~ /\[\s*[0-9]+\s*\]/ ) {# bit select
+                                        if ( $netName =~ /\\/ ) {# escaped identifier
+                                          if ( $netName =~ /\s+\[\s*[0-9]+\s*\]/ ) {# bit select
+                                          }else {
+                                            next ;
+                                          }
+                                        }
+                                        $netName =~ s/^\s+//;
+                                        $netName =~ s/\s+$//;
+                                        $netName =~ s/\[/ /; $netName =~ s/\]//; 
+                                        my ($name,$from) = (split(/\s+/,$netName))[0,1];
+                                        if ( exists $wires{$name} ) { 
+                                          my $exstng_widthStr = $wires{$name} ;
+                                          $exstng_widthStr =~ s/\[//; $exstng_widthStr =~ s/\]//; $exstng_widthStr =~ s/\:/ /;
+                                          my ($exstng_from,$exstng_to) = (split(/\s+/,$exstng_widthStr))[0,1];
+                                          my $new_widthStr = "[".$exstng_from.":".$exstng_to."]";
+                                          if($from > $exstng_from){
+                                              $new_widthStr = "[".$from.":";
+                                              $new_widthStr = $new_widthStr.$exstng_to."]";
+                                              if (!( exists $MODULE_ALREADY{$moduleName}->{ins}{$name} || exists $MODULE_ALREADY{$moduleName}->{outs}{$name} || exists $MODULE_ALREADY{$moduleName}->{bidis}{$name} ))
+                                              {$wires{$name} = $new_widthStr;}
+                                          }
+                                        }else{
+                                          my $new_widthStr = "[".$from.":"."0"."]";
+                                          if (!( exists $MODULE_ALREADY{$moduleName}->{ins}{$name} || exists $MODULE_ALREADY{$moduleName}->{outs}{$name} || exists $MODULE_ALREADY{$moduleName}->{bidis}{$name} ))
+                                          {$wires{$name} = $new_widthStr;}
+                                        }
+                                      } elsif ( $netName ne "" && $netName !~ /'b/ && $netName !~ /\{.*\}/ ) {
+                                      if($isConcat ==1) {next;} #assuming all the bit will be flattened in a concat
+                                      if ( exists $wires{$netName} ) { } 
+                                      elsif ( exists $MODULE_ALREADY{$moduleName}->{ins}{$netName} || exists $MODULE_ALREADY{$moduleName}->{outs}{$netName} || exists $MODULE_ALREADY{$moduleName}->{bidis}{$netName} ) { }
+                                      else { 
+                                      if (!( exists $MODULE_ALREADY{$moduleName}->{ins}{$netName} || exists $MODULE_ALREADY{$moduleName}->{outs}{$netName} || exists $MODULE_ALREADY{$moduleName}->{bidis}{$netName} ))
+                                      {$wires{$netName} = $widthStr;}
+                                      print "DBG-PAR-VERI : 013 : it is a $widthStr\n" if($DEBUG == 300); 
+                                           }
+                                                        }
+                                      }#foreach netNameExprList
+                                    } else { 
+                                      print "DBG-PAR-VERI : 014 : it is a single\n" if($DEBUG == 300); 
+                                      if ( $netNameExpr =~ /\[\s*[0-9]+\s*\]/ ) {# bit select
+                                        if ( $netNameExpr =~ /\\/ ) {# escaped identifier
+                                          if ( $netNameExpr =~ /\s+\[\s*[0-9]+\s*\]/ ) {# bit select
+                                          }else {
+                                            next ;
+                                          }
+                                        }
+                                        $netNameExpr =~ s/^\s+//;
+                                        $netNameExpr =~ s/\s+$//;
+                                        $netNameExpr =~ s/\[/ /; $netNameExpr =~ s/\]//; 
+                                        my ($name,$from) = (split(/\s+/,$netNameExpr))[0,1];
+                                        if ( exists $wires{$name} ) { 
+                                          my $exstng_widthStr = $wires{$name} ;
+                                          $exstng_widthStr =~ s/\[//; $exstng_widthStr =~ s/\]//; $exstng_widthStr =~ s/\:/ /;
+                                          my ($exstng_from,$exstng_to) = (split(/\s+/,$exstng_widthStr))[0,1];
+                                          my $new_widthStr = "[".$exstng_from.":".$exstng_to."]";
+                                          if($from > $exstng_from){
+                                              $new_widthStr = "[".$from.":";
+                                              $new_widthStr = $new_widthStr.$exstng_to."]";
+                                              if (!( exists $MODULE_ALREADY{$moduleName}->{ins}{$name} || exists $MODULE_ALREADY{$moduleName}->{outs}{$name} || exists $MODULE_ALREADY{$moduleName}->{bidis}{$name} ))
+                                              {$wires{$name} = $new_widthStr;}
+                                          }
+                                        }else{
+                                          my $new_widthStr = "[".$from.":"."0"."]";
+                                          if (!( exists $MODULE_ALREADY{$moduleName}->{ins}{$name} || exists $MODULE_ALREADY{$moduleName}->{outs}{$name} || exists $MODULE_ALREADY{$moduleName}->{bidis}{$name} ))
+                                          {$wires{$name} = $new_widthStr;}
+                                        }
+                                     }
+                                           }
+
+                                     } # if the conn line is for a leaf instance
+                                                     }# for all pins on the connection line
+
+                                               }#if exists in hierInst or leafInst
+                                }# for all conn lines
+foreach my $net ( keys %wires ) {
+                                      my $width_temp = $wires{$net} ;
+                                      if ( $net =~ /\\/ ) {# escaped identifier
+                                        print WRITE "wire $wires{$net} $net  \;\n";
+                                      }else {
+                                        print WRITE "wire $wires{$net} $net \;\n";
+                                      }
+                                }
+#--------------------------------------assign statement write--------------------#
+print WRITE "\n";
+foreach my $inst (keys %assignList){
+  print WRITE "assign $assignList{$inst}\n";
+}
+       #---------------- print the conn line -----------------------------------#
+       my @conns = $MODULE_ALREADY{$moduleName}->dbVNOMGetConn;
+       print WRITE "\n\n";
+       
+       foreach my $i ( @conns ) {  
+         my ($cellName_and_instName) = ( split(/\s*\(\s*/, $i ))[0];
+         $cellName_and_instName =~ s/^\s+//;
+         $cellName_and_instName =~ s/\s+$//;
+         my $instName = ( split(/\s+/, $cellName_and_instName ))[1];
+         if(!exists $assignList{$instName}){
+         if (( $MODULE_ALREADY{$moduleName}->dbVNOMHasHierInst($instName) ) 
+            || ( $MODULE_ALREADY{$moduleName}->dbVNOMHasLeafInst($instName) )) {
+           if ( $i =~ /\;\s*$/ ) {#if input is verilog semicolon is there in $i
+             print WRITE "\t$i\n"; 
+           } else{
+             print WRITE "\t$i ;\n"; 
+           }
+         }
+         }
+       }
+
+        print WRITE "\n";
+        print WRITE "endmodule\n";
+                                           }# foreach module
+#------------------------------------------------ hier : end : writing from the VERILOG database  ---------------------------------------------------------------------#
+                     }# if hier 
+
+print "INFO-PAR-VERI : 015 : Finished writing the Verilog !\n";
+close(WRITE);
+}#else
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "Command write_verilog took:",timestr($td),"\n";
+}# sub write_verilog
+
+
+sub sanityVerilogFalseII{
+
+################################################################################################
+#### global variables                                                                       ####
+################################################################################################
+%moduleArea = ();
+%moduleHierarchyPointer = ();
+@COMPONENTS = (\%COMP_ALREADY, \%COMP_NEW_ADDED, \%COMP_NEW_NO_LOGIC);
+@MODULES = (\%MODULE_ALREADY, \%MODULE_NEW_ADDED, \%MODULE_NEW_NO_LOGIC);
+@NETS = (\%NET_ALREADY, \%NET_NEW_ADDED, \%NET_NEW_NO_LOGIC);
+# do not initiallize the array as user may want to read more than 1 verilog  : Rajeev 02/18/09
+#%COMP_ALREADY = ();
+#%NET_ALREADY = ();
+#%MODULE_ALREADY = ();
+
+################################################################################################
+#### local  variables                                                                       ####
+################################################################################################
+my $noOfArguments = @_;
+my $INPUT_VERILOG_FILE = $_[0];
+my $OUTPUT_VERILOG_FILE = $_[1];
+my $referToPlef = \%MACROS_ALREADY;
+my $referToPlefInputPins = \%macroInputPins;
+my $referToPlefOutputPins = \%macroOutputPins;
+
+open (READ_INPUT_VERILOG, "$INPUT_VERILOG_FILE");
+
+my $count = 0;
+my $scaled_count = 0;
+my $line_count = 0;
+my $verilogModuleCount = 0;
+my $line = "";
+my $comment_line = "";
+my $i = 0;
+my $list_of_lm_pointers = "";
+my $cellref = "";
+my $remainder = "";
+my @nets = ();
+my $NON_UNIQUE_INSTANCE_NAME = 0;
+my $pinDirection = "";
+my $pinName = "";
+my $pinToFrom = "";
+my $skip_comment = 0;
+my $no_of_added_inst = 0 ;
+my $begin_cnt = 0;
+my $start_reading = 0;
+my $end_reading = 0;
+
+my $progBarMax = `wc -l $INPUT_VERILOG_FILE`;
+#print "progBarMax = $progBarMax\n";
+#my $progress = Term::ProgressBar->new($progBarMax);
+
+while(<READ_INPUT_VERILOG>) {
+
+#---------------- printing the line number ----------------#
+$count = $count + 1;
+if ($count =~ /0000$/){ 
+  #print "$count ...\n";
+#  $progress->update($count);
+}
+chomp($_);
+if ($_ =~ /\/\*(.*)\*\//){
+  $_ =~s/\/\*(.*)\*\///;
+}
+if (($skip_comment == 1) && ($_ !~ /\*\//)){
+  next;
+}
+if (($_ =~ /\/\*/) && ($_ !~ /\*\//) ){
+  $skip_comment = 1; 
+  $_ =~s/\/\*(.*)//;
+}
+if (($skip_comment == 1) && ($_ =~ /\*\//)){
+  $_ =~s/(.*)\*\///;
+  $skip_comment = 0;
+}
+if($_ =~ /\/\//){
+  $_ =~s/\/\/(.*)//;
+}
+if($_ =~ /^\s*\balways\b\s*/){
+  $start_reading = 1;
+  $end_reading = 0;
+}elsif($_ =~ /\s*\bend\b\s*/){
+  $start_reading = 0;
+  $end_reading = 1;
+  $begin_cnt--;
+}elsif($_ =~ /^\s*\binitial\b\s*/){
+  $start_reading = 1;
+  $end_reading = 0;
+}
+if(($start_reading == 1)&&($end_reading == 0)){
+  if($_ =~ /\s*\bbegin\b\s*/){
+    $begin_cnt++;
+  }
+  if($begin_cnt == 0){
+    last;
+  }
+}
+
+if($_ =~ /\`define/){next; }
+if($_ =~ /\`include/){next; }
+if($_ =~ (/\`timescale/) || (/\`reset_all/) || (/\`ifdef/) ||(/\`else/) || (/\`endif/)||(/\`celldefine/) ||(/\`endcelldefine/)||(/\`default_nettype/)||(/\`unconnected_drive pull1/)||(/\`unconnected_drive pull0/)||(/\`nounconnected_drive/)||(/\`delay_mode_zero/)||(/\`delay_mode_unit/)||(/\`delay_mode_path/)||(/\`delay_mode_distributed/)||(/\`uselib\s*file/)){next; }
+                else {
+if($_ =~ /\bendmodule\b/){
+                             $list_of_lm_pointers = "";
+                            } else {
+if($_ =~ /\;\s*$/){ $line = $line.$_;
+                        print "DBG-PAR-VERI : 001 : $line\n" if ($DEBUG == 101);
+                
+
+##################################################################################################
+####       make array for geting the top level module                                         ####
+##################################################################################################
+
+if($line =~ /\bmodule\b/){$module_line = $line; $module_line =~ s/^\s*//; $module_line =~ s/\((.*)\)\;//; $module_line =~ s/\(/ \(/;
+                         ($moduleName) = (split(/\s+/,$module_line))[1];
+                         $moduleName =~ s/\;//;
+                         print "DBG-PAR-VERI : 002 : reading module : $moduleName \n" if ($DEBUG == 101);
+                         $no_of_added_inst = 0 ;
+                         if ( exists $MODULE_ALREADY{$moduleName} ) {
+                           my $class = $MODULE_ALREADY{$moduleName}->dbVNOMGetClass; 
+                           if($class == 11){
+                             $MODULE_ALREADY{$moduleName}->dbVNOMSetClass(0);
+                           }
+                         } else {
+                         $MODULE_ALREADY{$moduleName} = VNOM::new();
+                                                                             }
+			} else {
+if($line =~ /\bassign\b/) {
+                           my $assign_line = $line;
+                           $assign_line =~ s/^\s*assign\s*//;
+                           $assign_line =~ s/\s*\;\s*$//;
+#------ Added by Rajeev ----#
+#--- first find the assign buffer from the PLDB library
+#--- find its input / output ports and area 
+#--- replace the assign statement with the buffer ... if buffer does not exist then leave the assign statement
+my $assignBufName = $GLOBAL->dbfGlobalGetBufForAssign;
+if ( $assignBufName ne "" ) {
+   my $assignIn  = $GLOBAL->dbfGlobalGetBufForAssignIn();
+   my $assignOut = $GLOBAL->dbfGlobalGetBufForAssignOut();
+   my $power  = $GLOBAL->dbfGlobalGetBufForAssignPower();
+   my $gnd = $GLOBAL->dbfGlobalGetBufForAssignGnd();
+                           my ($left_expr ,$right_expr) = (split(/=/,$assign_line))[0,1];
+                           $left_expr =~ s/\s+//;
+                           $right_expr =~ s/\s+//;
+                           my @left_pins_or_nets_array = &array_of_blasted_expr($left_expr,$moduleName);
+                           my @right_pins_or_nets_array = &array_of_blasted_expr($right_expr,$moduleName);
+                           if($#left_pins_or_nets_array == $#right_pins_or_nets_array) {
+                             foreach my $temp_left_bit (@left_pins_or_nets_array){
+                               my $temp_right_bit = shift(@right_pins_or_nets_array);
+                               if(($temp_right_bit !~ /'b/) && ( $temp_left_bit !~ /'b/)) {
+                                 my $temp_assign_component_name = "bt_assign_buf"."_".$no_of_added_inst;
+                                 #my $temp_assign_component_port_expr = "("."\.".$assignOut."(".$temp_left_bit.")".","."\.".$assignIn."(".$temp_right_bit.")".","."\.".$power."(1'b1".")".","."\.".$gnd."(1'b0".")".")" ;
+                                 my $temp_assign_component_port_expr = "("."\.".$assignOut."(".$temp_left_bit.")".","."\.".$assignIn."(".$temp_right_bit.")".")" ;
+                                 $no_of_added_inst++;
+                                 my $temp_conn_line = $assignBufName." ".$temp_assign_component_name.$temp_assign_component_port_expr;
+                                 $temp_conn_line =~ s/^\s*//;
+                                 
+                                 $temp_conn_line =~ s/\(/ \(/;
+                                 print "\nDBG-PAR-VERI : 003 : Added conn line $temp_conn_line to module $moduleName" if ($DEBUG == 300);
+                                 $MODULE_ALREADY{$moduleName}->dbVNOMAddConn($temp_conn_line);
+                                 my $area = $MODULE_ALREADY{$moduleName}->dbVNOMGetArea;
+                                 my @size = $PLDB{$assignBufName}->dbMdbGetSize if(exists $PLDB{$assignBufName}) ;
+                                 my $delA = $size[0]*$size[1];
+                                 $area = $area + $delA;
+                                 $GLOBAL->dbfGlobalAddBufForAssignInstance($temp_assign_component_name);
+                                 $MODULE_ALREADY{$moduleName}->dbVNOMSetArea($area);
+                                 $MODULE_ALREADY{$moduleName}->dbVNOMAddLeafInst($temp_assign_component_name);
+                                 $MODULE_ALREADY{$moduleName}->dbVNOMSetLeafInstCell($temp_assign_component_name,$assignBufName);
+                               }
+                             }
+                           }
+#print "$line\n" if ($DEBUG == 101);
+                                  }#if assign buffer exists
+else {print "DBG-PAR-VERI : 004 : Skipping assign statement\n" if ($DEBUG == 101);}
+                        } else {
+if($line =~ /\bendmodule\b/){
+#print "$line\n" if ($DEBUG == 101);
+                            } else {
+#### assumption that input and output lines will have only one pin / bus entry
+if($line =~ /\b[i,o][n,u]t*p*o*ut\b/){  $line =~ s/^\s+//;
+                                  if($line =~ /\[\s*\-*\s*[0-9]+\s*\:\s*\-*\s*[0-9]+\s*\]/){ # if the pin is a BUS
+#-------------------- added extra space after the closing bracket --------------------- OASYS #
+                                    $line =~ s/\]/ /; $line =~ s/\[/ /; $line =~ s/\:/ /; $line =~ s/\,/ /g; $line =~ s/\;//;
+                                    $line =~ s/reg//;
+                                    my @tempStringList =(split(/\s+/, $line));
+                                    my $number_of_string = @tempStringList;
+                                    my @new_tempStringList = ();
+                                    if ($number_of_string == 4){
+                                      ($pinDirection,$pinFrom,$pinTo,$pin) = @tempStringList[0,1,2,3];
+                                      push(@new_tempStringList,$pinDirection,$pinFrom,$pinTo,$pin);
+                                    }else {
+                                      $pinDirection = shift @tempStringList;
+                                      push (@new_tempStringList,$pinDirection);
+                                      $pinFrom = shift @tempStringList;
+                                      push (@new_tempStringList,$pinFrom);
+                                      $pinTo = shift @tempStringList;
+                                      push (@new_tempStringList,$pinTo);
+                                      foreach my $pin(@tempStringList){
+                                        push (@new_tempStringList,$pin);
+                                      }
+                                    }
+                                    $pinToFrom = "[".$pinFrom.":".$pinTo."]" ;
+                                    foreach my $pinName (@new_tempStringList[3 .. $#new_tempStringList]) {
+     if ($pinDirection eq 'input' ) { $MODULE_ALREADY{$moduleName}->dbVNOMAddInput($pinName); 
+                          $MODULE_ALREADY{$moduleName}->dbVNOMSetInputType($pinName, 1);
+                          $MODULE_ALREADY{$moduleName}->dbVNOMSetInputBits($pinName, $pinToFrom);
+                                     print "DBG-PAR-VERI : 005 : Adding input bus $pinName to $moduleName\n" if ($DEBUG == 300);
+                                    }
+     elsif ($pinDirection eq 'output' ) { $MODULE_ALREADY{$moduleName}->dbVNOMAddOutput($pinName); 
+                          $MODULE_ALREADY{$moduleName}->dbVNOMSetOutputType($pinName, 1);
+                          $MODULE_ALREADY{$moduleName}->dbVNOMSetOutputBits($pinName, $pinToFrom);
+                                     print "DBG-PAR-VERI : 006 : Adding output bus $pinName to $moduleName\n" if ($DEBUG == 300);
+                                        }
+    elsif ($pinDirection eq 'inout' ) { $MODULE_ALREADY{$moduleName}->dbVNOMAddBidi($pinName);
+                          $MODULE_ALREADY{$moduleName}->dbVNOMSetBidiType($pinName, 1);
+                          $MODULE_ALREADY{$moduleName}->dbVNOMSetBidiBits($pinName, $pinToFrom);
+                                     print "DBG-PAR-VERI : 007 : Adding inout bus $pinName to $moduleName\n" if ($DEBUG == 300);
+                                        }
+                                                                                           }
+
+                                    }# if pin is type BUS
+                                  else {
+                                     $line =~ s/\,/ /g; $line =~ s/\;//;
+                                     my @pins = split(/\s+/, $line);
+                                     my $len = @pins;
+                                     if ($len >= 2) { 
+                                            $pinDirection =  shift @pins;
+                                                      }
+                                     else { print "WARN-PAR-VERI : 008 : syntax issue at line $count\n"; } 
+     if ($pinDirection eq 'input' ) { 
+                                      foreach my $pinName ( @pins ) {
+                                        if($pinName =~ /reg/){next;} 
+                                      $MODULE_ALREADY{$moduleName}->dbVNOMAddInput($pinName); 
+                                      $MODULE_ALREADY{$moduleName}->dbVNOMSetInputType($pinName,0);
+                                      print "DBG-PAR-VERI : 009 : Adding input pin $pinName to $moduleName\n" if ($DEBUG == 300);
+                                                                 }
+                                     }
+     elsif ($pinDirection eq 'output' ) {
+                                      foreach my $pinName ( @pins ) {
+                                        if($pinName =~ /reg/){next;} 
+                                      $MODULE_ALREADY{$moduleName}->dbVNOMAddOutput($pinName); 
+                                      $MODULE_ALREADY{$moduleName}->dbVNOMSetOutputType($pinName,0);
+                                      print "DBG-PAR-VERI : 010 : Adding output pin $pinName to $moduleName\n" if ($DEBUG == 300);
+                                                                 }
+                                      }
+     elsif ($pinDirection eq 'inout' ) {
+                                      foreach my $pinName ( @pins ) {
+                                        if($pinName =~ /reg/){next;} 
+                                      $MODULE_ALREADY{$moduleName}->dbVNOMAddBidi($pinName);
+                                      $MODULE_ALREADY{$moduleName}->dbVNOMSetBidiType($pinName,0);
+                                      print "DBG-PAR-VERI : 011 : Adding output pin $pinName to $moduleName\n" if ($DEBUG == 300);
+                                                                 }
+                                      }
+
+                                     } # if pin is type single
+#print "$line\n" if ($DEBUG == 101);
+                            } else {
+if($line =~ /\b(wire|reg)\b/){
+  $line =~ s/^\s+//;
+  if($line =~ /\[\s*\-*\s*[0-9]+\s*\:\s*\-*\s*[0-9]+\s*\]/){ # if the wire is a BUS
+    $line =~ s/\]/ /; $line =~ s/\[/ /; $line =~ s/\:/ /; $line =~ s/\,/ /g; $line =~ s/\;//;
+    my @tempStringList =(split(/\s+/, $line));
+    my ($netFrom,$netTo) = @tempStringList[1,2];
+    my $netToFrom = "[".$netFrom.":".$netTo."]" ;
+    foreach my $netName (@tempStringList[3 .. $#tempStringList]) {
+      if ((!exists $MODULE_ALREADY{$moduleName}->{ins}{$netName}) 
+       && (!exists $MODULE_ALREADY{$moduleName}->{outs}{$netName})
+       && (!exists $MODULE_ALREADY{$moduleName}->{bidis}{$netName})) {
+        $MODULE_ALREADY{$moduleName}->dbVNOMAddNet($netName); 
+        $MODULE_ALREADY{$moduleName}->dbVNOMSetNetType($netName,1);
+        $MODULE_ALREADY{$moduleName}->dbVNOMSetNetBits($netName,$netToFrom);
+        print "DBG-PAR-VERI : 012 : Adding Net bus $netName to $moduleName\n" if ($DEBUG == 300);
+      }
+    }
+  }# if net is type BUS
+#print "$line\n" if ($DEBUG == 101);
+                        } else {
+if($line =~ /^$/){
+#print "$line\n" if ($DEBUG == 101);
+		} else {
+$line =~ s/^\s*//;
+
+$line =~ s/\(/ \(/;
+($cellref, $instance) = (split(/\s+/, $line))[0,1];
+           $MODULE_ALREADY{$moduleName}->dbVNOMAddConn($line);
+
+#print "$cellref $instance \n" if ($DEBUG == 101);
+if( exists $PLDB{$cellref}) {
+          #print "INFO-2 : $instance : $cellref is a leaf instance in $moduleName\n";
+          my $area = $MODULE_ALREADY{$moduleName}->dbVNOMGetArea;
+          my @size = $PLDB{$cellref}->dbMdbGetSize;
+          my $delA = $size[0]*$size[1];
+          $area = $area + $delA;
+          $MODULE_ALREADY{$moduleName}->dbVNOMSetArea($area);
+          $MODULE_ALREADY{$moduleName}->dbVNOMAddLeafInst($instance);
+          $MODULE_ALREADY{$moduleName}->dbVNOMSetLeafInstCell($instance,$cellref);
+                            }
+elsif ( exists $MODULE_ALREADY{$cellref} ) {
+          $MODULE_ALREADY{$cellref}->dbVNOMAddParent($moduleName);
+          $MODULE_ALREADY{$moduleName}->dbVNOMAddHierInst($instance);
+          $MODULE_ALREADY{$moduleName}->dbVNOMSetHierInstCell($instance,$cellref);
+} else { # Black box or a module that is defined later in the file
+          $MODULE_ALREADY{$moduleName}->dbVNOMAddHierInst($instance);
+          $MODULE_ALREADY{$moduleName}->dbVNOMSetHierInstCell($instance,$cellref);
+          $MODULE_ALREADY{$cellref}= VNOM::new();
+          $MODULE_ALREADY{$cellref}->dbVNOMAddParent($moduleName);
+          $MODULE_ALREADY{$cellref}->dbVNOMSetClass(11);
+          #print "setting $moduleName as parent of $cellref\n";
+                                            }
+} # empty lines loop
+} # wire loop
+} # input output loop
+} # endmodule loop
+} # assign loop
+} # module loop
+#############################
+## reset the line variable ##
+#############################
+$line = "";
+               } else { $line = $line.$_; 
+#                        #print "$line\n" if ($DEBUG == 101);
+                        } # if line does not end loop
+                        } # endmodule line loop
+			} # commented line loop
+} # while
+
+#$progress->update($progBarMax);
+close(READ_INPUT_VERILOG);
+print "INFO-PAR-VERI : 013 : Finished reading the verilog file\n";
+
+
+
+
+##################################################################################################
+####    finding the top module                                                                ####
+##################################################################################################
+my @TOP = ();
+foreach my $mod (keys %MODULE_ALREADY) { 
+       my @parents =  $MODULE_ALREADY{$mod}->dbVNOMGetParent;
+       my $np = @parents;
+#       print "number of parents of $mod are $np\n";
+       if ( $np == 0 ) { push(@TOP,$mod); }
+       elsif ( $np > 1 ) { print "INFO-PAR-VERI : 014 : $mod has $np parents \n"; }
+                              }
+my $nT = @TOP;
+if ( $nT == 1 ) { print "INFO-PAR-VERI : 015 : Setting top module as $TOP[0]\n"; 
+                  $CURRENT_MODULE = $TOP[0];
+                  $TOP_MODULE = $TOP[0];
+		  $GLOBAL->dbfGlobalSetTOP($TOP_MODULE);
+                }
+elsif ( $nT > 1 ) { print "WARN-PAR-VERI : 016 : there are more than 1 possible top modules, please pick the correct one from the list below\n";
+                    print join ",", @TOP; #print "\n";
+                  }
+else { print "ERROR-PAR-VERI : 017 : something is wrong with the verilog file\n"; }
+#---------------------------------------------------------------------------#
+#  debugging ##
+#my @inputs  = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetInput ;
+#print join(", ", @inputs ); #print "\n";
+#my @outputs  = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetOutput ;
+
+&dbgSummaryModules;
+} #sub sanityVerilogFalseII
+
+sub dbgSummaryModules {
+my $n = keys %MODULE_ALREADY;
+print "INFO-PAR : There are $n modules in the design\n";
+my $a = 0;
+foreach $mod ( keys %MODULE_ALREADY ) { 
+                     $a = $a + $MODULE_ALREADY{$mod}->dbVNOMGetArea; 
+#                     my @l = $MODULE_ALREADY{$mod}->dbVNOMGetLeafInst;
+#                     my $nl = @l;
+#                     print "$mod has $nl leaf cells\n";
+                                      }
+print "INFO-PAR : total area of design is $a\n";
+print "INFO-PAR : $TOP_MODULE is the top module\n";
+
+}#sub dbgSummaryModules
+
+sub replace_bb_inst_with_liberty_cell_inst
+{
+  %BB_CELL_PORT_VS_LIBERTY_CELL_PORT = ();
+  %BB_LIBERTY_CELL_PORT_VS_CELL_PORT = ();
+  %BB_CELL_VS_LIBERTY_CELL = ();
+  if (!exists $MODULE_ALREADY{$TOP_MODULE} ) {
+    ##print "WAR-PAR : 00 : $TOP_MODULE definition does not exist, probably you forgot to read the verilog for it\n";
+  }
+  my @conns = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetConn();
+  $MODULE_ALREADY{$TOP_MODULE}->dbVNOMWipeConn();
+  foreach my $org_connLine ( @conns ) {
+    my $connLine = $org_connLine;
+    $connLine =~ s/\(/\)\,/;
+    $connLine =~ s/\)\s*\;//;
+    my ($cell,$inst) = ( split(/\s+/, $connLine ))[0,1];
+    if($MODULE_ALREADY{$TOP_MODULE}->dbVNOMHasHierInst($inst)){
+      my @cell_conns = $MODULE_ALREADY{$cell}->dbVNOMGetConn;
+      if($#cell_conns < 0){
+        if($cell eq "GND"){
+          $connLine = $org_connLine;
+          $connLine =~ s/^GND/BUF/g;
+          $connLine =~ s/\)\s*;\s*$/,.in\(1'b0\)\)\;/g;
+          $connLine =~ s/\(/\)\,/;
+          $connLine =~ s/\)\s*\;//;
+          ($cell,$inst) = ( split(/\s+/, $connLine ))[0,1];
+        }
+        if($cell eq "VCC"){
+          $connLine = $org_connLine;
+          $connLine =~ s/^VCC/BUF/g;
+          $connLine =~ s/\)\s*;\s*$/,.in\(1'b1\)\)\;/g;
+          $connLine =~ s/\(/\)\,/;
+          $connLine =~ s/\)\s*\;//;
+          ($cell,$inst) = ( split(/\s+/, $connLine ))[0,1];
+        }
+        ##print "processing cell \"$cell\" instance \"$inst\"\n";
+        my $new_connLine = "";
+        $new_connLine = &find_liberty_cell_matching_cell_func($cell);
+        if($new_connLine ne ""){
+          ##print "corresponding liberty cell is $new_connLine\n";
+          $new_connLine = $new_connLine." ".$inst." (";
+          @nets = split(/\s*\)\s*\,\s*/, $connLine);
+          my  $noOfPins = @nets;
+          for(my $i = 1 ; $i < $noOfPins ; $i++){
+            $nets[$i] =~ s/\s*\(\s*/\|/;
+            $nets[$i] =~ s/\s*\)\s*//;
+            my ($pin,$net)=(split(/\s*\|\s*/, $nets[$i]))[0,1];
+            $pin =~ s/\.//;
+            $pin =~ s/\s+//g;
+            $net =~ s/\s+//g;
+            my $pinType = 0 ;
+            my $pinDir = 0 ;
+            my $pinWidthExpr = "" ;
+            if ( exists $MODULE_ALREADY{$cell}->{ins}{$pin} ) {
+              $pinType = $MODULE_ALREADY{$cell}->dbVNOMGetInputType($pin);
+              $pinWidthExpr = $MODULE_ALREADY{$cell}->dbVNOMGetInputBits($pin);
+              $pinDir = 1;
+            }elsif ( exists $MODULE_ALREADY{$cell}->{outs}{$pin} ) {
+              $pinType = $MODULE_ALREADY{$cell}->dbVNOMGetOutputType($pin);
+              $pinWidthExpr = $MODULE_ALREADY{$cell}->dbVNOMGetOutputBits($pin);
+              $pinDir = 2;
+            }elsif ( exists $MODULE_ALREADY{$cell}->{bidis}{$pin} ) {
+              $pinType = $MODULE_ALREADY{$cell}->dbVNOMGetBidiType($pin);
+              $pinWidthExpr = $MODULE_ALREADY{$cell}->dbVNOMGetBidiBits($pin);
+              $pinDir = 3;
+            }
+            my @netExprBlastedArray = &get_expr_bit_blast($net,$TOP_MODULE);
+            my @pinExprBlastedArray = ();
+            if($pinType == 1){
+              $pinWidthExpr =~ s/\[//;
+              $pinWidthExpr =~ s/\]//;
+              my @W = split(/\s*\:\s*/,$pinWidthExpr);
+              if ( $W[0] <= $W[1] ) {
+                for (my $xx = $W[0] ; $xx <=$W[1]; $xx++ ) {
+                  my $pinName = $pin."[".$xx."]";
+                  push(@pinExprBlastedArray,$pinName);
+                }
+              }elsif ( $W[0] > $W[1] ) {
+                for (my $xx = $W[0] ; $xx >=$W[1]; $xx-- ) {
+                  my $pinName = $pin."[".$xx."]";
+                  push(@pinExprBlastedArray,$pinName);
+                }
+              }
+            }else{
+              push(@pinExprBlastedArray,$pin);
+            }
+            my $tmp_index=0;
+            foreach my $tmp_pin (@pinExprBlastedArray){
+              ##print "processing pin $tmp_pin\n";
+              my $tmp_net = $netExprBlastedArray[$tmp_index];
+              my $rplcd_pin = &find_liberty_cell_matching_cell_func_port($cell,$tmp_pin);
+              ##print "corresponding liberty pin is $rplcd_pin\n";
+              if(($i != 1)||($tmp_index != 0)){
+                $new_connLine = $new_connLine.",";
+              }
+              $new_connLine = $new_connLine.".".$rplcd_pin."(".$tmp_net.")";
+              $tmp_index++;
+            }
+          }
+          $new_connLine = $new_connLine.");";
+          $MODULE_ALREADY{$TOP_MODULE}->dbVNOMAddConn($new_connLine);
+        }else{
+          $MODULE_ALREADY{$TOP_MODULE}->dbVNOMAddConn($org_connLine);
+        }
+      }else{
+        $MODULE_ALREADY{$TOP_MODULE}->dbVNOMAddConn($org_connLine);
+      }
+    }else{
+      $MODULE_ALREADY{$TOP_MODULE}->dbVNOMAddConn($org_connLine);
+    }
+  }
+  #if ( -w "proton_cell_map.txt" ){
+    open (CELL_MAP_WRITE,">proton_cell_map.txt");
+    print CELL_MAP_WRITE "cell map used by this synthesis tool\n";
+    print CELL_MAP_WRITE "------------------------------------\n";
+    foreach my $tmp_cell (keys %BB_CELL_VS_LIBERTY_CELL){
+      my $tmp_liberty_cell = $BB_CELL_VS_LIBERTY_CELL{$tmp_cell};
+      print CELL_MAP_WRITE "$tmp_cell $tmp_liberty_cell\n";
+    }
+    close(CELL_MAP_WRITE);
+  #}
+  #if ( -w "proton_cell_port_map.txt" ){
+    open (CELL_PORT_MAP_WRITE,">proton_cell_port_map.txt");
+    print CELL_PORT_MAP_WRITE "cell port map used by this synthesis tool\n";
+    print CELL_PORT_MAP_WRITE "-----------------------------------------\n";
+    foreach my $tmp_cell (keys %BB_CELL_PORT_VS_LIBERTY_CELL_PORT){
+      print CELL_PORT_MAP_WRITE "cell port map for cell $tmp_cell\n";
+      print CELL_PORT_MAP_WRITE "--------------------------------\n";
+      foreach my $tmp_cell_port (keys %{$BB_CELL_PORT_VS_LIBERTY_CELL_PORT{$tmp_cell}}){
+        my $tmp_liberty_cell_port = $BB_CELL_PORT_VS_LIBERTY_CELL_PORT{$tmp_cell}{$tmp_cell_port};
+        print CELL_PORT_MAP_WRITE "$tmp_cell_port $tmp_liberty_cell_port\n";
+      }
+    }
+    close(CELL_PORT_MAP_WRITE);
+  #}
+}#sub replace_bb_inst_with_liberty_cell_inst
+
+sub find_liberty_cell_matching_cell_func
+{
+  my $cell_name = $_[0];
+  ##print "Trying to find corresponding liberty cell for $cell_name\n";
+  if(exists $BB_CELL_VS_LIBERTY_CELL{$cell_name}){
+    ##print "cell_name $cell_name exists in BB_CELL_VS_LIBERTY_CELL\n";
+    return $BB_CELL_VS_LIBERTY_CELL{$cell_name};
+  }
+  my @cell_port_list = $MODULE_ALREADY{$cell_name}->dbVNOMGetPins();
+  foreach my $very_tmp_cell_pin (@cell_port_list){
+    ##print "$very_tmp_cell_pin ";
+  }
+  ##print "\n";
+  my $no_of_cell_port = @cell_port_list;
+  my $liberty_cell_footprint;
+  my @cell_vs_liberty_cell_match_array = ('','','','','','','','');
+  foreach my $liberty_cell (keys %TLDB){
+    ##print "checking liberty cell $liberty_cell\n";
+    $liberty_cell_footprint = "";
+    my @liberty_cell_pins = $TLDB{$liberty_cell}->dbTimingLibGetPins();
+    foreach my $very_tmp_lib_cell_pin (@liberty_cell_pins){
+      ##print "$very_tmp_lib_cell_pin ";
+    }
+    ##print "\n";
+    my $no_of_liberty_cell_port = @liberty_cell_pins;
+    ##print "no_of_cell_port $no_of_cell_port no_of_liberty_cell_port $no_of_liberty_cell_port\n";
+    if($no_of_liberty_cell_port != $no_of_cell_port){
+      ##print "number of port are not same\n";
+      next;
+    }else{
+      ##print "number of port are same\n";
+    }
+    if(exists $PLDB{$liberty_cell}){
+      $liberty_cell_footprint = $PLDB{$liberty_cell}->dbMdbGetFootprint();
+    }
+    if($liberty_cell_footprint =~ /^$cell_name$/){
+      $cell_vs_liberty_cell_match_array[0] = $liberty_cell;
+    }elsif($liberty_cell_footprint =~ /^$cell_name/){
+      $cell_vs_liberty_cell_match_array[2] = $liberty_cell;
+    }elsif($liberty_cell_footprint =~ /$cell_name$/){
+      $cell_vs_liberty_cell_match_array[4] = $liberty_cell;
+    }elsif($liberty_cell_footprint =~ /$cell_name/){
+      $cell_vs_liberty_cell_match_array[6] = $liberty_cell;
+    }elsif($liberty_cell =~ /^$cell_name$/){
+      $cell_vs_liberty_cell_match_array[1] = $liberty_cell;
+    }elsif($liberty_cell =~ /^$cell_name/){
+      $cell_vs_liberty_cell_match_array[3] = $liberty_cell;
+    }elsif($liberty_cell =~ /$cell_name$/){
+      $cell_vs_liberty_cell_match_array[5] = $liberty_cell;
+    }elsif($liberty_cell =~ /$cell_name/){
+      $cell_vs_liberty_cell_match_array[7] = $liberty_cell;
+    }
+  }
+  for(my $i=0;$i<8;$i++){
+    if($cell_vs_liberty_cell_match_array[$i] ne ""){
+      $BB_CELL_VS_LIBERTY_CELL{$cell_name} = $cell_vs_liberty_cell_match_array[$i];
+      ##print "adding $cell_name $cell_vs_liberty_cell_match_array[$i] in BB_CELL_VS_LIBERTY_CELL\n";
+      return $cell_vs_liberty_cell_match_array[$i];
+    }
+  }
+  ##print "no liberty cell found for $cell_name\n";
+  return "";
+}#sub find_liberty_cell_matching_cell_func
+
+sub find_liberty_cell_matching_cell_func_port
+{
+  my $cell_name = $_[0];
+  my $cell_port_name = $_[1];
+  if(!exists $BB_CELL_VS_LIBERTY_CELL{$cell_name}){
+    return $cell_port_name;
+  }
+  if(exists $BB_CELL_PORT_VS_LIBERTY_CELL_PORT{$cell_name}){
+    ##print "$cell_name exists in BB_CELL_PORT_VS_LIBERTY_CELL_PORT\n";
+    if(exists $BB_CELL_PORT_VS_LIBERTY_CELL_PORT{$cell_name}{$cell_port_name}){
+      ##print "$cell_name and $cell_port_name exists in BB_CELL_PORT_VS_LIBERTY_CELL_PORT\n";
+      return $BB_CELL_PORT_VS_LIBERTY_CELL_PORT{$cell_name}{$cell_port_name};
+    }
+  }
+  my $liberty_cell_name = $BB_CELL_VS_LIBERTY_CELL{$cell_name};
+  if(!exists $TLDB{$liberty_cell_name}){
+    $BB_CELL_PORT_VS_LIBERTY_CELL_PORT{$cell_name}{$cell_port_name} = $cell_port_name;
+    return $cell_port_name;
+  }
+  my $cell_port_name_no_bit = $cell_port_name;
+  my $cell_port_name_bit = $cell_port_name;
+  if($cell_port_name =~ /(\[|<)\s*[0-9]+\s*(\]|>)/){
+    $cell_port_name_no_bit =~ s/(\[|<).*$//g;
+    $cell_port_name_bit =~ s/^$cell_port_name_no_bit//g;
+    $cell_port_name_bit =~ s/(\[|<)//;
+    $cell_port_name_bit =~ s/(\]|>)//;
+  }else{
+    $cell_port_name_bit = "";
+  }
+  my $cell_port_direction = -1;
+  ##print "port_name_without bit is $cell_port_name_no_bit and index is $cell_port_name_bit\n";
+  my $busWidth = "" ;
+  if(exists $MODULE_ALREADY{$cell_name}->{ins}{$cell_port_name_no_bit}){
+    my $type = $MODULE_ALREADY{$cell_name}->dbVNOMGetInputType($cell_port_name_no_bit);
+    if($type == 1){
+      $busWidth = $MODULE_ALREADY{$cell_name}->dbVNOMGetInputBits($cell_port_name_no_bit); 
+    }
+    $cell_port_direction = 1;
+  }elsif(exists $MODULE_ALREADY{$cell_name}->{outs}{$cell_port_name_no_bit}){
+    my $type = $MODULE_ALREADY{$cell_name}->dbVNOMGetOutputType($cell_port_name_no_bit);
+    if($type == 1){
+      $busWidth = $MODULE_ALREADY{$cell_name}->dbVNOMGetOutputBits($cell_port_name_no_bit); 
+    }
+    $cell_port_direction = 2;
+  }elsif(exists $MODULE_ALREADY{$cell_name}->{bidis}{$cell_port_name_no_bit}){
+    my $type = $MODULE_ALREADY{$cell_name}->dbVNOMGetBidiType($cell_port_name_no_bit);
+    if($type == 1){
+      $busWidth = $MODULE_ALREADY{$cell_name}->dbVNOMGetBidiBits($cell_port_name_no_bit); 
+    }
+    $cell_port_direction = 3;
+  }
+  my @inPorts = $MODULE_ALREADY{$cell_name}->dbVNOMGetInput;
+  my @outPorts = $MODULE_ALREADY{$cell_name}->dbVNOMGetOutput;
+  my @bidiPorts = $MODULE_ALREADY{$cell_name}->dbVNOMGetBidi;
+  my $no_of_input = @inPorts;
+  my $no_of_output = @outPorts;
+  my $no_of_bidi = @bidiPorts;
+  my $port_position = "";
+  if((($cell_port_direction ==1)&&($no_of_input ==1))
+    ||(($cell_port_direction ==2)&&($no_of_output ==1))
+    ||(($cell_port_direction ==3)&&($no_of_bidi ==1))){
+    ##print "no of port is 1 and busWidth is $busWidth\n";
+    if($busWidth ne ""){
+      my $tmpBusWidth = $busWidth;
+      $tmpBusWidth =~ s/\[//;
+      $tmpBusWidth =~ s/\]//;
+      my @W = split(/\s*\:\s*/,$tmpBusWidth);
+      $port_position = abs($W[0] - $cell_port_name_bit);
+    }else{
+      $port_position = 0;
+    }
+    ##print "port_position is $port_position\n";
+    ##print "liberty_cell_name is $liberty_cell_name\n";
+    ##print "cell_port_direction is $cell_port_direction\n";
+    my $liberty_port_name = &get_cell_port_name_using_index($liberty_cell_name,$port_position,$cell_port_direction,-1,-1);
+    ##print "liberty_port_name is $liberty_port_name\n";
+    $BB_CELL_PORT_VS_LIBERTY_CELL_PORT{$cell_name}{$cell_port_name} = $liberty_port_name;
+    $BB_LIBERTY_CELL_PORT_VS_CELL_PORT{$liberty_cell_name}{$liberty_port_name} = $cell_port_name;
+    return $liberty_port_name;
+  }else{
+    if($cell_port_direction ==1){
+      $port_position = &get_elem_pos_in_array(\@inPorts,$cell_port_name_no_bit);
+    }elsif($cell_port_direction ==2){
+      $port_position = &get_elem_pos_in_array(\@outPorts,$cell_port_name_no_bit);
+    }elsif($cell_port_direction ==3){
+      $port_position = &get_elem_pos_in_array(\@bidiPorts,$cell_port_name_no_bit);
+    }
+    ##print "port_position is $port_position\n";
+    my $busWidthNum ;
+    if($busWidth ne ""){
+      my $tmpBusWidth = $busWidth;
+      $tmpBusWidth =~ s/\[//;
+      $tmpBusWidth =~ s/\]//;
+      my @W = split(/\s*\:\s*/,$tmpBusWidth);
+      $busWidthNum = abs($W[0] - $W[1]) +1;
+    }else{
+      $busWidthNum = 1;
+    }
+    my $liberty_port_name = &get_cell_port_name_using_index($liberty_cell_name,$port_position,$cell_port_direction,$busWidthNum,$cell_port_name_bit);
+    if($busWidth ne ""){
+      $liberty_port_name = $liberty_port_name;
+    }
+    $BB_CELL_PORT_VS_LIBERTY_CELL_PORT{$cell_name}{$cell_port_name} = $liberty_port_name;
+    $BB_LIBERTY_CELL_PORT_VS_CELL_PORT{$liberty_cell_name}{$liberty_port_name} = $cell_port_name;
+    return $liberty_port_name;
+  }
+}#sub find_liberty_cell_matching_cell_func_port
+
+sub get_cell_port_name_using_index
+{
+  my $liberty_cell_name = $_[0];
+  my $liberty_cell_port_position = $_[1];
+  my $liberty_cell_port_direction = $_[2];
+  my $liberty_cell_port_width = $_[3];
+  my $liberty_cell_port_index = $_[4];
+  my @liberty_cell_pins = $TLDB{$liberty_cell_name}->dbTimingLibGetPins();
+  if($liberty_cell_port_width == -1){
+    my @liberty_cell_pins_to_be_used = ();
+    foreach my $liberty_pin (@liberty_cell_pins){
+      ##print "procesing liberty_pin $liberty_pin\n";
+      my $liberty_pin_direction = $TLDB{$liberty_cell_name}->dbTimingLibGetPinDir($liberty_pin);
+      ##print "liberty_pin_direction is $liberty_pin_direction\n";
+      if((($liberty_cell_port_direction==1)&&($liberty_pin_direction eq "input"))
+        ||(($liberty_cell_port_direction==2)&&($liberty_pin_direction eq "output"))
+        ||(($liberty_cell_port_direction==3)&&($liberty_pin_direction eq "bidi"))){
+        push(@liberty_cell_pins_to_be_used,$liberty_pin);
+      }
+    }
+    my $tmp_liberty_cell_pin = $liberty_cell_pins_to_be_used[$liberty_cell_port_position];
+    return $tmp_liberty_cell_pin;
+  }else{
+    foreach my $liberty_pin (@liberty_cell_pins){
+      ##print "procesing liberty_pin $liberty_pin\n";
+      my $liberty_pin_direction = $TLDB{$liberty_cell_name}->dbTimingLibGetPinDir($liberty_pin);
+      ##print "liberty_pin_direction is $liberty_pin_direction\n";
+      if((($liberty_cell_port_direction==1)&&($liberty_pin_direction eq "input"))
+        ||(($liberty_cell_port_direction==2)&&($liberty_pin_direction eq "output"))
+        ||(($liberty_cell_port_direction==3)&&($liberty_pin_direction eq "bidi"))){
+        if(!exists $BB_LIBERTY_CELL_PORT_VS_CELL_PORT{$liberty_cell_name}{$liberty_pin}){
+          my $tmp_liberty_cell_pin_width = &get_liberty_pin_width($liberty_cell_name,$liberty_pin);
+          my $tmp_liberty_cell_pin_pos = &get_liberty_pin_position($liberty_cell_name,$liberty_pin);
+          my $tmp_liberty_cell_pin_index = &get_liberty_pin_index($liberty_pin);
+          ##print "tmp_liberty_cell_pin_width $tmp_liberty_cell_pin_width liberty_cell_port_width $liberty_cell_port_width\n";
+          ##print "tmp_liberty_cell_pin_pos $tmp_liberty_cell_pin_pos liberty_cell_port_position $liberty_cell_port_position\n";
+          if(($tmp_liberty_cell_pin_width == $liberty_cell_port_width)
+            &&($tmp_liberty_cell_pin_pos == $liberty_cell_port_position)
+            &&($tmp_liberty_cell_pin_index == $liberty_cell_port_index)){
+            return $liberty_pin;
+          }
+        }
+      }
+    }
+  }
+}#sub get_cell_port_name_using_index
+
+sub get_elem_pos_in_array
+{
+  my @array_arg = @{$_[0]};
+  my $elem_arg = $_[1];
+  ##print "get_elem_pos_in_array processing\n";
+  for(my $i=0;$i<=$#array_arg;$i++){
+    ##print "get_elem_pos_in_array processing $array_arg[$i]\n";
+    if($array_arg[$i] eq $elem_arg){
+      return $i;
+    }
+  }
+  return -1;
+}#sub get_elem_pos_in_array
+
+sub get_liberty_pin_width
+{
+  my $liberty_cell_name = $_[0];
+  my $liberty_cell_port_name = $_[1];
+  my $liberty_pin_no_bit = $liberty_cell_port_name;
+  my $liberty_pin_bit = $liberty_cell_port_name;
+  if($liberty_pin_no_bit =~ /(\[|<)\s*[0-9]+\s*(\]|>)/){
+    $liberty_pin_no_bit =~ s/(\[|<).*$//g;
+    $liberty_pin_bit =~ s/^$liberty_pin_no_bit//g;
+    $liberty_pin_bit =~ s/(\[|<)//;
+    $liberty_pin_bit =~ s/(\]|>)//;
+  }else{
+    return 1;
+  }
+  my @liberty_cell_pins = $TLDB{$liberty_cell_name}->dbTimingLibGetPins();
+  my $max_pin_index = 0;
+  my $min_pin_index = 0;
+  my $tmp_index=0;
+  my $cell_port_name_no_bit ;
+  my $cell_port_name_bit ;
+  ##print "liberty_pin_no_bit is $liberty_pin_no_bit liberty_pin_bit is $liberty_pin_bit\n";
+  foreach my $liberty_pin (@liberty_cell_pins){
+    if($liberty_pin =~ /(\[|<)\s*[0-9]+\s*(\]|>)/){
+      $cell_port_name_no_bit = $liberty_pin;
+      $cell_port_name_bit = $liberty_pin;
+      $cell_port_name_no_bit =~ s/(\[|<).*$//g;
+      $cell_port_name_bit =~ s/^$cell_port_name_no_bit//g;
+      $cell_port_name_bit =~ s/(\[|<)//;
+      $cell_port_name_bit =~ s/(\]|>)//;
+      ##print "cell_port_name_no_bit is $cell_port_name_no_bit cell_port_name_bit is $cell_port_name_bit\n";
+      if($cell_port_name_no_bit eq $liberty_pin_no_bit){
+        if($tmp_index == 0){
+          $max_pin_index = $cell_port_name_bit;
+          $min_pin_index = $cell_port_name_bit;
+        }else{
+          if($cell_port_name_bit > $max_pin_index){
+            $max_pin_index = $cell_port_name_bit;
+          }
+          if($cell_port_name_bit < $min_pin_index){
+            $min_pin_index = $cell_port_name_bit;
+          }
+        }
+        $tmp_index++;
+      }
+    }
+  }
+  ##print "max_pin_index is $max_pin_index min_pin_index is $min_pin_index\n";
+  return (abs($max_pin_index -$min_pin_index)+1);
+}#sub get_liberty_pin_width
+
+sub get_liberty_pin_position
+{
+  my $liberty_cell_name = $_[0];
+  my $liberty_cell_port_name = $_[1];
+  my %temp_pin_hash = ();
+  my $liberty_pin_direction = $TLDB{$liberty_cell_name}->dbTimingLibGetPinDir($liberty_cell_port_name);
+  my $liberty_pin_no_bit = $liberty_cell_port_name;
+  if($liberty_pin_no_bit =~ /(\[|<)\s*[0-9]+\s*(\]|>)/){
+    $liberty_pin_no_bit =~ s/(\[|<).*$//g;
+  }
+  my @liberty_cell_pins = $TLDB{$liberty_cell_name}->dbTimingLibGetPins();
+  ##print "liberty_pin_no_bit is $liberty_pin_no_bit\n";
+  my $liberty_pin_pos = -1;
+  my $tmp_liberty_pin_direction ;
+  foreach my $liberty_pin (@liberty_cell_pins){
+    $tmp_liberty_pin_direction = $TLDB{$liberty_cell_name}->dbTimingLibGetPinDir($liberty_pin);
+    if($tmp_liberty_pin_direction eq $liberty_pin_direction){
+      $liberty_pin =~ s/(\[|<).*$//g;
+      if(!exists $temp_pin_hash{$liberty_pin}){
+        $temp_pin_hash{$liberty_pin} = 1;
+        $liberty_pin_pos++;
+      }
+      if($liberty_pin eq $liberty_pin_no_bit){
+        return $liberty_pin_pos;
+      }
+    }
+  }
+  return $liberty_pin_pos;
+}#sub get_liberty_pin_position
+
+sub get_liberty_pin_index
+{
+  my $liberty_cell_port_name = $_[0];
+  my $liberty_pin_bit = "";
+  if($liberty_cell_port_name =~ /(\[|<)\s*[0-9]+\s*(\]|>)/){
+    $liberty_pin_bit = $liberty_cell_port_name;
+    $liberty_pin_bit =~ s/^.*(\[|<)//;
+    $liberty_pin_bit =~ s/(\]|>).*$//;
+  }
+  return $liberty_pin_bit;
+}#sub get_liberty_pin_index
+
+1;

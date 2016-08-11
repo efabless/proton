@@ -1,0 +1,74 @@
+#!/usr/bin/perl
+use GDS2;
+use File::Find;
+
+my $noOfArg = @ARGV;
+my %TECH_LAYER = ();
+my ($gdsFile, $outFile) = ("", "");
+
+if($noOfArg < 4 || $ARGV[0] eq '-h' || $ARGV[0] eq '-help' || $ARGV[0] eq '-HELP') {
+   print "usage : ./gds2pinInfo -gds < gds file >\n";
+   print "                      -output <output file name>\n";
+}else {
+   for(my $i=0 ; $i<=$noOfArg; $i++){
+       if($ARGV[$i] eq "-gds"){$gdsFile = $ARGV[$i+1];} 
+       if($ARGV[$i] eq "-output"){$outFile = $ARGV[$i+1];} 
+   }#for correct no.of Arguments
+
+   find(\&read_layermap_file, "."); #reading layermap file
+
+   my $compact = 0;
+   my $text_found = 0;
+   my ($layer_name, $edge, $pinName) = ("","","");
+   my @pinxy = ();
+
+   my $gds2File = new GDS2(-fileName=>"$gdsFile");
+   open (WRITE, ">$outFile");
+   while ($gds2File -> readGds2Record) {
+      my $string = $gds2File-> returnRecordAsString(-compact=>$compact);
+      if ($string =~ m/^\s*TEXT$/){
+          $text_found = 1;
+          ($layer_name, $edge, $pinName) = ("","","");
+          @pinxy = ();
+      }elsif(($string =~ m/^\s*ENDEL$/) && $text_found == 1){
+          $text_found = 0;
+          next;
+      }
+      if ($text_found == 1){ 
+          if($string =~ m/^\s*LAYER\s+(\d+)/){
+            my $layer_num = $1;
+            $layer_name = $TECH_LAYER{$layer_num};
+            
+          }elsif($string =~ m/^\s*ANGLE\s+(\d+)/){
+            my $angle = $1;
+            $edge = int($angle/90);
+          }elsif($string =~ m/^\s*XY\s+(.+)/){
+             my $coord_str = $1;
+             @pinxy = split(/\s+/,$coord_str);   
+          }elsif($string =~ m/^\s*STRING/){
+            my ($pinName)=(split(/\s*\'/,$string))[1];
+            my $edge_str = "-edge $edge" if($edge ne "");
+            print WRITE"editPin -pin $pinName -assign @pinxy -layer $layer_name $edge_str -fixedPin 1\n";
+          }else{next;}
+      }#if text found 
+   }#while
+   close WRITE;
+}
+
+#---------------Reading layermap file-------------------#
+sub read_layermap_file {
+  if($_ =~ /\.layermap$/) {
+    open(READ_LAYER, "$_"); 
+    while(<READ_LAYER>){
+    chomp();
+      if($_ =~ /^\s*#/ ){ next ;}
+      if($_ =~ /\#/ )   {$_ =~ s/\s+#.*$//;}
+      my ($layerName, $layerNum) = (split(/\s+/,$_))[0,2];
+      if(exists $TECH_LAYER{$layerName}){
+      }else{$TECH_LAYER{$layerNum} = $layerName;}
+    }
+    close READ_LAYER; 
+  }
+}#sub read_layermap_file
+#-------------------------------------------------------#
+

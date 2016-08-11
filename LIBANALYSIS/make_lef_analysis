@@ -1,0 +1,1012 @@
+
+sub find_pinFactor_old {
+
+#my $macroName = $_[0];
+my $macroName = "BUFX4";
+my @size = $PLDB{$macroName}->dbMdbGetSize;
+        my $width = $size[0];
+        my $height = $size[1];
+
+my @pins = $PLDB{$macroName}->dbMdbGetPins;
+my @OBS = $PLDB{$macroName}->dbMdbGetObs;
+        $nv = int ($width/$xpitch);
+        $nh = int ($height/$ypitch);
+for($i = 0; $i <= $nv; $i++) {
+        for($j = 0; $j <= $nh; $j++) {
+          my $xx = ($xpitch*0.5)+($xpitch*$i);
+          my $yy = ($ypitch*0.5)+($ypitch*$j);
+#-----------------------------------------------------------------------------------------------#
+foreach $pinName ( @pins ) {
+    my @RECTS = $PLDB{$macroName}->dbMdbGetPinRect($pinName);
+  foreach $rectLine ( @RECTS ) {
+    my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$rectLine))[0,2,3,4,5];
+
+          if(($xx>=$llx && $xx<=$urx) && ($yy>=$lly && $yy<=$ury)) {
+            print "INFO-LIBLYIS : 001 : pin $pinName crossover $xx,$yy\n";
+                                                                    }#if crossover found in pin
+                                 }#foreach rectangle of pin
+                            }#foreach pin of cell
+#------------------------------------------------------------------------------------------------#
+
+foreach $obsLine ( @OBS ) {
+     my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$obsLine))[0,2,3,4,5];
+
+     if(($xx>=$llx && $xx<=$urx) && ($yy>=$lly && $yy<=$ury)) {
+                                   print "INFO-LIBLYIS : 002 : obs $obsLine crossover $xx,$yy\n";
+                                                                    }#if crossover found in OBS
+                                 }#foreach rectangle of OBS
+
+#-------------------------------------------------------------------------------------------------#
+                       }#for horizontal lines
+                  }#for vertical lines
+
+}#sub find_pinFactor_old
+
+sub find_pinFactor {
+
+my $noOfArguments = @_;
+if($noOfArguments < 2 || $_[0] eq '-h') {
+  print "Usage :  find_pinFactor -cell <cell name>\n";
+} else { 
+  for(my $x = 0; $x < $noOfArguments ; $x++) {
+    if($_[$x] eq "-cell") {
+      $macroName = $_[$x+1];
+    }
+  }#for all the arguments
+my $guiWidth  = 540;
+my $guiHeight = 540;
+my $fact;
+
+  if( exists $PLDB{$macroName} ) {
+    my @size = $PLDB{$macroName}->dbMdbGetSize;
+    my @pins = $PLDB{$macroName}->dbMdbGetPins;
+    $width = $size[0]; $cellwidth = $width;
+    $height = $size[1]; $cellheight = $height;
+#--------------------------For Displaying the Cell-------------------------------------------------#    
+    my $guiHfact = $guiHeight/$height;
+    my $guiWfact = $guiWidth/$width;
+ if($guiHfact > $guiWfact){$fact = $guiWfact;}
+ else {$fact = $guiHfact;} 
+
+my $bllx = 50;
+my $blly = 50;
+my $burx = 50 + $width*$fact;
+my $bury = 50 + $height*$fact; 
+
+$design_canvas->createRectangle($bllx, $blly, $burx, $bury, -outline=> "purple");
+
+my $noOfPins = 0;
+foreach $pinName ( @pins ) {
+        $noOfPins++;
+        my @RECTS = $PLDB{$macroName}->dbMdbGetPinRect($pinName);
+        foreach $rectLine ( @RECTS ) {
+             my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$rectLine))[0,2,3,4,5];
+             $llx = $llx*$fact + 50;
+             $lly = $lly*$fact + 50;
+             $urx = $urx*$fact + 50;
+             $ury = $ury*$fact + 50;
+$design_canvas->createRectangle($llx, $lly, $urx, $ury, -outline=> "blue", -fill=>"blue", -stipple=>"gray25");
+                                      }
+        my $fortext = $RECTS[0];
+        my ($layer1, $llx1, $lly1, $urx1, $ury1)=(split(/\s+/,$fortext))[0,2,3,4,5];
+        my $midx = ($llx1 + $urx1)/2;
+        my $midy = ($lly1 + $ury1)/2;
+           $midx = $midx*$fact + 50;
+           $midy = $midy*$fact + 50 ;
+        $design_canvas->createText($midx,$midy, -text=>$pinName, -fill=>"yellow", -anchor=>"sw",  -tags=>"PINTEXT");
+
+                                  
+}
+my @OBS = $PLDB{$macroName}->dbMdbGetObs;
+                          foreach $obsLine ( @OBS ) {
+                      my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$obsLine))[0,2,3,4,5];
+              $llx = $llx*$fact + 50;
+              $lly = $lly*$fact + 50;
+              $urx = $urx*$fact + 50;
+              $ury = $ury*$fact + 50;
+$design_canvas->createRectangle($llx, $lly, $urx, $ury, -outline=> "blue", -fill=>"white", -stipple=>"gray12");
+                                      }
+
+
+#---------------------------------------------------------------------------------#
+    my $xpitch = 0;
+    my $ypitch = 0;
+    my $nLH = 100;
+    my $nLV = 100;
+    foreach my $layerName (keys %PTDB){
+      my $type = $PTDB{$layerName}->dbTechGetLayerType;
+      if ( $type eq "ROUTING") {
+        my $dir = $PTDB{$layerName}->dbTechGetLayerDir;;
+        my $num = $PTDB{$layerName}->dbTechGetLayerNum;
+        my $pitch = $PTDB{$layerName}->dbTechGetLayerPitch;
+        my $offset = $PTDB{$layerName}->dbTechGetLayerOffset;
+        if ( $dir eq "HORIZONTAL" ) {
+          if ( $nLH > $num ) {
+            $nLH = $num ; $ypitch = $pitch;
+            if ($offset eq "UND") {
+              $shifty = 0.5*$ypitch;
+            } else {
+              $shifty = $offset;
+            }  
+          }
+        } elsif ( $dir eq "VERTICAL" ) {
+          if ( $nLV > $num ) { 
+            $nLV = $num ; $xpitch = $pitch;
+            if ($offset eq "UND") {
+              $shiftx = 0.5*$xpitch;
+            } else {
+              $shiftx = $offset;
+            }  
+          } 
+        } else {
+          print "INFO-LIBLYIS-FND_PN_FCTR : 001 : invalid direction on routing layer $layerName\n";
+        }
+      } # if layer is a routing layer
+    } #search the first 2 consecutive orthgonal routing layers 
+    print "DBG-LIBLYIS-FND_PN_FCTR : 002 : lowest H : $nLH \= $ypitch, lowest V : $nLV \= $xpitch\n" if ($DEBUG == 100);
+    my @pins = $PLDB{$macroName}->dbMdbGetPins;
+    my $nv = int (($width)/$xpitch);
+    my $nh = int (($height)/$ypitch);
+
+
+    my $Ccops_count = 0; 
+    my $Bcops_count = 0;
+
+######################################################################################################## 
+my @Bcops = (); 
+my @Ecops = (); 
+my @Scops = (); 
+my @Ccops = (); 
+
+for(my $i = 0; $i < $nv; $i++) {
+    for(my $j = 0; $j < $nh; $j++) {
+        my $xx = (($xpitch*$i)+$shiftx );
+        my $yy = (($ypitch*$j)+ $shifty);
+        my $xx1 = (($xpitch*$i)+$shiftx )*$fact + 50;
+        my $yy1 = (($ypitch*$j)+ $shifty)*$fact + 50;
+
+$design_canvas->createLine($xx1, 50, $xx1, ($height*$fact+50),  -fill=>"green");
+$design_canvas->createLine(50, $yy1, ($width*$fact+50), $yy1,  -fill=>"green");
+$design_canvas->createText($xx1, $yy1, -text=>$j.",".$i, -fill=>"pink");
+
+        my $covered_Status = 0;
+        my $Ccops_count = 0; 
+        my @OBS = $PLDB{$macroName}->dbMdbGetObs;
+        my $obs_found = 0;
+        foreach $obsLine ( @OBS ) {
+           my ($layer, $ollx, $olly, $ourx, $oury)=(split(/\s+/,$obsLine))[0,2,3,4,5];
+           if(($xx>$ollx && $xx<$ourx) && ($yy>$olly && $yy<$oury)){push(@Bcops, $j.",".$i);$obs_found = 1;}
+                                  }
+
+if($obs_found == 0){
+        foreach $pinName ( @pins ) {
+                 my @RECTS = $PLDB{$macroName}->dbMdbGetPinRect($pinName);
+             foreach $rectLine ( @RECTS ) {
+                  my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$rectLine))[0,2,3,4,5];
+#-----------------------------------------------------------------------------------------#
+                  if(($xx>$llx && $xx<$urx) && ($yy>$lly && $yy<$ury)) {
+                     if(($pinName eq "VDD") || ($pinName eq "VSS") ) {push(@Bcops, $j.",".$i);}
+                   else{
+                     push(@Ccops, $j.",".$i);}
+                         $covered_Status = 1;
+
+                                                                       }#if covered
+                  
+#----------------------------------------------------------------------------------------#
+                                           }#foreach rectangle
+                                       }#foreach pin
+if($covered_Status == 0){
+########################### For LHS point ######################################
+        $Ccops_count = 0; 
+                        if($i > 0){my $Lxx = ($xpitch*($i- 1))+($shiftx);
+                                   my $Lyy = ($ypitch*$j)+ ($shifty);
+                                   foreach $pinName ( @pins ) {
+                                          my @RECTS = $PLDB{$macroName}->dbMdbGetPinRect($pinName);
+                                          foreach $rectLine ( @RECTS ) {
+                                               my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$rectLine))[0,2,3,4,5];
+                                   if(($Lxx>$llx && $Lxx<$urx) && ($Lyy>$lly && $Lyy<$ury)){
+                                      if($pinName eq "VDD" || $pinName eq "VSS" ) {}
+                                      else{$Ccops_count++;}
+                                                                                           } 
+                                                                         }#foreach rect
+                                                               }#foreach pin
+#-----------------------------------------------------#
+#        foreach $obsLine ( @OBS ) {
+#           my ($layer, $ollx, $olly, $ourx, $oury)=(split(/\s+/,$obsLine))[0,2,3,4,5];
+#           if($Lxx<$ollx && $xx>$ourx) { $Special_case++ }
+#                                  }
+#-----------------------------------------------------#
+                                  }#if i > 0
+
+########################### For RHS point ######################################
+                        if($i < ($nv - 1)){my $Rxx = ($xpitch*($i+ 1))+($shiftx);
+                                           my $Ryy = ($ypitch*$j)+ ($shifty);
+                                           foreach $pinName ( @pins ) {
+                                                  my @RECTS = $PLDB{$macroName}->dbMdbGetPinRect($pinName);
+                                                  foreach $rectLine ( @RECTS ) {
+                                                  my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$rectLine))[0,2,3,4,5];
+                                     if(($Rxx>$llx && $Rxx<$urx) && ($Ryy>$lly && $Ryy<$ury)){ 
+                                      if($pinName eq "VDD" || $pinName eq "VSS" ) {}
+                                      else{$Ccops_count++;}
+                                                                                           } 
+                                                               }#foreach rect
+                                                               }#foreach pin
+#-----------------------------------------------------#
+#        foreach $obsLine ( @OBS ) {
+#           my ($layer, $ollx, $olly, $ourx, $oury)=(split(/\s+/,$obsLine))[0,2,3,4,5];
+#           if($Rxx>$ourx && $xx<$ollx) { $Special_case++ }
+#                                  }
+#-----------------------------------------------------#
+                                  }#if i < nv
+
+########################### For point lying Bottom ######################################
+                        if($j > 0){my $Bxx = ($xpitch*$i)+($shiftx);
+                                   my $Byy = ($ypitch*($j -1))+ ($shifty);
+                                   foreach $pinName ( @pins ) {
+                                          my @RECTS = $PLDB{$macroName}->dbMdbGetPinRect($pinName);
+                                          foreach $rectLine ( @RECTS ) {
+                                          my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$rectLine))[0,2,3,4,5];
+                                   if(($Bxx>$llx && $Bxx<$urx) && ($Byy>$lly && $Byy<$ury)){ 
+                                       if($pinName eq "VDD" || $pinName eq "VSS" ) {}
+                                       else{$Ccops_count++;}
+                                                                                           } 
+                                                               }#foreach rect
+                                                               }#foreach pin
+#-----------------------------------------------------#
+#        foreach $obsLine ( @OBS ) {
+#           my ($layer, $ollx, $olly, $ourx, $oury)=(split(/\s+/,$obsLine))[0,2,3,4,5];
+#           if($Byy<$olly && $yy>$oury) { $Special_case++ }
+#                                  }
+#-----------------------------------------------------#
+                                  }#if i > 0 
+
+########################### For point lying above ######################################
+                        if($j < ($nh- 1)){my $Txx = ($xpitch*$i)+($shiftx);
+                                          my $Tyy = ($ypitch*($j +1))+ ($shifty);
+                                          foreach $pinName ( @pins ) {
+                                                 my @RECTS = $PLDB{$macroName}->dbMdbGetPinRect($pinName);
+                                                 foreach $rectLine ( @RECTS ) {
+                                                 my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$rectLine))[0,2,3,4,5];
+                                   if(($Txx>$llx && $Txx<$urx) && ($Tyy>$lly && $Tyy<$ury)){ 
+                                      if($pinName eq "VDD" || $pinName eq "VSS" ) {}
+                                      else{$Ccops_count++;}
+                                                                                           } 
+                                                                }#foreach rect
+                                                               }#foreach pin
+#-----------------------------------------------------#
+#        foreach $obsLine ( @OBS ) {
+#           my ($layer, $ollx, $olly, $ourx, $oury)=(split(/\s+/,$obsLine))[0,2,3,4,5];
+#           if($Tyy>$oury && $yy<$olly) { $Special_case++ }
+#                                  }
+#-----------------------------------------------------#
+                                  }#if i < nv
+                     if($Ccops_count == 1){push(@Ecops, $j.",".$i);}
+                     elsif($Ccops_count > 1){push(@Scops, $j.",".$i);}
+                     else {push(@Bcops, $j.",".$i);}
+                        
+
+                         }
+}
+      }#for horizontal lines
+    }#for vertical lines
+##########################################################################################################
+print "INFO-LIBLYIS-FND_PN_FCTR : 003 : B @Bcops\n";
+print "INFO-LIBLYIS-FND_PN_FCTR : 004 : c @Ccops\n";
+print "INFO-LIBLYIS-FND_PN_FCTR : 005 : s @Scops\n";
+print "INFO-LIBLYIS-FND_PN_FCTR : 006 : e @Ecops\n";
+my $noOfBpoints = @Bcops;
+my $noOfCpoints = @Ccops;
+my $noOfSpoints = @Scops;
+my $noOfEpoints = @Ecops;
+#$pinRouteFactor = get_pin_routability( 1.0*eCOPS -0.40*bCOPS + 1.0*cCOPS +  1/n*sCOPS -   0.5csCOPS);   
+#get_cell_routability = summation($pinRouteFactor/ cCOPS)
+#get_cell_norm_routability = get_cell_routability / number of pins
+
+my $pinRouteFactor = ( (1*$noOfEpoints) -(0.40*$noOfBpoints) + (1*$noOfCpoints) + (1/$noOfSpoints) - (0.5*($noOfCpoints+$noOfSpoints)) );
+$PLDB{$macroName}->dbMdbSetPinRoutibility($pinRouteFactor);
+#my $get_cell_routability = ($pinRouteFactor/ $noOfCpoints);
+#my $get_cell_norm_routability = $get_cell_routability / $noOfPins;
+print "INFO-LIBLYIS-FND_PN_FCTR : 007 : B->$noOfBpoints; C->$noOfCpoints; S->$noOfSpoints; E->$noOfEpoints\n";
+print "INFO-LIBLYIS-FND_PN_FCTR : 008 : pinRouteFactor->$pinRouteFactor\n";
+#print "get_cell_routability->$get_cell_routability\n";
+#print "noOfPins->$noOfPins; get_cell_norm_routability->$get_cell_norm_routability\n";
+my $routeFactor = $PLDB{$macroName}->dbMdbGetPinRoutibility;
+print "INFO-LIBLYIS-FND_PN_FCTR : 009 : routeFactor->$routeFactor\n";
+##--------------------------Finding pin area------------------------------------------------------------------##
+my $total_area = 0;
+foreach $pinName ( @pins ) {
+        my $pin_area = 0;
+        my $rect_area = 0;
+        my @RECTS = $PLDB{$macroName}->dbMdbGetPinRect($pinName);
+        foreach $rectLine ( @RECTS ) {
+             my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$rectLine))[0,2,3,4,5];
+             my $X_dis = $urx - $llx;
+             my $Y_dis = $ury - $lly;
+                $rect_area = $X_dis*$Y_dis;
+                $pin_area = $pin_area + $rect_area,
+                                     }
+             $pinArea{$pinName} = $pin_area;
+        $total_area = $total_area + $pin_area;        
+print "INFO-LIBLYIS-FND_PN_FCTR : 010 : pin_area->$pinName pin_area->$pin_area\n";
+                           }
+print "INFO-LIBLYIS-FND_PN_FCTR : 011 : Total_area->$total_area\n";
+my $factor_unitarea = $pinRouteFactor/$total_area;
+my $totalpinFactor = 0 ; 
+   foreach $pinName(keys %pinArea) {
+$factor_for_each_pin = $factor_unitarea * $pinArea{$pinName};
+print "INFO-LIBLYIS-FND_PN_FCTR : 012 : routibilty of pin $pinName for its area is $factor_for_each_pin\n";
+$totalpinFactor = $totalpinFactor + $factor_for_each_pin;
+                                   }
+my $get_cell_routability = $totalpinFactor; 
+my $get_cell_norm_routability = $get_cell_routability / $noOfPins;
+print "INFO-LIBLYIS-FND_PN_FCTR : 013 : get_cell_routability->$get_cell_routability :: $totalpinFactor\n";
+print "INFO-LIBLYIS-FND_PN_FCTR : 014 : noOfPins->$noOfPins; get_cell_norm_routability->$get_cell_norm_routability\n";
+#-----------------------------------------------------------------------------------------------#
+
+  }#if exist in PLDB
+}#else correct no of arguments
+
+
+}#sub find_pinFactor
+#----------------------------------------------------------------------------------------------------------------------------------#
+sub report_lef_analysis_xml {
+use XML::Writer;
+use IO::File;
+
+my $noOfArguments = @_;
+if($noOfArguments < 1 || $_[0] eq '-h'){print "Usage : report_lef_analysis_xml\n";
+                                        print "      : -cell<cellName>\n";
+                                       }
+else {
+my $cellName = "";
+my $get_fileName = "";
+my $xml_output = "";
+  for($i =0; $i <= $noOfArguments;$i++){
+      if($_[$i] eq "-cell"){$cellName = $_[$i+1];}
+  } 
+if(exists $PLDB{$cellName}){
+my @pins = $PLDB{$cellName}->dbMdbGetPins;
+#--------------------------------------------------------------------------------------------------------------------------------#
+my $xml = new XML::Writer(OUTPUT => \$xml_output);
+$xml->startTag("root");
+$xml_output .= "\n";
+$xml_output .= " ";
+$xml->startTag("report_lef_analysis");
+$xml_output .= "\n";
+$xml_output .= "  ";
+#---------------------------------------------------------------------------------------------------------------------------------#
+$xml->startTag("cell",
+               "name" => $cellName);
+$xml->endTag();
+$xml_output .= "\n";
+$xml_output .= "   ";
+#---------------------------------------------------------------------------------------------------------------------------------#
+my $fileName = &getfileName($cellName);
+$xml->startTag("file",
+               "name" => $fileName);
+$xml->endTag();
+$xml_output .= "\n";
+$xml_output .= "    ";
+#--------------------------------------------------------------------------------------------------------------------------------#
+my $class = $PLDB{$cellName}->dbMdbGetClass;
+$xml->startTag("class",
+               "name" => $class);
+$xml->endTag(); 
+$xml_output .= "\n";
+$xml_output .= "    ";
+#--------------------------------------------------------------------------------------------------------------------------------#
+my ($pg_pinCnt ,$sig_pinCnt) = &get_signal_pg_pins_cnt($cellName);
+$xml->startTag("pgpin",
+               "cnt" => $pg_pinCnt);
+$xml->endTag();
+$xml_output .= "\n";
+$xml_output .= "    ";
+$xml->startTag("signalpin",
+               "cnt" => $sig_pinCnt);
+$xml->endTag();
+$xml_output .= "\n";
+$xml_output .= "    ";
+#--------------------------------------------------------------------------------------------------------------------------------#
+my $PIN_INDEX_HASH = &get_pin_index($cellName);
+my $routeFactor = $PLDB{$cellName}->dbMdbGetPinRoutibility;
+$xml->startTag("signalRouteIndex",
+               "routeIndex" => $routeFactor);
+$xml->endTag();
+$xml_output .= "\n";
+$xml_output .= "     ";
+#--------------------------------------------------------------------------------------------------------------------------------#
+$xml->startTag("pinRouteIndex");
+$xml_output .= "\n";
+$xml_output .= "    ";
+my %PIN_INDEX = %$PIN_INDEX_HASH;
+my @pins = $PLDB{$cellName}->dbMdbGetPins;
+foreach my $pinName (@pins){
+  if($pinName eq "VDD" || $pinName eq "VSS"){}
+  else{
+  my @indexList = @{$PIN_INDEX{$pinName}};
+  $index1 = $indexList[0];
+  $index2 = $indexList[1];
+  $index3 = $indexList[2];
+$xml_output .= "  ";
+$xml->startTag("pin",
+               "name" => $pinName,"index1" => $index1,"index2" => $index2,"index3" => $index3);
+$xml->endTag();
+$xml_output .= "\n";
+$xml_output .= "    ";
+}               
+}
+$xml->endTag();
+$xml_output .= "\n";
+$xml_output .= "   ";
+#-------------------------------------------------------------------------------------------------------------------------------#
+my $get_antennaFound = &getantennafound($cellName);
+$xml->startTag("antenna",
+               "found"=> $get_antennaFound);
+$xml->endTag();
+$xml_output .= "\n";
+$xml_output .= "   ";
+#-------------------------------------------------------------------------------------------------------------------------------#
+my $function = $PLDB{$cellName}->dbMdbGetFunction;
+$xml->startTag("function",
+               "name" => $function);
+$xml->endTag();
+$xml_output .= "\n";
+$xml_output .= "   ";
+#-------------------------------------------------------------------------------------------------------------------------------#
+my $total_pinArea = &get_total_pinArea($cellName);
+$xml->startTag("pinArea",
+               "total" => $total_pinArea);
+$xml->endTag();
+$xml_output .= "\n";
+$xml_output .= "   ";
+#-------------------------------------------------------------------------------------------------------------------------------#
+my $class = $PLDB{$cellName}->dbMdbGetClass;
+my ($left_side_pinCnt,$right_side_pinCnt) = &get_cnt_pinL_and_pinR($cellName); 
+my ($bottom_side_pinCnt,$top_side_pinCnt) = &get_cnt_pinT_and_pinB($cellName);
+if($class eq "CORE" || $class eq "core"){
+$xml->startTag("pin_data",
+               "pinL" => $left_side_pinCnt,"pinR" => $right_side_pinCnt);
+$xml->endTag();
+$xml_output .= "\n";
+$xml_output .= "  "; 
+}else {
+$xml->startTag("pin_data",
+               "pinL" => $left_side_pinCnt,"pinR" => $right_side_pinCnt,"pinT" => $top_side_pinCnt,"pinB" => $bottom_side_pinCnt);
+$xml->endTag();
+$xml_output .= "\n";
+$xml_output .= "  "; 
+}
+#----------------------------------------------------------------------------------------------#
+my $var = &get_value_from_origin_and_foreign_of_cell($cellName);
+if($var ne "" ){
+$xml->startTag("gds",
+               "gds" => $var);
+$xml->endTag();
+$xml_output .= "\n";
+$xml_output .= " ";
+}
+#----------------------------------------------------------------------------------------------#
+$xml->endTag();
+$xml_output .= "\n";
+$xml_output .= "";
+$xml->endTag();
+}else {print "ERROR: cell $cellName not exists in PLDB\n";}
+open($xml_new,">lef_analysis_rpt.xml");
+print $xml_new "$xml_output\n";
+}
+}#sub report_lef_analysis_xml
+#----------------------------------------------------------------------------------------------------------------------------------#
+sub getfileName {
+my $cellName = $_[0];
+my $fileName = "";
+if(exists $PLDB{$cellName}){
+  my @lef_file_list = $GLOBAL->dbfGlobalGetFileName;
+  foreach my $leffile (@lef_file_list){
+    my $getcell = `grep -R -o $cellName @$leffile[0]`;
+    if($getcell ne ""){$get_fileName = @$leffile[0];}
+  }
+  my @fileName_list = (split(/\//,$get_fileName));
+  $fileName = $fileName_list[-1];
+}
+return($fileName);
+}#sub getfileName
+#----------------------------------------------------------------------------------#
+sub get_signal_pg_pins_cnt {
+my $cellName = $_[0];
+my $pg_pinCnt = 0;
+my $sig_pinCnt = 0;
+if(exists $PLDB{$cellName}){
+my @pins = $PLDB{$cellName}->dbMdbGetPins;
+  foreach my $pinName (@pins){
+    my $type = $PLDB{$cellName}->dbMdbGetPinType($pinName);
+    if (($type == 0 )||($type == 9)||($type == 10)){ $pinType = 'SIGNAL'; $sig_pinCnt++;}
+    elsif ( $type == 1 ) { $pinType = 'POWER'; $pg_pinCnt++;}
+    elsif ( $type == 2 ) { $pinType = 'GROUND'; $pg_pinCnt++;}
+  }
+}
+return($pg_pinCnt,$sig_pinCnt);
+}#sub get_signal_pg_pins_cnt
+#-----------------------------------------------------------------------------------#
+sub getantennafound {
+my $cellName = $_[0];
+my $get_antennavalue = "";
+my $get_antennaFound = "";
+if(exists $PLDB{$cellName}){
+my @pins = $PLDB{$cellName}->dbMdbGetPins;
+  foreach my $pinName (@pins){
+    my $get_antenna = $PLDB{$cellName}->dbMdbGetAntennaFound($pinName);
+    if($get_antenna == 1){$get_antennavalue = $get_antenna;} 
+    if($get_antennavalue == 1){$get_antennaFound = "yes";}
+    else{$get_antennaFound = "no";}
+  }
+}
+return($get_antennaFound);
+}#sub getantennafound
+#-----------------------------------------------------------------------------------#
+sub get_cnt_pinL_and_pinR{
+my $cellName = $_[0];
+my $left_side_pinCnt = 0;
+my $right_side_pinCnt =0;
+if(exists $PLDB{$cellName}){
+  my $class = $PLDB{$cellName}->dbMdbGetClass;
+  my @size = $PLDB{$cellName}->dbMdbGetSize;
+  my $llx = 0;
+  my $lly = 0;
+  my $urx = $size[0];
+  my $ury = $size[1];
+  my $middle_point_x_of_cell = ($urx + $llx)/2;
+  my $middle_point_y_of_cell = ($ury + $lly)/2;
+  my $new_llx = $middle_point_x_of_cell;
+  my $new_urx = $middle_point_x_of_cell;
+  my @pins = $PLDB{$cellName}->dbMdbGetPins;
+  foreach my $pinName (@pins){
+    my @RECTS = $PLDB{$cellName}->dbMdbGetPinRect($pinName);
+    my($pinllx,$pinlly,$pinurx,$pinury) = (split(/\s+/,$RECTS[0]))[2,3,4,5];
+    my $middle_point_x_of_pin = ($pinurx + $pinllx)/2;
+    my $middle_point_y_of_pin = ($pinury + $pinlly)/2;
+     if($new_llx >= $middle_point_x_of_pin && $new_urx >= $middle_point_x_of_pin) {
+        $left_side_pinCnt++;
+     }elsif($new_llx < $middle_point_x_of_pin && $new_urx < $middle_point_x_of_pin) {
+        $right_side_pinCnt++;
+     }
+  }
+}
+return($left_side_pinCnt,$right_side_pinCnt);
+}#sub get_cnt_pinL_and_pinR
+#-----------------------------------------------------------------------------------------------------------------#
+sub get_cnt_pinT_and_pinB{
+my $cellName = $_[0];
+my $top_side_pinCnt = 0;
+my $bottom_side_pinCnt = 0;
+if(exists $PLDB{$cellName}){
+  my $class = $PLDB{$cellName}->dbMdbGetClass;
+  if($class ne "CORE" || $class ne "core"){
+    my @size = $PLDB{$cellName}->dbMdbGetSize;
+    my $llx = 0;
+    my $lly = 0;
+    my $urx = $size[0];
+    my $ury = $size[1];
+    my $middle_point_x_of_cell = ($urx + $llx)/2;
+    my $middle_point_y_of_cell = ($ury + $lly)/2;
+    my $new_lly = $middle_point_y_of_cell;
+    my $new_ury = $middle_point_y_of_cell;
+    my @pins = $PLDB{$cellName}->dbMdbGetPins;
+    foreach my $pinName (@pins){
+      my @RECTS = $PLDB{$cellName}->dbMdbGetPinRect($pinName);
+      my($pinllx,$pinlly,$pinurx,$pinury) = (split(/\s+/,$RECTS[0]))[2,3,4,5];
+      my $middle_point_x_of_pin = ($pinurx + $pinllx)/2;
+      my $middle_point_y_of_pin = ($pinury + $pinlly)/2;
+       if($new_lly>=$middle_point_y_of_pin && $new_ury >=$middle_point_y_of_pin){
+          $bottom_side_pinCnt++;
+       }elsif($new_lly <$middle_point_y_of_pin && $new_ury <$middle_point_y_of_pin){
+          $top_side_pinCnt++;
+       } 
+    }
+  }  
+}
+return($bottom_side_pinCnt,$top_side_pinCnt);
+}#sub get_cnt_pinT_and_pinB
+#-----------------------------------------------------------------------------------------------------------------#
+sub return_data_find_pinFactor{
+my $macroName = $_[0];
+my %COVERED_POINTS = ();
+my %EMPTY_POINTS = ();
+my %SHARED_POINTS = ();
+my %BLOCKED_POINTS = ();
+  if( exists $PLDB{$macroName} ) {
+    my @size = $PLDB{$macroName}->dbMdbGetSize;
+    my $width = $size[0]; 
+    my $height = $size[1];
+    my $xpitch = 0;
+    my $ypitch = 0;
+    my $nLH = 100;
+    my $nLV = 100;
+    foreach my $layerName (keys %PTDB){
+      my $type = $PTDB{$layerName}->dbTechGetLayerType;
+      if ( $type eq "ROUTING") {
+        my $dir = $PTDB{$layerName}->dbTechGetLayerDir;;
+        my $num = $PTDB{$layerName}->dbTechGetLayerNum;
+        my $pitch = $PTDB{$layerName}->dbTechGetLayerPitch;
+        my $offset = $PTDB{$layerName}->dbTechGetLayerOffset;
+        if ( $dir eq "HORIZONTAL" ) {
+          if ( $nLH > $num ) {
+            $nLH = $num ; $ypitch = $pitch;
+            if ($offset eq "UND") {
+              $shifty = 0.5*$ypitch;
+            } else {
+              $shifty = $offset;
+            }  
+          }
+        } elsif ( $dir eq "VERTICAL" ) {
+          if ( $nLV > $num ) { 
+            $nLV = $num ; $xpitch = $pitch;
+            if ($offset eq "UND") {
+              $shiftx = 0.5*$xpitch;
+            } else {
+              $shiftx = $offset;
+            }  
+          } 
+        } else {
+          print "INFO-LIBLYIS : 001 : invalid direction on routing layer $layerName\n";
+        }
+      } # if layer is a routing layer
+    } #search the first 2 consecutive orthgonal routing layers 
+    print "DBG-LIBLYIS : 002 : lowest H : $nLH \= $ypitch, lowest V : $nLV \= $xpitch\n" if ($DEBUG == 100);
+    my @pins = $PLDB{$macroName}->dbMdbGetPins;
+    my $nv = int (($width)/$xpitch);
+    my $nh = int (($height)/$ypitch);
+    my $Ccops_count = 0; 
+    my $Bcops_count = 0;
+
+######################################################################################################## 
+my @Bcops = (); 
+my @Ecops = (); 
+my @Scops = (); 
+my @Ccops = (); 
+
+for(my $i = 0; $i < $nv; $i++) {
+    for(my $j = 0; $j < $nh; $j++) {
+        my $xx = (($xpitch*$i)+$shiftx );
+        my $yy = (($ypitch*$j)+ $shifty);
+
+        my $covered_Status = 0;
+        my $Ccops_count = 0; 
+        my @OBS = $PLDB{$macroName}->dbMdbGetObs;
+        my $obs_found = 0;
+        foreach $obsLine ( @OBS ) {
+           my ($layer, $ollx, $olly, $ourx, $oury)=(split(/\s+/,$obsLine))[0,2,3,4,5];
+           if(($xx>$ollx && $xx<$ourx) && ($yy>$olly && $yy<$oury)){push(@Bcops, $j.",".$i);$obs_found = 1;
+                                                                    my $bpoint = $j.",".$i;
+                                                                    $BLOCKED_POINTS{$bpoint} = 1;
+                                                                   }
+                                  }
+
+if($obs_found == 0){
+        foreach $pinName ( @pins ) {
+                 my @RECTS = $PLDB{$macroName}->dbMdbGetPinRect($pinName);
+             foreach $rectLine ( @RECTS ) {
+                  my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$rectLine))[0,2,3,4,5];
+#-----------------------------------------------------------------------------------------#
+                  if(($xx>$llx && $xx<$urx) && ($yy>$lly && $yy<$ury)) {
+                     if(($pinName eq "VDD") || ($pinName eq "VSS") ) {push(@Bcops, $j.",".$i);
+                                                                      my $bpoint = $j.",".$i;
+                                                                      $BLOCKED_POINTS{$bpoint} = 1;
+                                                                     }
+                   else{
+                     push(@Ccops, $j.",".$i);
+                     my $cpoint = $j.",".$i;
+                     $COVERED_POINTS{$cpoint} = $pinName;
+                   }
+                         $covered_Status = 1;
+
+                                                                       }#if covered
+                  
+#----------------------------------------------------------------------------------------#
+                                           }#foreach rectangle
+                                       }#foreach pin
+if($covered_Status == 0){
+########################### For LHS point ######################################
+        $Ccops_count = 0; 
+                        if($i > 0){my $Lxx = ($xpitch*($i- 1))+($shiftx);
+                                   my $Lyy = ($ypitch*$j)+ ($shifty);
+                                   foreach $pinName ( @pins ) {
+                                          my @RECTS = $PLDB{$macroName}->dbMdbGetPinRect($pinName);
+                                          foreach $rectLine ( @RECTS ) {
+                                               my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$rectLine))[0,2,3,4,5];
+                                   if(($Lxx>$llx && $Lxx<$urx) && ($Lyy>$lly && $Lyy<$ury)){
+                                      if($pinName eq "VDD" || $pinName eq "VSS" ) {}
+                                      else{$Ccops_count++;}
+                                                                                           } 
+                                                                         }#foreach rect
+                                                               }#foreach pin
+                                  }#if i > 0
+
+########################### For RHS point ######################################
+                        if($i < ($nv - 1)){my $Rxx = ($xpitch*($i+ 1))+($shiftx);
+                                           my $Ryy = ($ypitch*$j)+ ($shifty);
+                                           foreach $pinName ( @pins ) {
+                                                  my @RECTS = $PLDB{$macroName}->dbMdbGetPinRect($pinName);
+                                                  foreach $rectLine ( @RECTS ) {
+                                                  my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$rectLine))[0,2,3,4,5];
+                                     if(($Rxx>$llx && $Rxx<$urx) && ($Ryy>$lly && $Ryy<$ury)){ 
+                                      if($pinName eq "VDD" || $pinName eq "VSS" ) {}
+                                      else{$Ccops_count++;}
+                                                                                           } 
+                                                               }#foreach rect
+                                                               }#foreach pin
+                                  }#if i < nv
+
+########################### For point lying Bottom ######################################
+                        if($j > 0){my $Bxx = ($xpitch*$i)+($shiftx);
+                                   my $Byy = ($ypitch*($j -1))+ ($shifty);
+                                   foreach $pinName ( @pins ) {
+                                          my @RECTS = $PLDB{$macroName}->dbMdbGetPinRect($pinName);
+                                          foreach $rectLine ( @RECTS ) {
+                                          my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$rectLine))[0,2,3,4,5];
+                                   if(($Bxx>$llx && $Bxx<$urx) && ($Byy>$lly && $Byy<$ury)){ 
+                                       if($pinName eq "VDD" || $pinName eq "VSS" ) {}
+                                       else{$Ccops_count++;}
+                                                                                           } 
+                                                               }#foreach rect
+                                                               }#foreach pin
+                                  }#if i > 0 
+
+########################### For point lying above ######################################
+                        if($j < ($nh- 1)){my $Txx = ($xpitch*$i)+($shiftx);
+                                          my $Tyy = ($ypitch*($j +1))+ ($shifty);
+                                          foreach $pinName ( @pins ) {
+                                                 my @RECTS = $PLDB{$macroName}->dbMdbGetPinRect($pinName);
+                                                 foreach $rectLine ( @RECTS ) {
+                                                 my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$rectLine))[0,2,3,4,5];
+                                   if(($Txx>$llx && $Txx<$urx) && ($Tyy>$lly && $Tyy<$ury)){ 
+                                      if($pinName eq "VDD" || $pinName eq "VSS" ) {}
+                                      else{$Ccops_count++;}
+                                                                                           } 
+                                                                }#foreach rect
+                                                               }#foreach pin
+                                  }#if i < nv
+                     if($Ccops_count == 1){push(@Ecops, $j.",".$i);
+                                           my $epoint = $j.",".$i;
+                                           $EMPTY_POINTS{$epoint} = 1;
+                     }elsif($Ccops_count > 1){push(@Scops, $j.",".$i);
+                                              my $spoint = $j.",".$i;
+                                              $SHARED_POINTS{$spoint} = 1;
+                     }else {push(@Bcops, $j.",".$i);
+                            my $bpoint = $j.",".$i;
+                            $BLOCKED_POINTS{$bpoint} = 1;
+                     }
+               }
+          }
+      }#for horizontal lines
+    }#for vertical lines
+##########################################################################################################
+  my $noOfBpoints = @Bcops;
+  my $noOfCpoints = @Ccops;
+  my $noOfSpoints = @Scops;
+  my $noOfEpoints = @Ecops;
+  if($noOfBpoints != 0 && $noOfCpoints != 0 && $noOfSpoints != 0 && $noOfEpoints != 0){
+    my $pinRouteFactor = ( (1*$noOfEpoints) -(0.40*$noOfBpoints) + (1*$noOfCpoints) + (1/$noOfSpoints) - (0.5*($noOfCpoints+$noOfSpoints)) );
+    $PLDB{$macroName}->dbMdbSetPinRoutibility($pinRouteFactor);
+  }
+}
+return(\%COVERED_POINTS,\%EMPTY_POINTS,\%SHARED_POINTS,\%BLOCKED_POINTS);
+}#sub return_data_find_pinFactor
+#-----------------------------------------------------------------------------------------------------------------#
+sub pinPoints {
+my $macroName = $_[0];
+my %COVERED_POINTS_OF_PIN = ();
+my %EMPTY_POINTS_OF_PIN = ();
+my %SHARED_POINTS_OF_PIN = ();
+my %BLOCKED_POINTS_OF_PIN = ();
+if( exists $PLDB{$macroName}) {
+    my @size = $PLDB{$macroName}->dbMdbGetSize;
+    my $width = $size[0]; 
+    my $height = $size[1];
+    my $xpitch = 0;
+    my $ypitch = 0;
+    my $nLH = 100;
+    my $nLV = 100;
+    foreach my $layerName (keys %PTDB){
+      my $type = $PTDB{$layerName}->dbTechGetLayerType;
+      if ( $type eq "ROUTING") {
+        my $dir = $PTDB{$layerName}->dbTechGetLayerDir;;
+        my $num = $PTDB{$layerName}->dbTechGetLayerNum;
+        my $pitch = $PTDB{$layerName}->dbTechGetLayerPitch;
+        my $offset = $PTDB{$layerName}->dbTechGetLayerOffset;
+        if ( $dir eq "HORIZONTAL" ) {
+          if ( $nLH > $num ) {
+            $nLH = $num ; $ypitch = $pitch;
+            if ($offset eq "UND") {
+              $shifty = 0.5*$ypitch;
+            } else {
+              $shifty = $offset;
+            }  
+          }
+        } elsif ( $dir eq "VERTICAL" ) {
+          if ( $nLV > $num ) { 
+            $nLV = $num ; $xpitch = $pitch;
+            if ($offset eq "UND") {
+              $shiftx = 0.5*$xpitch;
+            } else {
+              $shiftx = $offset;
+            }  
+          } 
+        } else {
+          print "INFO-LIBLYIS : 001 : invalid direction on routing layer $layerName\n";
+        }
+      } # if layer is a routing layer
+    } #search the first 2 consecutive orthgonal routing layers 
+    print "DBG-LIBLYIS : 002 : lowest H : $nLH \= $ypitch, lowest V : $nLV \= $xpitch\n" if ($DEBUG == 100);
+    my $nv = int (($width)/$xpitch);
+    my $nh = int (($height)/$ypitch);
+  my ($Covered_points,$Empty_points,$Shared_points,$Blocked_points) = &return_data_find_pinFactor($macroName); 
+  my %COVERED_POINTS = %$Covered_points;
+  my %EMPTY_POINTS = %$Empty_points;
+  my %SHARED_POINTS = %$Shared_points;
+  my %BLOCKED_POINTS = %$Blocked_points;
+  foreach my $point (keys %COVERED_POINTS){
+     my ($j,$i) = (split(/\,/,$point));
+     if(exists$COVERED_POINTS{$point}){
+       my $pinName = $COVERED_POINTS{$point};
+       push (@{$COVERED_POINTS_OF_PIN{$pinName}},$point);
+       my $lhs_point = ""; 
+       my $rhs_point = "";
+       my $bottom_point = "";
+       my $top_point = "";
+       if($i > 0){$lhs_point = $j.",".($i-1);}
+       if($i < ($nv-1)){$rhs_point = $j.",".($i+1);}
+       if($j > 0){$bottom_point = ($j-1).",".$i;}
+       if($j < ($nh -1)){$top_point = ($j+1).",".$i;}
+       if(%EMPTY_POINTS){
+         if(exists $EMPTY_POINTS{$lhs_point}){
+            push (@{$EMPTY_POINTS_OF_PIN{$pinName}},$lhs_point);
+         }
+         if(exists $EMPTY_POINTS{$rhs_point}){
+            push(@{$EMPTY_POINTS_OF_PIN{$pinName}},$rhs_point);
+         }
+         if(exists $EMPTY_POINTS{$bottom_point}){
+            push(@{$EMPTY_POINTS_OF_PIN{$pinName}},$bottom_point); 
+         }
+         if(exists $EMPTY_POINTS{$top_point}){
+            push(@{$EMPTY_POINTS_OF_PIN{$pinName}},$top_point);
+         }
+       }
+       if(%SHARED_POINTS){
+         if(exists $SHARED_POINTS{$lhs_point}){
+            push (@{$SHARED_POINTS_OF_PIN{$pinName}},$lhs_point);
+         }
+         if(exists $SHARED_POINTS{$rhs_point}){
+            push(@{$SHARED_POINTS_OF_PIN{$pinName}},$rhs_point);
+         }
+         if(exists $SHARED_POINTS{$bottom_point}){
+            push(@{$SHARED_POINTS_OF_PIN{$pinName}},$bottom_point); 
+         }
+         if(exists $SHARED_POINTS{$top_point}){
+            push(@{$SHARED_POINTS_OF_PIN{$pinName}},$top_point);
+         }
+       }
+       if(%BLOCKED_POINTS){
+         if(exists $BLOCKED_POINTS{$lhs_point}){
+            push(@{$BLOCKED_POINTS_OF_PIN{$pinName}},$lhs_point);
+         }
+         if(exists $BLOCKED_POINTS{$rhs_point}){
+            push(@{$BLOCKED_POINTS_OF_PIN{$pinName}} ,$rhs_point);
+         }
+         if(exists $BLOCKED_POINTS{$bottom_point}){
+            push(@{$BLOCKED_POINTS_OF_PIN{$pinName}} ,$bottom_point); 
+         }
+         if(exists $BLOCKED_POINTS{$top_point}){
+            push(@{$BLOCKED_POINTS_OF_PIN{$pinName}},$top_point);
+         }
+       } 
+     }
+  }
+}
+return(\%COVERED_POINTS_OF_PIN,\%SHARED_POINTS_OF_PIN,\%EMPTY_POINTS_OF_PIN,\%BLOCKED_POINTS_OF_PIN);
+}#sub pinPoints
+#-----------------------------------------------------------------------------------------------------------------------#
+sub get_pin_index {
+my $macroName = $_[0];
+my %PIN_INDEX = ();
+my $index1  = 0;
+my $index2  = 0;
+my $index3  = 0;
+my ($COVERED_POINTS_of_PIN,$SHARED_POINTS_of_PIN,$EMPTY_POINTS_of_PIN,$BLOCKED_POINTS_of_PIN) = &pinPoints($macroName);
+my %COVERED_POINTS_OF_PIN = %$COVERED_POINTS_of_PIN;
+my %SHARED_POINTS_OF_PIN = %$SHARED_POINTS_of_PIN;
+my %EMPTY_POINTS_OF_PIN = %$EMPTY_POINTS_of_PIN;
+my %BLOCKED_POINTS_OF_PIN = %$BLOCKED_POINTS_of_PIN;
+my @pins = $PLDB{$macroName}->dbMdbGetPins;
+foreach my $pinName (@pins){
+  if($pinName eq "VDD" || $pinName eq "VSS"){}
+  else {
+    my $no_ofshared_point = 0;
+    my $no_ofcovered_point = 0;
+    my $no_ofempty_point = 0;
+    my $no_ofblocked_point = 0;
+#---------------------------------------------------------------------------------------------------------#
+    my @shared_point = @{$SHARED_POINTS_OF_PIN{$pinName}};
+    my %sunique = ();
+    foreach my $s (@shared_point){
+        $sunique{$s} = 1;
+    }
+    my @shared_uniq = keys %sunique;
+    $no_ofshared_point = @shared_uniq;
+#---------------------------------------------------------------------------------------------------------#
+    my @covered_point = @{$COVERED_POINTS_OF_PIN{$pinName}};
+    my %cunique = ();
+    foreach my $c (@covered_point){
+     $cunique{$c} = 1;
+    }
+    my @cov_uniq = keys %cunique;
+    $no_ofcovered_point = @cov_uniq;
+#---------------------------------------------------------------------------------------------------------#    
+    my @empty_point = @{$EMPTY_POINTS_OF_PIN{$pinName}};
+    my %eunique = ();
+    foreach my $e (@empty_point){
+     $eunique{$e} = 1;
+    }
+    my @empty_uniq = keys %eunique;
+    $no_ofempty_point = @empty_uniq;
+#---------------------------------------------------------------------------------------------------------#    
+    my @blocked_point = @{$BLOCKED_POINTS_OF_PIN{$pinName}};
+    my %bunique = ();
+    foreach my $b (@blocked_point){
+     $bunique{$b} =1;
+    }
+    my @blocked_uniq = keys %bunique;
+    $no_ofblocked_point = @blocked_uniq;
+#----------------------------------------------------------------------------------------------------------#
+    $index1 = $no_ofcovered_point + $no_ofempty_point;
+    $index2 = $no_ofshared_point;
+    $index3 = $no_ofblocked_point;
+    push(@{$PIN_INDEX{$pinName}},$index1,$index2,$index3);
+  }
+}
+return (\%PIN_INDEX);
+}#sub get_pin_index 
+#-----------------------------------------------------------------------------------------------------------#
+sub get_value_from_origin_and_foreign_of_cell {
+my $macroName = $_[0];
+my $var = "";
+if(exists $PLDB{$macroName}){
+  my @origin_size = $PLDB{$macroName}->dbMdbGetOrigin;
+  my @foreign_size = $PLDB{$macroName}->dbMdbGetForeignCoords;
+  my $x_origin_size  = $origin_size[0];
+  my $y_origin_size  = $origin_size[1];
+  my $x_foreign_size = $foreign_size[0];
+  my $y_foreign_size = $foreign_size[1];
+  my $x_total =  $x_origin_size + $x_foreign_size;
+  my $y_total =  $y_origin_size + $y_foreign_size;
+  if(($x_total < 0 && $y_total < 0 )|| ($x_total == 0 && $y_total < 0)||($x_total < 0 && $y_total == 0)||($x_total < 0 && $y_total > 0)||($x_total > 0 && $y_total < 0)){
+      $var = "neg";
+  }elsif(($x_total > 0 && $y_total > 0)||($x_total == 0 && $y_total > 0)||($x_total > 0 && $y_total == 0)){
+      $var = "pos";
+  }  
+}
+return($var);
+}#sub get_value_from_origin_and_foreign_of_cell
+#-----------------------------------------------------------------------------------------------------------#
+sub get_total_pinArea {
+my $macroName = $_[0];
+my $total_area = 0;
+if(exists $PLDB{$macroName}){
+  my @pins = $PLDB{$macroName}->dbMdbGetPins;
+  foreach my $pinName (@pins){
+    my $pin_area = 0;  
+    my $rectArea = 0;
+    my @RECTS = $PLDB{$macroName}->dbMdbGetPinRect($pinName);
+    foreach $rectLine ( @RECTS ){
+      my($layer,$llx,$lly,$urx,$ury) = (split(/\s+/,$rectLine))[0,2,3,4,5];
+      my $X_dis = ($urx - $llx);
+      my $Y_dis = ($ury - $lly);
+      $rectArea = ($X_dis*$Y_dis);
+      $pin_area = $pin_area + $rectArea;
+    }
+    $total_area = $total_area + $pin_area;
+  }
+}
+return($total_area);
+}#sub get_total_pinArea
+#-----------------------------------------------------------------------------------------------------------#
+1;

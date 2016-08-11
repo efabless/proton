@@ -1,0 +1,229 @@
+sub report_timing_sta {
+my $noOfArguments = @_;
+if( $noOfArguments < 2 ) { 
+	print "Usage : report_timing -outFile <reportFile> \n";
+        print "                      -reg2reg  <instancePin> \n";
+}
+else { # if correct no. of inputs
+	for(my $i = 0; $i < $noOfArguments; $i++){
+		if($_[$i] eq "-outFile"){$REPORT_FILE = $_[$i+1];}
+	} # for
+
+	print "INFO-TE : 001 : Writing timing report to file \"$REPORT_FILE\"\n";
+	open (WRITE,">$REPORT_FILE");
+	print WRITE "Report of Static Timing Analysis from proton tool\n";
+	print WRITE "----------------------------------------\n";
+	print WRITE "\n";
+	print WRITE "\n";
+
+	&dbgStaBuildTimingGraph;
+}# if correct no. of inputs
+}# sub report_timing_sta
+
+sub dbgStaBuildTimingGraph {
+# Right now only doing for reg 2 reg
+	&dbgStaReg2RegTrace;
+}# sub dbgStaBuildTimingGraph
+
+sub dbgStaReg2RegTrace {
+$count2 = 0;
+$pathNum = 1;
+$PRINTVAR = 0;
+
+foreach $instance ( keys %COMP_ALREADY ) {
+	$cellref = $CADB{$instance}->dbCadbGetCellref;
+        my $function = $PLDB{$cellref}->dbMdbGetFunction;
+        print "INFO-TE : 001 : $instance : $cellref : $function\n";
+        if ( $function eq "flop" ) {
+        	print "INFO-TE : 002 : tracing the output cone of $instance : $cellref : $function ....\n";
+        	@TEMP_PATH=();
+        	push(@TEMP_PATH,$instance);
+                &dbgStaTraceReg2Reg($instance,$count2);
+        }#if instance is a register
+}# foreach component
+}# sub dbgStaReg2RegTrace
+
+sub dbgStaTraceReg2Reg  {
+local $instanceName = $_[0];
+local $noOfComponentsBeforeBranch = $_[1];
+local $cellref = $CADB{$instanceName}->dbCadbGetCellref;
+local $fwdNetName;
+
+print "INFO-TE : 001 : tracing forward through $instanceName\n";
+local @pins = $PLDB{$cellref}->dbMdbGetPins;
+
+foreach $pinName ( @pins ) {
+	if ( $PLDB{$cellref}->dbMdbGetPinDir($pinName) == 1 ) {
+        if( exists $COMP_ALREADY{$instanceName}{$pinName} ) {
+        $fwdNetName = $COMP_ALREADY{$instanceName}{$pinName};
+        $noOfComponentsOnNet = keys %{$NETS_ALREADY{$fwdNetName}};
+        if($noOfComponentsOnNet > 2) {
+        	print "INFO-TE : 002 : possible branching of path \n"; 
+                $noOfComponentsBeforeBranch = @TEMP_PATH;
+                print "INFO-TE : 003 : $noOfComponentsBeforeBranch to be saved before branching\n";
+        } else { $noOfComponentsBeforeBranch  = $noOfComponentsBeforeBranch; }
+        foreach $newInstanceName ( keys %{$NETS_ALREADY{$fwdNetName}} ) {
+         	if( $newInstanceName eq "PIN" ) { 
+                }#if its a DEF port 
+                elsif ( exists $PORTS_ALREADY{$TOP_MODULE}{$newInstanceName} ) {
+                }# if its a verilog port
+                else {
+                	$newCellref = $CADB{$newInstanceName}->dbCadbGetCellref;
+                   	if ( $newInstanceName eq $instanceName ) { }
+                   	elsif($PLDB{$newCellref}->dbMdbGetFunction eq "flop" ) {
+                        	push(@TEMP_PATH,"$newInstanceName $fwdNetName");
+				###############################################
+				# timing report being generated ...
+				###############################################
+				&dbgStaReport1PathTiming(@TEMP_PATH);
+                                $pathNum++;
+                                $presentNoOfComponents = @TEMP_PATH;
+                                $removeNoOfComponents = $presentNoOfComponents - $noOfComponentsBeforeBranch;
+#                               print "removing $removeNoOfComponents components At reg \n";
+                                for(my $xx = 0; $xx <= $removeNoOfComponents;$xx++) {
+                                	my $yy = $presentNoOfComponents - $xx;
+                                        delete $TEMP_PATH[$yy];
+                                }#for
+
+                    	}
+                   	else {
+                          	push(@TEMP_PATH,"$newInstanceName $fwdNetName");
+                          	&dbgStaTraceReg2Reg($newInstanceName,$noOfComponentsBeforeBranch);
+                          	print "INFO-TE : 004 : $noOfComponentsBeforeBranch after split\n";
+                                $presentNoOfComponents = @TEMP_PATH;
+                                $removeNoOfComponents = $presentNoOfComponents - $noOfComponentsBeforeBranch;
+#                               print "removing $removeNoOfComponents components At somewhere \n";
+                                for(my $xx = 0; $xx <= $removeNoOfComponents;$xx++) {
+                                	my $yy = $presentNoOfComponents - $xx;
+                                        delete $TEMP_PATH[$yy];
+                                }#for
+                        }
+
+          	}#if instance is not a block PIN
+     	}#foreach
+ 	}# if pin has some connectivity
+        }#if pin is an output pin
+}# foreach pin of instance
+}# sub dbgStaTraceReg2Reg
+
+
+sub dbgStaReport1PathTiming {
+my @PATHLIST = @_;
+   #print join ",", @PATHLIST ;
+   my $slew = 0.550;
+   my $load = 0.025;
+   my $cumlativeDelay = 0;
+   my $clock_period = 20000;
+   my $uncertanity = 100;
+   my $setup_time = 200;
+   my $startInst = shift @PATHLIST;
+   my $noOfInstOnPath = @PATHLIST;
+   my $stopInst = (split(/\s+/,$PATHLIST[$noOfInstOnPath-1]))[0];
+
+                                 print WRITE "Path # $pathNum\n";
+                                 print WRITE "StartPoint : $startInst\n";
+                                 print WRITE "EndPoint : $stopInst\n";
+                                 print WRITE "-----------------------------------------------------------\n";
+                                 print WRITE "inst     macro   arc    delay   tdelay  tran\n";
+                                 print WRITE "-----------------------------------------------------------\n";
+                                 my $cellref = $CADB{$startInst}->dbCadbGetCellref;
+                                 my $cellFunc = $PLDB{$cellref}->dbMdbGetFunction;
+                                 if ( $cellFunc eq "flop" ) { 
+                                 $previousInstInPin = "CK";
+                                      my @pins = $PLDB{$cellref}->dbMdbGetPins;
+                                      foreach my $pinName ( @pins ) {
+                                                 my $pinType = $PLDB{$cellref}->dbMdbGetPinType($pinName);
+                                                 if ( $pinType == 3 ) { $previousInstInPin = $pinName; }
+                                                                    }# foreach pin
+                                                           }# if cell is a register
+                                 print WRITE "$startInst $cellref ";
+                                 my $previousInst = $startInst;
+                                 foreach $inst ( @PATHLIST ) {
+                                         my ($i,$n) = (split(/\s+/,$inst))[0,1];
+                                         my $previousInstOutPin = $NETS_ALREADY{$n}{$previousInst};
+                                         my $arc = "$previousInstInPin $previousInstOutPin";
+                                         #my @instDelayTran = $TADB{$previousInst}->dbTimingInstGetArcDly($previousInstInPin,$previousInstOutPin);
+                                         my @instDelayTran = dbaGetInstRiseDly($previousInst,$previousInstInPin,$previousInstOutPin,$slew,$load);
+                                            $cumlativeDelay = $cumlativeDelay + $instDelayTran[0];
+                                         printf WRITE " $previousInstInPin->$previousInstOutPin $instDelayTran[0] $cumlativeDelay $instDelayTran[1]\n";
+                                         printf WRITE "%s->%s %.2f %.2f %.2f\n", $previousInstInPin, $previousInstOutPin, $instDelayTran[0], $cumlativeDelay, $instDelayTran[1];
+print WRITE "\n";
+                                         my $c = $CADB{$i}->dbCadbGetCellref;
+                                         print WRITE "$i $c ";
+                                         $previousInst = $i;
+                                         $previousInstInPin = $NETS_ALREADY{$n}{$i};
+                                                              }#foreach
+
+                                       print WRITE "\n";
+                                 print WRITE "-----------------------------------------------------------\n";
+print WRITE "clock period : $clock_period\n";
+my $reqTime = $clock_period - $uncertanity - $setup_time;
+print WRITE "required time : $reqTime\n";
+print WRITE "arrival time : $cumlativeDelay\n";
+my $slack = $reqTime - $cumlativeDelay;
+print WRITE "slack : $slack\n";
+                                 print WRITE "-----------------------------------------------------------\n";
+                                       print WRITE "\n\n";
+
+}# sub dbgStaReport1PathTiming
+
+sub dbaStaReg2RegTiming {
+my $startInst = $_[0];
+my $stopInst = $_[1];
+
+
+}#sub dbaStaReg2RegTiming 
+
+sub dbBuildTimingGraph {
+#------------------------------------------------------#
+# add delays to each begin/end point in the S-Matrix
+# this can be added via a timing report and also via 
+# internal STA
+# currently i will add those delays via a random 
+# selection of delay between 30% to 70% of the clock period
+# the logic used is the following
+# if there exist a timing path between I/O to flops,
+# i will add the delay
+#------------------------------------------------------#
+print "INFO-TE : 001 : building timing graph for the design\n";
+my $clock_period = 2;
+my @inputPort = $PLACE{$TOP_MODULE}->dbPlaceGetInPortList;
+ #print join ",", @inputPort;
+           foreach $port ( @inputPort ) {
+           my $InstNum = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByName($port);
+           my @fanOuts = $PLACE{$TOP_MODULE}->dbPlaceGetFanOuts($InstNum);
+           my $val = 0;
+           foreach my $yy ( @fanOuts ) {
+                   my $rand_pcnt = 0.30+rand(0.40);
+                   my $val = $clock_period*$rand_pcnt;
+                   $PLACE{$TOP_MODULE}->dbPlaceSetSlackVal($yy,$InstNum,$val);
+                   my $fromInst = $PLACE{$TOP_MODULE}->dbPlaceGetNameByNumberCol($InstNum);
+                   my $toInst = $PLACE{$TOP_MODULE}->dbPlaceGetNameByNumberRow($yy);
+                    print "INFO-TE : 002 : $yy, $InstNum : $val\n";
+                    print "INFO-TE : 003 : $fromInst, $toInst : $val\n";
+                                      }# foreach fanOuts
+
+                                       }# foreach input port
+my @outputPort = $PLACE{$TOP_MODULE}->dbPlaceGetOutPortList;
+ #print join ",", @outputPort;
+           foreach $port ( @outputPort ) {
+           my $InstNum = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByName($port);
+           my @fanIns = $PLACE{$TOP_MODULE}->dbPlaceGetFanIns($InstNum);
+           my $val = 0;
+           foreach my $yy ( @fanIns ) {
+                   my $rand_pcnt = 0.30+rand(0.40);
+                   my $val = $clock_period*$rand_pcnt;
+                   $PLACE{$TOP_MODULE}->dbPlaceSetSlackVal($yy,$InstNum,$val);
+                   my $fromInst = $PLACE{$TOP_MODULE}->dbPlaceGetNameByNumberCol($yy);
+                   my $toInst = $PLACE{$TOP_MODULE}->dbPlaceGetNameByNumberRow($InstNum);
+                    print "INFO-TE : 004 : $fromInst, $toInst : $val\n";
+                    print "INFO-TE : 005 : $yy, $InstNum : $val\n";
+                                      }# foreach fanIns
+
+                                       }# foreach output port
+
+
+
+}# sub dbBuildTimingGraph
+
+1;

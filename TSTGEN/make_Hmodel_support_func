@@ -1,0 +1,1929 @@
+
+sub dbfTstgenCreateModule {
+my $moduleName = $_[0];
+my $inCount = $_[1];
+my $outCount = $_[2];
+my $seqCount = $_[3];
+my $combCount = $_[4];
+my $RC = $_[5];
+my $TC = $_[6];
+my $nCluster = $_[7];
+my $totalCompCount = $_[8];
+my $llx = $_[9];
+my $lly = $_[10];
+my $urx = $_[11];
+my $ury = $_[12];
+my $moduleType = $_[13];
+print "INFO-TST : 001 : Creating a module $moduleName type $moduleType\n";
+$PSEUDO_MODULE_ALREADY{$moduleName} = PseudoModuleModelDB::new();
+
+#<!-- logical attributes -->
+$PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetLogicalDirty(1);
+$PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetModuleName($moduleName);
+$PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetSeqComps($seqCount);
+$PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetCombComps($combCount);
+$PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetTotalComps($totalCompCount);
+$PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetTimingComplexity($TC);
+$PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetRoutingComplexity($RC);
+$PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetInCount($inCount);
+$PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetOutCount($outCount);
+$PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetClusterCount($nCluster);
+$PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetClass($moduleType);
+
+#<!-- physical attributes -->
+$PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetPhysicalDirty(1);
+$PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetFloorplan("$moduleName/_self_");
+$PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetSize($llx,$lly,$urx,$ury);
+
+}#sub dbfTstgenCreateModule
+
+sub dbfTstgenCreateHierModuleInst {
+my $parent = $_[0];
+my $instName = $_[1];
+my $moduleName = $_[2];
+my $llx = $_[3];
+my $lly = $_[4];
+my $urx = $_[5];
+my $ury = $_[6];
+my $status;
+
+if($llx eq "" && $lly eq ""){
+   $status = "UNPLACED";
+}else {
+   $status = "PLACED";
+}
+#print "llx $llx, lly $lly, urx $urx, ury $ury, status $status\n";
+
+$PSEUDO_MODULE_ALREADY{$parent}->dbaTstgenSetLogicalDirty(1);
+#--------------------------- populate the instance hash table --------------------------#
+print "INFO-TST : 002 : Creating hier instance $instName of cell $moduleName in $parent at $llx,$lly,$urx,$ury\n";
+$PSEUDO_VINST_ALREADY{$parent}{$instName} = PseudoInstanceModelDB::new();
+$PSEUDO_VINST_ALREADY{$parent}{$instName}->dbPimDBSetParentModule($parent);
+$PSEUDO_VINST_ALREADY{$parent}{$instName}->dbPimDBSetInstCellref($moduleName);
+$PSEUDO_VINST_ALREADY{$parent}{$instName}->dbPimDBSetInstRelBbox($llx,$lly,$urx,$ury);
+$PSEUDO_VINST_ALREADY{$parent}{$instName}->dbPimDBSetInstName($instName);
+$PSEUDO_VINST_ALREADY{$parent}{$instName}->dbPimDBSetInstStatus($status);
+}#sub dbfTstgenCreateHierModuleInst
+
+sub dbfTstgenCreateTopModule {
+my $moduleName = $_[0];
+my $inCount = $_[1];
+my $outCount = $_[2];
+my $seqCount = $_[3];
+my $combCount = $_[4];
+my $RC = $_[5];
+my $TC = $_[6];
+my $nCluster = $_[7];
+my $width = $_[8];
+my $height = $_[9];
+my $totalCompCount = $_[10];
+print "INFO-TST : 001 : Creating $moduleName as a top module of width $width and height $height\n";
+$TOP_MODULE = $moduleName;
+$GLOBAL->dbfGlobalSetTOP($moduleName);
+$PSEUDO_MODULE_ALREADY{$moduleName} = PseudoModuleModelDB::new();
+$PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetIsModuleTop;
+
+#<!-- logical attributes -->
+$PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetLogicalDirty(1);
+$PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetModuleName($moduleName);
+$PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetSeqComps($seqCount);
+$PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetCombComps($combCount);
+$PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetTotalComps($totalCompCount);
+$PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetTimingComplexity($TC);
+$PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetRoutingComplexity($RC);
+$PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetInCount($inCount);
+$PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetOutCount($outCount);
+$PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetClusterCount($nCluster);
+
+#<!-- physical attributes -->
+$PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetPhysicalDirty(1);
+$PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetFloorplan("$moduleName/_self_");
+$PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetSize(0,0,$width,$height);
+
+}#sub dbfTstgenCreateTopModule
+
+sub dbfTstgenCreateGlueNet {
+my $netPrefixName = $_[0];
+my $srcModule = $_[1];
+my $sinkModule = $_[2];
+my $fanInCount = $_[3];
+my $fanOutCount = $_[4];
+print "INFO-TST : 001 : creating glue $netPrefixName connections between $srcModule and $sinkModule modules\n";
+$PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$netPrefixName} = PseudoNetModelDB::new();
+$PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$netPrefixName}->dbaTstgenSetPseudoNetPrefix($netPrefixName);
+$PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$netPrefixName}->dbaTstgenSetPseudoNetType("glue");
+}#sub dbfTstgenCreateGlueNet
+
+sub dbfTstgenCreateWire {
+my $netPrefix = $_[0];
+my $width = $_[1];
+my $srcVInst = $_[2];
+my $fanInPin = $_[3]; 
+my $netCoordStr = $_[4];
+   #$netCoordStr =~ s/{//;
+   #$netCoordStr =~ s/}//;
+   my @netCoords = split(/\,/,$netCoordStr);
+my @fanOutList = @{$_[5]};
+my $addMode = $_[6];
+
+$PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenSetLogicalDirty(1);
+print "INST-TST : 001 : creating wire $netPrefix $width connections from inst $srcVInst to";
+unless ( $addMode && exists $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$netPrefix} ) {
+$PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$netPrefix} = PseudoNetModelDB::new();
+$PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$netPrefix}->dbaTstgenSetPseudoNetPrefix($netPrefix);
+$PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$netPrefix}->dbaTstgenSetPseudoNetType("wire");
+$PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$netPrefix}->dbaTstgenSetPseudoNetParentModule($TOP_MODULE);
+}
+
+my $isSrcSet = 0;
+if ( $addMode ) {
+  my ($prevSrcVInst, $prevFanInPin) = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$netPrefix}->dbaTstgenGetPseudoNetSourceFanInList();
+  if ( $prevSrcVInst ne "" ) {
+    $isSrcSet = 1;
+    if ( $srcVInst eq "" ) {
+      $srcVInst = $prevSrcVInst;
+    }
+    elsif ( $prevSrcVInst ne $srcVInst ) {
+      print "ERR-TST : 002 : source $srcVInst is inconsistent with $prevSrcVInst, net unchanged.\n";
+      return "";
+    }
+  }
+}
+
+if ( ! $isSrcSet ) {
+  if ($fanInPin eq "") {
+   $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$netPrefix}->dbaTstgenSetPseudoNetSourceFanInList($srcVInst,$width);
+  } else {
+   $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$netPrefix}->dbaTstgenSetPseudoNetSourceFanInList($srcVInst,$fanInPin);
+  }
+  if ($srcVInst eq "PIN" ) {
+   $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$netPrefix}->dbaTstgenSetPseudoNetIsTopConn(1);
+  }
+}
+
+$PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$netPrefix}->dbaTstgenSetPseudoNetCoords(@netCoords);
+
+for ( my $k = 0; $k < @fanOutList; $k +=2 ) {
+  my ($sinkVInst, $fanOutPin ) = ($fanOutList[$k], $fanOutList[$k+1]);
+  print "INFO-TST : 003 : $sinkVInst";
+  if($fanOutPin eq ""){
+     $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$netPrefix}->dbaTstgenSetPseudoNetSinkFanOutList($sinkVInst,$width);
+  }else{
+     $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$netPrefix}->dbaTstgenSetPseudoNetSinkFanOutList($sinkVInst,$fanOutPin);
+  }
+  if ($sinkVInst eq "PIN" ) {
+    $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$netPrefix}->dbaTstgenSetPseudoNetIsTopConn(1);
+  }
+}
+print "\n";
+return($netPrefix);
+}#sub dbfTstgenCreateWire
+
+
+sub dbfTstgenCreateNet {
+my $netPrefix = $_[0];
+my $busWidth = $_[1];
+my $srcVInst = $_[2];
+my $fanInPin = $_[3];
+my $netCoordStr = $_[4];
+   #$netCoordStr =~ s/{//;
+   #$netCoordStr =~ s/}//;
+   my @netCoords = split(/\,/,$netCoordStr);
+my @fanOutList = @{$_[5]};
+my $addMode = $_[6];
+
+my ($type, $busFrom, $busTo);
+if ( $busWidth =~ m/\[.*\]/ ) {
+  $type = "bus";
+  ($busFrom, $busTo) = &utilGetBitsRange($busWidth);
+  $busWidth = 1 + abs ($busTo - $busFrom);
+}
+elsif ( $busWidth > 1 ) {
+  $type = "bus";
+}
+else {
+  $type = "single";
+}
+
+my $netName;
+if ( $netPrefix ne "" ) {
+  $netName = $netPrefix;
+  if ( defined $busFrom && defined $busTo ) {
+    $netName .= "\[$busFrom:$busTo\]";
+  }
+}
+else {
+  my $count = keys( %{$PSEUDO_VNET_ALREADY{$TOP_MODULE}} ) ;
+  $netName = "BD0_net". ($type eq "bus" ? "B" : "") . $count;
+}
+$PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenSetLogicalDirty(1);
+unless ( $addMode && exists $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$netName} ) {
+$PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$netName} = PseudoNetModelDB::new();
+$PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$netName}->dbaTstgenSetPseudoNetPrefix($netName);
+$PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$netName}->dbaTstgenSetPseudoNetWidth($busWidth);
+$PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$netName}->dbaTstgenSetPseudoNetParentModule($TOP_MODULE);
+$PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$netName}->dbaTstgenSetPseudoNetType($type);
+}
+
+$PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$netName}->dbaTstgenSetPseudoNetCoords(@netCoords);
+
+my $isSrcSet = 0;
+if ( $addMode ) {
+  my ($prevSrcVInst, $prevFanInPin) = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$netPrefix}->dbaTstgenGetPseudoNetSourceFanInList();
+  if ( $prevSrcVInst ne "" ) {
+    $isSrcSet = 1;
+    if ( $srcVInst eq "" ) {
+      $srcVInst = $prevSrcVInst;
+    }
+    elsif ( $prevSrcVInst ne $srcVInst ) {
+      print "ERR-TST : 001 : source $srcVInst is inconsistent with $prevSrcVInst, net unchanged.\n";
+      return "";
+    }
+  }
+}
+my ($isTopConn, $topConnPin) = (0, "");
+print "INFO-TST : 002 : creating net $netName $busWidth connections from inst $srcVInst" if ( $fanInPin eq "" );
+print "INFO-TST : 003 : creating net $netName connections from inst $srcVInst" if ( $fanInPin ne "" );
+print "INFO-TST : 004 : at pin $fanInPin" if ( $fanInPin ne "" );
+print "INFO-TST : 005 : to";
+if ( ! $isSrcSet ) {
+$PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$netName}->dbaTstgenSetPseudoNetSourceFanInList($srcVInst, $fanInPin);
+if ( $srcVInst eq "PIN" ) {
+  $isTopConn = 1;
+  $topConnPin = $fanInPin;
+}
+elsif ( $fanInPin ne "" ) { # <!-- && ( $srcVInst ne "PIN" ) -->
+  my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$srcVInst}->dbPimDBGetInstCellref;
+  if ( exists $PSEUDO_MODULE_ALREADY{$cellref} ) {
+    if ( $type eq "bus" && $fanInPin !~ m/\[.*\]/ ) {
+      $fanInPin .= "\[0:" . ($busWidth - 1) . "\]";
+    }
+    unless ( $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenHasOutput($fanInPin) ||  $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenHasBidi($fanInPin) ) {  #bidi added by Mansi
+      $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenSetLogicalDirty(1);
+      $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenAddOutput($fanInPin);
+    }# if ( need to add pin )
+  }# if hier module
+}
+}# if ( ! $isSrcSet )
+
+for ( my $k = 0; $k < @fanOutList; $k +=2 ) {
+  my ($sinkVInst, $fanOutPin) = ($fanOutList[$k], $fanOutList[$k + 1]);
+  print "INFO-TST : 006 : $sinkVInst";
+  print "INFO-TST : 007 : at pin $fanOutPin" if ( $fanOutPin ne "" );
+  $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$netName}->dbaTstgenSetPseudoNetSinkFanOutList($sinkVInst, $fanOutPin);
+  if ( $sinkVInst eq "PIN" ) {
+    $isTopConn = 1;
+    if ( $topConnPin eq "" && $fanOutPin ne "" ) {
+      $topConnPin = $fanOutPin;
+    }
+  }
+  elsif ( $fanOutPin ne "" ) { # <!-- && ( $sinkVInst ne "PIN" ) -->
+    my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$sinkVInst}->dbPimDBGetInstCellref;
+    if ( exists $PSEUDO_MODULE_ALREADY{$cellref} ) {
+      if ( $type eq "bus" && $fanOutPin !~ m/\[.*\]/ ) {
+        $fanOutPin .= "\[0:" . ($busWidth - 1) . "\]";
+      }
+      unless ( $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenHasInput($fanOutPin)  || $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenHasBidi($fanOutPin) ) {  # bidi added by Mansi
+        $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenSetLogicalDirty(1);
+        $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenAddInput($fanOutPin);
+      }# if ( need to add pin )
+    }# if hier module
+  }# if ( $fanOutPin is specified )
+}# for ( $k )
+print "\n";
+
+if ( $isTopConn ) {
+  $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$netName}->dbaTstgenSetPseudoNetIsTopConn(1);
+  if ( $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$netName}->dbaTstgenGetPseudoNetTopConnPin() eq "" ) {
+    if ( $topConnPin eq "" && $netPrefix ne "" ) {
+      $topConnPin = $netPrefix;
+    }
+    $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$netName}->dbaTstgenSetPseudoNetTopConnPin($topConnPin);
+  }
+}# if ( $isTopConn )
+return($netName);
+}#sub dbfTstgenCreateNet
+
+
+sub dbfTstgenCreateClock {
+my $netPrefixName = $_[0];
+my $srcModule = $_[1];
+my $sinkModule = $_[2];
+my $fanInCount = $_[3];
+my $fanOutCount = $_[4];
+print "INFO-TST : 001 : creating clock connections between $srcModule and $sinkModule modules\n";
+$PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$netPrefixName} = PseudoNetModelDB::new();
+$PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$netPrefixName}->dbaTstgenSetPseudoNetPrefix($netPrefixName);
+$PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$netPrefixName}->dbaTstgenSetPseudoNetType("clock");
+}#sub dbfTstgenCreateClock
+
+sub dbfTstgenCreateBumpNet {
+my $netPrefix = $_[0];
+my $busWidth = $_[1];
+my $srcVInst = $_[2];
+my $fanInPin = $_[3];
+my $netCoordStr = $_[4];
+my $fanOutIdx = 5;  #<!-- fanOutList starts here -->
+my $noOfArguments = @_;
+
+my @netCoords = split(/\,/,$netCoordStr);
+
+# UNDER CONSTRUCTION
+
+}#sub dbfTstgenCreateBumpNet
+
+
+sub dbfTstgenFindOverlapModule2Wire {
+print "INFO-TST:003 finding overlap between modules and wires\n";
+foreach my $moduleName ( keys %PSEUDO_MODULE_ALREADY ) {
+print "INFO-TST:004 processing $moduleName\n";
+                                                       }
+
+
+
+}#sub dbfTstgenFindOverlapModule2Wire
+
+sub dbfTstgenCreatePlcBlkg {
+my $blkgName = $_[0];
+my @blkgRect = ($_[1],$_[2],$_[3],$_[4]);
+print "INFO-TST:005 creating placement blockage $blkgName\n";
+$PSEUDO_BLKG_ALREADY{$TOP_MODULE}{$blkgName} = PseudoBlkgModelDB::new();
+$PSEUDO_BLKG_ALREADY{$TOP_MODULE}{$blkgName}->dbaTstgenSetPseudoBlkgSize(@blkgRect);
+$PSEUDO_BLKG_ALREADY{$TOP_MODULE}{$blkgName}->dbaTstgenSetPseudoBlkgType("P");
+
+}#sub dbfTstgenCreatePlcBlkg
+
+sub dbfTstgenCreateRouteBlkg {
+my $blkgName = $_[0];
+my @blkgRect = ($_[1],$_[2],$_[3],$_[4]);
+my $layerName = $_[5];
+print "INFO-TST:006 : creating routing blockage $blkgName\n";
+$PSEUDO_BLKG_ALREADY{$TOP_MODULE}{$blkgName} = PseudoBlkgModelDB::new();
+$PSEUDO_BLKG_ALREADY{$TOP_MODULE}{$blkgName}->dbaTstgenSetPseudoBlkgSize(@blkgRect);
+$PSEUDO_BLKG_ALREADY{$TOP_MODULE}{$blkgName}->dbaTstgenSetPseudoBlkgType("R");
+$PSEUDO_BLKG_ALREADY{$TOP_MODULE}{$blkgName}->dbaTstgenSetPseudoBlkgLayer($layerName);
+
+}#sub dbfTstgenCreateRouteBlkg
+
+
+sub dbfTstgenUpdateVNOMFromPseudo {
+
+my $moduleName = $_[0];
+
+#<!-- hash, key = module, value = ref to array of child insts -->
+%editedModules = ();
+$editedModules{$moduleName} = [ "PIN" ];
+foreach my $instName ( keys %{$PSEUDO_VINST_ALREADY{$moduleName}} ) {
+  if ( $instName eq "PIN" ) {
+    next;
+  }
+  my $cellref = $PSEUDO_VINST_ALREADY{$moduleName}{$instName}->dbPimDBGetInstCellref;
+  unless ( exists $PSEUDO_MODULE_ALREADY{$cellref} ) {
+    next;
+  }
+  unless ( exists $editedModules{$cellref} ) {
+    $editedModules{$cellref} = [];
+  }
+  push(@{$editedModules{$cellref}}, $instName);
+}#foreach inst
+
+my $dirty;
+foreach my $cellref ( keys %editedModules ) {
+  $dirty = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetLogicalDirty;
+  if ( $dirty == 0 ) { next; }
+  unless ( exists $MODULE_ALREADY{$cellref} ) {
+    $MODULE_ALREADY{$cellref} = VNOM::new();
+    my $class = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetClass;
+    $MODULE_ALREADY{$cellref}->dbVNOMSetClass($class);
+  }
+  &dbfTstgenUpdateVNOMModulePins($cellref);
+}#foreach
+
+$dirty = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetLogicalDirty;
+if ( $dirty == 1 ) {
+  &dbfTstgenUpdateVNOMModuleInsts($moduleName);
+}
+
+#<!-- Clear all logical dirty bits only,
+#     here physical objects are not updated yet -->
+foreach my $cellref ( keys %editedModules ) {
+  $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenSetLogicalDirty(0);
+}
+
+}# sub dbfTstgenUpdateVNOMFromPseudo
+
+
+sub dbfTstgenUpdateVNOMModulePins {
+
+my $moduleName = $_[0];
+
+my ($pin, $type, $bits);
+$MODULE_ALREADY{$moduleName}->dbVNOMWipeInput;
+my @pins = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetInput;
+foreach $pin ( @pins ) {
+  $MODULE_ALREADY{$moduleName}->dbVNOMAddInput($pin);
+  $type = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetInputType($pin);
+  $MODULE_ALREADY{$moduleName}->dbVNOMSetInputType($pin, $type);
+  if ( $type == 1 ) {
+    $bits = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetInputBits($pin);
+    $MODULE_ALREADY{$moduleName}->dbVNOMSetInputBits($pin, $bits);
+  }
+}
+
+$MODULE_ALREADY{$moduleName}->dbVNOMWipeOutput;
+@pins = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetOutput;
+foreach $pin ( @pins ) {
+  $MODULE_ALREADY{$moduleName}->dbVNOMAddOutput($pin);
+  $type = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetOutputType($pin);
+  $MODULE_ALREADY{$moduleName}->dbVNOMSetOutputType($pin, $type);
+  if ( $type == 1 ) {
+    $bits = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetOutputBits($pin);
+    $MODULE_ALREADY{$moduleName}->dbVNOMSetOutputBits($pin, $bits);
+  }
+}
+
+$MODULE_ALREADY{$moduleName}->dbVNOMWipeBidi;
+@pins = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetBidi;
+foreach $pin ( @pins ) {
+  $MODULE_ALREADY{$moduleName}->dbVNOMAddBidi($pin);
+  $type = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetBidiType($pin);
+  $MODULE_ALREADY{$moduleName}->dbVNOMSetBidiType($pin, $type);
+  if ( $type == 1 ) {
+    $bits = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetBidiBits($pin);
+    $MODULE_ALREADY{$moduleName}->dbVNOMSetBidiBits($pin, $bits);
+  }
+}
+
+}# sub dbfTstgenUpdateVNOMModulePins
+
+
+sub dbfTstgenUpdateVNOMModuleInsts {
+
+my $moduleName = $_[0];
+
+$MODULE_ALREADY{$moduleName}->dbVNOMWipeConn;
+
+foreach my $instName ( keys %{$PSEUDO_VINST_ALREADY{$moduleName}} ) {
+  if ( $instName eq "PIN" ) {
+    next;
+  }
+  &dbfTstgenCollectVInstWirePins($moduleName, $instName);
+  &dbfTstgenCollectVInstBusPins($moduleName, $instName);
+  &dbfTstgenMarkVInstUsedPins($moduleName, $instName);
+  my $conn = dbfTstgenCreateConnForPseudoVInst($moduleName, $instName);
+  $MODULE_ALREADY{$moduleName}->dbVNOMAddConn($conn);
+}#foreach inst
+
+$MODULE_ALREADY{$moduleName}->dbVNOMWipeLeafInst;
+$MODULE_ALREADY{$moduleName}->dbVNOMWipeHierInst;
+foreach my $instName ( keys %{$PSEUDO_VINST_ALREADY{$moduleName}} ) {
+  if ( $instName eq "PIN" ) {
+    next;
+  }
+  my $cellref = $PSEUDO_VINST_ALREADY{$moduleName}{$instName}->dbPimDBGetInstCellref;
+  print "DBG-TST : 001 : Adding $instName of $cell to $moduleName in main database\n" if ($DEBUG == 300);
+
+  if ( exists $PLDB{$cellref} ) {
+    my $orient = $PSEUDO_VINST_ALREADY{$moduleName}{$instName}->dbPimDBGetInstOrient;
+    $MODULE_ALREADY{$moduleName}->dbVNOMAddLeafInst($instName);
+    $MODULE_ALREADY{$moduleName}->dbVNOMSetLeafInstCell($instName,$cellref);
+    $MODULE_ALREADY{$moduleName}->dbVNOMSetLeafInstOrient($instName,$orient);
+  }
+  elsif ( exists $MODULE_ALREADY{$cellref} ) {
+    $MODULE_ALREADY{$moduleName}->dbVNOMAddHierInst($instName);
+    $MODULE_ALREADY{$moduleName}->dbVNOMSetHierInstCell($instName,$cellref);
+    unless ( $MODULE_ALREADY{$cellref}->dbVNOMHasParent($moduleName) ) {
+      $MODULE_ALREADY{$cellref}->dbVNOMAddParent($moduleName);
+    }
+  }
+  else {
+    print "DBG-TST : 002 : Module $cellref is neither leaf nor hier\n" if ($DEBUG == 300);
+  }
+
+}#foreach inst
+
+}# sub dbfTstgenUpdateVNOMModuleInsts
+
+
+sub dbfTstgenCollectVInstWirePins {
+
+my $moduleName = $_[0];
+my $instName = $_[1];
+my $cellref = $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBGetInstCellref;
+
+$PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBWipeInstInputWirePins();
+$PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBWipeInstOutputWirePins();
+#----------added by Mansi-----------#
+$PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBWipeInstBidiWirePins();
+
+my $pinName;
+if ( exists $PLDB{$cellref} ) {
+  my @pins = $PLDB{$cellref}->dbMdbGetWirePins;
+  foreach $pinName ( @pins ) {
+    my $type = $PLDB{$cellref}->dbMdbGetPinType($pinName);
+    if ( $type == 1 || $type == 2 ) {
+      next;  # skip power/ground
+    }
+    my $dir = $PLDB{$cellref}->dbMdbGetPinDir($pinName);
+    if ($dir == 0) {
+      $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBAddInstInputWirePin($pinName, $type);
+    }
+    elsif ($dir == 1) {
+      $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBAddInstOutputWirePin($pinName, $type);
+    }
+#---------added by Mansi-----------#
+    elsif ($dir == 2) {
+      $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBAddInstBidiWirePin($pinName, $type);
+    }
+#----------------------------------#
+  }# foreach $pinName
+}
+elsif ( exists $PSEUDO_MODULE_ALREADY{$cellref} ) {
+  my @inPins;
+  if ( $moduleName ne $cellref ) {
+    @inPins = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetInput;
+    foreach $pinName ( @inPins ) {
+      my $type = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetInputType($pinName);
+      if ($type == 0) {
+        $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBAddInstInputWirePin($pinName, 0);
+      }
+    }
+  }
+  else {  # self inst of top module
+    @inPins = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetOutput;
+    foreach $pinName ( @inPins ) {
+      my $type = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetOutputType($pinName);
+      if ($type == 0) {
+        $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBAddInstInputWirePin($pinName, 0);
+      }
+    }
+  }
+
+  my @outPins;
+  if ( $moduleName ne $cellref ) {
+    @outPins = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetOutput;
+    foreach $pinName ( @outPins ) {
+      my $type = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetOutputType($pinName);
+      if ($type == 0) {
+        $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBAddInstOutputWirePin($pinName, 0);
+      }
+    }
+  }
+  else {  # self inst of top module
+    @outPins = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetInput;
+    foreach $pinName ( @outPins ) {
+      my $type = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetInputType($pinName);
+      if ($type == 0) {
+        $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBAddInstOutputWirePin($pinName, 0);
+      }
+    }
+  }
+#----------------------------added by Mansi-------------------------------#
+  my @bidiPins;
+  if ( $moduleName ne $cellref ) {
+    @bidiPins = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetBidi;
+    foreach $pinName ( @bidiPins ) {
+      my $type = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetBidiType($pinName);
+      if ($type == 0) {
+        $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBAddInstBidiWirePin($pinName, 0);
+      }
+    }
+  }
+  else {  # self inst of top module
+    @bidiPins = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetBidi;
+    foreach $pinName ( @bidiPins ) {
+      my $type = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetBidiType($pinName);
+      if ($type == 0) {
+        $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBAddInstBidiWirePin($pinName, 0);
+      }
+    }
+  }
+#---------------------------------------------------------------------------#
+}
+
+}# sub dbfTstgenCollectVInstWirePins
+
+
+sub dbfTstgenCollectVInstBusPins {
+
+my $moduleName = $_[0];
+my $instName = $_[1];
+my $cellref = $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBGetInstCellref;
+
+$PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBWipeInstInputBusPins;
+$PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBWipeInstOutputBusPins;
+#---------------------------added by Mansi--------------------------------------#
+$PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBWipeInstBidiBusPins;
+#-------------------------------------------------------------------------------#
+if ( exists $PLDB{$cellref} ) {
+  my @pins = $PLDB{$cellref}->dbMdbGetBusPins;
+  my %PLPinHash = ();
+
+  foreach my $pinName ( @pins ) {
+    my $type = $PLDB{$cellref}->dbMdbGetPinType($pinName);
+    if ( $type == 1 || $type == 2 ) {
+      next;  # skip power/ground
+    }
+
+    my $base = $PLDB{$cellref}->dbMdbGetPinBusBaseName($pinName);
+    unless ( exists $PLPinHash{$base} ) {
+      my $dir = $PLDB{$cellref}->dbMdbGetPinDir($pinName);
+      my $bit = $PLDB{$cellref}->dbMdbGetPinBusBit($pinName);
+      $PLPinHash{$base}{D} = $dir;
+      $PLPinHash{$base}{L} = $bit;
+      $PLPinHash{$base}{H} = $bit;
+      $PLPinHash{$base}{T} = $type;
+    }
+    else {
+      my $bit = $PLDB{$cellref}->dbMdbGetPinBusBit($pinName);
+      if ( $bit < $PLPinHash{$base}{L} ) {
+        $PLPinHash{$base}{L} = $bit;
+      }
+      elsif ( $bit > $PLPinHash{$base}{H} ) {
+        $PLPinHash{$base}{H} = $bit;
+      }
+    }
+  }# foreach $pinName
+
+  foreach $base ( keys %PLPinHash ) {
+    my $dir = $PLPinHash{$base}{D};
+    my $from = $PLPinHash{$base}{L};
+    my $to = $PLPinHash{$base}{H};
+    my $type = $PLPinHash{$base}{T};
+    if ($dir == 0) {
+      $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBAddInstInputBusPin($base, $from, $to, $type);
+    }elsif ($dir == 1) {
+      $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBAddInstOutputBusPin($base, $from, $to, $type);
+    }elsif($dir == 2){ # added by Mansi
+      $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBAddInstBidiBusPin($base, $from, $to, $type);
+    }
+  }# foreach $base
+
+}
+elsif ( exists $PSEUDO_MODULE_ALREADY{$cellref} ) {
+  my @inPins = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetInput;
+  foreach my $pinName ( @inPins ) {
+    if ( 1 != $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetInputType($pinName) ) {
+      next;  # non bus
+    }
+    my $bits = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetInputBits($pinName);
+    my ($from, $to) = &utilGetBitsRange($bits);
+
+    if ( $moduleName ne $cellref ) {
+      $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBAddInstInputBusPin($pinName, $from, $to, 0);
+    }
+    else {  # self inst of top module
+      $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBAddInstOutputBusPin($pinName, $from, $to, 0);
+    }
+  }# foreach $pinName
+
+  my @outPins = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetOutput;
+  foreach my $pinName ( @outPins ) {
+    if ( 1 != $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetOutputType($pinName) ) {
+      next;  # non bus
+    }
+    my $bits = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetOutputBits($pinName);
+    my ($from, $to) = &utilGetBitsRange($bits);
+
+    if ( $moduleName ne $cellref ) {
+      $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBAddInstOutputBusPin($pinName, $from, $to, 0);
+    }
+    else {  # self inst of top module
+      $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBAddInstInputBusPin($pinName, $from, $to, 0);
+    }
+  }# foreach $pinName
+#----------------------------added by Mansi------------------------------------#
+  my @bidiPins = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetBidi;
+  foreach my $pinName ( @bidiPins ) {
+    if ( 1 != $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetBidiType($pinName) ) {
+      next;  # non bus
+    }
+    my $bits = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetBidiBits($pinName);
+    my ($from, $to) = &utilGetBitsRange($bits);
+
+    $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBAddInstBidiBusPin($pinName, $from, $to, 0);
+  }# foreach $pinName
+#------------------------------------------------------------------------------#
+
+}# if ( exists $PSEUDO_MODULE_ALREADY{$cellref} )
+
+}# sub dbfTstgenCollectVInstBusPins
+
+
+sub dbfTstgenBindPseudoVInstPins {
+
+my $moduleName = $_[0];
+my $instName = $_[1];
+my $cellref = $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBGetInstCellref;
+
+foreach my $net ( keys %{$PSEUDO_VNET_ALREADY{$moduleName}} ) {
+  my $netType = $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenGetPseudoNetType;
+  if ( $netType eq "wire" ) {
+      next;  # already split to single nets
+  }
+
+  my ($pinName, $width, $from, $to);
+  my ($sourceVInst, $fanInPin) = $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenGetPseudoNetSourceFanInList;
+  if ( $instName eq $sourceVInst ) {
+    if ( $fanInPin ne "" ) {
+      next;
+    }
+    if ( $netType ne "bus" ) {
+      $pinName = $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBGetInstNextOutputWirePin(0, $net);
+    }
+    else {
+      $width = $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenGetPseudoNetWidth;
+      ($pinName, $from, $to) =
+         $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBGetInstNextOutputBusPin($width, 0, $net);
+    }
+    if ( $pinName eq "" && exists $PSEUDO_MODULE_ALREADY{$cellref} ) {
+      $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenSetLogicalDirty(1);
+      my $pinCount = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetOutput;
+      if ( $netType ne "bus" ) {
+        $pinName = "BD0_out" . $pinCount;
+        $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenAddOutput($pinName);
+      }
+      else {
+        $pinName = "BD0_outB" . $pinCount;
+        $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenAddOutput($pinName);
+        $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenSetOutputType($pinName, 1);
+        my $bits = "\[0:" . ($width - 1) . "\]";
+        $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenSetOutputBits($pinName, $bits);
+      }
+    }
+    $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenSetPseudoNetSourceFanInList($instName, $pinName);
+  }
+  else {  #<!-- ( $instName is sink? ) -->
+    my @fanOutList = $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenGetPseudoNetSinkFanOutList;
+    my $fanOutLen = @fanOutList;
+    my $isSink = 0;
+    for (my $k = 0; $k < $fanOutLen; $k += 2) {
+      my ($sinkVInst, $fanOutPin) = ($fanOutList[$k], $fanOutList[$k + 1]);
+      if ( $instName eq $sinkVInst ) {
+        $isSink = 1;
+        $pinName = $fanOutPin;
+        last;
+      }
+    }# for k
+
+    if ( $isSink == 0 || $pinName ne "" ) {
+      next;
+    }
+    if ( $netType ne "bus" ) {
+      $pinName = $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBGetInstNextInputWirePin(0, $net);
+    }
+    else {
+      $width = $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenGetPseudoNetWidth;
+      ($pinName, $from, $to) =
+         $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBGetInstNextInputBusPin($width, 0, $net);
+    }
+    if ( $pinName eq "" && exists $PSEUDO_MODULE_ALREADY{$cellref} ) {
+      $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenSetLogicalDirty(1);
+      my $pinCount = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetInput;
+      if ( $netType ne "bus" ) {
+        $pinName = "BD0_in" . $pinCount;
+        $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenAddInput($pinName);
+      }
+      else {
+        $pinName = "BD0_inB" . $pinCount;
+        $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenAddInput($pinName);
+        $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenSetInputType($pinName, 1);
+        my $bits = "\[0:" . ($width - 1) . "\]";
+        $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenSetInputBits($pinName, $bits);
+      }
+    }
+    $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenSetPseudoNetSinkFanOutList($instName, $pinName);
+  }# if ( $instName is sink )
+}# foreach $net
+
+}# sub dbfTstgenBindPseudoVInstPins
+
+
+sub dbfTstgenMarkVInstUsedPins {
+
+my $moduleName = $_[0];
+my $instName = $_[1];
+
+#
+#<!-- update inst pin's USED field based on fan in/out pins in PSEUDO_VNET_ALREADY -->
+#
+foreach my $net ( keys %{$PSEUDO_VNET_ALREADY{$moduleName}} ) {
+  my $netType = $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenGetPseudoNetType;
+  if ( $netType eq "wire" ) {
+      next;  # already split to single nets
+  }
+  my ($sourceVInst, $fanInPin) = $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenGetPseudoNetSourceFanInList;
+  my @fanOutList = $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenGetPseudoNetSinkFanOutList;
+  my $fanOutLen = @fanOutList;
+  my $netName = "";
+  if ( $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenGetPseudoNetIsTopConn ) {
+    $netName = $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenGetPseudoNetTopConnPin;
+  }
+  if ( $netName eq "" ) {
+    $netName = $net;  #<!-- guarantee non empty net name -->
+  }
+
+  if ($instName eq $sourceVInst) {
+    if($netType ne "bus"){
+       $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBSetInstOutputWirePinUsed($fanInPin, $netName);
+  #--------------------------------------------added by Mansi---------------------------------------------#
+       if ( ! $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBInstHasOutputWirePin($fanInPin) ) {
+         $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBSetInstBidiWirePinUsed($fanInPin, $netName);
+       }
+  #-------------------------------------------------------------------------------------------------------#
+    }else{
+      $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBSetInstOutputBusPinUsed($fanInPin, $netName);
+  #-------------------------------------------added by Mansi----------------------------------------------#
+      if ( ! $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBInstHasOutputBusPin($fanInPin) ) {
+        $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBSetInstBidiBusPinUsed($fanInPin, $netName);
+      }
+  #-------------------------------------------------------------------------------------------------------#
+    }
+  }
+  for (my $k = 0; $k < $fanOutLen; $k += 2) {
+    my ($sinkVInst,$fanOutPin) = ($fanOutList[$k], $fanOutList[$k + 1]);
+    if ($instName eq $sinkVInst) {
+        $netName = &dbfTstgenConvertTieLoHiNetToBitSeq($moduleName, $netName);
+        if($netType ne "bus"){
+           $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBSetInstInputWirePinUsed($fanOutPin, $netName);
+          #----------------------------------addded by Mansi----------------------------------------------#
+          if ( ! $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBInstHasInputWirePin($fanOutPin) ) {
+            $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBSetInstBidiWirePinUsed($fanOutPin, $netName);
+          }
+          #-----------------------------------------------------------------------------------------------#
+        }else{
+           $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBSetInstInputBusPinUsed($fanOutPin, $netName);
+          #---------------------------------added by Mansi------------------------------------------------#
+          if ( ! $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBInstHasInputBusPin($fanOutPin) ) {
+            $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBSetInstBidiBusPinUsed($fanOutPin, $netName);
+          }
+          #-----------------------------------------------------------------------------------------------#
+       }
+    }
+  }# for $k
+}#foreach $net
+
+}# sub dbfTstgenMarkVInstUsedPins
+
+
+sub dbfTstgenConvertTieLoHiNetToBitSeq {
+
+my $moduleName = $_[0];
+my $netName = $_[1];
+
+#<!-- exclude unconnected pins, top conn net names -->
+unless ( length($netName) > 0 && exists $PSEUDO_VNET_ALREADY{$moduleName}->{$netName} ) {
+  return $netName;
+}
+
+my ($sourceVInst, $fanInPin) = $PSEUDO_VNET_ALREADY{$moduleName}->{$netName}->dbaTstgenGetPseudoNetSourceFanInList;
+$sourceVInst =~ s/^\s*\"\s*(.*)\s*\"\s*$/\1/;  # get rid of enclosing quotes if neccessary
+unless ( $sourceVInst =~ m/^\d*'b[01]+$/ ) {
+  return $netName;
+}
+
+#<!-- in tie lo/hi nets, replace net name with bits -->
+my $lastBit = $sourceVInst;
+$lastBit =~ s/^.*([01])$/\1/;
+my $type = $PSEUDO_VNET_ALREADY{$moduleName}->{$netName}->dbaTstgenGetPseudoNetType;
+if ( $type ne "bus" ) {
+  $netName = "1'b" . $lastBit;
+}
+else {
+  my $width = $PSEUDO_VNET_ALREADY{$moduleName}->{$netName}->dbaTstgenGetPseudoNetWidth;
+  if ( $width < 1 ) {
+    ($width = $sourceVInst) =~ s/'b[01]+$//;
+  }
+  my $bits = $sourceVInst;
+  $bits =~ s/^\d*'b//;
+  while ( length($bits) < $width ) {
+    $bits .= $lastBit;
+  }
+  $netName = $width . "'b" . $bits;
+}
+return $netName;
+}# sub dbfTstgenConvertTieLoHiNetToBitSeq
+
+
+sub dbfTstgenCreateConnForPseudoVInst {
+
+my $moduleName = $_[0];
+my $instName = $_[1];
+
+#
+#<!-- generate conn line based on pin vs net in PSEUDO_VINST_ALREADY -->
+#
+my $cellref = $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBGetInstCellref;
+my $line = $cellref . " " . $instName . " (";
+
+my @pinList = $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBGetInstPinConnList;
+my $pinListLen = @pinList;
+my $instPinCount = 0;
+for (my $i = 0; $i < $pinListLen; $i += 2) {
+  my ($pinName, $netName) = ($pinList[$i], $pinList[$i + 1]);
+  my $pin = "\." . $pinName . "(" . $netName. ")";
+  if ($instPinCount == 0) {
+    $line = $line . $pin;
+  }
+  else {
+    $line = $line . ", " . $pin;
+  }
+  $instPinCount++;
+}
+
+$line = $line . ")";
+return $line;
+
+}# sub dbfTstgenCreateConnForPseudoVInst
+
+
+sub dbfTstgenGetPseudoModuleConn {
+
+my $moduleName = $_[0];
+
+my @conns = ();
+foreach my $instName ( keys %{$PSEUDO_VINST_ALREADY{$moduleName}} ) {
+  if ( $instName ne "PIN" ) {
+    my $conn = dbfTstgenCreateConnForPseudoVInst($moduleName, $instName);
+    push(@conns, $conn);
+  }
+}#foreach inst
+return @conns;
+
+}# sub dbfTstgenGetPseudoModuleConn
+
+
+sub dbfTstgenCreatePseudoInst {
+my $parent = shift @_;
+my $inst = shift @_;
+my $cellref = shift @_;
+my $status = shift @_;
+my $orient = shift @_;
+my @bbox = @_;
+
+if($bbox[0] eq "" && $bbox[1] eq ""){
+   $status = "UNPLACED";
+} else { 
+   $status = "PLACED";
+}
+
+print "INFO-TST : 001 : llx $bbox[0], lly $bbox[1], urx $bbox[2], ury $bbox[3], status $status\n";
+print "INFO-TST : 002 : Creating instance $inst of cell $cellref in $parent at @bbox\n";
+$PSEUDO_MODULE_ALREADY{$parent}->dbaTstgenSetLogicalDirty(1);
+$PSEUDO_VINST_ALREADY{$parent}{$inst} = PseudoInstanceModelDB::new();
+$PSEUDO_VINST_ALREADY{$parent}{$inst}->dbPimDBSetParentModule($parent);
+$PSEUDO_VINST_ALREADY{$parent}{$inst}->dbPimDBSetInstName($inst);
+$PSEUDO_VINST_ALREADY{$parent}{$inst}->dbPimDBSetInstCellref($cellref);
+$PSEUDO_VINST_ALREADY{$parent}{$inst}->dbPimDBSetInstRelBbox(@bbox);
+$PSEUDO_VINST_ALREADY{$parent}{$inst}->dbPimDBSetInstStatus($status);
+$PSEUDO_VINST_ALREADY{$parent}{$inst}->dbPimDBSetInstOrient($orient);
+
+}#sub dbfTstgenCreatePseudoInst
+
+
+sub dbfTstgenLoadVNOMPins {
+
+my $moduleName = $_[0];
+my $moduleType = $MODULE_ALREADY{$moduleName}->dbVNOMGetClass;
+print "INFO-TST : 001 : Loading pseudo module $moduleName type $moduleType\n";
+$PSEUDO_MODULE_ALREADY{$moduleName} = PseudoModuleModelDB::new();
+$PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetLogicalDirty(0);
+$PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetModuleName($moduleName);
+$PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetClass($moduleType);
+
+my $pin;
+my @pins = $MODULE_ALREADY{$moduleName}->dbVNOMGetInput;
+foreach $pin ( @pins ) {
+  $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenAddInput($pin);
+  my $type = $MODULE_ALREADY{$moduleName}->dbVNOMGetInputType($pin);
+  $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetInputType($pin, $type);
+  if ( $type == 1 ) {
+    my $bits = $MODULE_ALREADY{$moduleName}->dbVNOMGetInputBits($pin);
+    $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetInputBits($pin, $bits);
+  }
+}
+
+@pins = $MODULE_ALREADY{$moduleName}->dbVNOMGetOutput;
+foreach $pin ( @pins ) {
+  $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenAddOutput($pin);
+  my $type = $MODULE_ALREADY{$moduleName}->dbVNOMGetOutputType($pin);
+  $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetOutputType($pin, $type);
+  if ( $type == 1 ) {
+    my $bits = $MODULE_ALREADY{$moduleName}->dbVNOMGetOutputBits($pin);
+    $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetOutputBits($pin, $bits);
+  }
+}
+
+@pins = $MODULE_ALREADY{$moduleName}->dbVNOMGetBidi;
+foreach $pin ( @pins ) {
+  $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenAddBidi($pin);
+  my $type = $MODULE_ALREADY{$moduleName}->dbVNOMGetBidiType($pin);
+  $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetBidiType($pin, $type);
+  if ( $type == 1 ) {
+    my $bits = $MODULE_ALREADY{$moduleName}->dbVNOMGetBidiBits($pin);
+    $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetBidiBits($pin, $bits);
+  }
+}
+
+}#sub dbfTstgenLoadVNOMPins
+
+
+sub dbfTstgenLoadVNOMInsts {
+
+my $moduleName = $_[0];
+
+my ($inst, $cellref);
+my @insts = $MODULE_ALREADY{$moduleName}->dbVNOMGetHierInst;
+foreach $inst ( @insts ) {
+  $PSEUDO_VINST_ALREADY{$moduleName}{$inst} = PseudoInstanceModelDB::new();
+  $PSEUDO_VINST_ALREADY{$moduleName}{$inst}->dbPimDBSetParentModule($moduleName);
+  $PSEUDO_VINST_ALREADY{$moduleName}{$inst}->dbPimDBSetInstName($inst);
+  $cellref = $MODULE_ALREADY{$moduleName}->dbVNOMGetHierInstCell($inst);
+  $PSEUDO_VINST_ALREADY{$moduleName}{$inst}->dbPimDBSetInstCellref($cellref);
+}
+
+@insts = $MODULE_ALREADY{$moduleName}->dbVNOMGetLeafInst;
+foreach $inst ( @insts ) {
+  $PSEUDO_VINST_ALREADY{$moduleName}{$inst} = PseudoInstanceModelDB::new();
+  $PSEUDO_VINST_ALREADY{$moduleName}{$inst}->dbPimDBSetParentModule($moduleName);
+  $PSEUDO_VINST_ALREADY{$moduleName}{$inst}->dbPimDBSetInstName($inst);
+  $cellref = $MODULE_ALREADY{$moduleName}->dbVNOMGetLeafInstCell($inst);
+  $PSEUDO_VINST_ALREADY{$moduleName}{$inst}->dbPimDBSetInstCellref($cellref);
+  &dbfTstgenCollectVInstBusPins($moduleName, $inst);
+}
+
+}#sub dbfTstgenLoadVNOMInsts
+
+
+sub dbfTstgenLoadVNOMNets {
+
+my $moduleName = $_[0];
+
+my @conns = $MODULE_ALREADY{$moduleName}->dbVNOMGetConn;
+foreach my $conn ( @conns ) {
+
+  #<!-- remove leading white spaces -->
+  $conn =~ s/^\s+//;
+  #<!-- remove trailing white spaces, and possibly semicolon -->
+  $conn =~ s/\s*\;?\s*$//;
+
+  my $instCell = $conn;
+  $instCell =~ s/\(.+$//;
+
+  #<!-- keep only list of pin-net pairs -->
+  $conn =~ s/\s*\(\s*/\|/;   # mark leftmost L-paren
+  $conn =~ s/^.*\|//;        # remove from left up to the mark
+
+  my ($cellref, $inst) = ( split(/\s+/, $instCell ))[0,1];
+  if (( $MODULE_ALREADY{$moduleName}->dbVNOMHasHierInst($inst) ) 
+     || ( $MODULE_ALREADY{$moduleName}->dbVNOMHasLeafInst($inst) )) {
+  unless ( exists $PSEUDO_VINST_ALREADY{$moduleName}{$inst} ) {
+    print "DBG-TST : 001 : Creating VInst $inst cell $cellref from conn line\n" if ($DEBUG == 328);
+    $PSEUDO_VINST_ALREADY{$moduleName}{$inst} = PseudoInstanceModelDB::new();
+    $PSEUDO_VINST_ALREADY{$moduleName}{$inst}->dbPimDBSetParentModule($moduleName);
+    $PSEUDO_VINST_ALREADY{$moduleName}{$inst}->dbPimDBSetInstName($inst);
+    $PSEUDO_VINST_ALREADY{$moduleName}{$inst}->dbPimDBSetInstCellref($cellref);
+  }
+
+  #<!-- remove all white spaces -->
+  $conn =~ s/\s+//g;
+  #<!-- remove trailing R-parens -->
+  $conn =~ s/\)+$//;
+
+  my @nets = split(/\)\,/, $conn);
+  my $pinCount = @nets;
+  for ( my $i = 0 ; $i < $pinCount ; $i++ ) {
+    my ($pin, $net) = (split(/\(/, $nets[$i]))[0,1];
+    if ( $net eq "" ) {
+      next;
+    }
+
+    $pin =~ s/^\.//;
+    print "DBG-TST : 002 : Extracted pin $pin net $net from pair\n" if ($DEBUG == 328);
+
+#<!-- Determine pin type (single or bus) and direction (input or output)
+#    Leaf cells: bus pins - hashed to PSEUDO_VINST_ALREADY;
+#               wire pins - use PLDB info.
+#    Hier cells: use info in PSEUDO_MODULE_ALREADY.
+# -->
+    my ($type, $dir, $width, $bits, $from, $to);
+    if ( exists $PLDB{$cellref} ) {
+      if ( $PSEUDO_VINST_ALREADY{$moduleName}{$inst}->dbPimDBInstHasInputBusPin($pin) ) {
+        $type = "bus";
+        $dir = 0;
+        $bits = $PSEUDO_VINST_ALREADY{$moduleName}{$inst}->dbPimDBGetInstInputBusBits($pin);
+        ($from, $to) = &utilGetBitsRange($bits);
+        $width = 1 + abs ($to - $from);
+      }elsif ( $PSEUDO_VINST_ALREADY{$moduleName}{$inst}->dbPimDBInstHasOutputBusPin($pin) ) {
+        $type = "bus";
+        $dir = 1;
+        $bits = $PSEUDO_VINST_ALREADY{$moduleName}{$inst}->dbPimDBGetInstOutputBusBits($pin);
+        ($from, $to) = &utilGetBitsRange($bits);
+        $width = 1 + abs ($to - $from);
+      }elsif($PSEUDO_VINST_ALREADY{$moduleName}{$inst}->dbPimDBInstHasBidiBusPin($pin)){    #added by Mansi
+        $type = "bus";
+        $dir = 2;
+        $bits = $PSEUDO_VINST_ALREADY{$moduleName}{$inst}->dbPimDBGetInstBidiBusBits($pin);
+        ($from, $to) = &utilGetBitsRange($bits);
+        $width = 1 + abs ($to - $from);
+      }else {
+        $type = "single";
+        $dir = $PLDB{$cellref}->dbMdbGetPinDir($pin);
+        $width = 1;
+      }
+    }
+    elsif ( exists $PSEUDO_MODULE_ALREADY{$cellref} ) {
+      if ( $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenHasInput($pin) ) {
+        $dir = 0;
+        if ( 1 == $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetInputType($pin) ) {
+          $type = "bus";
+          $bits = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetInputBits($pin);
+          ($from, $to) = &utilGetBitsRange($bits);
+          $width = 1 + abs ($to - $from);
+        }
+        else {
+          $type = "single";
+          $width = 1;
+        }
+      }
+      elsif ( $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenHasOutput($pin) ) {
+        $dir = 1;
+        if ( 1 == $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetOutputType($pin) ) {
+          $type = "bus";
+          $bits = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetOutputBits($pin);
+          ($from, $to) = &utilGetBitsRange($bits);
+          $width = 1 + abs ($to - $from);
+        }
+        else {
+          $type = "single";
+          $width = 1;
+        }
+      }
+      elsif ( $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenHasBidi($pin) ) {
+        $dir = 2;
+        if ( 1 == $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetBidiType($pin) ) {
+          $type = "bus";
+          $bits = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetBidiBits($pin);
+          ($from, $to) = &utilGetBitsRange($bits);
+          $width = 1 + abs ($to - $from);
+        }
+        else {
+          $type = "single";
+          $width = 1;
+        }
+      }
+    }# if ( hier cell )
+
+    unless ( defined $type ) {    #<!-- make best possible guess -->
+      if ( $net =~ m/\{.*\}/ ) {
+        $type = "bus";
+        my @subnets = split(/\s*\,\s*/, $net);
+        $width = @subnets;
+        $bits = "\[0:" . ($width - 1) . "\]";
+      }
+      elsif ( $net =~ m/\d*'b[01]+/ ) {
+        ( $width = $net ) =~ s/'b.+$//;
+        if ( $width > 1 ) {
+          $type = "bus";
+        }
+        else {
+          $type = "single";
+        }
+      }
+      else {
+        $type = "single";
+        $width = 1;
+      }
+    }
+
+    my @subpins = ();
+    my @subnets = ();
+    if ( $type eq "bus" && $net =~ m/\{.*\}/ ) {
+      $width = 1;
+      @subpins = utilSplitBusBits("$pin$bits");
+      $net =~ s/^\s*\{\s*//;
+      $net =~ s/\s*\}\s*$//;
+      @subnets = split(/\s*\,\s*/, $net);
+    }
+    else {
+      push(@subpins, $pin);
+      push(@subnets, $net);
+    }
+
+    my $i = 0;
+    foreach my $spin ( @subpins ) {
+      my $snet = $subnets[$i++];
+      unless ( defined $snet && $snet ne "" ) {
+        next;
+      }
+
+      my $isNetTieLoHi = 0;
+      my $sourceVInst;
+      if ( $snet =~ m/\d*'b[01]+/ ) {
+        $isNetTieLoHi = 1;
+        ($sourceVInst = $snet) =~ s/^\d*'b/'b/;
+        my $count = keys( %{$PSEUDO_VNET_ALREADY{$moduleName}} ) ;
+        $snet = "BD0_tie" . $count;
+      }
+  
+      unless ( exists $PSEUDO_VNET_ALREADY{$moduleName}->{$snet} ) {
+        $PSEUDO_VNET_ALREADY{$moduleName}->{$snet} = PseudoNetModelDB::new();
+        $PSEUDO_VNET_ALREADY{$moduleName}->{$snet}->dbaTstgenSetPseudoNetPrefix($snet);
+        $PSEUDO_VNET_ALREADY{$moduleName}->{$snet}->dbaTstgenSetPseudoNetParentModule($moduleName);
+        $PSEUDO_VNET_ALREADY{$moduleName}->{$snet}->dbaTstgenSetPseudoNetType($type);
+        $PSEUDO_VNET_ALREADY{$moduleName}->{$snet}->dbaTstgenSetPseudoNetWidth($width);
+      }
+  
+      if ( $isNetTieLoHi ) {
+        $PSEUDO_VNET_ALREADY{$moduleName}->{$snet}->dbaTstgenSetPseudoNetSourceFanInList($sourceVInst, "");
+        $PSEUDO_VNET_ALREADY{$moduleName}->{$snet}->dbaTstgenSetPseudoNetSinkFanOutList($inst, $spin);
+        next;
+      }
+  
+      my $isTopConn = 0;
+      if ( $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenHasInput($snet) ) {
+        $isTopConn = 1;  # PIN is source;
+        $PSEUDO_VNET_ALREADY{$moduleName}->{$snet}->dbaTstgenSetPseudoNetTopConnPin($snet);
+      }
+      elsif ( $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenHasOutput($snet) ) {
+        $isTopConn = 2;  # PIN is sink;
+        $PSEUDO_VNET_ALREADY{$moduleName}->{$snet}->dbaTstgenSetPseudoNetTopConnPin($snet);
+      }
+  
+      if ( $dir == 1 ) {
+        ############## Added by aditya to avoid SrcList overwriting (issue with spice ) ################
+        #$PSEUDO_VNET_ALREADY{$moduleName}->{$snet}->dbaTstgenSetPseudoNetSourceFanInList($inst, $spin);
+        my @srcList = $PSEUDO_VNET_ALREADY{$moduleName}->{$snet}->dbaTstgenGetPseudoNetSourceFanInList;
+        if(@srcList == 0 || $srcList[0] eq ""){  # by default srcList[0] and srcList[1] are null string
+           $PSEUDO_VNET_ALREADY{$moduleName}->{$snet}->dbaTstgenSetPseudoNetSourceFanInList($inst, $spin);
+        }else{
+           $PSEUDO_VNET_ALREADY{$moduleName}->{$snet}->dbaTstgenSetPseudoNetSinkFanOutList($inst, $spin);
+           if ( $isTopConn == 1 ) {
+             $PSEUDO_VNET_ALREADY{$moduleName}->{$snet}->dbaTstgenSetPseudoNetSourceFanInList("PIN", $snet);
+             $PSEUDO_VNET_ALREADY{$moduleName}->{$snet}->dbaTstgenSetPseudoNetIsTopConn(1);
+           }
+        }
+        #####################################################################################
+        if ( $isTopConn == 2 ) {
+          $PSEUDO_VNET_ALREADY{$moduleName}->{$snet}->dbaTstgenSetPseudoNetSinkFanOutList("PIN", $snet);
+          $PSEUDO_VNET_ALREADY{$moduleName}->{$snet}->dbaTstgenSetPseudoNetIsTopConn(1);
+        }
+      }
+      elsif ( $dir == 0 ) {
+        $PSEUDO_VNET_ALREADY{$moduleName}->{$snet}->dbaTstgenSetPseudoNetSinkFanOutList($inst, $spin);
+        if ( $isTopConn == 1 ) {
+          $PSEUDO_VNET_ALREADY{$moduleName}->{$snet}->dbaTstgenSetPseudoNetSourceFanInList("PIN", $snet);
+          $PSEUDO_VNET_ALREADY{$moduleName}->{$snet}->dbaTstgenSetPseudoNetIsTopConn(1);
+        }
+        #----------------------------------------added by Mansi------------------------------------------#
+        if ( $isTopConn == 2 ) {
+          $PSEUDO_VNET_ALREADY{$moduleName}->{$snet}->dbaTstgenSetPseudoNetSinkFanOutList("PIN", $snet);
+          $PSEUDO_VNET_ALREADY{$moduleName}->{$snet}->dbaTstgenSetPseudoNetIsTopConn(1);
+        }
+        if ( $isTopConn == 3 ) {
+          $PSEUDO_VNET_ALREADY{$moduleName}->{$snet}->dbaTstgenSetPseudoNetSinkFanOutList("PIN", $snet);
+          $PSEUDO_VNET_ALREADY{$moduleName}->{$snet}->dbaTstgenSetPseudoNetIsTopConn(1);
+        }
+        #------------------------------------------------------------------------------------------------#
+      }elsif($dir == 2){
+         $PSEUDO_VNET_ALREADY{$moduleName}->{$snet}->dbaTstgenSetPseudoNetSinkFanOutList($inst, $spin);
+        if ( $isTopConn == 3 ) {
+          $PSEUDO_VNET_ALREADY{$moduleName}->{$snet}->dbaTstgenSetPseudoNetSinkFanOutList("PIN", $snet);
+          $PSEUDO_VNET_ALREADY{$moduleName}->{$snet}->dbaTstgenSetPseudoNetIsTopConn(1);
+        }
+      }
+    }# for subpin
+  }# for pin
+  }#if exists in hierInst of leafInst
+}# for $conn
+
+foreach my $net ( keys %{$PSEUDO_VNET_ALREADY{$moduleName}} ) {
+  if ( $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenGetPseudoNetIsTopConn ) {
+    my $inst = "PIN";
+    $PSEUDO_VINST_ALREADY{$moduleName}{$inst} = PseudoInstanceModelDB::new();
+    $PSEUDO_VINST_ALREADY{$moduleName}{$inst}->dbPimDBSetParentModule($moduleName);
+    $PSEUDO_VINST_ALREADY{$moduleName}{$inst}->dbPimDBSetInstName($inst);
+    $PSEUDO_VINST_ALREADY{$moduleName}{$inst}->dbPimDBSetInstCellref($moduleName);
+    last;
+  }
+}
+#--------------------------------------------added by Mansi-------------------------------------------#
+foreach my $net (keys %{$PSEUDO_VNET_ALREADY{$moduleName}}){
+  my @srcList = $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenGetPseudoNetSourceFanInList;
+  if($srcList[0] eq ""){
+    my @fanOutList = $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenGetPseudoNetSinkFanOutList; 
+    my $fanOutLen = @fanOutList;
+    for(my $i=0;$i<$fanOutLen;$i+= 2){
+      my($sinkVInst, $fanOutPin) = ($fanOutList[$i], $fanOutList[$i+1]);
+      my $cellref = "";
+      if(exists $PSEUDO_VINST_ALREADY{$moduleName}{$sinkVInst}){
+        $cellref = $PSEUDO_VINST_ALREADY{$moduleName}{$sinkVInst}->dbPimDBGetInstCellref;
+      }
+      if(exists $PLDB{$cellref}){
+        my $dir = $PLDB{$cellref}->dbMdbGetPinDir($fanOutPin); 
+        if($dir == 2){
+          $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenSetPseudoNetSourceFanInList($sinkVInst,$fanOutPin);
+          $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenRemovePseudoNetSinkFanOutList($sinkVInst,$fanOutPin);
+          last;
+        }
+      }elsif(exists $PSEUDO_MODULE_ALREADY{$cellref}){
+        if($PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenHasBidi($fanOutPin)){
+          $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenSetPseudoNetSourceFanInList($sinkVInst,$fanOutPin);
+          $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenRemovePseudoNetSinkFanOutList($sinkVInst,$fanOutPin);
+          last;
+        }
+      } 
+    }#for
+  }
+}#foreach
+
+}#sub dbfTstgenLoadVNOMNets
+
+
+sub dbfTstgenSetupPseudoConn {
+
+my $moduleName = $_[0];
+
+&dbfTstgenSplitWireNets($moduleName);
+
+my $hasTopConn = 0;
+foreach my $net ( keys %{$PSEUDO_VNET_ALREADY{$moduleName}} ) {
+  if ( $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenGetPseudoNetIsTopConn ) {
+    $hasTopConn = 1;
+    last;
+  }
+}#foreach
+
+if ( $hasTopConn ) {
+  unless ( exists $PSEUDO_VINST_ALREADY{$moduleName}->{"PIN"} ) {
+    &dbfTstgenCreatePseudoInst($moduleName, "PIN", $moduleName);
+  }
+  &dbfTstgenCollectVInstWirePins($moduleName, "PIN");
+  &dbfTstgenCollectVInstBusPins($moduleName, "PIN");
+  &dbfTstgenMarkVInstUsedPins($moduleName, "PIN");
+  &dbfTstgenBindNamedTopConnPins($moduleName);
+  &dbfTstgenBindAnonTopConnPins($moduleName);
+}
+
+foreach my $instName ( keys %{$PSEUDO_VINST_ALREADY{$moduleName}} ) {
+  if ( $instName eq "PIN" ) {
+    next;
+  }
+  &dbfTstgenCollectVInstWirePins($moduleName, $instName);
+  &dbfTstgenCollectVInstBusPins($moduleName, $instName);
+  &dbfTstgenMarkVInstUsedPins($moduleName, $instName);
+  &dbfTstgenBindPseudoVInstPins($moduleName, $instName);
+}#foreach inst
+
+}# sub dbfTstgenSetupPseudoConn
+
+
+sub dbfTstgenBindNamedTopConnPins {
+
+my $module = $_[0];
+
+foreach my $net ( keys %{$PSEUDO_VNET_ALREADY{$module}} ) {
+  my $type = $PSEUDO_VNET_ALREADY{$module}->{$net}->dbaTstgenGetPseudoNetType;
+  unless ( $PSEUDO_VNET_ALREADY{$module}->{$net}->dbaTstgenGetPseudoNetIsTopConn &&
+           $type ne "wire" ) {
+    next;
+  }
+
+  my $topConnPin = $PSEUDO_VNET_ALREADY{$module}->{$net}->dbaTstgenGetPseudoNetTopConnPin;
+  if ( $topConnPin eq "" ) {
+    next;
+  }
+
+  #<!-- make sure pin with same name exists in top module, otherwise create it -->
+
+  my $isPINSource = 0;
+  my ($sourceVInst, $fanInPin) = $PSEUDO_VNET_ALREADY{$module}->{$net}->dbaTstgenGetPseudoNetSourceFanInList;
+  if ( $sourceVInst eq "PIN" ) {
+    $isPINSource = 1;
+  }
+
+  if ( $type eq "single" ) {
+    if ( $isPINSource ) {
+      if ( $PSEUDO_VINST_ALREADY{$module}->{"PIN"}->dbPimDBInstHasInputWirePin($topConnPin) ) {
+        $PSEUDO_VINST_ALREADY{$module}->{"PIN"}->dbPimDBSetInstInputWirePinUsed($topConnPin, $net);
+      }
+      else {
+        $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenSetLogicalDirty(1);
+        $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenAddInput($topConnPin);
+      }
+    }
+    else {  #<!-- ( NOT $isPINSource ) -->
+      if ( $PSEUDO_VINST_ALREADY{$module}->{"PIN"}->dbPimDBInstHasOutputWirePin($topConnPin) ) {
+        $PSEUDO_VINST_ALREADY{$module}->{"PIN"}->dbPimDBSetInstOutputWirePinUsed($topConnPin, $net);
+      }
+      else {
+        $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenSetLogicalDirty(1);
+        $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenAddOutput($topConnPin);
+      }
+    }
+  }
+  elsif ( $type eq "bus" ) {
+    my $busWidth = $PSEUDO_VNET_ALREADY{$module}->{$net}->dbaTstgenGetPseudoNetWidth;
+    if ( $isPINSource ) {
+      if ( $PSEUDO_VINST_ALREADY{$module}->{"PIN"}->dbPimDBInstHasInputBusPin($topConnPin) ) {
+        if ( $PSEUDO_VINST_ALREADY{$module}->{"PIN"}->dbPimDBGetInstInputBusWidth($topConnPin)
+               != $busWidth ) {
+          print "WARN-TST : 001 : width of bus net $topConnPin inconsistent with width of top pin\n";
+          print "WARN-TST : 002 : input bus pin width $busWidth will be assumed\n";
+        }
+        $PSEUDO_VINST_ALREADY{$module}->{"PIN"}->dbPimDBSetInstInputBusPinUsed($topConnPin, $net);
+      }
+      else {
+        $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenSetLogicalDirty(1);
+        $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenAddInput($topConnPin);
+        $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenSetInputType($topConnPin, 1);
+        my $bits = "\[0:" . ($busWidth - 1) . "\]";
+        $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenSetInputBits($topConnPin, $bits);
+      }
+    }
+    else {  #<!-- ( NOT $isPINSource ) -->
+      if ( $PSEUDO_VINST_ALREADY{$module}->{"PIN"}->dbPimDBInstHasOutputBusPin($topConnPin) ) {
+        if ( $PSEUDO_VINST_ALREADY{$module}->{"PIN"}->dbPimDBGetInstOutputBusWidth($topConnPin)
+               != $busWidth ) {
+          print "WARN-TST : 003 : width of bus net $topConnPin inconsistent with width of top pin\n";
+          print "WARN-TST : 004 : output bus pin width $busWidth will be assumed\n";
+        }
+        $PSEUDO_VINST_ALREADY{$module}->{"PIN"}->dbPimDBSetInstOutputBusPinUsed($topConnPin, $net);
+      }
+      else {
+        $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenSetLogicalDirty(1);
+        $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenAddOutput($topConnPin);
+        $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenSetOutputType($topConnPin, 1);
+        my $bits = "\[0:" . ($busWidth - 1) . "\]";
+        $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenSetOutputBits($topConnPin, $bits);
+      }
+    }
+  }# if ( $type eq "bus" )
+}# foreach net
+
+}# sub dbfTstgenBindNamedTopConnPins
+
+
+sub dbfTstgenBindAnonTopConnPins {
+
+my $module = $_[0];
+
+foreach my $net ( keys %{$PSEUDO_VNET_ALREADY{$module}} ) {
+  my $type = $PSEUDO_VNET_ALREADY{$module}->{$net}->dbaTstgenGetPseudoNetType;
+  unless ( $PSEUDO_VNET_ALREADY{$module}->{$net}->dbaTstgenGetPseudoNetIsTopConn &&
+           $type ne "wire" ) {
+    next;
+  }
+
+  my $topConnPin = $PSEUDO_VNET_ALREADY{$module}->{$net}->dbaTstgenGetPseudoNetTopConnPin;
+  if ( $topConnPin ne "" ) {
+    next;
+  }
+
+  my $isPINSource = 0;
+  my ($sourceVInst, $fanInPin) = $PSEUDO_VNET_ALREADY{$module}->{$net}->dbaTstgenGetPseudoNetSourceFanInList;
+  if ( $sourceVInst eq "PIN" ) {
+    $isPINSource = 1;
+  }
+
+  if ( $type eq "single" ) {
+    if ( $isPINSource ) {
+      $topConnPin = $PSEUDO_VINST_ALREADY{$module}->{"PIN"}->dbPimDBGetInstNextInputWirePin(0, $net);
+      if ( $topConnPin eq "" ) {
+        my $pinCount = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetInput;
+        $topConnPin = "BD0_IN" . $pinCount;
+        $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenSetLogicalDirty(1);
+        $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenAddInput($topConnPin);
+      }
+    }
+    else {  #<!-- ( NOT $isPINSource ) -->
+      $topConnPin = $PSEUDO_VINST_ALREADY{$module}->{"PIN"}->dbPimDBGetInstNextOutputWirePin(0, $net);
+      if ( $topConnPin eq "" ) {
+        my $pinCount = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetOutput;
+        $topConnPin = "BD0_OUT" . $pinCount;
+        $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenSetLogicalDirty(1);
+        $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenAddOutput($topConnPin);
+      }
+    }
+  }
+  elsif ( $type eq "bus" ) {
+    my $busWidth = $PSEUDO_VNET_ALREADY{$module}->{$net}->dbaTstgenGetPseudoNetWidth;
+    my ($from, $to);
+    if ( $isPINSource ) {
+      ($topConnPin, $from, $to) =
+         $PSEUDO_VINST_ALREADY{$module}->{"PIN"}->dbPimDBGetInstNextInputBusPin($busWidth, 0, $net);
+      if ( $topConnPin eq "" ) {
+        my $pinCount = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetInput;
+        $topConnPin = "BD0_INB" . $pinCount;
+        $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenSetLogicalDirty(1);
+        $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenAddInput($topConnPin);
+        $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenSetInputType($topConnPin, 1);
+        my $bits = "\[0:" . ($busWidth - 1) . "\]";
+        $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenSetInputBits($topConnPin, $bits);
+      }
+    }
+    else {  #<!-- ( NOT $isPINSource ) -->
+      ($topConnPin, $from, $to) =
+         $PSEUDO_VINST_ALREADY{$module}->{"PIN"}->dbPimDBGetInstNextOutputBusPin($busWidth, 0, $net);
+      if ( $topConnPin eq "" ) {
+        my $pinCount = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetOutput;
+        $topConnPin = "BD0_OUTB" . $pinCount;
+        $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenSetLogicalDirty(1);
+        $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenAddOutput($topConnPin);
+        $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenSetOutputType($topConnPin, 1);
+        my $bits = "\[0:" . ($busWidth - 1) . "\]";
+        $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenSetOutputBits($topConnPin, $bits);
+      }
+    }
+  }# if ( $type eq "bus" )
+
+  $PSEUDO_VNET_ALREADY{$module}->{$net}->dbaTstgenSetPseudoNetTopConnPin($topConnPin);
+}# foreach net
+
+}# sub dbfTstgenBindAnonTopConnPins
+
+
+sub dbfTstgenSplitWireNets {
+
+my $module = $_[0];
+
+foreach my $net ( keys %{$PSEUDO_VNET_ALREADY{$module}} ) {
+  if ( $PSEUDO_VNET_ALREADY{$module}->{$net}->dbaTstgenGetPseudoNetType ne "wire" ) {
+    next;
+  }
+
+  my ($sourceVInst, $fanInPin) = $PSEUDO_VNET_ALREADY{$module}->{$net}->dbaTstgenGetPseudoNetSourceFanInList;
+  my @fanOutList = $PSEUDO_VNET_ALREADY{$module}->{$net}->dbaTstgenGetPseudoNetSinkFanOutList;
+  my $fanOutLen = @fanOutList;
+
+  for (my $i = 0; $i < $fanInPin; $i++) {
+    my $newNet = $net . "_$i";
+    $PSEUDO_VNET_ALREADY{$module}->{$newNet} = PseudoNetModelDB::new();
+    $PSEUDO_VNET_ALREADY{$module}->{$newNet}->dbaTstgenSetPseudoNetPrefix($newNet);
+    $PSEUDO_VNET_ALREADY{$module}->{$newNet}->dbaTstgenSetPseudoNetParentModule($module);
+    $PSEUDO_VNET_ALREADY{$module}->{$newNet}->dbaTstgenSetPseudoNetType("single");
+    my $isTopConn = $PSEUDO_VNET_ALREADY{$module}->{$net}->dbaTstgenGetPseudoNetIsTopConn;
+    $PSEUDO_VNET_ALREADY{$module}->{$newNet}->dbaTstgenSetPseudoNetIsTopConn($isTopConn);
+
+    $PSEUDO_VNET_ALREADY{$module}->{$newNet}->dbaTstgenSetPseudoNetSourceFanInList($sourceVInst, "");
+    for (my $k = 0; $k < $fanOutLen; $k += 2) {
+      my ($sinkVInst,$fanOutPin) = ($fanOutList[$k], $fanOutList[$k + 1]);
+      $PSEUDO_VNET_ALREADY{$module}->{$newNet}->dbaTstgenSetPseudoNetSinkFanOutList($sinkVInst, "");
+    }
+    my @coords = $PSEUDO_VNET_ALREADY{$module}->{$net}->dbaTstgenGetPseudoNetCoords;
+    $PSEUDO_VNET_ALREADY{$module}->{$newNet}->dbaTstgenSetPseudoNetCoords(@coords);
+  }# for new net
+}#foreach wire net
+
+}# sub dbfTstgenSplitWireNets
+
+
+sub dbfTstgenEditModule {
+
+my $moduleName = $_[0];
+
+unless ( exists $MODULE_ALREADY{$moduleName} ) {
+  &dbfTstgenCreateTopModule($moduleName);
+  return;
+}
+
+$TOP_MODULE = $moduleName;
+delete $PSEUDO_MODULE_ALREADY{$moduleName};
+delete $PSEUDO_VINST_ALREADY{$moduleName};
+delete $PSEUDO_VNET_ALREADY{$moduleName};
+&dbfTstgenLoadVNOMPins($moduleName);
+$PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetIsModuleTop();
+
+my ($inst, $cellref);
+my @insts = $MODULE_ALREADY{$moduleName}->dbVNOMGetHierInst;
+foreach $inst ( @insts ) {
+  $cellref = $MODULE_ALREADY{$moduleName}->dbVNOMGetHierInstCell($inst);
+  delete $PSEUDO_MODULE_ALREADY{$cellref};
+  delete $PSEUDO_VINST_ALREADY{$cellref};
+  delete $PSEUDO_VNET_ALREADY{$cellref};
+}
+
+foreach $inst ( @insts ) {
+  $cellref = $MODULE_ALREADY{$moduleName}->dbVNOMGetHierInstCell($inst);
+  unless ( exists $PSEUDO_MODULE_ALREADY{$cellref} ) {
+    &dbfTstgenLoadVNOMPins($cellref);
+  }
+}
+
+&dbfTstgenLoadVNOMInsts($moduleName);
+&dbfTstgenLoadVNOMNets($moduleName);
+
+}#sub dbfTstgenEditModule
+
+
+sub dbfTstgenDownHier {
+
+my $moduleName = $_[0];
+
+$TOP_MODULE = $moduleName;
+$PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetIsModuleTop();
+
+my ($inst, $cellref);
+my @insts = $MODULE_ALREADY{$moduleName}->dbVNOMGetHierInst;
+foreach $inst ( @insts ) {
+  $cellref = $MODULE_ALREADY{$moduleName}->dbVNOMGetHierInstCell($inst);
+  unless ( exists $PSEUDO_MODULE_ALREADY{$cellref} ) {
+    &dbfTstgenLoadVNOMPins($cellref);
+  }
+}
+
+if ( !exists $PSEUDO_VINST_ALREADY{$moduleName} ) {
+  &dbfTstgenLoadVNOMInsts($moduleName);
+  &dbfTstgenLoadVNOMNets($moduleName);
+}
+elsif ( !exists $PSEUDO_VNET_ALREADY{$moduleName} ) {
+  &dbfTstgenLoadVNOMNets($moduleName);
+}
+
+}#sub dbfTstgenDownHier
+
+
+sub dbfTstgenIdentifyModuleParent {
+
+my $module = $_[0];
+my $parent = $_[1];
+
+if ( defined $parent && $parent ne "" ) {
+  #<!-- user specified parent, for validation only -->
+  unless ( $MODULE_ALREADY{$module}->dbVNOMHasParent($parent) ) {
+    undef $parent;
+  }
+}
+else {
+  #<!-- find unique parent module -->
+  my %parentHash = ();
+  my @parents = $MODULE_ALREADY{$module}->dbVNOMGetParent;
+  foreach my $parent ( @parents ) {
+    $parentHash{$parent} = 1;
+  }
+  if ( (keys %parentHash) == 1 ) {
+    $parent = $parents[0];
+  }
+  else {
+    undef $parent;
+  }
+}
+
+return $parent;
+}# sub dbfTstgenIdentifyModuleParent
+
+
+sub dbfTstgenConstructConnSMatrix 
+{ 
+my $module = $_[0]; 
+
+my %INST_HASH = ();
+my %DRVR_HASH = ();
+my %SINK_HASH = ();
+
+my $instCnt = 0;
+foreach my $inst ( keys %{$PSEUDO_VINST_ALREADY{$module}} ) {
+  if ( $inst eq "PIN" ) {
+    next;
+  }
+  $INST_HASH{$inst} = ++$instCnt;
+}#foreach inst
+
+my $nodeCnt = $instCnt;
+
+my $bidiCnt = 0;
+my @bidi_pins = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetBidi;
+foreach my $bidi ( @bidi_pins ) {
+  if ( $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetBidiType($bidi) == 0 ) {
+    $SINK_HASH{$bidi} = $DRVR_HASH{$bidi} = ++$nodeCnt;
+    $bidiCnt++;
+  }
+  else {
+    my $bits = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetBidiBits($bidi);
+    my $pin = $bidi . $bits;
+    my @portList = utilSplitBusBits($pin);
+    foreach my $port ( @portList ) {
+      $SINK_HASH{$bidi} = $DRVR_HASH{$port} = ++$nodeCnt;
+      $bidiCnt++;
+    }
+  }
+}#foreach bidi
+
+my @input_pins = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetInput;
+foreach my $in ( @input_pins ) {
+  if ( $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetInputType($in) == 0 ) {
+    $DRVR_HASH{$in} = ++$nodeCnt;
+  }
+  else {
+    my $bits = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetInputBits($in);
+    my $pin = $in . $bits;
+    my @portList = utilSplitBusBits($pin);
+    foreach my $port ( @portList ) {
+      $DRVR_HASH{$port} = ++$nodeCnt;
+    }
+  }
+}#foreach in
+
+my $colCnt = $nodeCnt;
+$nodeCnt = $instCnt + $bidiCnt;  # reset $nodeCnt for rows
+
+my @output_pins = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetOutput;
+foreach my $out ( @output_pins ) {
+  if ( $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetOutputType($out) == 0 ) {
+    $SINK_HASH{$out} = ++$nodeCnt;
+  }
+  else {
+    my $bits = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetOutputBits($out);
+    my $pin = $out . $bits;
+    my @portList = utilSplitBusBits($pin);
+    foreach my $port ( @portList ) {
+      $SINK_HASH{$port} = ++$nodeCnt;
+    }
+  }
+}#foreach out
+
+my $rowCnt = $nodeCnt;
+
+$CONN_SMATRIX = PlaceDB::->new();
+$CONN_SMATRIX->dbPlaceInit($rowCnt, $colCnt, $instCnt,
+                           $colCnt - $instCnt, $rowCnt - $instCnt);
+
+while ( my ($node, $num) = each %INST_HASH ) {
+  $CONN_SMATRIX->dbPlaceSetRow($num, $node);
+  $CONN_SMATRIX->dbPlaceSetColumn($num, $node);
+  print $node, ' => ', $num, "\n" if ($DEBUG == 328);
+}
+while ( my ($node, $num) = each %DRVR_HASH ) {
+  $CONN_SMATRIX->dbPlaceSetColumn($num, $node);
+  print $node, ' => ', $num, "\n" if ($DEBUG == 328);
+}
+while ( my ($node, $num) = each %SINK_HASH ) {
+  $CONN_SMATRIX->dbPlaceSetRow($num, $node);
+  print $node, ' => ', $num, "\n" if ($DEBUG == 328);
+}
+
+foreach my $net ( keys %{$PSEUDO_VNET_ALREADY{$module}} ) {
+  my $netType = $PSEUDO_VNET_ALREADY{$module}->{$net}->dbaTstgenGetPseudoNetType;
+  if ( $netType eq "wire" ) {
+      next;  # already split to single nets
+  }
+  my $width = $PSEUDO_VNET_ALREADY{$module}->{$net}->dbaTstgenGetPseudoNetWidth;
+  my ($srcVInst, $fanInPin) = $PSEUDO_VNET_ALREADY{$module}->{$net}->dbaTstgenGetPseudoNetSourceFanInList;
+  my @fanOutList = $PSEUDO_VNET_ALREADY{$module}->{$net}->dbaTstgenGetPseudoNetSinkFanOutList;
+  for ( my $k = 0; $k < @fanOutList; $k += 2 ) {
+    my $sinkVInst = $fanOutList[$k];
+    if ( $srcVInst eq "PIN" ) {
+      if ( $width == 1 ) {
+        my $col = $DRVR_HASH{$fanInPin};
+        my $row = $INST_HASH{$sinkVInst};
+        $CONN_SMATRIX->dbPlaceIncrTpathVal($row, $col, 1);
+        print "DBG-TST : 001 : add_entry $net ($col $row) = #1\n" if ($DEBUG == 328);
+      }
+      else {
+        my @pins = dbfTstgenBlastModuleBusPins($module, $fanInPin);
+        foreach my $pin ( @pins ) {
+          my $col = $DRVR_HASH{$pin};
+          my $row = $INST_HASH{$sinkVInst};
+          $CONN_SMATRIX->dbPlaceIncrTpathVal($row, $col, 1);
+          print "DBG-TST : 002 : add_entry $net ($col $row) = #1\n" if ($DEBUG == 328);
+        }
+      }
+    }# if source is port
+    elsif ( $sinkVInst eq "PIN" ) {
+      my $fanOutPin = $fanOutList[$k + 1];
+      if ( $width == 1 ) {
+        my $col = $INST_HASH{$srcVInst};
+        my $row = $SINK_HASH{$fanOutPin};
+        $CONN_SMATRIX->dbPlaceIncrTpathVal($row, $col, 1);
+        print "DBG-TST : 003 : add_entry $net ($col $row) = #1\n" if ($DEBUG == 328);
+      }
+      else {
+        my @pins = dbfTstgenBlastModuleBusPins($module, $fanOutPin);
+        foreach my $pin ( @pins ) {
+          my $col = $INST_HASH{$srcVInst};
+          my $row = $SINK_HASH{$pin};
+          $CONN_SMATRIX->dbPlaceIncrTpathVal($row, $col, 1);
+          print "DBG-TST : 004 : add_entry $net ($col $row) = #1\n" if ($DEBUG == 328);
+        }
+      }
+    }# if sink is port
+    else {  # both source and sink are inst
+      my $col = $INST_HASH{$srcVInst};
+      my $row = $INST_HASH{$sinkVInst};
+      $CONN_SMATRIX->dbPlaceIncrTpathVal($row, $col, $width);
+      print "DBG-TST : 005 : add_entry $net ($col $row) = $width\n" if ($DEBUG == 328);
+    }
+  }# for $k
+}#foreach $net
+
+if ( $DEBUG == 328 ) {
+  $CONN_SMATRIX->dbgPlaceGetColumn;
+  $CONN_SMATRIX->dbgPlaceGetTpath;
+}
+
+}# sub dbfTstgenConstructConnSMatrix 
+
+
+sub dbfTstgenPurgeModule {
+
+my $moduleName = $_[0];
+
+unless ( exists $PSEUDO_MODULE_ALREADY{$moduleName} ) {
+  return;
+}
+
+my @childModules = ();
+foreach my $inst ( keys %{$PSEUDO_VINST_ALREADY{$moduleName}} ) {
+  if ( $inst eq "PIN" ) {
+    next;
+  }
+  my $cellref = $PSEUDO_VINST_ALREADY{$moduleName}{$inst}->dbPimDBGetInstCellref;
+  if ( exists $PSEUDO_MODULE_ALREADY{$cellref} ) {
+    push(@childModules, $cellref);
+  }
+}#foreach inst
+
+delete $PSEUDO_MODULE_ALREADY{$moduleName};
+delete $PSEUDO_VINST_ALREADY{$moduleName};
+delete $PSEUDO_VNET_ALREADY{$moduleName};
+
+foreach my $cellref ( @childModules ) {
+  unless ( exists $PSEUDO_VINST_ALREADY{$cellref} ||
+           exists $PSEUDO_VNET_ALREADY{$cellref} ) {
+    delete $PSEUDO_MODULE_ALREADY{$cellref};
+  }
+}
+
+}#sub dbfTstgenPurgeModule
+#----------------------------------------------------------------------------------------------------------------------#
+sub dbfTstgenMarkVInstUsedPins_old {
+
+my $moduleName = $_[0];
+my $instName = $_[1];
+
+#
+#<!-- update inst pin's USED field based on fan in/out pins in PSEUDO_VNET_ALREADY -->
+#
+foreach my $net ( keys %{$PSEUDO_VNET_ALREADY{$moduleName}} ) {
+  my $netType = $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenGetPseudoNetType;
+  if ( $netType eq "wire" ) {
+      next;  # already split to single nets
+  }
+  my ($sourceVInst, $fanInPin) = $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenGetPseudoNetSourceFanInList;
+  my @fanOutList = $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenGetPseudoNetSinkFanOutList;
+  my $fanOutLen = @fanOutList;
+
+  my $pinName = "";
+  my ($isSource, $isSink) = (0, 0);
+  if ($instName eq $sourceVInst) {
+    $isSource = 1;
+    $pinName = $fanInPin;
+  }
+  else {
+    for (my $k = 0; $k < $fanOutLen; $k += 2) {
+      my ($sinkVInst,$fanOutPin) = ($fanOutList[$k], $fanOutList[$k + 1]);
+      if ($instName eq $sinkVInst) {
+        $isSink = 1;
+        $pinName = $fanOutPin;
+        last;
+      }
+    }# for $k
+  }
+
+  if ( ($isSource == 0 && $isSink == 0 ) || $pinName eq "" ) {
+    next;
+  }
+
+  my $netName = "";
+  if ( $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenGetPseudoNetIsTopConn ) {
+    $netName = $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenGetPseudoNetTopConnPin;
+  }
+  if ( $netName eq "" ) {
+    $netName = $net;  #<!-- guarantee non empty net name -->
+  }
+
+  if ( $netType ne "bus" ) {
+    if ( $isSource ) {
+      $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBSetInstOutputWirePinUsed($pinName, $netName);
+    }
+    else {  #<!-- ( isSink ) -->
+      $netName = &dbfTstgenConvertTieLoHiNetToBitSeq($moduleName, $netName);
+      $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBSetInstInputWirePinUsed($pinName, $netName);
+    }
+  }
+  else {  #<!-- ( $netType eq "bus" ) -->
+    if ( $isSource ) {
+      $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBSetInstOutputBusPinUsed($pinName, $netName);
+    }
+    else {  #<!-- ( isSink ) -->
+      $netName = &dbfTstgenConvertTieLoHiNetToBitSeq($moduleName, $netName);
+      $PSEUDO_VINST_ALREADY{$moduleName}->{$instName}->dbPimDBSetInstInputBusPinUsed($pinName, $netName);
+    }
+  }
+}#foreach $net
+
+}# sub dbfTstgenMarkVInstUsedPins_old
+#----------------------------------------------------------------------------------------------------------------------#
+
+
+1;

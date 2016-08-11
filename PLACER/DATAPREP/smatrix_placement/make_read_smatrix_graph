@@ -1,0 +1,62 @@
+
+sub read_graph_smatrix {
+$DEBUG = 31;
+my $INPUT_GRAPH = "detailed_xy.out";
+if ( -e $INPUT_GRAPH) {
+open(READ,"$INPUT_GRAPH");
+print "INFO-PL_DATAPRP_SMTRX_PL : 001 : Reading the graph for $INPUT_GRAPH\n";
+print "INFO-PL_DATAPRP_SMTRX_PL : 002 : Existing Die size are : @{$DIE_ALREADY{dieArea}} \n";
+
+##########Scaling to values to the die size##########
+$line1 = <READ>;
+($llx,$lly) = (split(/\s+/, $line1))[0,1];
+$absllx = abs($llx);
+$abslly = abs($lly);
+
+$line2 = <READ>;
+($urx,$ury) = (split(/\s+/, $line2))[0,1];
+print "INFO-PL_DATAPRP_SMTRX_PL : 003 : $line1 : $llx and $lly and $absllx and $abslly\n";
+$newurx = $urx + $absllx;
+$newury = $ury + $abslly;
+print "INFO-PL_DATAPRP_SMTRX_PL : 004 : $line2 : $urx and $ury and $newurx and $newury\n";
+
+$scalex = $DIE_ALREADY{dieArea}[2]/($newurx);
+$scaley = $DIE_ALREADY{dieArea}[3]/($newury);
+print "INFO-PL_DATAPRP_SMTRX_PL : 005 : Scalex : $scalex and Scaley : $scaley \n";
+
+while(<READ>) {
+chomp();
+($node,$x,$y) = (split(/\s+/, $_))[0,1,2];
+$x = ($x+$absllx)*$scalex;
+$y = ($y+$abslly)*$scaley;
+
+print "INFO-PL_DATAPRP_SMTRX_PL : 006 : $x and $y\n";
+$found = 0;
+if ( exists $TEMPR{$node} ) { $found = 1; $instance = $TEMPR{$node}; } else { $found = 0;}
+if($found == 1 ) { 
+                if ( exists $CADB{$instance} ) {
+     $CADB{$instance}->dbCadbSetLoc($x,$y);
+     $CADB{$instance}->dbCadbSetStatus(PLACED);
+     $CADB{$instance}->dbCadbSetOrient(N);
+                                               } 
+                elsif ( exists $PORTS_ALREADY{$TOP_MODULE}{$instance} ) {
+     $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetLoc($x,$y);
+     $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetSide($side);
+     $PORTS_ALREADY{$TOP_MODULE}{$instance}->dbPortSetStatus(PLACED);
+                                               }
+                else { print "ERR-PL_DATAPRP_SMTRX_PL : 007 : $instance is neither a port nor a component\n"; }
+
+                 }
+else { print "DBG-PL_DATAPRP_SMTRX_PL : 008 : node $node not found\n" if($debug); }
+              }#while
+
+}#end if
+else {
+print "ERR-PL_DATAPRP_SMTRX_PL : 009 : No detailed_xy.out file found \n";
+}
+close($INPUT_GRAPH);
+&set_inst_box;
+}#sub read_graph_smatrix
+
+1;
+

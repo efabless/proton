@@ -1,0 +1,126 @@
+
+sub getCrossoverPoints {
+my $xpitch = 0.66;
+my $ypitch = 0.56;
+#$layername = "METAL2";
+#my $xpitch = $TECHNOLOGY_PHYSICAL{$layerName}{PITCH};
+#$layerName = "METAL1";
+#my $ypitch = $TECHNOLOGY_PHYSICAL{$layerName}{PITCH};
+#$macroName = $_[0];
+#print "Enter the macroName?\n";
+#chomp($macroName=<STDIN>);
+                      my $macroName = "BUFX4";
+           
+                      my @pins = $PLDB{$macroName}->dbMdbGetPins;
+                         foreach $pinName ( @pins ) {
+                      my @RECTS = $PLDB{$macroName}->dbMdbGetPinRect($pinName);
+                         foreach $rectLine ( @RECTS ) {
+                      my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$rectLine))[0,2,3,4,5];
+
+#my $width = 3.300 ;
+#my $height = 5.040 ;
+$cellwidth = $width;
+$cellheight = $height;
+        $nv = $width/$xpitch;
+           for($i = 0; $i <= $nv; $i++) {
+               my $xx = ($xpitch*$i)+($xpitch*0.5);
+                   
+             $nh = $height/$ypitch;
+           for($j = 0; $j <= $nh; $j++) {
+              my $yy = ($ypitch*$j);
+                     if(($xx>=$llx && $xx<=$urx) && ($yy>=$lly && $yy<=$ury))
+                         {
+                              print "INFO-LIBLYIS-GETCROS_OVR_PONT : 001 :\tFor $macroName and $pinName and $layer, $llx, $lly, $urx, $ury, crossovers are $xx,$yy\n";
+                          }
+                             
+}}}}
+}#sub getCrossoverPoints
+###################################################################################################
+sub analyze_pin_access {
+my $noOfArguments = @_;
+if($noOfArguments < 2 || $_[0] eq '-h'){ print "Usage :  analyze_pin_acces -cell <cell name>\n";
+                      }
+else{ 
+############# since correct no of arguments ################
+############# registering the inputs        ################
+for(my $x = 0; $x < $noOfArguments ; $x++){
+if($_[$x] eq "-cell"){$MACRO_TO_DISPLAY = $_[$x+1];}
+                                          }#for all the arguments
+
+# printing the cell Name if it exists in the data base
+# else give a message that the cell is not in data base
+# possible reasons could be that the lef file for that cell is not read
+# or a typo on users part.
+
+            if( exists $PLDB{$MACRO_TO_DISPLAY} ) {
+            my @size = $PLDB{$MACRO_TO_DISPLAY}->dbMdbGetSize;
+            $width = $size[0]; $cellwidth = $width;
+            $height = $size[1]; $cellheight = $height;
+            
+  print "INFO-LIBLYIS : 001 : width is $width\n";
+  print "INFO-LIBLYIS : 002 : height is $height\n";
+my $xpitch = 0;
+my $ypitch = 0;
+my $nLH = 100;
+my $nLV = 100;
+
+foreach my $layerName (keys %PTDB){
+        my $type = $PTDB{$layerName}->dbTechGetLayerType;
+           if ( $type eq "ROUTING") {
+        my $dir = $PTDB{$layerName}->dbTechGetLayerDir;;
+        my $num = $PTDB{$layerName}->dbTechGetLayerNum;
+        my $pitch = $PTDB{$layerName}->dbTechGetLayerPitch;
+        my $offset = $PTDB{$layerName}->dbTechGetLayerOffset;
+              if ( $dir eq "HORIZONTAL" ) { if ( $nLH > $num ) {
+                                                 $nLH = $num ; $ypitch = $pitch;
+                                                 if ($offset eq "UND"){$shifty = 0.5*$ypitch;}
+                                                 else                 {$shifty = $offset;}  
+                                                                 }
+                                           }
+           elsif ( $dir eq "VERTICAL" ) { if ( $nLV > $num ) { 
+                                               $nLV = $num ; $xpitch = $pitch;
+                                               if ($offset eq "UND"){$shiftx = 0.5*$xpitch;}
+                                                 else               {$shiftx = $offset;}  
+                               
+                                                               } 
+                                            }
+           else { print "WARN-LIBLYIS : 003 : invalid direction on routing layer $layerName\n"; }
+                                    } # if layer is a routing layer
+                                   } #search the first 2 consequtive orthgonal routing layers 
+print "DBG-LIBLYIS : 004 : lowest H : $nLH \= $ypitch, lowest V : $nLV \= $xpitch\n" if ($DEBUG == 100);
+
+             my @pins = $PLDB{$MACRO_TO_DISPLAY}->dbMdbGetPins;
+                         foreach $pinName ( @pins ) {
+                      my @RECTS = $PLDB{$MACRO_TO_DISPLAY}->dbMdbGetPinRect($pinName);
+                         foreach $rectLine ( @RECTS ) {
+                      my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$rectLine))[0,2,3,4,5];
+#print "pin $pinName , $layer ,$llx,$lly,$urx,$ury\n";
+#$llx = $llx * $LefDisplayFact+20;
+#$lly = $lly * $LefDisplayFact;
+#$urx = $urx * $LefDisplayFact+20;
+#$ury = $ury * $LefDisplayFact;
+
+            $nv = int ($width/$xpitch);
+           for($i = 0; $i <= $nv; $i++) {
+               $xx = ($xpitch*$i)+($shiftx);
+
+            $nh = int ($height/$ypitch);
+           for($j = 0; $j <=$nh; $j++) {
+               $yy = ($ypitch*$j)+ ($shifty);
+          if(($xx>=$llx && $xx<=$urx) && ($yy>=$lly && $yy<=$ury))
+                         {
+ #$xx = $xx/$LefDisplayFact;
+ #$yy = $yy/$LefDisplayFact;
+                              print "INFO-LIBLYIS : 005 : \tpin $pinName layer $layer, ($llx, $lly, $urx, $ury)\t crossovers are $xx,$yy\n";
+                          }
+
+                                      }#for horizontal lines
+                                    }#for vertical lines
+                                                        }#foreach rectangle
+                                                       }#foreach pin
+             }#if exist in PLDB
+        }#else correct no of arguments
+}#sub analyze_pin_access
+###################################################################################################
+
+1;

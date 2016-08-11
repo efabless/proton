@@ -1,0 +1,677 @@
+sub write_hier_graph_rltd_mpl {
+my $noOfArguments = @_;
+#----------------- Defaults --------------------#
+my $moduleName = $TOP_MODULE;
+my $pinMode = 0;
+
+if ( $_[0] eq '-h') { print "Usage : write_hier_place_graph -module <module name>\n";
+  print "                               --pin\n";
+}
+else {
+for (my $i = 0; $i < $noOfArguments; $i++) {
+if ($_[$i] eq "-module") {$moduleName = $_[$i+1];}
+elsif ($_[$i] eq "--pin") {$pinMode = 1;}
+elsif ( $_[$i] =~ m/^-+\w/) { print "WARN-TST : 001 : invalid option $_[$i]\n"; }
+} # for
+
+&write_hiergraph_mpl($moduleName, $pinMode);
+
+}#else
+
+}#sub write_hier_graph_rltd_mpl
+
+sub write_hiergraph_mpl {
+my $module = $_[0];
+my $pinMode = $_[1];
+%PIN_HASH_1 = ();
+%PIN_HASH_2 = ();
+my $xy_out_file;
+my $nodefile;
+my $libfile;
+my @size = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetSize;
+my $mpl_scale_x ; 
+my $mpl_scale_y ;
+if ($MPL_BINARY_IS_RUNNING == 1) {
+    $mpl_scale_x = (10 - (-10))/($size[2] - $size[0]);
+    $mpl_scale_y = (10 - (-10))/($size[3] - $size[1]);
+}else {
+    $mpl_scale_x  = 1; 
+    $mpl_scale_y  = 1;
+}
+if ($MPL_BINARY_IS_RUNNING == 1) {
+  $xy_out_file = "mp_xy.in";
+  $nodefile = "nodefile";
+  $libfile = "libfile";
+} else {
+  $xy_out_file = "xy.out";
+  $nodefile = $TOP_MODULE.".nodefile";
+  $libfile = $TOP_MODULE.".libfile" ;
+}
+
+#-------------------------write the node file----------------------------------#
+
+#open(WRITE_NODE, ">nodefile");
+open(WRITE_NODE, ">$nodefile");
+
+my $rowHeight = $GLOBAL->dbGlobalGetRowHeight;
+my $numberOfRows = 0;
+if ( $rowHeight > 0 ) {
+  $numberOfRows = int(($size[3] - $size[1]) / $rowHeight);
+}
+print WRITE_NODE "$numberOfRows\n";
+if ($MPL_BINARY_IS_RUNNING == 1) {
+print WRITE_NODE "-10 -10 \n";
+print WRITE_NODE "10 10 \n";
+}else{
+print WRITE_NODE "$size[0] $size[1]\n";
+print WRITE_NODE "$size[2] $size[3]\n";
+}
+
+open(WRITE_XY, ">$xy_out_file");
+if ($MPL_BINARY_IS_RUNNING == 1) {
+print WRITE_XY "-10 -10\n";
+print WRITE_XY "10 10\n";
+}else{
+print WRITE_XY "$size[0] $size[1]\n";
+print WRITE_XY "$size[2] $size[3]\n";
+}
+
+my %PORT_HASH = ();
+my $nodeCnt = 0;
+my @output_pins = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetOutput;
+foreach my $out (@output_pins) {
+  if ( $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetOutputType($out) == 0 ) {
+    $PORT_HASH{$out} = $nodeCnt++;
+  }
+  else {
+    my $bits = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetOutputBits($out);
+    my $pin = $out . $bits;
+    my @portList = utilSplitBusBits($pin);
+    foreach my $port ( @portList ) {
+      $PORT_HASH{$port} = $nodeCnt++;
+    }
+  }
+}#foreach out
+
+my @input_pins = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetInput;
+foreach my $in (@input_pins) {
+  if ( $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetInputType($in) == 0 ) {
+    $PORT_HASH{$in} = $nodeCnt++;
+  }
+  else {
+    my $bits = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetInputBits($in);
+    my $pin = $in . $bits;
+    my @portList = utilSplitBusBits($pin);
+    foreach my $port ( @portList ) {
+      $PORT_HASH{$port} = $nodeCnt++;
+    }
+  }
+}#foreach in
+
+my @bidi_pins = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetBidi;
+foreach my $bidi (@bidi_pins){
+  if ( $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetBidiType($bidi) == 0 ) {
+    $PORT_HASH{$bidi} = $nodeCnt++;
+  }
+  else {
+    my $bits = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetBidiBits($bidi);
+    my $pin = $bidi . $bits;
+    my @portList = utilSplitBusBits($pin);
+    foreach my $port ( @portList ) {
+      $PORT_HASH{$port} = $nodeCnt++;
+    }
+  }
+}#foreach bidi
+
+foreach my $port ( keys %PORT_HASH ) {
+  print WRITE_NODE "$PORT_HASH{$port} 1\n";
+  unless ( $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenHasPin($port) ) {
+    next;
+  }
+  my @shapes = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetPinRect($port);
+  unless ( @shapes > 0 ) {
+    next;
+  }
+  my ($midx, $midy) = &dbfTstgenGetShapeMidPoint($shapes[0]);
+  if ($MPL_BINARY_IS_RUNNING == 1 ) {
+    $midx = (($midx*$mpl_scale_x) - 10);
+    $midy = (($midy*$mpl_scale_y) - 10);
+    print WRITE_XY "$PORT_HASH{$port} $midx $midy\n";
+  }
+  else {
+    print WRITE_XY "$PORT_HASH{$port} $midx $midy\n";
+  }
+}
+
+%INST_HASH = ();
+my %CELL_HASH = ();
+my %HCELL_HASH = ();
+my $nextCellID = 2;  # starts from 2, all ports use cellID 1
+foreach my $inst ( keys %{$PSEUDO_VINST_ALREADY{$module}} ) {
+  if ( $inst eq "PIN" ) {
+    next;
+  }
+  #print "added node $nodeCnt for instance $inst in INST_HASH\n" ;
+  $INST_HASH{$inst} = $nodeCnt;
+  my $cellref = $PSEUDO_VINST_ALREADY{$module}{$inst}->dbPimDBGetInstCellref;
+  my $cellID;
+  if ( exists $PLDB{$cellref} ) {
+    if ( exists $CELL_HASH{$cellref} ) {
+      $cellID = $CELL_HASH{$cellref};
+    }#if exists CELL_HASH
+    else {
+      $CELL_HASH{$cellref} = $cellID = $nextCellID++;
+    }#else
+  }#if exists cellref in PLDB
+  else { # each hier inst has its own bbox
+    $HCELL_HASH{$inst} = $cellID = $nextCellID++;
+  }# if hier inst
+  my $status = $PSEUDO_VINST_ALREADY{$module}{$inst}->dbPimDBGetInstStatus;
+  if ( $status eq "FIXED" || $status eq "FIRM" ) {
+    print WRITE_NODE "$nodeCnt -$cellID\n";  #<!-- negative cellID -->
+    my ($locx, $locy) = $PSEUDO_VINST_ALREADY{$module}{$inst}->dbPimDBGetInstRelLoc;
+    print WRITE_NODE "\t$locx $locy\n";
+  }
+  else {
+    print WRITE_NODE "$nodeCnt $cellID\n";
+    if ( $status eq "PLACED" ) {
+      my ($locx, $locy) = $PSEUDO_VINST_ALREADY{$module}{$inst}->dbPimDBGetInstRelLoc;
+      if ($MPL_BINARY_IS_RUNNING == 1 ) {
+        $locx = (($locx*$mpl_scale_x) - 10);
+        $locy = (($locy*$mpl_scale_y) - 10);
+        print WRITE_XY "$nodeCnt $locx $locy\n";
+      }
+      else {
+        print WRITE_XY "$nodeCnt $locx $locy\n";
+      }
+    }
+  }
+  $nodeCnt++;
+}#foreach inst
+close(WRITE_NODE);
+close(WRITE_XY);
+
+#-------------------------write the lib file-----------------------------------#
+
+open(WRITE_LIB, ">$libfile");
+print WRITE_LIB "1 0 0\n";  # representing all ports
+
+my %MOD_PIN_HASH = ();
+foreach my $hinst ( keys %HCELL_HASH ) {
+  my $cellref = $PSEUDO_VINST_ALREADY{$module}{$hinst}->dbPimDBGetInstCellref;
+  #<!-- TODO find appropriate cellref for clone -->
+  #my $status = $PSEUDO_VINST_ALREADY{$module}{$hinst}->dbPimDBGetInstStatus;
+  #my @box = ( $status eq "UNPLACED" ) ?
+  #          $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetSize :
+  #          $PSEUDO_VINST_ALREADY{$module}{$hinst}->dbPimDBGetInstRelBbox;
+  my @box = &return_pseudo_vinst_size($hinst);
+  my $xdim = $box[2] - $box[0];
+  my $ydim = $box[3] - $box[1];
+  if ($MPL_BINARY_IS_RUNNING == 1 ) {
+    $xdim = (($xdim*$mpl_scale_x));
+    $ydim = (($ydim*$mpl_scale_y));
+    print WRITE_LIB "$HCELL_HASH{$hinst} $xdim $ydim";
+  } else {
+    print WRITE_LIB "$HCELL_HASH{$hinst} $xdim $ydim";
+  }
+    print WRITE_LIB "\n";
+    $MOD_PIN_HASH{$cellref} = {};
+    my @pins = &dbfTstgenPseudoModuleLogicalToPhysicalPins($cellref);
+    my $pinCnt = @pins;
+    $pinCnt = 0 ;
+    foreach my $pin ( @pins ) {
+      $pinCnt++ ;
+    }
+     if ($pinMode){
+    print WRITE_LIB " $pinCnt\n";
+     }
+    $pinCnt = 0;
+    foreach my $pin ( @pins ) {
+      $MOD_PIN_HASH{$cellref}->{$pin} = $pinCnt++;
+      my @shapes = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetPinRect($pin);
+      my ($midx, $midy) = &dbfTstgenGetShapeMidPoint($shapes[0]);
+      if ($MPL_BINARY_IS_RUNNING == 1 ) {
+        $midx = (($midx*$mpl_scale_x));
+        $midy = (($midy*$mpl_scale_y));
+      if($pinMode){
+      print WRITE_LIB "\t$midx $midy\n";
+      }#if pinMode
+     }#if mpl
+     else {
+      if($pinMode){
+         print WRITE_LIB "\t$midx $midy\n";
+      }#if pinMode
+     }#else
+   }
+}#foreach hier inst
+
+foreach my $cellName ( keys %CELL_HASH ) {
+  unless ( exists $PLDB{$cellName} ) {
+    next;
+  }
+  my @box = $PLDB{$cellName}->dbMdbGetSize;
+      if ($MPL_BINARY_IS_RUNNING == 1 ) {
+        $box[0] = (($box[0]*$mpl_scale_x));
+        $box[1] = (($box[1]*$mpl_scale_y));
+        print WRITE_LIB "$CELL_HASH{$cellName} $box[0] $box[1]";
+      }
+      else {
+        print WRITE_LIB "$CELL_HASH{$cellName} $box[0] $box[1]";
+        }
+        print WRITE_LIB "\n"; 
+my @pins = $PLDB{$cellName}->dbMdbGetPins;
+    $MOD_PIN_HASH{$cellName} = {};
+    my $pinCnt = @pins;
+    $pinCnt = 0 ;
+    foreach my $pin ( @pins ) {
+      my $type = $PLDB{$cellName}->dbMdbGetPinType($pin);
+      if ( $type == 1 || $type == 2 ) {
+        next;
+      }
+      $pinCnt++ ;
+    }
+    if ($pinMode){
+    print WRITE_LIB " $pinCnt\n";
+    }
+    $pinCnt = 0;
+    foreach my $pin ( @pins ) {
+      my $type = $PLDB{$cellName}->dbMdbGetPinType($pin);
+      if ( $type == 1 || $type == 2 ) {
+        next;  # skip power/ground
+      }
+      $MOD_PIN_HASH{$cellName}->{$pin} = $pinCnt++;
+      my @shapes = $PLDB{$cellName}->dbMdbGetPinRect($pin);
+      my ($midx, $midy) = &dbfTstgenGetShapeMidPoint($shapes[0]);
+      if ($MPL_BINARY_IS_RUNNING == 1 ) {
+        $midx = (($midx*$mpl_scale_x));
+        $midy = (($midy*$mpl_scale_y));
+        if($pinMode){
+        print WRITE_LIB "\t$midx $midy\n";
+        }
+      }#if mpl 
+      else {
+        if($pinMode){
+           print WRITE_LIB "\t$midx $midy\n";
+         }
+      }#else
+    }
+}#foreach cellName
+
+if ( $DEBUG == 328 ) {
+  foreach my $cellref ( keys %MOD_PIN_HASH ) {
+    foreach my $pin ( sort keys %{$MOD_PIN_HASH{$cellref}} ) {
+      my $num = $MOD_PIN_HASH{$cellref}->{$pin};
+      print WRITE_LIB "DBG: $cellref $pin $num\n";
+    }# foreach pin
+  }# foreach cellref
+}
+
+close(WRITE_LIB);
+
+#-------------------------write the node map file------------------------------#
+
+open(WRITE_NMAP, ">$module.nodeMap.txt");
+%NODE_HASH = ();
+foreach my $port ( keys %PORT_HASH ) {
+  my $n = $PORT_HASH{$port};
+  print WRITE_NMAP "$port $n\n";
+  $NODE_HASH{$n} = $port;
+}#foreach 
+foreach my $inst ( keys %INST_HASH ) {
+  my $n = $INST_HASH{$inst};
+  print WRITE_NMAP "$inst $n\n";
+  $NODE_HASH{$n} = $inst;
+}#foreach 
+close(WRITE_NMAP);
+
+#------------------------------write the graph file----------------------------#
+print "INFO-TST : 001 : Writing the graph file of current module in $module.txt\n";
+open(WRITE_CONN, ">$module.txt");
+
+#my $min_node_no = 0;
+#my $max_node_no = keys %NODE_HASH;
+#$max_node_no = $max_node_no - 1;
+#print WRITE_CONN "$min_node_no $max_node_no\n";
+foreach my $net ( keys %{$PSEUDO_VNET_ALREADY{$module}} ) {
+  my $type = $PSEUDO_VNET_ALREADY{$module}->{$net}->dbaTstgenGetPseudoNetType;
+  unless ( $type eq "single" || $type eq "bus" ) {
+    next;
+  }
+  my $width = $PSEUDO_VNET_ALREADY{$module}->{$net}->dbaTstgenGetPseudoNetWidth;
+
+  my @nodeList = ();
+  my @pinList = ();
+  my @new_nodeList = ();
+  my ($sourceVInst, $fanInPin) = $PSEUDO_VNET_ALREADY{$module}->{$net}->dbaTstgenGetPseudoNetSourceFanInList;
+  if ( $sourceVInst =~ m/^\d*'b[01]+$/ ) {
+    next;
+  }
+  if ( $sourceVInst eq "PIN" ) {
+    if ( $fanInPin eq "" ) {
+      $fanInPin = $PSEUDO_VNET_ALREADY{$module}->{$net}->dbaTstgenGetPseudoNetTopConnPin;
+    }
+    my @blastedPins = ();
+    if ( $width == 1 ) {
+      push(@blastedPins, $fanInPin);
+    }
+    else {
+      @blastedPins = dbfTstgenBlastModuleBusPins($module, $fanInPin);
+    }
+    if ( @blastedPins != $width ) {
+      print "WARN-TST : 002 : net $net width $width is inconsistent with pin $fanInPin\n"; 
+      next;  # skip this net
+    }
+    foreach my $pin ( @blastedPins ) {
+      if ( exists $PORT_HASH{$pin} ) {
+        push(@nodeList, $PORT_HASH{$pin});
+      }
+      else {
+        push(@nodeList, "\($pin\)");
+      }
+      #if ( $pinMode ) {
+        push(@pinList, 0);
+      #}
+    }# foreach pin
+  }
+  elsif ( exists $INST_HASH{$sourceVInst} ) {
+    for ( my $j = 0; $j < $width; $j++ ) {
+      push(@nodeList, $INST_HASH{$sourceVInst});
+    }
+    #if ( $pinMode ) {
+      my $cellref = $PSEUDO_VINST_ALREADY{$module}{$sourceVInst}->dbPimDBGetInstCellref;
+      if ( $width == 1 ) {
+        push(@pinList, $MOD_PIN_HASH{$cellref}->{$fanInPin});
+      }
+      else {
+        my @srcPins = &dbfTstgenBlastModuleBusPins($cellref, $fanInPin);
+        if ( @srcPins != $width ) {
+          print "WARN-TST : 003 : net $net width $width is inconsistent with pin $fanInPin\n"; 
+          next;  # skip this net
+        }
+        foreach my $pin ( @srcPins ) {
+          push(@pinList, $MOD_PIN_HASH{$cellref}->{$pin});
+        }
+      }
+    #}# if pin mode
+  }
+
+  my @fanOutList = $PSEUDO_VNET_ALREADY{$module}->{$net}->dbaTstgenGetPseudoNetSinkFanOutList;
+  my $fanOutLen = @fanOutList;
+  for (my $k = 0; $k < $fanOutLen; $k += 2) {
+    my ($sinkVInst, $fanOutPin) = ($fanOutList[$k], $fanOutList[$k + 1]);
+    if ( $sinkVInst eq "PIN" ) {
+      if ( $fanOutPin eq "" ) {
+        $fanOutPin = $PSEUDO_VNET_ALREADY{$module}->{$net}->dbaTstgenGetPseudoNetTopConnPin;
+      }
+      my @blastedPins = ();
+      if ( $width == 1 ) {
+        push(@blastedPins, $fanOutPin);
+      }
+      else {
+        @blastedPins = dbfTstgenBlastModuleBusPins($module, $fanOutPin);
+      }
+      if ( @blastedPins != $width ) {
+        print "WARN-TST : 004 : net $net width $width is inconsistent with pin $fanOutPin\n"; 
+        next;  # skip this sink
+      }
+      foreach my $pin ( @blastedPins ) {
+        if ( exists $PORT_HASH{$pin} ) {
+          push(@nodeList, $PORT_HASH{$pin});
+        }
+        else {
+          push(@nodeList, "\($pin\)");
+        }
+        #if ( $pinMode ) {
+          push(@pinList, 0);
+        #}
+      }# foreach pin
+    }
+    elsif ( exists $INST_HASH{$sinkVInst} ) {
+      for ( my $j = 0; $j < $width; $j++ ) {
+        push(@nodeList, $INST_HASH{$sinkVInst});
+      }
+      #if ( $pinMode ) {
+        my $cellref = $PSEUDO_VINST_ALREADY{$module}{$sinkVInst}->dbPimDBGetInstCellref;
+        if ( $width == 1 ) {
+          push(@pinList, $MOD_PIN_HASH{$cellref}->{$fanOutPin});
+        }
+        else {
+          my @sinkPins = &dbfTstgenBlastModuleBusPins($cellref, $fanOutPin);
+          if ( @sinkPins != $width ) {
+            print "WARN-TST : 005 : net $net width $width is inconsistent with pin $fanOutPin\n"; 
+            next;  # skip this sink
+          }
+          foreach my $pin ( @sinkPins ) {
+            push(@pinList, $MOD_PIN_HASH{$cellref}->{$pin});
+          }
+        }
+      #}# if pin mode
+    }# if sink is inst, not port
+  }# for $k
+
+  my $len = @nodeList;
+  if ( $len % $width != 0 ) {
+    print "WARN-TST : 006 : net $net width $width is inconsistent with node list length $len\n"; 
+    next;  # skip this net
+  }
+  $len /= $width;
+  if ( $len <  2 ) {
+    if ( $width == 1 ) {
+      print "WARN-TST : 007 : net $net is connected to no pins or only one pin\n"; 
+    }
+    else {
+      print "WARN-TST : 008 : some of net $net is connected to no pins or only one pin\n"; 
+    }
+    next;  # skip this net
+  }
+
+  for (my $i = 0; $i < $width; $i++) {
+    if ( $len == 2 ) {
+      print WRITE_CONN "$nodeList[$i] $nodeList[$i + $width]";
+      if ( ! $pinMode ) {
+        print WRITE_CONN "\n";
+      }
+      else {
+        print WRITE_CONN " $pinList[$i] $pinList[$i + $width]\n";
+      }
+        push(@new_nodeList,$nodeList[$i],$pinList[$i],$nodeList[$i + $width],$pinList[$i + $width]);
+      next;
+    }#if len == 2
+
+    #<!-- ($len > 2) -->
+    print WRITE_CONN "$len -1\n";
+    for (my $j = 0; $j < $len; $j++) {
+      print WRITE_CONN "\t$nodeList[$i + $j * $width]";
+      if ( ! $pinMode ) {
+        print WRITE_CONN "\n";
+      }
+      else {
+        print WRITE_CONN " $pinList[$i + $j * $width]\n";
+      }
+        push(@new_nodeList,$nodeList[$i + $j * $width],$pinList[$i + $j * $width]);
+    }# for $j
+  }# for $i
+&node_pinName_list(@new_nodeList);
+}#foreach net
+close(WRITE_CONN);
+
+}#sub write_hiergraph_mpl
+#----------------------------------------------------------------------------------------------------#
+sub hier_graph_pinName{
+my $node_1 = $_[0];
+my $pin_1 = $_[1];
+my $node_2 = $_[2];
+my $pin_2 = $_[3];
+my $pinName_1 = "";
+my $pinName_2 = "";
+if(exists $NODE_HASH{$node_1}){
+my $nodeName_1 = $NODE_HASH{$node_1};
+if($nodeName_1 eq "PIN"){}
+else {
+my $cellref_1 = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$nodeName_1}->dbPimDBGetInstCellref;
+if(exists $PLDB{$cellref_1}){
+     my @pins = $PLDB{$cellref_1}->dbMdbGetPins;
+     my $pinCnt = 0;
+     foreach my $p (@pins){
+       my $type = $PLDB{$cellref_1}->dbMdbGetPinType($p);
+       if ( $type == 1 || $type == 2 ) {
+          next;  # skip power/ground
+       }#if type
+       elsif ($type == 0){  
+         if($pinCnt == $pin_1){
+            $pinName_1 = $p;
+        }#if pinCnt
+       }#elsif type 0
+    }#foreach $p
+}#if exists cellref_1 in PLDB
+else {
+my @pins_Name = &dbfTstgenPseudoModuleLogicalToPhysicalPins($cellref_1);
+my $pinCnt = 0;
+   foreach my $pin_Name(@pins_Name){
+       if ($pinCnt == $pin_1){
+           $pinName_1 = $pin_Name;
+      }#if pinCnt
+       $pinCnt++;
+   }#foreach $pinName_1
+}#else
+}#else
+}#if exists node hash
+####################################################################
+if(exists $NODE_HASH{$node_2}){
+my $nodeName_2 = $NODE_HASH{$node_2};
+if ($nodeName_2 eq "PIN"){}
+else {
+my $cellref_2 = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$nodeName_2}->dbPimDBGetInstCellref; 
+if(exists $PLDB{$cellref_2}){
+     my @pins = $PLDB{$cellref_2}->dbMdbGetPins;
+     my $pinCnt = 0;
+     foreach my $p (@pins){
+       my $type = $PLDB{$cellref_2}->dbMdbGetPinType($p);
+       if ( $type == 1 || $type == 2 ) {
+          next;  # skip power/ground
+       }#if type
+       elsif ($type == 0){  
+         if($pinCnt == $pin_1){
+            $pinName_1 = $p;
+        }#if pinCnt
+       }#elsif type 0
+    }#foreach $p
+}#if exists cellref_2 in PLDB
+else {
+my @pinsName = &dbfTstgenPseudoModuleLogicalToPhysicalPins($cellref_2);
+my $pinCnt = 0;
+foreach my $pin_name(@pinsName){
+    if ($pinCnt == $pin_2){
+        $pinName_2 = $pin_name;
+              }#if $pin_Cnt
+         $pinCnt++;
+   }#foreach pinName
+}#else
+}#else 
+}#if exists node hash
+return($pinName_1,$pinName_2);
+}#sub hier_graph_pinName
+
+#----------------------------------------------------------------------------------------------------#
+sub node_pinName_list {
+  my @node = @_;
+  my $node_list = @node;
+  if($node_list == 4){
+  my ( $pinName_1,$pinName_2) =  &hier_graph_pinName($node[0],$node[1],$node[2],$node[3]);
+    if($node[0] < $node[2]){
+       $PIN_HASH_1{$node[0]."".$node[2]} = $pinName_1;
+       $PIN_HASH_2{$node[2]."".$node[0]} = $pinName_2;
+      }#if 
+    else {
+       $PIN_HASH_1{$node[2]."".$node[0]} = $pinName_2;
+       $PIN_HASH_2{$node[0]."".$node[2]} = $pinName_1;
+      }#else
+  }#if len == 4
+  if( $node_list > 4 ){
+      my $node_1 = shift @node;
+      my $pin_node_1 = shift @node;
+      my $new_node_list = @node;
+      for (my $i = 0; $i <$new_node_list; $i +=2){
+           my ($inst_node,$pin_node) = ($node[$i],$node[$i+1]);
+       my ( $pin_Name_1,$pin_Name_2) =  &hier_graph_pinName($node_1,$pin_node_1,$inst_node,$pin_node);
+             if($node_1 < $inst_node){
+                $PIN_HASH_1{$node_1."".$inst_node} = $pin_Name_1;
+                $PIN_HASH_2{$inst_node."".$node_1} = $pin_Name_2;
+             }#if
+             else {
+                $PIN_HASH_1{$inst_node."".$node_1} = $pin_Name_2;
+                $PIN_HASH_2{$node_1."".$inst_node} = $pin_Name_1;
+                }#else    
+     }#for 
+ }#if node_list > 4
+}#sub node_pinName_list
+#----------------------------------------------------------------------------------------------------#
+sub read_mp_pins_out {
+my $INPUT_PINS = "mp_pins.out";
+if ( -e $INPUT_PINS){
+open(READ,"$INPUT_PINS");
+print "INFO-TST : 001 : Reading the file for $INPUT_PINS\n";
+while(<READ>){
+chomp();
+
+my ($node1,$x1,$y1,$node2,$x2,$y2)= (split(/\s+/,$_))[0,1,2,3,4,5];
+my @bbox1 = ();
+my @bbox2 = ();
+
+my $llx1 = $x1;
+my $lly1 = $y1;
+my $urx1 = $x1;
+my $ury1 = $y1;
+ 
+push (@bbox1,$llx1,$lly1,$urx1,$ury1);
+my $shape1 = join("",@bbox1);
+
+my $llx2 = $x2;
+my $lly2 = $y2;
+my $urx2 = $x2;
+my $ury2 = $y2;
+
+push(@bbox2,$llx2,$lly2,$urx2,$ury2);
+my $shape2 = join("",@bbox);
+
+my $new_node1 = "";
+my $new_node2 = "";
+my $instance_1 = "";
+my $instance_2 = "";
+if( exists $NODE_HASH{$node1} && $NODE_HASH{$node2}){
+    $instance_1 = $NODE_HASH{$node1};
+    $instance_2 = $NODE_HASH{$node2};
+    if($node1 < $node2){
+     $new_node1 = $node1."".$node2;
+     $new_node2 = $node2."".$node1;
+    }#if
+   else{
+     $new_node1 = $node2."".$node1;
+     $new_node2 = $node1."".$node2;
+   }#else
+ }#if exists NODE_HASH
+if(exists $PIN_HASH_1{$new_node1}){
+$pinName1 = $PIN_HASH_1{$new_node1};
+             }#if exists 
+if(exists $PIN_HASH_2{$new_node2}){
+$pinName2 = $PIN_HASH_2{$new_node2};
+             }#if exists
+
+my $cellref_1 = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$instance_1}->dbPimDBGetInstCellref;
+$PSEUDO_MODULE_ALREADY{$cellref_1}->dbaTstgenAddPinRect($pinName1,$shape1);
+#print "$cellref_1 $pinName1 $new_node1\n";
+my $cellref_2 = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$instance_2}->dbPimDBGetInstCellref;
+$PSEUDO_MODULE_ALREADY{$cellref_2}->dbaTstgenAddPinRect($pinName2,$shape2);
+#print "$cellref_2 $pinName2 $new_node2\n";
+   }#while
+}#if exists file
+else {
+print "WARN-TST : 002 : No $INPUT_PINS file found \n";
+}
+
+}#sub read_mp_pins_out
+
+1;
+
+
+

@@ -1,0 +1,516 @@
+sub activate_libViewTab{
+    $GLOBAL->dbGlobalSetActiveLibraryTab("synlib_view");
+    $GLOBAL->dbGlobalSetActiveCanvas("lib_view");
+    $synCanvas->CanvasFocus;
+}#sub activate_libViewTab
+
+################################### Making Dropdown for Input and Output Pins #########################################
+
+sub InOutPin {
+my @opins = ();
+my @rpins = ();
+my $cellName = $MACRO_TO_DISPLAY;
+   if( exists $PLDB{$cellName}){
+           my @pins = $PLDB{$cellName}->dbMdbGetPins;
+
+       foreach $pinName ( @pins ) {
+           my $pinDir = $PLDB{$cellName}->dbMdbGetPinDir($pinName);
+              if ($pinDir == 0) {
+                 push (@rpins, $pinName);
+                                   }
+           elsif ($pinDir == 1){
+                 push (@opins, $pinName);
+                                   }
+                              }#foreach
+                          }#if exists
+       foreach (sort @opins){
+                $dropdown->insert('end',$_);
+                                     }#foreach
+
+       foreach (sort @rpins){
+                $dropdown1->insert('end',$_);
+                                     }#foreach
+}#sub InOutPin    
+
+###########################################  To plot timing Graph   ################################################
+
+sub plot_lib_data {
+
+#****f* / plot_lib_data
+# NAME
+#   plot_lib_data
+# FUNCTION
+#   timimg plot for lib data> 
+# SYNOPSIS
+#   plot_lib_data -cell <cellname> 
+#                 -InPin <input pin>
+#                 -OutPin <output pin>
+#                 -rise/-fall
+# INPUTS
+#   options:
+#   -cell <cellname>, -InPin <input pin>, -OutPin <output pin>,-rise/-fall
+# OUTPUTS
+#    display timing delay graph
+# ****
+
+
+my $cellName;
+#my $delay;             #####################################################################################
+#my $inputPin;   #-----># These are globle variables,because we are using these variables in Plot_lib_Graph #
+#my $outputPin;         #####################################################################################  
+my @rpins = ();
+my @opins = ();
+my @Indexdata = ();
+my @Valuedata = ();
+my @Index1 = ();
+my @Index2 = ();
+my @plotData = ();
+my $noOfArguments = @_;
+
+if($noOfArguments < 7 || $_[0] eq '-h' || $_[0] eq '-help' || $_[0] eq '-HELP') {
+                                    print "usage : plot_lib_data -cell < {cell Name} >\n";
+                                    print "                      -InPin <inputPin>\n";
+                                    print "                      -OutPin <outputPin>\n";
+                                    print "                      -rise / -fall\n";
+                       } else {
+
+for(my $i = 0 ; $i < $noOfArguments ;  $i++){
+if($_[$i] eq "-cell"){  $cellName = $_[$i+1];} 
+if ($_[$i] eq "-InPin"){ $inputPin = $_[$i+1];}
+if ($_[$i] eq "-OutPin"){ $outputPin = $_[$i+1];}
+if ($_[$i] eq "-rise"){ $delay = riseDelay;}
+if ($_[$i] eq "-fall"){ $delay = fallDelay;}
+                                            }# for correct no.of Arguments
+
+################################### check the existence of Cell in LEF ########################################
+if( exists $PLDB{$cellName}){
+################################### check the existence of Cell in LIB ########################################
+                    if( exists $TLDB{$cellName}){print "INFO: Cell $cellName found\n";
+                                                  }
+                  else{
+                       my $CanvasWidth = 800;
+                       my $CanvasHeight = 400;
+                       my $X = $CanvasWidth/2;
+                       my $Y = $CanvasHeight/2;
+                       my $WarningMsg = "Warning: \"Timing Database is not available\"";
+                          $synCanvas->createText($X,$Y, -text,$WarningMsg, -font,"Times 24 italic", -fill,"red");  
+                       return;
+                           }#if not in lib database
+
+($index,@Indexdata) = $TLDB{$cellName}->dbTimingLibGetPinDelayIndex($outputPin, $inputPin, 0, $delay); 
+@Valuedata = $TLDB{$cellName}->dbTimingLibGetPinDelay($outputPin, $inputPin, 0, $delay);
+                              
+                              }#if cell exists in PLDB 
+
+else {print " This Cell does not exist in Library\n";
+      return;}
+    $Indexdata1 = shift @Indexdata;
+    @Index1 = split(/\s+/,$Indexdata1);
+ my $Indexdata2 = shift @Indexdata;
+    @Index2 = split(/\s+/,$Indexdata2);
+ my $n = @Index1;
+ my $m = @Index2;
+ my $p = @Valuedata;
+
+@plotData = (@plotData,[@Index2]);
+
+ for (my $i= 0; $i<$p; $i++){
+      my $valueEl = shift @Valuedata;
+      my @data = split(/\s+/,$valueEl);
+@plotData = (@plotData, [@data]);
+
+                             }#for
+&Plot_lib_Graph(@plotData);
+
+     }#else correct no of arg
+
+}#sub plot_lib_data
+
+#############################################################################################
+
+sub Plot_lib_Graph {
+my @data = @_;
+my $canvas = $synCanvas;
+my $CanvasWidth = 800;
+my $CanvasHeight = 400;
+my @LineColor=("OliveDrab1", "orange","orange red", "red","SeaGreen1","yellow", "sienna2","sienna4", "VioletRed","purple");
+my @LineType = ([2,4],[2,8],[4,4],[6,4],[6,4,2,4],[6,4,2,4,2,4]);
+my @Stipple = ("gray12","gray25","gray50","gray75");
+my $graphTitle = "Graph:->  For ".$delay.":-{ Index_2 vs Values }";
+my $xLabel = "Index_2 ----------> ";
+my $yLabel = "Y-axis ";
+my $refIndex = $Indexdata1;
+&Call_Plot_lib_Graph(\@data,$CanvasWidth,$CanvasHeight,\@LineColor,\@LineType,\@Stipple,$graphTitle,$xLabel,$canvas,$dataField,$refIndex);
+}#sub Plot_lib_Graph
+
+
+sub Call_Plot_lib_Graph {
+
+my @arg =@_;
+my @data = @{$arg[0]};
+my $box = [0,0,805,405];
+
+#print "arr data @data\n";
+my @data1 = @{$data[0]};
+my @data2 = @{$data[1]};
+my @data3 = @{$data[2]};
+my @data4 = @{$data[3]};
+my @data5 = @{$data[4]};
+my @data6 = @{$data[5]};
+my @data7 = @{$data[6]};
+my @data8 = @{$data[7]};
+
+my $KbCanvasWidth = $arg[1];
+my $KbCanvasHeight = $arg[2];
+my @color = @{$arg[3]};
+my @linetype = @{$arg[4]};
+my @type = @{$linetype[1]};
+my @stipple = @{$arg[5]};
+my $title = $arg[6];
+my $xLabel = $arg[7];
+my $plotCanvas = $arg[8];
+my $dataFields = $arg[9];
+my @dataField = split(/\,/,$dataField);
+my $refIndex = $arg[10];
+my @Index1 = split(/\s+/,$refIndex);
+##### remove hardcoding ####
+my $llx = 155;
+my $lly = 30;
+my $urx = $KbCanvasWidth-50;
+my $ury = $KbCanvasHeight-30;
+############################
+my $width = $urx-$llx;
+my $height = $ury-$lly;
+my @coords = @data;
+my $n = @coords;
+my @ref= @{$coords[0]};
+my @refSorted = sort {$a<=>$b} @ref;
+my $refsize = @ref;
+##############-----find the Min & Max Data Field----############
+my @Mindata = ();
+my @Maxdata = ();
+my @datafield = ();
+for (my $i=1; $i<$n; $i++){
+my @data = ();
+@data = @{$coords[$i]};
+@datafield = sort {$a <=> $b} @data;
+@Mindata = (@Mindata ,$datafield[0]);
+@Maxdata = (@Maxdata ,$datafield[$refsize-1]);
+                         }#for
+@Mindata = sort {$a <=> $b} @Mindata;  
+@Maxdata = sort {$a <=> $b} @Maxdata;
+my $Maxdatalength = @Maxdata;
+
+my $Minref = $ref[0];
+my $MinSortedref = $refSorted[0];
+my $Maxref = $ref[$refsize-1];
+my $Mindata = $Mindata[0];
+my $Maxdata = $Maxdata[$Maxdatalength-1];
+ 
+my $dataDiff = $Maxdata - $Mindata;
+my $refDiff = $Maxref - $Minref;
+my $dataStepSize = $dataDiff/6;
+#print " min data $Mindata, $Maxdata\n";
+#print " min ref  $Minref, $Maxref\n";
+
+my $refStepSize = $refDiff/$refsize;
+
+my $dataStepSize_integer = $dataDiff/6;
+my $refStepSize_integer = $refDiff/$refsize;
+
+$plotCanvas->createRectangle(0,0,805,405, -outline,"black");
+$plotCanvas->createRectangle($llx,$lly,$urx,$ury, -outline,"green");
+
+##------------------- to create data fields in left Canvas -----------------##
+$plotCanvas->createRectangle(5,$lly,110,$ury, -outline,"yellow");
+$plotCanvas->createRectangle(5,$ury,110,$ury-25, -outline,"yellow");
+$plotCanvas->createText(60,$ury-10, -text,"Timing Values", -font,"Times 12",-fill,"magenta");
+
+#-----------------------------------------------------------------------------------#
+
+for (my $i=0; $i<=6; $i++){
+
+##Co-ordinates for data fields Y-Axis##
+
+my $_1; my $_2;
+my $_3; my $_4;
+my $llx1 = $llx - 4;
+my $lly1 = $lly + (($height*$i)/6); 
+my $llx2 = $llx + 4; 
+my $lly2 = $lly + (($height*$i)/6);
+my $dataText = $Mindata +$dataStepSize*$i;
+
+$_1=$dataText*100000;
+$_2=$_1%10;
+$_3 = int($_1/10);
+
+if( $_2>=5)
+{
+$_4=($_3+1)/(10000) ;
+}
+else
+{
+$_4=($_3)/(10000) ;
+}
+$plotCanvas->createLine($llx1,$lly1,$llx2,$lly2, -fill,"red");
+$plotCanvas->createText($llx1-18,$lly1, -text=>$_4,-fill,"magenta");
+
+###### if dataStepSize =0 #######
+if ($dataStepSize == 0){last;}
+#######################################
+
+                           }#for Y-Axis coordinates 
+
+for (my $j=1; $j<=$refsize+1; $j++){
+##Co-ordinates for ref fields##
+my $_5; my $_6;
+my $_7; my $_8;
+my $llx3 = $llx+($width*$j)/($refsize+1);
+my $lly3 = $lly+4;
+my $llx4 = $llx+($width*$j)/($refsize+1);
+my $lly4 = $lly-4; 
+my $refText = $Minref+ $refStepSize*($j-1);
+
+$_5=$refText*100000;
+$_6=$_1%10;
+$_7= int($_5/10);
+if( $_6>=5)
+{
+$_8=($_7+1)/(10000) ;
+}
+else
+{
+$_8=($_7)/(10000) ;
+}
+
+$plotCanvas->createLine($llx3,$lly3,$llx4,$lly4, -fill,"red");
+$plotCanvas->createText($llx3,$lly-9, -text=>$_8,-fill,"magenta");
+                                   }#for ref
+
+###########---plots for each data Field---############
+my $count = 1;
+for (my $k=1; $k<$n; $k++){
+my @data = ();
+@data = @{$coords[$k]};
+my $datasize = @data;
+my @linepoint =();
+my $color;
+my @lineType= ();
+my $stipple;
+my $tag = "graph".$k;
+my $m = @Index1;
+
+if ($k <=10){$color = $color[$k-1];}
+else {$color = $color[$k-11];}
+if ($k <=6){@lineType = @{$linetype[$k-1]};$stipple = "";}
+else {
+    if($k> 6 && $k<=10){
+         @lineType = (4,4);
+         $stipple = @stipple[$k-7];
+                         }
+   else { @lineType = "";
+          $stipple = "";}
+     }
+
+######## case when dataStepSize = 0 ########
+
+my $x1;
+my $y1;
+if ($data[0] eq "NULL"){}
+else {
+ $x1 = $llx+($width/($refsize+1));
+    
+#-----------------------------------------------------------#
+if ($dataStepSize == 0) { 
+$y1 = $lly+ ($height/6)*($data[0]-$Mindata);
+                          }#if dataStepSize is zero
+else {
+$y1 = $lly+ (($height/6)*($data[0]-$Mindata)/$dataStepSize);
+      }#if dataStepSize not zero
+   push (@linepoint, $x1,$y1);  
+#-----------------------------------------------------------#
+
+$plotCanvas->createOval($x1-3,$y1+3,$x1+3,$y1-3, -fill=>$color,-tags,$tag);##creating circle joints 
+      }
+################### draw plot ##################################
+for (my $l=1; $l< $datasize; $l++){
+ 
+my $x2;
+my $y2;
+if ($data[$l] eq "NULL"){}
+else {
+ $x2 = $llx+(($width/($refsize+1))*(1 + ($ref[$l]-$Minref)/$refStepSize));
+#-------------------------------------------------------------#
+if ($dataStepSize == 0) { 
+$y2 = $lly+ ($height/6)*($data[$l]-$Mindata);
+                          }#if dataStepSize is zero
+else {
+$y2 = $lly+ (($height/6)*($data[$l]-$Mindata)/$dataStepSize);
+      }#if dataStepSize not zero
+    
+#-------------------------------------------------------------#
+
+$plotCanvas->createOval($x2-3,$y2+3,$x2+3,$y2-3, -fill=>$color,-tags,$tag);##creating circle joints
+
+push (@linepoint, $x2,$y2);
+     }#if dataStepSize is not zero
+}#for plot
+
+my $XX = 5; my $YY = $ury-(25+20*$k);
+my $XX1 = 25; my $YY1 = $ury-(25+20*$k);
+
+$plotCanvas->createLine(@linepoint, -dash,[@lineType],-stipple,$stipple,-fill,$color,-tags,$tag);
+$plotCanvas->createLine($XX,$YY,$XX1,$YY1, -dash,[@lineType],-stipple,$stipple,-fill,$color);## sample lines for leftside Display   
+
+my $t = ($n-1)/$m*$count;
+if ($k <= $t){$count = $count;}
+else {$count = $count+1;}
+
+$plotCanvas->createText(45,$YY,-text,"Index1-",-fill,$color,-tags,$tag);## dataField text for leftside Display  
+$plotCanvas->createText(85,$YY,-text,$Index1[$count-1],-fill,$color,-tags,$tag);## dataField text for leftside Display  
+
+ $plotCanvas->bind($tag,"<Enter>"=> sub{$plotCanvas->itemconfigure($tag,-fill=>'white')});
+ $plotCanvas->bind($tag,"<Leave>"=> sub{ $plotCanvas->itemconfigure($tag,-fill=>$color);});
+                                  
+                           }#for each data field
+
+&draw_graph_lable_title_color($plotCanvas,$title,$xLabel,$llx,$lly,$width,$height);
+&printCoords_xy($plotCanvas,$llx,$lly,$Minref,$Mindata,$refsize,$refStepSize,$dataStepSize,$width,$height,$MinSortedref);
+
+$plotCanvas->viewArea(@$box, -border => 0);
+@box_org = $plotCanvas->getView();
+&design_ZoomIn_ZoomOut($plotCanvas,\@box_org);
+}#sub Call_Plot_lib_Graph
+
+######################## create label, Title of Graph ########################
+sub draw_graph_lable_title_color{
+my ($plotCanvas,$graphTitle,$labelX,$llx,$lly,$width,$height) = @_;
+#my $labelY = "y-Axis ------->";
+#my $labelY = "y-Axis ------->";
+
+my $X = $llx+$width/2;
+my $Y = $lly+$height+15;
+my $X1 = $llx+$width/2;
+my $Y1 = $lly-22;
+
+$plotCanvas->createText($X,$Y, -text,$graphTitle, -font,"Times 14 ", -fill,"orange red");  
+$plotCanvas->createText($X1,$Y1, -text,$labelX, -font,"Times 13 ", -fill,"orange red");  
+#$plotCanvas->createText($X2,$Y2, -text,$labelY, -font,"Italic 18 bold", -fill,"orange red");  
+#$Plotcanv->markerCreate($X2,$Y2, -text,$labelY, -font,"Italic 18 bold", -fill,"orange red",-rotate,90);
+}#sub draw_graph_lable_title_color
+
+######################################################################
+sub canvasToDisplayCoords {
+my ($plotCanvas,$llx, $lly,$MinRef,$MinData,$refSize,$refStepSize,$dataStepSize,$width,$height,$MinSortedRef) = @_;
+my @xy = $plotCanvas->eventLocation();
+my $x = $xy[0];
+my $y = $xy[1];
+my $x1;
+if ($MinRef == $MinSortedRef){
+$x1 = $MinRef + ((($x-$llx)*($refSize+1)/$width)-1)*$refStepSize;
+                              }
+else {
+$x1 = $MinRef+ (($x-$llx)*($refSize+1)/$width)*$refStepSize;
+$x1 = -$x1;
+}
+my $y1 = $MinData + (($y-$lly)*6*$dataStepSize/$height);
+
+my $t= sprintf("(x,y ) %7.3f,%7.3f\n" ,  $x1,$y1);
+$plotCanvas->createRectangle($x-60,$y+5,$x+60,$y+25, -outline=>"green",-fill=>"white",-tags=>"COORDSTEXT");
+$plotCanvas->createText($x,$y+5, -text=>$t ,-tags=>"COORDSTEXT");
+$plotCanvas->createLine($llx,$y,$x,$y, -width=> 0,-fill=>"yellow",-dash=>[6,4],-tags=>"COORDSTEXT");
+$plotCanvas->createLine($x,$lly,$x,$y, -width=> 0,-fill=>"yellow",-dash=>[6,4],-tags=>"COORDSTEXT");
+ 
+}#sub canvasToDisplayCoords
+
+sub printCoords_xy {
+my @arg = @_;
+my $plotCanvas = $arg[0];
+$plotCanvas->CanvasBind("<Button-1>"=> [sub {&canvasToDisplayCoords(@arg); }]);
+$plotCanvas->CanvasBind("<B1-ButtonRelease>"=> [sub{$plotCanvas->delete(COORDSTEXT);}]);
+}#sub printCoords_xy
+
+################################ reserve for future use ##############################################
+
+sub plot_lib_data1 {
+
+my $INPUT_CELLLIST;
+my @cellList = ();
+my $noOfArguments = @_;
+
+if($noOfArguments < 7 || $_[0] eq '-h') {
+                                    print "usage : plot_lib_data -cellList < {list of macroas} >\n";
+                                    print "                      -InPin <inputPin>\n";
+                                    print "                      -OutPin <outputPin>\n";
+                                    print "                      -rise / -fall\n";
+                       } else {
+
+for(my $i = 0 ; $i < $noOfArguments ;  $i++){
+if($_[$i] eq "-cellList"){  $INPUT_CELLLIST = $_[$i+1];
+                            @cellList = split(/\,/,$INPUT_CELLLIST);
+                          }#if 
+if ($_[$i] eq "-InPin"){ $inPin = $_[$i+1];}
+if ($_[$i] eq "-OutPin"){ $outPin = $_[$i+1];}
+if ($_[$i] eq "-rise"){ $delay = riseDelay;}
+if ($_[$i] eq "-fall"){ $delay = fallDelay;}
+                                            }# for no of arguments
+
+foreach $macroName (@cellList){
+my @rpins = ();
+my @opins = ();
+
+   if( exists $PLDB{$macroName}){
+
+   my @pins = $PLDB{$macroName}->dbMdbGetPins;
+
+   foreach $pinName ( @pins ) {
+           my $pinDir = $PLDB{$macroName}->dbMdbGetPinDir($pinName);
+           if ($pinDir == 0) {
+                 push (@rpins, $pinName);
+                 my $func = $TLDB{$macroName}->dbTimingLibGetPinFunc($pinName);
+                 my $pinType = $TLDB{$macroName}->dbTimingLibGetPinType($pinName);
+                               }
+           elsif ($pinDir == 1){
+              push (@opins, $pinName);
+                                }
+            
+                               }#foreach pin
+
+##print "input pins are :- @rpins\n";
+#print "output pins are :- @opins\n";
+###########################################################
+foreach $outpin (@opins){ 
+        foreach $inpin (@rpins){
+my $Ttype = "fallDelay";
+my @data = ();
+my @data1 = ();
+             my @cond = $TLDB{$macroName}->dbTimingLibGetPinCond($outpin, $inpin, "fallDelay");
+print "in pin $inpin outpin $outpin\n";
+print "cod @cond\n";
+
+       # foreach $condEl (@cond){
+#print "my cond $condEl\n";
+#my @data = $TLDB{$macroName}->dbTimingLibGetPinDelayIndex($outpin, $inpin, $condEl, 'fallDelay'); 
+#my @data1 = $TLDB{$macroName}->dbTimingLibGetPinDelay($outpin, $inpin, $condEl, 'fallDelay');
+ 
+ ($index,@data) = $TLDB{$macroName}->dbTimingLibGetPinDelayIndex($outpin, $inpin, 'riseDelay'); 
+ @data1 = $TLDB{$macroName}->dbTimingLibGetPinDelay($outpin, $inpin, 'riseDelay');
+
+#print "my data @data\n";
+#print "my value @data1\n";
+#}
+}} 
+
+
+                           }#if pin exists in database
+else { print "Not present in Database\n";}
+                    }#foreach Macro
+     }#else correct no of arg
+}#sub plot_lib_data1
+
+####################################################################################################
+
+
+1;
+
+

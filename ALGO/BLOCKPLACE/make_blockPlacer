@@ -1,0 +1,395 @@
+#!/usr/bin/perl -w
+
+
+sub dbPlaceBlockCompactor {
+#use strict;
+use Graph::Directed;
+#use Graph::Layouter qw(layout);
+#use Graph::Renderer;
+use List::Util qw[min max];
+use Getopt::Long;
+use Benchmark;
+
+my ($fpdef, $fpdefout, $dir, $genGx);
+my ($help, $debug, $verbose) = (0,1,1);
+my $mGL  = Graph::Directed->new;
+my $mGR  = Graph::Directed->new;
+my $mGx  = Graph::Directed->new;
+my @MACRO;
+my %MACRO;
+my @DIEAREA;
+my $eps = 1;
+
+
+########################################################################
+  my $t0 = new Benchmark;
+
+  # initialize vars
+  my (@args) = @_;
+  ($fpdef, $fpdefout, $dir, $genGx) = ();
+  ($help, $debug, $verbose) = (0,0,0);
+  $mGL  = Graph::Directed->new;
+  $mGR  = Graph::Directed->new;
+  $mGx  = Graph::Directed->new;
+  @MACRO = ();
+  %MACRO = ();
+  @DIEAREA = ();
+
+$dir = "x";
+  $help = 0;
+  &make_blockplacer_readArgs(@args);
+  if ($help) {
+    &make_blockplacer_usage();
+  } else {
+    &make_blockplacer_readFpdef;
+    #&make_blockplacer_genGx;
+    &make_blockplacer_place;
+  } #if...else
+
+  &finish();
+  my $t1 = new Benchmark;
+  my $td = timediff($t1, $t0);
+  print "dbPlaceBlockCompactor took:",timestr($td),"\n";
+
+########################################################################
+sub make_blockplacer_readArgs {
+  my (@args) =  @_;
+  my $args = join(' ',@args);
+  if (!defined($args)) {
+	$args = "";
+  }
+  my $parseResult = Getopt::Long::GetOptionsFromString($args , 
+						       # read args here
+						       "fpdef=s"    => \$fpdef,
+						       "output=s"   => \$fpdefout,
+						       "dir"        => \$dir,
+						       "genGx"      => \$genGx,
+						       "help"       => \$help,
+						       "debug"      => \$debug,
+						       "verbose"    => \$verbose,
+						      );
+} #sub make_blockplacer_readArgs
+
+########################################################################
+sub finish() {
+  #anything special to be done when this script exits
+} #sub finish
+
+########################################################################
+sub sortBySlack { 
+   $MACRO{$a}{slack} <=> $MACRO{$b}{slack};
+}
+
+
+sub make_blockplacer_place {
+
+
+  my @order = sort make_blockplacer_sortHashValueCurr (keys(%MACRO)); 
+  $worstNodeSlack = 0;
+  foreach my $m (@order) { 
+    $MACRO{$m}{slack} = $MACRO{$m}{max} - $MACRO{$m}{min};
+  }
+  my $first = 1;
+  foreach my $m (sort sortBySlack (keys(%MACRO))) { 
+    if (($m ne "M_L") and ($m ne "M_R") and ($MACRO{$m}{slack}<0)) {
+      printf("DBG-ALGO_BLK_PL : macro:%-30s slack:%-10d\n",$m,$MACRO{$m}{slack});
+      if ($first) {$worstNode = $m; $first = 0;}
+    }
+  }
+  if (!$first) {
+      $m = $worstNode;
+      print "No solution exists, max constrained macro:$m  slack:$MACRO{$m}{slack}\n";
+      close(FPDEFWR);
+      $cmd = "cp $fpdef $fpdefout"; system($cmd);
+      $cmd = "cp $fpdef abradabra"; system($cmd);
+      #die();
+      return();   
+  }
+ foreach my $m (@order) {
+    if ($MACRO{$m}{min} > $MACRO{$m}{max}) {
+      print "No solution exists because min of macro:$m > max ;;Min:$MACRO{$m}{min} max=$MACRO{$m}{max}";
+        $cmd = "cp $fpdef $fpdefout"; system($cmd);
+	return();   
+ } elsif ( ($MACRO{$m}{curr} >= $MACRO{$m}{min}) && ($MACRO{$m}{curr} <= $MACRO{$m}{max})) {
+      $MACRO{$m}{locX} = $MACRO{$m}{curr};
+    } elsif ($MACRO{$m}{curr} < $MACRO{$m}{min}) {
+      $MACRO{$m}{locX} = $MACRO{$m}{min};
+    } elsif ($MACRO{$m}{curr} > $MACRO{$m}{max}) {
+      $MACRO{$m}{locX} = $MACRO{$m}{max};
+    }
+
+    my @succ = $mGL->successors($m);
+    foreach my $succ (@succ) {
+      my $wt = $mGL->get_edge_weight($m, $succ);
+      $wt += $MACRO{$m}{locX} - $MACRO{$m}{min};
+      $mGL->set_edge_weight($m, $succ, $wt)
+    }
+
+    my @pred = $mGR->predecessors($m);
+    foreach my $pred (@pred) {
+      my $wt = $mGR->get_edge_weight($pred, $m);
+      $wt += $MACRO{$m}{locX} - $MACRO{$m}{min};
+      $mGR->set_edge_weight($pred, $m, $wt)
+    }
+
+    print"INFO-ALGO_BLK_PL : 001 : Placed Macro:$m at $MACRO{$m}{locX}\n";
+    &make_blockplacer_findMinX("M_R");
+    &make_blockplacer_findMaxX("M_L");
+
+    if ($dir eq "y") {
+      $MACRO{$m}{p_lly} = $MACRO{$m}{locX};
+      $MACRO{$m}{p_llx} = $MACRO{$m}{llx};
+      $MACRO{$m}{p_ury} = $MACRO{$m}{p_llx} + $MACRO{$m}{ury} - $MACRO{$m}{lly};
+      $MACRO{$m}{p_urx} = $MACRO{$m}{urx};
+    } else {
+      $MACRO{$m}{p_llx} = $MACRO{$m}{locX};
+      $MACRO{$m}{p_lly} = $MACRO{$m}{lly};
+      $MACRO{$m}{p_urx} = $MACRO{$m}{p_llx} + $MACRO{$m}{urx} - $MACRO{$m}{llx};
+      $MACRO{$m}{p_ury} = $MACRO{$m}{ury};
+    } #if
+  }
+    &make_blockplacer_writeFpdef;
+} # sub make_blockplacer_place
+
+########################################################################
+sub make_blockplacer_findMinX {
+  my ($m) = @_;
+  my $minX = -1;
+  print"DBG-ALGO_BLK_PL : 001 : Finding Min X for $m...\n" if ($debug);
+  if ($m eq "M_L") { 
+    $minX = 0;
+  } else {
+    my @pred = $mGL->predecessors($m);
+    my @predMinX;
+    foreach my $pred (@pred) {
+      my $predMinX = make_blockplacer_findMinX($pred);
+      my $edgeWt = $mGL->get_edge_weight($pred,$m);
+      print"\t\tDBG-ALGO_BLK_PL : 002 : m:$m pred:$pred predMinX:$predMinX edgeWt:$edgeWt\n" if ($debug);
+      push(@predMinX, $predMinX +$edgeWt);
+    }
+    $minX = max(@predMinX);
+    print"\tDBG-ALGO_BLK_PL : 003 : @pred : @predMinX\n" if ($debug);
+  }
+  print"MinX of Macro:$m = $minX\n"  if ($verbose);
+  $MACRO{$m}{min} = $minX;
+  return($minX);
+} #sub make_blockplacer_findMinX
+
+########################################################################
+sub make_blockplacer_findMaxX {
+  my ($m) = @_;
+  my $maxX = -1;
+  print"DBG-ALGO_BLK_PL : 001 : Finding Max X for $m...\n" if ($debug);
+  if ($m eq "M_R") { 
+    $maxX = 0;
+  } else {
+    my @pred = $mGR->predecessors($m);
+    my @predMaxX;
+    foreach my $pred (@pred) {
+      my $predMaxX = make_blockplacer_findMaxX($pred);
+      my $edgeWt = $mGR->get_edge_weight($pred,$m);
+      print"\t\tDBG-ALGO_BLK_PL : 002 : m:$m pred:$pred predMaxX:$predMaxX edgeWt:$edgeWt\n" if ($debug);
+      push(@predMaxX, $predMaxX +$edgeWt);
+    }
+    $maxX = max(@predMaxX);
+    print"\tDBG-ALGO_BLK_PL : 003 : @pred : @predMaxX\n" if ($debug);
+  }
+  print"MaxX of Macro:$m = $maxX\n" if ($verbose);
+  $MACRO{$m}{max} = $MACRO{M_R}{curr} - $maxX;
+  return($maxX);
+} #sub make_blockplacer_findMaxX
+
+########################################################################
+sub make_blockplacer_sortHashValueCurr {
+   $MACRO{$a}{curr} <=> $MACRO{$b}{curr};
+} #sub make_blockplacer_sortHashValueCurr
+
+########################################################################
+
+## ########################################################################
+sub make_blockplacer_readFpdef {
+
+  open(FPDEF, $fpdef)    or &finish( "$! : $fpdef",__LINE__);
+  my $readComps = 0;
+  my $line = <FPDEF>;
+  my $lineCount = 0;
+  while ($line) {
+    chomp $line;
+    if ($line =~ /^\s*DIEAREA\s*\(\s*(.*)\s*\)\s*;/ ) {
+      my $dieArea = $1;
+      $dieArea =~ s/\)\s+\(//;
+      print "MSG-ALGO_BLK_PL : 001 : Found $dieArea\n";
+      @DIEAREA = split(/\s+/,$dieArea);
+    } elsif ($line =~ /^\s*COMPONENTS/ ) {
+      $readComps = 1;
+      while ($readComps) {
+	$line = <FPDEF>; $lineCount++; 
+	#read components
+	if ($line =~ /^\s*([A-Za-z]\w*)\s+\(\s*(.*)\s*\)\s*\(\s*(.*)\s*\)\s*;/ ) {
+	  ($MACRO{$1}{llx},$MACRO{$1}{lly}) = split(/\s+/,$2);
+	  ($MACRO{$1}{urx},$MACRO{$1}{ury}) = split(/\s+/,$3);
+	  if ($MACRO{$1}{llx} < 0) { $MACRO{$1}{urx} -= $MACRO{$1}{llx};$MACRO{$1}{llx} = 0; }
+	  if ($MACRO{$1}{lly} < 0) { $MACRO{$1}{ury} -= $MACRO{$1}{lly};$MACRO{$1}{lly} = 0;}
+	} elsif ($line =~ /^\s*END COMPONENTS/ ) {
+	  $readComps = 0;
+	}
+      } #while
+    } #elsif
+      $line = <FPDEF>; $lineCount++; 
+  } #while
+  close(FPDEF);
+
+  ## read fpdef and create graph
+  foreach my $macro (keys %MACRO) {
+    $mGL->add_vertex($macro);
+    $mGR->add_vertex($macro);
+    if ($dir eq "y") { 
+      $MACRO{$macro}{curr} = $MACRO{$macro}{lly};
+    } else {
+      $MACRO{$macro}{curr} = $MACRO{$macro}{llx};
+   }
+ } #foreach
+
+  # create pesudo macros for Left and Right edge
+  $mGL->add_vertex("M_L");
+  $mGL->add_vertex("M_R");
+  $mGR->add_vertex("M_L");
+  $mGR->add_vertex("M_R");
+  $MACRO{M_L}{min} = 0;
+  $MACRO{M_R}{max} = 0;
+  $MACRO{M_L}{curr} = 0;
+  if ($dir eq "y") {$MACRO{M_R}{curr} = $DIEAREA[3];} else {$MACRO{M_R}{curr} = $DIEAREA[2];}
+  $MACRO{M_L}{llx} = 0;
+  $MACRO{M_L}{lly} = 0;
+  $MACRO{M_L}{urx} = 0;
+  if ($dir eq "y") {$MACRO{M_L}{ury} = $DIEAREA[2];} else {$MACRO{M_L}{ury} = $DIEAREA[3];}
+  if ($dir eq "y") {$MACRO{M_R}{llx} = $DIEAREA[3];} else {$MACRO{M_R}{llx} = $DIEAREA[2];}
+  $MACRO{M_R}{lly} = 0;
+  if ($dir eq "y") {$MACRO{M_R}{urx} = $DIEAREA[3];} else {$MACRO{M_R}{urx} = $DIEAREA[2];}
+  if ($dir eq "y") {$MACRO{M_R}{ury} = $DIEAREA[2];} else {$MACRO{M_R}{ury} = $DIEAREA[3];}
+  if ($dir eq "y") { &make_blockplacer_genGy;} else {
+    &make_blockplacer_genGx;
+  }
+  &make_blockplacer_findMinX("M_R");
+  &make_blockplacer_findMaxX("M_L");
+
+
+
+} # sub make_blockplacer_readFpdef
+
+## ########################################################################
+sub make_blockplacer_writeFpdef {
+
+  open(FPDEFRD, $fpdef)           or &finish( "$! : $fpdef"   ,__LINE__);
+  open(FPDEFWR, ">$fpdefout")    or &finish( "$! : $fpdefout",__LINE__);
+  my $readComps = 0;
+  my $line = <FPDEFRD>;
+  my $lineCount = 0;
+  while ($line) {
+    chomp $line;
+    if ($line =~ /^\s*COMPONENTS/ ) {
+      $readComps = 1;
+      print FPDEFWR "$line\n";
+      while ($readComps) {
+	$line = <FPDEFRD>; $lineCount++; 
+	#read components
+	if ($line =~ /^\s*([A-Za-z]\w*)\s+\(\s*(.*)\s*\)\s*\(\s*(.*)\s*\)\s*;/ ) {
+	  print FPDEFWR "$1 ( $MACRO{$1}{p_llx} $MACRO{$1}{p_lly} ) ( $MACRO{$1}{p_urx} $MACRO{$1}{p_ury} ) ;\n";
+	} else {
+	  if ($line =~ /^\s*END COMPONENTS/ ) {
+	    $readComps = 0;
+	  } #if
+	  print FPDEFWR "$line\n";
+	} #else
+      } #while
+    } else {
+      print FPDEFWR "$line\n";
+    } #else
+    $line = <FPDEFRD>; $lineCount++; 
+  } #while
+  close(FPDEFRD);
+  close(FPDEFWR);
+} #sub make_blockplacer_writeFpdef
+
+########################################################################
+sub make_blockplacer_genGx {
+
+  #create Gx
+  my @checky;
+  foreach my $m (keys %MACRO) {
+#    if (($m ne "M_L") && ($m ne "M_R")) {
+      my $ylo = $MACRO{$m}{lly} + $eps;
+      my $yhi = $MACRO{$m}{ury} - $eps;
+      if ($ylo > $DIEAREA[1]) { push(@checky, $ylo);}
+      if ($yhi < $DIEAREA[3]) { push(@checky, $yhi);}
+#    } #if
+  } #foreach
+
+  my $yLast = -100;
+  foreach my $y (sort {$a <=> $b} @checky) {
+    if ($y != $yLast) {
+      my %macroVld = ();
+      my @macroSeq = ();
+      foreach my $m (keys %MACRO) {
+	if (($MACRO{$m}{lly}<$y) && ($MACRO{$m}{ury}>$y)) { push(@{$macroVld{$MACRO{$m}{llx}}},$m); }
+      } #foreach
+      foreach my $x (sort {$a <=> $b} keys %macroVld) { push(@macroSeq,@{$macroVld{$x}}); }
+      for (my $i=0; $i<$#macroSeq; $i++) {
+	my $sizeX = $MACRO{$macroSeq[$i]}{urx} - $MACRO{$macroSeq[$i]}{llx};
+	if (!$mGL->has_edge($macroSeq[$i]  ,$macroSeq[$i+1])) {
+	  $mGL->add_weighted_edge($macroSeq[$i]  ,$macroSeq[$i+1],$sizeX);
+	}
+	if (!$mGR->has_edge($macroSeq[$i+1],$macroSeq[$i])) {
+	  $mGR->add_weighted_edge($macroSeq[$i+1],$macroSeq[$i]  ,$sizeX);
+	}
+      }
+      $yLast = $y;
+    }#if
+  }#foreach
+
+
+} # sub make_blockplacer_genGx
+########################################################################
+sub make_blockplacer_genGy {
+  #create Gy
+  my @checkx;
+  foreach my $m (keys %MACRO) {
+#    if (($m ne "M_L") && ($m ne "M_R")) {
+      my $xlo = $MACRO{$m}{llx} + $eps;
+      my $xhi = $MACRO{$m}{urx} - $eps;
+      if ($xlo > $DIEAREA[0]) { push(@checkx, $xlo);}
+      if ($xhi < $DIEAREA[2]) { push(@checkx, $xhi);}
+#    } #if
+  } #foreach
+
+  my $xLast = -100;
+  foreach my $x (sort {$a <=> $b} @checkx) {
+    if ($x != $xLast) {
+      my %macroVld = ();
+      my @macroSeq = ();
+      foreach my $m (keys %MACRO) {
+	if (($MACRO{$m}{llx}<$x) && ($MACRO{$m}{urx}>$x)) { push(@{$macroVld{$MACRO{$m}{lly}}},$m); }
+      } #foreach
+      foreach my $y (sort {$a <=> $b} keys %macroVld) { push(@macroSeq,@{$macroVld{$y}}); }
+      for (my $i=0; $i<$#macroSeq; $i++) {
+	my $sizeY = $MACRO{$macroSeq[$i]}{ury} - $MACRO{$macroSeq[$i]}{lly};
+	if (!$mGL->has_edge($macroSeq[$i]  ,$macroSeq[$i+1])) {
+	  $mGL->add_weighted_edge($macroSeq[$i]  ,$macroSeq[$i+1],$sizeY);
+	}
+	if (!$mGR->has_edge($macroSeq[$i+1],$macroSeq[$i])) {
+	  $mGR->add_weighted_edge($macroSeq[$i+1],$macroSeq[$i]  ,$sizeY);
+	}
+      }
+      $xLast = $x;
+    }#if
+  }#foreach
+} # sub make_blockplacer_genGy
+########################################################################
+sub make_blockplacer_usage {
+    print"\ndbPlaceBlockCompactor Usage: dbPlaceBlockCompactor -fpdef <fpdef file> -output <output fpdef file> -dir <x/y> [-verbose -debug -norun -help]\n";
+	# add details of each switch here
+    return;
+}#sub make_blockplacer_usage
+
+} #sub dbPlaceBlockCompactor
+1;

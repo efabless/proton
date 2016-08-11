@@ -1,0 +1,152 @@
+#!/bin/perl -w 
+
+sub dbPlaceShowFFConn {
+my $ffInst = $_[0];
+
+if ( exists $COMP_ALREADY{$ffInst} ) {
+     my $cellref = $CADB{$ffInst}->dbCadbGetCellref;
+     if ( $PLDB{$cellref}->dbMdbGetFunction eq "flop" && $PLDB{$cellref}->dbMdbGetType == 1 ) {
+    my $InstAddr = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByName($ffInst);
+    my @fanIns = $PLACE{$TOP_MODULE}->dbPlaceGetFanInFlops($InstAddr); 
+#-----------------------------------------------------------------------------------#
+# draw a blue line for all fanIn Flops
+my @rootFFLoc = $CADB{$ffInst}->dbCadbGetLoc;
+   foreach my $instPntr ( @fanIns ) {
+   my $inst = $PLACE{$TOP_MODULE}->dbPlaceGetNameByNumberCol($instPntr);
+   if ( exists  $COMP_ALREADY{$inst} ) {
+   my @fanInInstLoc = $CADB{$inst}->dbCadbGetLoc;
+   print "$rootFFLoc[0],$rootFFLoc[1],$fanInInstLoc[0],$fanInInstLoc[1]\n";
+   #my @ll = dbGuidatabase2Gui(@rootFFLoc);
+   #my @ur = dbGuidatabase2Gui(@fanInInstLoc);
+   #$design_canvas->createLine($ll[0],$ll[1],$ur[0],$ur[1], -fill => "blue", -tags => "flight_line");
+   my @ll = dbWGuidatabase2WGui(@rootFFLoc);
+   my @ur = dbWGuidatabase2WGui(@fanInInstLoc);
+   $design_worldcanvas->createLine($ll[0],$ll[1],$ur[0],$ur[1], -fill => "blue", -tags => "flight_line");
+                                       }
+                                }# foreach fanin instance
+#-----------------------------------------------------------------------------------#
+     @fanIns = $PLACE{$TOP_MODULE}->dbPlaceGetFanInPorts($InstAddr);
+   # print join ",  ", @fanIns;
+# draw a purple line for all fanIn Ports
+ @rootFFLoc = $PLACE{$TOP_MODULE}->dbPlaceGetFlopLoc($ffInst);
+   foreach my $instPntr ( @fanIns ) {
+   my $inst = $PLACE{$TOP_MODULE}->dbPlaceGetNameByNumberCol($instPntr);
+   my @fanInInstLoc = $PLACE{$TOP_MODULE}->dbPlaceGetPortLoc($inst);
+   print "$rootFFLoc[0],$rootFFLoc[1],$fanInInstLoc[0],$fanInInstLoc[1]\n";
+   #my @ll = dbGuidatabase2Gui(@rootFFLoc);
+   #my @ur = dbGuidatabase2Gui(@fanInInstLoc);
+   #$design_canvas->createLine($ll[0],$ll[1],$ur[0],$ur[1], -fill => "green", -tags => "flight_line");
+   my @ll = dbWGuidatabase2WGui(@rootFFLoc);
+   my @ur = dbWGuidatabase2WGui(@fanInInstLoc);
+   $design_worldcanvas->createLine($ll[0],$ll[1],$ur[0],$ur[1], -fill => "purple", -tags => "flight_line");
+                                }# foreach fanin port
+
+#-----------------------------------------------------------------------------------#
+    my @fanOuts = $PLACE{$TOP_MODULE}->dbPlaceGetFanOutPorts($InstAddr);
+    #print join ",  ", @fanOuts;
+# draw a DarkSalmon line for all fanOut Ports
+ @rootFFLoc = $PLACE{$TOP_MODULE}->dbPlaceGetFlopLoc($ffInst);
+   foreach my $instPntr ( @fanOuts ) {
+   my $inst = $PLACE{$TOP_MODULE}->dbPlaceGetNameByNumberRow($instPntr);
+   my @fanOutInstLoc = $PLACE{$TOP_MODULE}->dbPlaceGetPortLoc($inst);
+   print "$rootFFLoc[0],$rootFFLoc[1],$fanOutInstLoc[0],$fanOutInstLoc[1]\n";
+   #my @ll = dbGuidatabase2Gui(@rootFFLoc);
+   #my @ur = dbGuidatabase2Gui(@fanInInstLoc);
+   #$design_canvas->createLine($ll[0],$ll[1],$ur[0],$ur[1], -fill => "green", -tags => "flight_line");
+   my @ll = dbWGuidatabase2WGui(@rootFFLoc);
+   my @ur = dbWGuidatabase2WGui(@fanOutInstLoc);
+   $design_worldcanvas->createLine($ll[0],$ll[1],$ur[0],$ur[1], -fill => "DarkSalmon", -tags => "flight_line");
+                                }# foreach fanin port
+
+    ###################################################################
+     @fanOuts = $PLACE{$TOP_MODULE}->dbPlaceGetFanOutFlops($InstAddr); 
+    ###################################################################
+# draw a orange line for all fanOut Flops
+@rootFFLoc = $CADB{$ffInst}->dbCadbGetLoc;
+   foreach my $instPntr ( @fanOuts ) {
+   my $inst = $PLACE{$TOP_MODULE}->dbPlaceGetNameByNumberRow($instPntr);
+   if ( exists  $COMP_ALREADY{$inst} ) {
+   my @fanInInstLoc = $CADB{$inst}->dbCadbGetLoc;
+   print "$rootFFLoc[0],$rootFFLoc[1],$fanInInstLoc[0],$fanInInstLoc[1]\n";
+   #my @ll = dbGuidatabase2Gui(@rootFFLoc);
+   #my @ur = dbGuidatabase2Gui(@fanInInstLoc);
+   #$design_canvas->createLine($ll[0],$ll[1],$ur[0],$ur[1], -fill => "yellow", -tags => "flight_line");
+   my @ll = dbWGuidatabase2WGui(@rootFFLoc);
+   my @ur = dbWGuidatabase2WGui(@fanInInstLoc);
+   $design_worldcanvas->createLine($ll[0],$ll[1],$ur[0],$ur[1], -fill => "orange", -tags => "flight_line");
+                                       }
+                                }# foreach fanOut instance
+
+    ###################################################################
+                                                                                             } # if the flop is a register
+else { print "WARN : 002 : instance $ffInst is not a begin or end point\n"; }
+                                     }# if the instance exists
+else { print "WARN : 001 : instance $ffInst is not found in the databse\n"; }
+
+
+}#sub dbPlaceShowFFConn
+
+
+sub dbPlaceShowDFM {
+
+my @drivers = (u10,u12,u13,u14,u15,u16);
+print join ", ", @drivers; print "\n";
+my @nextLevel1Drivers = &dbPlaceDrawFanOutFlight(@drivers);
+print join ", ", @nextLevel1Drivers; print "\n";
+sleep 2;
+my @nextLevel2Drivers = &dbPlaceDrawFanOutFlight(@nextLevel1Drivers);
+print join ", ", @nextLevel2Drivers; print "\n";
+sleep 2;
+my @nextLevel3Drivers = &dbPlaceDrawFanOutFlight(@nextLevel2Drivers);
+#print join ", ", @nextLevel2Drivers; print "\n";
+#sleep 2;
+#my @nextLevel4Drivers = &dbPlaceDrawFanOutFlight(@nextLevel3Drivers);
+#print join ", ", @nextLevel2Drivers; print "\n";
+#sleep 2;
+#my @nextLevel5Drivers = &dbPlaceDrawFanOutFlight(@nextLevel4Drivers);
+#print join ", ", @nextLevel2Drivers; print "\n";
+#sleep 2;
+#my @nextLevel6Drivers = &dbPlaceDrawFanOutFlight(@nextLevel5Drivers);
+#print join ", ", @nextLevel2Drivers; print "\n";
+#sleep 2;
+#my @nextLevel7Drivers = &dbPlaceDrawFanOutFlight(@nextLevel6Drivers);
+#print join ", ", @nextLevel2Drivers; print "\n";
+##sleep 2;
+#my @nextLevel8Drivers = &dbPlaceDrawFanOutFlight(@nextLevel7Drivers);
+#print join ", ", @nextLevel2Drivers; print "\n";
+#sleep 2;
+#my @nextLevel9Drivers = &dbPlaceDrawFanOutFlight(@nextLevel8Drivers);
+#print join ", ", @nextLevel2Drivers; print "\n";
+
+}# sub dbPlaceShowDFM
+
+
+sub dbPlaceDrawFanOutFlight {
+my @drivers = @_;
+my @nextLevelDriver = ();
+
+foreach my $driver ( @drivers ) {
+#print "$driver\n";
+        my $InstAddr = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByName($driver);
+        my @fanOuts = $PLACE{$TOP_MODULE}->dbPlaceGetFanOuts($InstAddr);
+        if ( exists  $COMP_ALREADY{$driver} ) {
+        @rootDriverLoc = $CADB{$driver}->dbCadbGetLoc;
+   foreach my $instPntr ( @fanOuts ) {
+   my $inst = $PLACE{$TOP_MODULE}->dbPlaceGetNameByNumberRow($instPntr);
+   if ( exists  $COMP_ALREADY{$inst} ) {
+#   print "\t$inst\n";
+   push(@nextLevelDriver,$inst);
+   my @fanOutInstLoc = $CADB{$inst}->dbCadbGetLoc;
+#   print "$rootDriverLoc[0],$rootDriverLoc[1],$fanOutInstLoc[0],$fanOutInstLoc[1]\n";
+   my @ll = dbGuidatabase2Gui(@rootDriverLoc);
+   my @ur = dbGuidatabase2Gui(@fanOutInstLoc);
+   $design_canvas->createLine($ll[0],$ll[1],$ur[0],$ur[1], -fill => "yellow", -tags => "flight_line");
+                                       }
+
+        
+                                }# foreach fanOut
+                                              }# if driver is a flop
+                                  }#for each driver
+return(@nextLevelDriver);
+}# sub dbPlaceDrawFanOutFlight
+1;

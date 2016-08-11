@@ -1,0 +1,109 @@
+
+
+sub flplan_align_inst {
+use Benchmark;
+my $t0 = new Benchmark;
+
+my $noOfArguments = @_;
+
+if( $_[0] eq '-h' || $_[0] eq '-help') { print "Usage : place_design \n";
+                           print "        --hier | --flat \n";
+                           print "        -space n : even space in microns \n";
+                           print "        -align H or V :  line up instances in horizontal or vertical dir\n";
+                           print "        --selected \n";
+                           print "        -pattern regexp : align all instances that match this pattern \n";
+                           print "        note : by defaul all sections are written out\n";
+                         }
+else { # if correct no. of inputs
+my $usePseudo = 0;
+my $useFlat = 1;
+my $instSpacing = 0;
+my $align = H ;
+my $prefix ; undef $prefix ;
+my $side = "t";
+my $start = "0";
+
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "--hier"){$usePseudo = 1; $useFlat = 0;}
+if($_[$i] eq "-space"){$instSpacing = $_[$i+1] ;}
+if($_[$i] eq "-start"){$start = $_[$i+1] ;}
+if($_[$i] eq "-align"){$align = $_[$i+1] ;}
+if($_[$i] eq "-pattern"){$prefix = $_[$i+1] ;}
+if($_[$i] eq "-start"){$start = $_[$i+1] ;}
+                                         } # for
+
+
+print "aliging instance with $prefix prefix in $align direction with the space of $instSpacing starting from $start\n";
+
+#--------- use hier database if the --hier switch is used ------#
+if ($usePseudo == 1 ) {
+if ($align eq "H") { $locX = $start;}
+if ($align eq "V") { $startY = $start;}
+# loop through all the instances of the current top module and find the instance that match the name of the prefix
+# then spread them in alphabetical order 
+$moduleName = $TOP_MODULE;
+
+my @instArray = ();
+foreach my $vinst ( keys %{$PSEUDO_VINST_ALREADY{$moduleName}} ) {
+    if ( $vinst =~ /$prefix/) { push(@instArray,$vinst); }
+                                                                 }
+my $xx = @instArray;
+print "$xx instances to be arrayed\n";
+my @instArraySorted =  sort {$a cmp $b} @instArray ;
+#--------- find minX and minY ------#
+my $minX = 10000000;
+my $minY = 10000000;
+foreach my $vinst (@instArraySorted) {
+my @loc = $PSEUDO_VINST_ALREADY{$moduleName}{$vinst}->dbPimDBGetInstRelLoc;
+if ($loc[0] < $minX) { $minX = $loc[0]}
+if ($loc[1] < $minY) { $minY = $loc[1]}
+                                    }
+print "$minX and $minY\n";
+$locX = $minX;
+my $vinst = shift @instArraySorted;
+my $cellref = $PSEUDO_VINST_ALREADY{$moduleName}{$vinst}->dbPimDBGetInstCellref;
+if (exists $PLDB{$cellref} ) { @size = $PLDB{$cellref}->dbMdbGetSize; }
+$llx = $minX;
+$urx = $minX + $size[0] ;
+$lly = $minY;
+$ury = $minY + $size[1] ;
+my @bbox = ();
+push(@bbox,$llx);
+push(@bbox,$lly);
+push(@bbox,$urx);
+push(@bbox,$ury);
+      $PSEUDO_VINST_ALREADY{$moduleName}{$vinst}->dbPimDBSetInstRelBbox(@bbox);
+print "First $vinst : $cellref : $size[0] $size[1] : $llx $lly \n";
+
+#------------------------------------#
+foreach my $vinst (@instArraySorted) {
+my $cellref = $PSEUDO_VINST_ALREADY{$moduleName}{$vinst}->dbPimDBGetInstCellref;
+if (exists $PLDB{$cellref} ) { @size = $PLDB{$cellref}->dbMdbGetSize; }
+$llx = $urx + $instSpacing ;
+$urx = $llx + $size[0] ;
+$ury = $minY + $size[1] ;
+my @bbox = ();
+push(@bbox,$llx);
+push(@bbox,$lly);
+push(@bbox,$urx);
+push(@bbox,$ury);
+      $PSEUDO_VINST_ALREADY{$moduleName}{$vinst}->dbPimDBSetInstRelBbox(@bbox);
+print "$vinst : $cellref : $size[0] $size[1] : $llx $lly \n";
+                                    }
+
+
+     
+
+                      }# if use hierarchical database
+elsif( $usePseudo == 0) {
+      
+     }# if use flat database
+
+
+}
+
+}
+
+
+
+1;

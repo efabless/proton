@@ -1,0 +1,82 @@
+
+
+sub dbHier2Flat {
+ my $numOfArg = @_;
+ my $force = 0;
+ if($numOfArg < 0 || $_[0] eq "-h" || $_[0] eq "-help"){
+    print "Usage: dbHier2Flat --force (to update Flat db without checking existence of data in flat db)\n";
+ }else{
+    for(my $i=0; $i<$numOfArg; $i++){
+        if($_[$i] eq "--force"){$force = 1;}
+    }
+    #<--------------- sync data from FLOORPLAN_ALREADY to PORT_ALREADY ----------------->
+    my $moduleName = $TOP_MODULE;
+    if ( exists $FLOORPLAN_LOOKUP{"$moduleName/_self_"} ) {
+    print "INFO : updating flad db for module \"$moduleName\" ...\n";
+    
+         my $fpPntr = $FLOORPLAN_LOOKUP{"$moduleName/_self_"} ;
+         if ( exists $FLOORPLAN_ALREADY{$fpPntr} ) {
+             my $fpUnit = $FLOORPLAN_ALREADY{$fpPntr}->dbFlplanGetDBUnit;
+             my $gDBU = $GLOBAL->dbfGlobalGetDBU;
+             my $mulFactor = $gDBU / $fpUnit ;
+             print "DBG : floorplan to flat db is $mulFactor factor\n";
+    
+            my @pinList = $FLOORPLAN_ALREADY{$fpPntr}->dbFlplanGetPinList;
+      foreach my $pin (@pinList) {
+        my $status = $FLOORPLAN_ALREADY{$fpPntr}->dbFlplanGetPinStatus($pin);
+        my @shapes = $FLOORPLAN_ALREADY{$fpPntr}->dbFlplanGetPinRect($pin);
+               if ((exists $PORTS_ALREADY{$moduleName}{$pin})  && $force == 0) {
+                   print "WARN : multiple definition of the same pin ... keeping previous\n";
+                                                                    }
+                else { $PORTS_ALREADY{$moduleName}{$pin} = PortDB::new();
+    # ---- TODO : currently only support one physical shape for the pin -----#
+           my @shapes_info = split(/\s+/, $shapes[0]);
+           my $pinHeight = sprintf("%.3f",($shapes_info[4] - $shapes_info[2])*$mulFactor);
+           my $pinWidth  = sprintf("%.3f",($shapes_info[3] - $shapes_info[1])*$mulFactor);
+           my $layer = $shapes_info[0];
+           #----------- TODO : find the location of pin given its orientation and box -----------#
+           my $dbX = $shapes_info[1]*$mulFactor;
+           my $dbY = $shapes_info[2]*$mulFactor;
+           my $side = 'E';
+                     # items to be set for each pin #
+                     # $PORTS_ALREADY{$moduleName}{$pin}->dbPortSetStatus($data);
+                     # $PORTS_ALREADY{$moduleName}{$pin}->dbPortSetSignal('SIGNAL');
+                     # $PORTS_ALREADY{$moduleName}{$pin}->dbPortSetDir($pinDirection);
+                     # $PORTS_ALREADY{$moduleName}{$pin}->dbPortSetConn($pin);
+                     # $PORTS_ALREADY{$moduleName}{$pin}->dbPortSetLoc($dbX,$dbY);
+                     # $PORTS_ALREADY{$moduleName}{$pin}->dbPortSetSide($side);
+                     # $PORTS_ALREADY{$moduleName}{$pin}->dbPortSetLayer($layer);
+                     # $PORTS_ALREADY{$moduleName}{$pin}->dbPortSetSize($pinWidth,$pinHeight);
+               if ( $status > 1 ) { $PORTS_ALREADY{$moduleName}{$pin}->dbPortSetStatus('FIXED'); 
+                     $PORTS_ALREADY{$moduleName}{$pin}->dbPortSetSignal('SIGNAL');
+                     $PORTS_ALREADY{$moduleName}{$pin}->dbPortSetConn($pin);
+                     $PORTS_ALREADY{$moduleName}{$pin}->dbPortSetLayer($layer);
+                     $PORTS_ALREADY{$moduleName}{$pin}->dbPortSetSize($pinWidth,$pinHeight);
+                     #<----------- TODO : find the direction of the pin -------------->
+                     my $pinDirection = 'INPUT';
+                     if ( exists $MODULE_ALREADY{$moduleName}) {
+                     my $pinTempName = $pin;
+                                 if ( $pin =~ /\[\d+\]/ ) {
+                                  $pinTempName = $pin;
+                                  $pinTempName =~ s/\[\d+\]//;
+                                                          }
+                                 my $i = $MODULE_ALREADY{$moduleName}->dbVNOMHasInput($pinTempName);
+                                 my $o = $MODULE_ALREADY{$moduleName}->dbVNOMHasOutput($pinTempName);
+                                 my $b = $MODULE_ALREADY{$moduleName}->dbVNOMHasBidi($pinTempName);
+                                 if ( $i == 1 ) { $pinDirection = 'INPUT';}
+                                 elsif ( $o == 1 ) { $pinDirection = 'OUTPUT';}
+                                 elsif ( $b == 1 ) { $pinDirection = 'INOUT';}
+                      print "DBG : $pin : $i : $o : $b :  $pinDirection\n";
+                                                               }
+                     $PORTS_ALREADY{$moduleName}{$pin}->dbPortSetDir($pinDirection);
+                     $PORTS_ALREADY{$moduleName}{$pin}->dbPortSetLoc($dbX,$dbY);
+                     $PORTS_ALREADY{$moduleName}{$pin}->dbPortSetSide($side);
+                                  }
+                     }#if pin exists
+                                                    }# foreach pin in the floorplan of the moduleName
+                                                         }# if floorplan exists for the moduleName
+    
+                                                    }#if exists floorplan pointer
+ }#if 
+}# sub dbHier2Flat
+1;

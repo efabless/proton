@@ -1,0 +1,152 @@
+sub Value_AscendingNum {
+     $sn{$a} <=> $sn{$b};
+               }
+
+sub get_spnet_dir {
+
+#****f* /get_spnet_dir
+# NAME
+#      get_spnet_dir
+# FUNCTION
+#      per layer preferdirection and non-preferdirection
+# Assumptions 
+#      working only routed special nets       
+# SYNOPSIS
+#      get_spnet_dir -netsName <{list of nets name}> or 
+#      get_spnet_dir [-all] for all special nets
+# INPUTS
+#      options:
+#      -netsName <{list of nets name}> : for some nets or
+#      -all: for all nets
+# OUTPUTS
+#      print layerName,layerNumber,layerDirection,PreferDirection,NonPreferDirection and total
+#****
+
+my $noOfArguments = @_;
+if ($noOfArguments < 1 || $_[0] eq '-h'){ print "Usage : -netsName <{list of net Name}>\n";
+                                          print "        -all <{all nets}> \n";
+                                                            }#if
+else {
+my $OUTPUT_NETS_PRE = 0;
+my $DEFAULT = 0;
+for(my $i = 0;$i < $noOfArguments; $i++){
+    if ($_[$i] eq "-netsName"){$nets = $_[$i+1];
+    $nets =~ s/\{\s*//;
+    $nets =~ s/\s*\}//;
+    @nets = split(/\,/,$nets); 
+    $OUTPUT_NETS_PRE = 1;}
+    elsif($_[$i] eq "-all") {$DEFAULT = 1;}
+                                            }#for
+my @prefdir = ();
+my @nonprefdir = ();
+if ($OUTPUT_NETS_PRE == 1 ){
+  foreach $nets (@nets){
+    if (exists $NETS_ROUTING_ALREADY{$nets}){
+        my @routes = (); 
+        push(@routes,$NETS_ROUTING_ALREADY{$nets}->dbNetRoutingDBGetSpecialRoute); 
+        push(@routes,$NETS_ROUTING_ALREADY{$nets}->dbNetRoutingDBGetFixedRoute); 
+      foreach $rl (@routes){
+        my $routeLayer = (split(/\s+/,$rl))[0];
+        my $routeLn = $PTDB{$routeLayer}->dbTechGetLayerNum;
+        my $routeLayerPrefDir = $PTDB{$routeLayer}->dbTechGetLayerDir  ;
+        my @routebbox = &xformNetSegToPathSeg($rl);
+        my $routeSegXLength = ($routebbox[2]-$routebbox[0]);
+        my $routeSegYLength = ($routebbox[3]-$routebbox[1]); 
+        my $routeSegLength = $routeSegXLength + $routeSegYLength;
+        if ( $routeSegYLength == 0 ) {
+             #print "pref $routeLayer $routeLayerPrefDir  $routeLn $routeSegLength\n";
+          if ( $routeLayerPrefDir  eq "HORIZONTAL" ) {
+               #print "pref $routeSegXLength\n";
+               $prefdir[$routeLn] = $prefdir[$routeLn] + $routeSegXLength;
+                                                                         }#if prefdir horizontal
+          else {
+               #print "nonpref $routeSegXLength\n";
+               $nonprefdir[$routeLn] = $nonprefdir[$routeLn] + $routeSegXLength;
+                                               }#else
+                                            }# if segment is horizontal
+        if ( $routeSegXLength == 0 ) {
+          if ( $routeLayerPrefDir  eq "VERTICAL" ) {
+               $prefdir[$routeLn] = $prefdir[$routeLn] + $routeSegYLength;
+                                                                 }#if prefdir vertical
+          else {
+                $nonprefdir[$routeLn] = $nonprefdir[$routeLn] + $routeSegYLength;
+                                                                  }#else
+                                                                }# if segment is vertical
+                                                               }#foreach routes
+                                                             }# if exists net 
+                                                         }#foreach net
+                                                        }#if OUTPUT_NETS_PRE
+if ($DEFAULT == 1){
+  foreach $nets (keys %NETS_ALREADY){
+    if (exists $NETS_ROUTING_ALREADY{$nets}){
+        my @routes = (); 
+        push(@routes, $NETS_ROUTING_ALREADY{$nets}->dbNetRoutingDBGetSpecialRoute); 
+        push(@routes, $NETS_ROUTING_ALREADY{$nets}->dbNetRoutingDBGetFixedRoute); 
+      foreach $rl (@routes){
+        my $routeLayer = (split(/\s+/,$rl))[0];
+        my $routeLn = $PTDB{$routeLayer}->dbTechGetLayerNum;
+        my $routeLayerPrefDir = $PTDB{$routeLayer}->dbTechGetLayerDir  ;
+        my @routebbox = &xformNetSegToPathSeg($rl);
+        my $routeSegXLength = ($routebbox[2]-$routebbox[0]);
+        my $routeSegYLength = ($routebbox[3]-$routebbox[1]); 
+        my $routeSegLength = $routeSegXLength + $routeSegYLength;
+        if ( $routeSegYLength == 0 ) {
+             #print "pref $routeLayer $routeLayerPrefDir  $routeLn $routeSegLength\n";
+          if ( $routeLayerPrefDir  eq "HORIZONTAL" ) {
+             #print "pref $routeSegXLength\n";
+             $prefdir[$routeLn] = $prefdir[$routeLn] + $routeSegXLength;
+                                                                         }#if prefdir horizontal
+          else {
+                 #print "nonpref $routeSegXLength\n";
+                 $nonprefdir[$routeLn] = $nonprefdir[$routeLn] + $routeSegXLength;
+                                                           }#else
+                                                   }# if segment is horizontal
+        if ( $routeSegXLength == 0 ) {
+          if ( $routeLayerPrefDir  eq "VERTICAL" ) {
+               $prefdir[$routeLn] = $prefdir[$routeLn] + $routeSegYLength;
+                                                       }#if prefdir vertical
+          else {
+                $nonprefdir[$routeLn] = $nonprefdir[$routeLn] + $routeSegYLength;
+                                                                   }#else
+                                                                 }# if segment is vertical
+                                                               }#foreach routes
+                                                            }#if exists nets
+                                                         }#foreach net
+                                                     }#if default
+
+#print join ",", @prefdir; print "\n";
+#print join ",", @nonprefdir; print "\n";
+foreach $layer(keys %PTDB){
+$Ln = $PTDB{$layer}->dbTechGetLayerNum;
+$sn{$layer} = $Ln;
+             }#foreach 
+           
+write LAYER_TOP;
+select (STDOUT);
+$~ = "LAYER";
+$p = @prefdir;
+for (my $i = 0; $i<$p; $i++){
+     my @key = sort Value_AscendingNum(keys (%sn));
+        $layerDir = $PTDB{$key[$i]}->dbTechGetLayerDir;
+     if (($layerDir eq "HORIZONTAL")|| ($layerDir eq "VERTICAL")){
+          $pref_dir = $prefdir[$i];
+          $total = $pref_dir + $nonprefdir[$i];
+write();
+format LAYER =
+@<<<<<<       	       @##              @<<<<<<<<<<	 @########       @#########           @############       	
+$key[$i],               $i,              $layerDir,      $pref_dir,      $nonprefdir[$i],      $total,
+.
+                                             }#if
+                                          }#for
+format LAYER_TOP =
+------------------------------------------------------------------------------------------------------------
+LayerName 	         LayerNo	Direction	 PreferDir        NonPreferDir 	            Total
+------------------------------------------------------------------------------------------------------------
+.
+}
+}#sub get_spnet_dir
+
+
+  
+
+1;

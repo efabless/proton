@@ -1,0 +1,96 @@
+
+sub report_inst {
+my $t0 = new Benchmark;
+my $DETAILRPT = 0;
+my $RPTFILE = $TOP_MODULE."_instRpt.rpt";
+my $USERLIST = 0;
+my $PINLIMIT = 0;
+my $pinBoundLo = 1;
+my $pinBoundHi = 1000;
+my $noOfArguments = @_;
+my @WL = (); # len count
+my @IC = (); # instance count
+if ($noOfArguments < 0 || $_[0] eq '-h'){print "Usage : -inst <{list of nets Name}> \n";
+                                         print "      :       by default all nets \n";
+                                         print "      : -noOfSink n:m <limit analysis on sink inst to this instance>\n";
+                                         print "      : -noOfSource n:m <limit analysis on source inst to this instance>\n";
+                                         print "      : -output <detailed report is provided in the file>\n";
+                                         print "      : --summary <only summary of report is provided on the prompt>\n";
+                                         print "      : -byCellPatt {list of cellNames of cellName pattern}\n";
+                                         print "      : -byStatus {list of placement status, one or more of FIXED, PLACED, UNPLACED, FIRM}\n";
+                                         print "      : -byArea {instance within the bbox}\n";
+                                         print "      : -byType {report instance of type seq|combi|block|IOpads}\n";
+                                                                        }#if
+else {
+     my $summary =0;
+     my $detail = 0;
+     for (my $i = 0;$i < $noOfArguments; $i++){
+          if ($_[$i] eq "-nets"){$nets = $_[$i+1];
+          $nets =~ s/\{\s*//;
+          $nets =~ s/\s*\}//;
+          @nets = split(/\,/,$nets);
+          $USERLIST = 1;}
+          if($_[$i] eq "--summary"){$DETAILRPT = 0;}
+          if($_[$i] eq "--detail"){$DETAILRPT = 1;}
+          if($_[$i] eq "-output"){$RPTFILE=$_[$i+1];$DETAILRPT =1; open(WRITE,">$RPTFILE");}
+          if($_[$i] eq "-noOfSink"){
+                                    $SINKLIMIT=1;
+                                    ($sinkBoundLo,$sinkBoundHi) = (split(/\:/,$_[$i+1]))[0,1];
+                                    }
+                         }#for
+
+foreach my $netName ( keys %{NETS_ALREADY} ) {
+                                             }# foreach all nets in the design
+
+close(WRITE);
+}
+my $t1 = new Benchmark;
+my $td = timediff($t1,$t0);
+print "command report_inst completed in:",timestr($td),"\n";
+print "\n\n";
+print "       WireLength Stat     \n";
+print "num-pins   : nets analysed :  wire-length \n";
+my $totalLen = 0;
+my $totalNet = 0;
+for(my $x = 0 ; $x < @WL ; $x++) {
+       my $l = sprintf("%.2f", $WL[$x]/2000);
+       print "INFO-DES : 001 : $x pin net : $NC[$x]        : $l (um)\n" if ($WL[$x] != "");
+       $totalLen += $l;
+       $totalNet += $NC[$x];
+                                 }
+print "INFO-DES : 001 : Total wirelength of $totalNet analyzed nets is $totalLen (um)\n";
+}#sub report_inst
+
+
+sub get_net_est_length {
+# returns the estimated wirelength of the net 1/2 perimeter of bbox
+#------------------ find wl of a net from its pin locations -----------------#
+my $net = $_[0];
+if ( exists $NETS_ALREADY{$net} ) {
+my $totalmhd =0;
+my @boxlistX = ();
+my @boxlistY = ();
+
+# find the components connected
+         foreach $inst ( keys %{$NETS_ALREADY{$net}} ) {
+                    my $pinName = $NETS_ALREADY{$net}{$inst};
+                    if ( exists $CADB{$inst}) {
+                    my $cellref = $CADB{$inst}->dbCadbGetCellref;
+                    my @instLoc = $CADB{$inst}->dbCadbGetLoc;
+                       push(@boxlistX,$instLoc[0]);  
+                       push(@boxlistY,$instLoc[1]);  
+                                              }# if instance exists 	         
+                    elsif ($pinName == "PIN") {
+                                              }
+        }#foreach inst 
+print join ",",@boxlistX if ($DEBUG); print "\n" if ($DEBUG);
+my $llx = min(@boxlistX);
+my $lly = min(@boxlistY);
+my $urx = max(@boxlistX);
+my $ury = max(@boxlistY);
+my $totalmhd = ($urx - $llx) + ($ury - $lly);
+print "DBG-DES : 001 : MHD=$totalmhd\n"  if ($DEBUG);
+return($totalmhd);
+                               }# if net exists in nets database
+}#sub get_net_est_length
+1;

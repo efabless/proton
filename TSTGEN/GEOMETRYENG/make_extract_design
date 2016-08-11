@@ -1,0 +1,180 @@
+## This function extracts a part of a design within 
+## a given (x0,y0) and (x1,y1) coordinates
+
+## Algo:
+##Step 1: Foreach cell check coordinates{
+##   If inside the extracted design { then:
+##        a) copy cell into new netlist
+##        b) update location  } }
+##
+##Step 2: Foreach cell in new netlist {
+##            Foreach new pin {  
+##                      a) find_net 
+##                      b) determine in/out
+##                      c) for in -> find source & conn cell
+##                      d) for out -> find sink & conn cell
+##                      e) if connCell is in new verilog then same conn
+##                       else { add port $thisNet}
+##                      }
+###################################################
+
+sub extractDesign() {
+  my %compsInside;
+  my %connectedComps;
+  my %netsInside;
+  my %cookiePorts;
+  my $debug =0;
+
+  my $noOfArguments = @_;
+  my @cookiesize = ();
+  if( $noOfArguments < 1 || $_[0] eq '-h') { 
+ print "Usage : extractDesign\n";
+        print "                           -bbox <{llx,lly,urx,ury}>\n";
+        print "                           <-debug>\n";
+	
+  }
+  else {
+  for(my $i = 0; $i < $noOfArguments; $i++){ 
+  if($_[$i] eq "-bbox"){  
+   my $rect = $_[$i+1]; 
+   $rect =~ s/\{\s*//; 
+   $rect =~ s/\s*\}//; 
+   @cookiesize = split(/\,/,$rect);
+  }
+  elsif ($_[$i] eq "-debug") {
+   $debug = 1;
+  }
+  } # for
+  } # end else
+#  print "$cookiesize[0] $cookiesize[1] $cookiesize[2] $cookiesize[3]\n";
+  my ($llx_cut, $lly_cut, $urx_cut, $ury_cut);
+  $llx_cut = $cookiesize[0] * 2000;
+  $lly_cut = $cookiesize[1] * 2000;
+  $urx_cut = $cookiesize[2] * 2000;
+  $ury_cut = $cookiesize[3] * 2000;
+
+#  print "$llx_cut, $lly_cut, $urx_cut, $ury_cut\n";
+  my (@loc,@loc_mod, $instName,$size);
+  my ($xorigin, $yorigin, $llx, $lly, $urx,$ury);
+#  $DBSCALEFACTOR = $DEF_DATABASE_UNIT;
+
+  open (WRITE, ">extractDesign_def");
+  print WRITE "#DEF written from proton verion-212\n";
+  print WRITE "\n";
+  print WRITE "VERSION 5.6 \;\n";
+  print WRITE "NAMESCASESENSITIVE ON \;\n";
+  print WRITE "DIVIDERCHAR \"\/\" \;\n";
+  print WRITE "BUSBITCHARS \"\[ \]\" \;\n";
+  print WRITE "DESIGN extractDesign \;\n";
+  print WRITE "UNITS DISTANCE MICRONS 2000 \;\n";  
+
+  print WRITE "DIEAREA ( $llx_cut $lly_cut ) ( $urx_cut $ury_cut ) \;\n";
+  print WRITE "\n";
+
+
+                             
+  foreach $instName ( keys %COMP_ALREADY ) {
+        my $status = $CADB{$instName}->dbCadbGetStatus;
+        my $cellref =  $CADB{$instName}->dbCadbGetCellref;
+        my $orient = $CADB{$instance}->dbCadbGetOrient;
+       # print "Orient: $orient\n" if ($debug);
+        (@loc) =  $CADB{$instName}->dbCadbGetLoc;
+       # $xorigin = $loc[0]/$DBSCALEFACTOR;
+       # $yorigin = $loc[1]/$DBSCALEFACTOR;
+
+        $xorigin = $loc[0];
+        $yorigin = $loc[1];
+
+        #$xorigin = $xorigin*$MICRONFACTOR;
+        #$yorigin = $yorigin*$MICRONFACTOR;
+
+  if( exists $MACROS_ATTRIBUTE_ALREADY{$cellref} ) {
+    $size = $MACROS_ATTRIBUTE_ALREADY{$cellref}{size};
+    ($width,$height)=(split(/\s+/,$size))[0,1];
+
+    #$width = $width*$MICRONFACTOR;
+    #$height = $height*$MICRONFACTOR;  
+        } 
+  else { 
+   print "WARN-TST_GEOM-EXTRT_DES : 001 : $InstanceName : $cellref at $location size not found\n"; 
+                                                     next ;
+        }
+
+  if( $orient eq "N") {
+    $llx = $xorigin;
+    $lly = $yorigin;
+    $urx = $xorigin+$width;
+    $ury = $yorigin+$height;
+        }
+  elsif( $orient eq "FN")
+ {
+    $llx = $xorigin;
+    $lly = $yorigin+$height;
+    $urx = $xorigin+$width;
+    $ury = $yorigin;
+        }
+ elsif( $orient eq "FS") {
+  $llx = $xorigin;
+  $lly = $yorigin;
+  $urx = $xorigin+$width;
+  $ury = $yorigin+$height;
+        }
+ elsif( $orient eq "S") {
+  $llx = $xorigin;
+  $lly = $yorigin;
+  $urx = $xorigin+$width;
+  $ury = $yorigin+$height;
+        }
+ elsif( $orient eq "W") {
+  $llx = $xorigin;
+  $lly = $yorigin;
+  $urx = $xorigin+$height;
+  $ury = $yorigin+$width;
+        }
+ elsif( $orient eq "FW") {
+  $llx = $xorigin;
+  $lly = $yorigin;
+  $urx = $xorigin+$height;
+  $ury = $yorigin+$width;
+        }
+ elsif( $orient eq "E") {
+  $llx = $xorigin;
+  $lly = $yorigin;
+  $urx = $xorigin+$height;
+  $ury = $yorigin+$width;
+        }
+ elsif( $orient eq "FE") {
+  $llx = $xorigin;
+  $lly = $yorigin;
+  $urx = $xorigin+$height;
+  $ury = $yorigin+$width;
+         }
+        if (($llx >= $llx_cut) && ($lly >= $lly_cut) && ($urx<=$urx_cut) &&($ury<=$ury_cut)) {
+          $compsInside{$instName}{inside} = 1;
+          @loc_mod = ($loc[0]-$llx_cut, $loc[1]-$lly_cut);
+	  print "DBG-TST_GEOM-EXTRT_DES : 002 : Instance Name = $instName   $orient \n"  if ($debug);
+     	  print "\tDBG-TST_GEOM-EXTRT_DES : 003 : Location llx=$llx lly=$lly urx=$urx ury=$ury\n" if ($debug);
+   	  print "\tDBG-TST_GEOM-EXTRT_DES : 004 : INSIDE modified location = @loc_mod\n" if ($debug);
+          print  WRITE "- $instName $cellref \n"; 
+     	  if ( $status eq "PLACED" || $status eq "FIXED" ) { 
+      	 	print WRITE "\+ $status \( $loc_mod[0] $loc_mod[1] \) $orient "; 
+     	  }
+          print WRITE "\;\n";
+     
+  }
+        
+
+ }# foreach component
+
+
+
+print WRITE "END DESIGN\n";
+close(WRITE);
+print "INFO-TST_GEOM-EXTRT_DES : 005 : extractDesign_def written out\n";
+
+#&extractDeisgn_extractNets();
+
+} #sub extractDesign
+
+
+1;

@@ -1,0 +1,1740 @@
+#!/usr/bin/perl 
+sub activate_DesignTab {
+$design_canvas->CanvasFocus;
+@REDO_UNDO_ARRAY = ();
+$GLOBAL->dbGlobalSetActiveCanvas("design_canvas");
+&addBind_for_pinPlace;
+}#sub activate_DesignTab
+
+sub dbGuiDisplayPlacement {
+use Benchmark;
+my $t0 = new Benchmark;
+
+use Tk;
+my $INSTANCE=$_[0];
+my $PIN=$_[1];
+my $obs=$_[2];
+#$design_canvas->delete("all");
+###################################
+## the canvas area reamain the same : always  500 by 500
+##################################
+
+$designName = "$TOP_MODULE";
+
+$box = [0,0,540,540];
+$guiCanvasWidth = 540;
+$guiCanvasHeight = 540;
+
+# a margin of 20 units is given on each side ..
+
+$DBSCALEFACTOR = $DEF_DATABASE_UNIT;
+
+if ( exists $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}} ) {
+my @size = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetSize;
+$guiDiellx = $size[0];
+$guiDielly = $size[1];
+$guiDieurx = $size[2];
+$guiDieury = $size[3];
+
+$guiMuDiellx = $guiDiellx/$DBSCALEFACTOR;
+$guiMuDielly = $guiDielly/$DBSCALEFACTOR;
+$guiMuDieurx = $guiDieurx/$DBSCALEFACTOR;
+$guiMuDieury = $guiDieury/$DBSCALEFACTOR;
+
+if ( $guiDiellx == 0 && $guiDielly == 0 ) { $dieIsCentre = 0;} 
+elsif ( $guiDiellx+$guiDieurx == 0 && $guiDieury+$guiDielly == 0 ) { $dieIsCentre = 1}
+else {$dieIsCentre = 2}
+     }
+
+$guiWidth = abs($guiMuDieurx - $guiMuDiellx) ;
+$guiHeight = abs($guiMuDieury - $guiMuDielly) ;
+
+my $dieHMultFact  = 500/$guiHeight;
+my $dieWMultFact  = 500/$guiWidth;
+
+if( $dieHMultFact < $dieWMultFact ) { $MICRONFACTOR = $dieHMultFact; }
+else {  $MICRONFACTOR =  $dieWMultFact; }
+
+$GLOBAL->dbGlobalSetMicronFactor($MICRONFACTOR);
+
+
+#########################################################################################################################
+#####   display the die area boundary  ###
+#########################################################################################################################
+if ( $dieIsCentre == 0 || $dieIsCentre == 2 ) {
+$lly = 520-$guiMuDielly*$MICRONFACTOR;
+$ury = 520-$guiMuDieury*$MICRONFACTOR;
+$llx = $guiMuDiellx*$MICRONFACTOR + 20;
+$urx = $guiMuDieurx*$MICRONFACTOR + 20;
+
+$design_canvas->createRectangle($llx,$lly,$urx,$ury, -outline,"green");
+                         }
+else {
+$lly = 270-$guiMuDielly*$MICRONFACTOR;
+$ury = 270-$guiMuDieury*$MICRONFACTOR;
+$llx = $guiMuDiellx*$MICRONFACTOR + 270;
+$urx = $guiMuDieurx*$MICRONFACTOR + 270;
+$design_canvas->createRectangle($llx,$lly,$urx,$ury, -outline,"green");
+     }
+
+################################## ROWS   ########################################################################
+if ( exists $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}} ) {
+#     print "Using the new code ..\n";
+     my @rows = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetRows;
+                foreach my $tag ( @rows ) {
+                        my ($x,$y) = (split(/\s+/, $tag))[2,3];
+#                        print "$x and $y\n";
+                        my ($llx,$lly) = dbGuidatabase2Gui($x,$y);
+                     $design_canvas->createLine($llx,$lly,$urx,$lly, -fill => "grey41", -tags=>"ROWS");
+                    
+                                          }# foreach
+                                              }
+#########################################################################################################################
+#####   display the ports of the top module  ###
+#########################################################################################################################
+
+if ( $DISPLAY_TABLE{PORT} == 1 ) {
+     my $moduleName = $TOP_MODULE;
+     foreach $port ( keys %{$PORTS_ALREADY{$moduleName}} ) {
+#             $PORTS_ALREADY{$moduleName}{$port}->dbgPortGetStatus;
+             my $status = $PORTS_ALREADY{$moduleName}{$port}->dbPortGetStatus;
+             if ( $status == 2 || $status == 3 ) {
+             my @loc = $PORTS_ALREADY{$moduleName}{$port}->dbPortGetLoc;
+             my $dir = $PORTS_ALREADY{$moduleName}{$port}->dbPortGetDir;
+             my $orient = $PORTS_ALREADY{$moduleName}{$port}->dbPortGetSide;
+             my @guiloc = dbGuidatabase2Gui($loc[0],$loc[1]);
+             my $x = $guiloc[0];
+             my $y = $guiloc[1];
+             print "INFO(GUI_100) : $port  $x $y $orient $dir\n" if ($DEBUG > 10);
+my @poly = dbGuiCreatePin($x,$y,$orient,$dir);
+             ##print join "," , @poly; print "\n";
+$design_canvas->createPolygon($poly[0],$poly[1], $poly[2], $poly[3],$poly[4], $poly[5], -outline => "yellow", -fill => "yellow", -stipple => "gray12" , -tags=>"PORTS");
+$design_canvas->createText($x,$y, -text=>$port, -fill=>"", -anchor=>"sw",  -tags=>"INSTANCETEXT");
+                                                 } #if status is placed or fixed
+                                                           }# foreach
+                                 }# if the port display is ON
+
+
+
+##################################  INSTANCE IN THE DESIGN  #######################################################
+my $mulFact = $MICRONFACTOR/$DBSCALEFACTOR;
+
+foreach $InstanceName ( keys %COMP_ALREADY ) {
+        #print "$InstanceName\n" if ($DEBUG);
+        my @Inst_bbox = $CADB{$InstanceName}->dbCadbGetbBox;
+        @location = $CADB{$InstanceName}->dbCadbGetLoc;
+        $orient =   $CADB{$InstanceName}->dbCadbGetOrient;
+        $cellref =  $CADB{$InstanceName}->dbCadbGetCellref;
+        $status =  $CADB{$InstanceName}->dbCadbGetStatus;
+           
+       if($PLDB{$cellref}->dbMdbGetFunction eq "flop" && $PLDB{$cellref}->dbMdbGetType == 1) {$InstColor = "blueViolet";}
+else {$InstColor="red";}       
+      #print "$InstanceName $cellref $location[0] $location[1] $orient\n" if ($DEBUG == 23);
+                  if( $status eq "PLACED" || $status eq "FIXED" ) {
+my $llx = $Inst_bbox[0]*$mulFact;
+my $lly = $Inst_bbox[1]*$mulFact;
+my $urx = $Inst_bbox[2]*$mulFact;
+my $ury = $Inst_bbox[3]*$mulFact;
+
+if( $dieIsCentre == 1) {
+$lly = 270-$lly;
+$ury = 270-$ury;
+$llx = $llx + 270;
+$urx = $urx + 270;
+                       }
+else {
+$lly = 520-$lly;
+$ury = 520-$ury;
+$llx = $llx + 20;
+$urx = $urx + 20;
+     }
+if ($INSTANCE ==1){
+ $design_canvas->createRectangle($llx,$lly,$urx,$ury, -outline=>"red", -tags=>"INSTANCE", -state =>"normal", -fill => $InstColor, -stipple => "gray12");
+                       }#if Instance display var is 1
+
+##############################   pins for each instance  ################################
+#my @cellOrigin = $PLDB{$cellref}->dbMdbGetOrigin;
+#my @cellSize = $PLDB{$cellref}->dbMdbGetSize;
+#my @pins = $PLDB{$cellref}->dbMdbGetPins;
+#                      foreach $pinName ( @pins ) {
+#                      my $pinDire = $PLDB{$cellref}->dbMdbGetPinDir($pinName);
+#                      my @RECTS = $PLDB{$cellref}->dbMdbGetPinRect($pinName);
+#                         foreach $rectLine ( @RECTS ) {
+#                      my ($layer, $rllx1, $rlly1, $rurx1, $rury1)=(split(/\s+/,$rectLine))[0,2,3,4,5];
+#                      my $color = $PTDB{$layer}->dbTechGetLayerColor;
+#                      my $num = $PTDB{$layer}->dbTechGetLayerNum;
+## ----- commented the next 2 lines for bug Fix 0000123 
+##                      my $colour;          
+##                  if (exists $HashCol{$num}){$colour =  $HashCol{$num}}
+####################### changing the orientation of Pin Rectangles according to Instance orientation ######################## 
+# my @PinRect = &xformCellPinToInstPin($location[0],$location[1],$cellOrigin[0], $cellOrigin[1],$orient,$cellSize[0],$cellSize[1],$rllx1,$rlly1,$rurx1,$rury1);
+#
+# my ($llx1,$lly1) = dbGuidatabase2Gui($PinRect[0],$PinRect[1]);  # Multiplying with database#  
+# my ($urx1,$ury1) = dbGuidatabase2Gui($PinRect[2],$PinRect[3]);  # multiplication Factor    #
+#
+#if ($PIN == 1){
+#$design_canvas->createRectangle($llx1,$lly1,$urx1,$ury1, -outline=>$color,  -fill => $color,-tags=>"PINRECT", -stipple => "gray12");
+#                  }#if pin display var is 1
+#                                                       }# for rectangle
+#                                  my $fortext = shift @RECTS;
+#                                  my ($layer, $llx2, $lly2, $urx2, $ury2)=(split(/\s+/,$fortext))[0,2,3,4,5];
+#        my @TextRect = &xformCellPinToInstPin($location[0],$location[1],$cellOrigin[0], $cellOrigin[1],$orient,$cellSize[0],$cellSize[1],$llx2,$lly2,$urx2,$ury2);
+#        my ($llx2,$lly2) = dbGuidatabase2Gui($TextRect[0],$TextRect[1]);  # Multiplying with database#  
+#        my ($urx2,$ury2) = dbGuidatabase2Gui($TextRect[2],$TextRect[3]);            
+#                                  my $midx = $llx2 + ($urx2 - $llx2)/2;
+#                                  my $midy = $lly2 + ($ury2 - $lly2)/2;
+# 
+#$design_canvas->createText($midx,$midy, -text=>$pinName, -fill=>"", -anchor=>"sw", -tags=>"PinText" );
+#
+#                                                         }#for pins
+######################################## Display Obstraction of cells ##############################################
+#
+#my @OBS = $PLDB{$cellref}->dbMdbGetObs;
+#                          foreach $obsLine ( @OBS ) {
+#                      my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$obsLine))[0,2,3,4,5];
+#                      my $num = $PTDB{$layer}->dbTechGetLayerNum;
+#                      my $colour;          
+#                  if (exists $HashCol{$num}){$colour =  $HashCol{$num}}
+# my @obsRect = &xformCellPinToInstPin($location[0],$location[1],$cellOrigin[0], $cellOrigin[1],$orient,$cellSize[0],$cellSize[1],$llx,$lly,$urx,$ury); 
+# my ($llx,$lly) = dbGuidatabase2Gui($obsRect[0],$obsRect[1]);  # Multiplying with database#  
+# my ($urx,$ury) = dbGuidatabase2Gui($obsRect[2],$obsRect[3]);  # multiplication Factor    #
+#if ($obs ==1){      
+#$design_canvas->createRectangle($llx,$lly,$urx,$ury, -outline,$colour,-fill,$colour,-tags,"OBSRECT",-stipple,"gray50");
+#                }#if obstraction display var is 1
+#                                                 }# foreach obs line
+
+
+$design_canvas->createText($llx,$lly, -text=>$InstanceName, -fill=>"", -anchor=>"sw", -tags=>"INSTANCETEXT");
+
+                  }# if component status is fixed or placed
+                       } # creacting all rectangles for design
+
+###################################### For all net routing in the design ########################################
+foreach my $net ( keys %NETS_ALREADY ) {
+        if (exists $NETS_ROUTING_ALREADY{$net}) {
+           my @data = $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBGetRegularRoute;
+           foreach $segment ( @data ) {
+                   my @seg = split(/\s+/,$segment);
+                   my @routeBox = xformNetSegToRouteBox($segment);
+                   my @s1 = dbGuidatabase2Gui($routeBox[0],$routeBox[1]);
+                   my @s2 = dbGuidatabase2Gui($routeBox[2],$routeBox[3]);
+                   if ( exists $PTDB{$seg[0]} ) {
+                   my $num = $PTDB{$seg[0]}->dbTechGetLayerNum;
+                   my $color = $HashCol{$num};
+                   
+$design_canvas->createRectangle($s1[0],$s1[1],$s2[0],$s2[1], -outline=>$color, -tags=>"NETTAG", -state =>"normal", -fill =>$color, -stipple => "gray12");
+#$design_canvas->createRectangle($s1[0],$s1[1],$s2[0],$s2[1], -outline=>"green", -tags=>"NETTAG", -state =>"normal", -fill =>$color, -stipple => "gray12");
+                                                }#if the metal layer exists in the technology
+                                      }#foreach segment of routing
+                                                }# if routing data is present
+                                       }#for all nets in the database
+
+####################################################### Zoom Function ####################################################
+        my $zoomRect;
+        my @zoomRectCoords;
+        # $design_canvas = $design_canvas->Subwidget("canvas");
+
+        $design_canvas->CanvasBind('<3>' => sub {
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+
+            @zoomRectCoords = ($x, $y, $x, $y);
+
+            $zoomRect = $design_canvas->createRectangle(
+                                            @zoomRectCoords,
+                                            -outline => 'red',
+                                            );
+        });
+                $design_canvas->CanvasBind('<B3-Motion>' => sub {
+            @zoomRectCoords[2,3] = ($design_canvas->canvasx($Tk::event->x),
+                                    $design_canvas->canvasy($Tk::event->y));
+
+            $design_canvas->coords($zoomRect => @zoomRectCoords);
+        });
+                $design_canvas->CanvasBind('<B3-ButtonRelease>' => sub {
+            # Delete the rectangle.
+            $design_canvas->delete($zoomRect);
+
+            # Was the rectangle big enough?
+            return if
+                abs($zoomRectCoords[0] - $zoomRectCoords[2]) < 10 ||
+                    abs($zoomRectCoords[1] - $zoomRectCoords[3]) < 10;
+
+            # Let's find the zooming factor.
+            my $dx = $design_canvas->width  /abs($zoomRectCoords[0] - $zoomRectCoords[2]);
+            my $dy = $design_canvas->height /abs($zoomRectCoords[1] - $zoomRectCoords[3]);
+
+            my $scale = [$dx => $dy] -> [$dy <= $dx];
+
+            # Let's scale everything up.
+            $design_canvas->Subwidget('scrolled')->scale('all' => 0, 0, $scale, $scale);
+            # Modify the bounding box.
+            $_ *= $scale for @$box;
+
+            # Resize the scrollregion.
+            $design_canvas->configure(-scrollregion => $box);
+
+            # Now we change the view to center on correct area.
+            $design_canvas->xviewMoveto($zoomRectCoords[0] * $scale / $box->[2]);
+            $design_canvas->yviewMoveto($zoomRectCoords[1] * $scale / $box->[3]);
+        });
+
+            $design_canvas->CanvasBind('<2>' => sub {
+             my $scale = $guiCanvasWidth/$box->[2];
+
+            $design_canvas->Subwidget('scrolled')->scale('all' => 0, 0, $scale, $scale);
+            $box = [0, 0, $guiCanvasWidth, $guiCanvasHeight];
+            $design_canvas->configure(-scrollregion => $box);
+        });
+$DESIGN_DISPLAY = 1;
+&display_pin2pin_flyLines;
+#&description_box_binding; 
+#&retrieve_descriptionBox;
+$t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "design display took:",timestr($td),"\n";
+
+}#sub dbGuiDisplayPlacement
+
+sub dbGuiDisplayPlacement_old {
+use Tk;
+my $INSTANCE=$_[0];
+my $PIN=$_[1];
+my $obs=$_[2];
+#$design_canvas->delete("all");
+###################################
+## the canvas area reamain the same : always  500 by 500
+##################################
+
+$box = [0,0,540,540];
+$guiCanvasWidth = 540;
+$guiCanvasHeight = 540;
+
+# a margin of 20 units is given on each side ..
+
+$DBSCALEFACTOR = $DEF_DATABASE_UNIT;
+
+if ( exists $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}} ) {
+my @size = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetSize;
+$guiDiellx = $size[0];
+$guiDielly = $size[1];
+$guiDieurx = $size[2];
+$guiDieury = $size[3];
+
+$guiMuDiellx = $guiDiellx/$DBSCALEFACTOR;
+$guiMuDielly = $guiDielly/$DBSCALEFACTOR;
+$guiMuDieurx = $guiDieurx/$DBSCALEFACTOR;
+$guiMuDieury = $guiDieury/$DBSCALEFACTOR;
+
+if ( $guiDiellx == 0 && $guiDielly == 0 ) { $dieIsCentre = 0;} 
+elsif ( $guiDiellx+$guiDieurx == 0 && $guiDieury+$guiDielly == 0 ) { $dieIsCentre = 1}
+else {$dieIsCentre = 2}
+     }
+
+$guiWidth = abs($guiMuDieurx - $guiMuDiellx) ;
+$guiHeight = abs($guiMuDieury - $guiMuDielly) ;
+
+my $dieHMultFact  = 500/$guiHeight;
+my $dieWMultFact  = 500/$guiWidth;
+
+if( $dieHMultFact < $dieWMultFact ) { $MICRONFACTOR = $dieHMultFact; }
+else {  $MICRONFACTOR =  $dieWMultFact; }
+
+$GLOBAL->dbGlobalSetMicronFactor($MICRONFACTOR);
+
+$designName = "$TOP_MODULE";
+
+#########################################################################################################################
+#####   display the die area boundary  ###
+#########################################################################################################################
+if ( $dieIsCentre == 0 || $dieIsCentre == 2 ) {
+$lly = 520-$guiMuDielly*$MICRONFACTOR;
+$ury = 520-$guiMuDieury*$MICRONFACTOR;
+$llx = $guiMuDiellx*$MICRONFACTOR + 20;
+$urx = $guiMuDieurx*$MICRONFACTOR + 20;
+
+$design_canvas->createRectangle($llx,$lly,$urx,$ury, -outline,"green");
+                         }
+else {
+$lly = 270-$guiMuDielly*$MICRONFACTOR;
+$ury = 270-$guiMuDieury*$MICRONFACTOR;
+$llx = $guiMuDiellx*$MICRONFACTOR + 270;
+$urx = $guiMuDieurx*$MICRONFACTOR + 270;
+$design_canvas->createRectangle($llx,$lly,$urx,$ury, -outline,"green");
+     }
+
+################################## ROWS   ########################################################################
+if ( exists $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}} ) {
+#     print "Using the new code ..\n";
+     my @rows = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetRows;
+                foreach my $tag ( @rows ) {
+                        my ($x,$y) = (split(/\s+/, $tag))[2,3];
+#                        print "$x and $y\n";
+                        my ($llx,$lly) = dbGuidatabase2Gui($x,$y);
+                     $design_canvas->createLine($llx,$lly,$urx,$lly, -fill => "grey41", -tags=>"ROWS");
+                    
+                                          }# foreach
+                                              }
+#########################################################################################################################
+#####   display the ports of the top module  ###
+#########################################################################################################################
+
+if ( $DISPLAY_TABLE{PORT} == 1 ) {
+     my $moduleName = $TOP_MODULE;
+     foreach $port ( keys %{$PORTS_ALREADY{$moduleName}} ) {
+#             $PORTS_ALREADY{$moduleName}{$port}->dbgPortGetStatus;
+             my $status = $PORTS_ALREADY{$moduleName}{$port}->dbPortGetStatus;
+             if ( $status == 2 || $status == 3 ) {
+             my @loc = $PORTS_ALREADY{$moduleName}{$port}->dbPortGetLoc;
+             my $dir = $PORTS_ALREADY{$moduleName}{$port}->dbPortGetDir;
+             my $orient = $PORTS_ALREADY{$moduleName}{$port}->dbPortGetSide;
+             my @guiloc = dbGuidatabase2Gui($loc[0],$loc[1]);
+             my $x = $guiloc[0];
+             my $y = $guiloc[1];
+             print "INFO(GUI_100) : $port  $x $y $orient $dir\n" if ($DEBUG > 10);
+my @poly = dbGuiCreatePin($x,$y,$orient,$dir);
+             ##print join "," , @poly; print "\n";
+$design_canvas->createPolygon($poly[0],$poly[1], $poly[2], $poly[3],$poly[4], $poly[5], -outline => "yellow", -fill => "yellow", -stipple => "gray12" , -tags=>"PORTS");
+$design_canvas->createText($x,$y, -text=>$port, -fill=>"", -anchor=>"sw",  -tags=>"INSTANCETEXT");
+                                                 } #if status is placed or fixed
+                                                           }# foreach
+                                 }# if the port display is ON
+
+
+
+##################################  INSTANCE IN THE DESIGN  #######################################################
+foreach $InstanceName ( keys %COMP_ALREADY ) {
+        #print "$InstanceName\n" if ($DEBUG);
+        @location = $CADB{$InstanceName}->dbCadbGetLoc;
+        $orient =   $CADB{$InstanceName}->dbCadbGetOrient;
+        $cellref =  $CADB{$InstanceName}->dbCadbGetCellref;
+        $status =  $CADB{$InstanceName}->dbCadbGetStatus;
+#-----------------------------------------------------------------------------------------------------#
+#print " ins name $InstanceName cellref $cellref\n";
+       #my $InstColor = "red";                 
+       if($PLDB{$cellref}->dbMdbGetFunction eq "flop" && $PLDB{$cellref}->dbMdbGetType == 1) {$InstColor = "blueViolet";}
+else {$InstColor="red";}       
+#-----------------------------------------------------------------------------------------------------#
+
+      #print "$InstanceName $cellref $location[0] $location[1] $orient\n" if ($DEBUG == 23);
+                  if( $status eq "PLACED" || $status eq "FIXED" ) {
+$xorigin = $location[0]/$DBSCALEFACTOR;
+$yorigin = $location[1]/$DBSCALEFACTOR;
+
+
+$xorigin = $xorigin*$MICRONFACTOR;
+$yorigin = $yorigin*$MICRONFACTOR;
+
+if( exists $MACROS_ATTRIBUTE_ALREADY{$cellref} ) {
+$size = $MACROS_ATTRIBUTE_ALREADY{$cellref}{size};
+($width,$height)=(split(/\s+/,$size))[0,1];
+$width = $width*$MICRONFACTOR;
+$height = $height*$MICRONFACTOR;           } else {  print "WARNING : $InstanceName : $cellref at $location size not found\n"; 
+                                                     next ;
+                                                   }
+
+if( $orient eq "N") {
+$llx = $xorigin;
+$lly = $yorigin;
+$urx = $xorigin+$width;
+$ury = $yorigin+$height;
+                    }
+elsif( $orient eq "FN") {
+$llx = $xorigin;
+$lly = $yorigin+$height;
+$urx = $xorigin+$width;
+$ury = $yorigin;
+                    }
+elsif( $orient eq "FS") {
+$llx = $xorigin;
+$lly = $yorigin;
+$urx = $xorigin+$width;
+$ury = $yorigin+$height;
+                    }
+elsif( $orient eq "S") {
+$llx = $xorigin;
+$lly = $yorigin;
+$urx = $xorigin+$width;
+$ury = $yorigin+$height;
+                    }
+elsif( $orient eq "W") {
+$llx = $xorigin;
+$lly = $yorigin;
+$urx = $xorigin+$height;
+$ury = $yorigin+$width;
+                    }
+elsif( $orient eq "FW") {
+$llx = $xorigin;
+$lly = $yorigin;
+$urx = $xorigin+$height;
+$ury = $yorigin+$width;
+                    }
+elsif( $orient eq "E") {
+$llx = $xorigin;
+$lly = $yorigin;
+$urx = $xorigin+$height;
+$ury = $yorigin+$width;
+                    }
+elsif( $orient eq "FE") {
+$llx = $xorigin;
+$lly = $yorigin;
+$urx = $xorigin+$height;
+$ury = $yorigin+$width;
+                    }
+else {
+     print "MSG : Illegal orientation $orient of $InstanceName\n";
+     }
+
+if( $dieIsCentre == 1) {
+$lly = 270-$lly;
+$ury = 270-$ury;
+$llx = $llx + 270;
+$urx = $urx + 270;
+                       }
+else {
+$lly = 520-$lly;
+$ury = 520-$ury;
+$llx = $llx + 20;
+$urx = $urx + 20;
+     }
+if ($INSTANCE ==1){
+ $design_canvas->createRectangle($llx,$lly,$urx,$ury, -outline=>"red", -tags=>"INSTANCE", -state =>"normal", -fill => $InstColor, -stipple => "gray12");
+
+                       }#if Instance display var is 1
+
+##############################   pins for each instance  ################################
+my @cellOrigin = $PLDB{$cellref}->dbMdbGetOrigin;
+my @cellSize = $PLDB{$cellref}->dbMdbGetSize;
+my @pins = $PLDB{$cellref}->dbMdbGetPins;
+                      foreach $pinName ( @pins ) {
+                      my $pinDire = $PLDB{$cellref}->dbMdbGetPinDir($pinName);
+                      my @RECTS = $PLDB{$cellref}->dbMdbGetPinRect($pinName);
+                         foreach $rectLine ( @RECTS ) {
+                      my ($layer, $rllx1, $rlly1, $rurx1, $rury1)=(split(/\s+/,$rectLine))[0,2,3,4,5];
+                      my $color = $PTDB{$layer}->dbTechGetLayerColor;
+                      my $num = $PTDB{$layer}->dbTechGetLayerNum;
+# ----- commented the next 2 lines for bug Fix 0000123 
+#                      my $colour;          
+#                  if (exists $HashCol{$num}){$colour =  $HashCol{$num}}
+###################### changing the orientation of Pin Rectangles according to Instance orientation ######################## 
+ my @PinRect = &xformCellPinToInstPin($location[0],$location[1],$cellOrigin[0], $cellOrigin[1],$orient,$cellSize[0],$cellSize[1],$rllx1,$rlly1,$rurx1,$rury1);
+
+ my ($llx1,$lly1) = dbGuidatabase2Gui($PinRect[0],$PinRect[1]);  # Multiplying with database#  
+ my ($urx1,$ury1) = dbGuidatabase2Gui($PinRect[2],$PinRect[3]);  # multiplication Factor    #
+
+if ($PIN == 1){
+$design_canvas->createRectangle($llx1,$lly1,$urx1,$ury1, -outline=>$color,  -fill => $color,-tags=>"PINRECT", -stipple => "gray12");
+                  }#if pin display var is 1
+                                                       }# for rectangle
+                                  my $fortext = shift @RECTS;
+                                  my ($layer, $llx2, $lly2, $urx2, $ury2)=(split(/\s+/,$fortext))[0,2,3,4,5];
+        my @TextRect = &xformCellPinToInstPin($location[0],$location[1],$cellOrigin[0], $cellOrigin[1],$orient,$cellSize[0],$cellSize[1],$llx2,$lly2,$urx2,$ury2);
+        my ($llx2,$lly2) = dbGuidatabase2Gui($TextRect[0],$TextRect[1]);  # Multiplying with database#  
+        my ($urx2,$ury2) = dbGuidatabase2Gui($TextRect[2],$TextRect[3]);            
+                                  my $midx = $llx2 + ($urx2 - $llx2)/2;
+                                  my $midy = $lly2 + ($ury2 - $lly2)/2;
+ 
+$design_canvas->createText($midx,$midy, -text=>$pinName, -fill=>"", -anchor=>"sw", -tags=>"PinText" );
+
+                                                         }#for pins
+####################################### Display Obstraction of cells ##############################################
+
+my @OBS = $PLDB{$cellref}->dbMdbGetObs;
+                          foreach $obsLine ( @OBS ) {
+                      my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$obsLine))[0,2,3,4,5];
+                      my $num = $PTDB{$layer}->dbTechGetLayerNum;
+                      my $colour;          
+                  if (exists $HashCol{$num}){$colour =  $HashCol{$num}}
+ my @obsRect = &xformCellPinToInstPin($location[0],$location[1],$cellOrigin[0], $cellOrigin[1],$orient,$cellSize[0],$cellSize[1],$llx,$lly,$urx,$ury); 
+ my ($llx,$lly) = dbGuidatabase2Gui($obsRect[0],$obsRect[1]);  # Multiplying with database#  
+ my ($urx,$ury) = dbGuidatabase2Gui($obsRect[2],$obsRect[3]);  # multiplication Factor    #
+if ($obs ==1){      
+$design_canvas->createRectangle($llx,$lly,$urx,$ury, -outline,$colour,-fill,$colour,-tags,"OBSRECT",-stipple,"gray50");
+                }#if obstraction display var is 1
+                                                 }# foreach obs line
+
+
+$design_canvas->createText($llx,$lly, -text=>$InstanceName, -fill=>"", -anchor=>"sw", -tags=>"INSTANCETEXT");
+
+                  }# if component status is fixed or placed
+                       } # creacting all rectangles for design
+
+###################################### For all net routing in the design ########################################
+foreach my $net ( keys %NETS_ALREADY ) {
+        if (exists $NETS_ROUTING_ALREADY{$net}) {
+           my @data = $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBGetRegularRoute;
+           foreach $segment ( @data ) {
+                   my @seg = split(/\s+/,$segment);
+                   my @routeBox = xformNetSegToRouteBox($segment);
+                   my @s1 = dbGuidatabase2Gui($routeBox[0],$routeBox[1]);
+                   my @s2 = dbGuidatabase2Gui($routeBox[2],$routeBox[3]);
+                   if ( exists $PTDB{$seg[0]} ) {
+                   my $num = $PTDB{$seg[0]}->dbTechGetLayerNum;
+                   my $color = $HashCol{$num};
+                   
+$design_canvas->createRectangle($s1[0],$s1[1],$s2[0],$s2[1], -outline=>$color, -tags=>"NETTAG", -state =>"normal", -fill =>$color, -stipple => "gray12");
+#$design_canvas->createRectangle($s1[0],$s1[1],$s2[0],$s2[1], -outline=>"green", -tags=>"NETTAG", -state =>"normal", -fill =>$color, -stipple => "gray12");
+                                                }#if the metal layer exists in the technology
+                                      }#foreach segment of routing
+                                                }# if routing data is present
+                                       }#for all nets in the database
+
+####################################################### Zoom Function ####################################################
+        my $zoomRect;
+        my @zoomRectCoords;
+        # $design_canvas = $design_canvas->Subwidget("canvas");
+
+        $design_canvas->CanvasBind('<3>' => sub {
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+
+            @zoomRectCoords = ($x, $y, $x, $y);
+
+            $zoomRect = $design_canvas->createRectangle(
+                                            @zoomRectCoords,
+                                            -outline => 'red',
+                                            );
+        });
+                $design_canvas->CanvasBind('<B3-Motion>' => sub {
+            @zoomRectCoords[2,3] = ($design_canvas->canvasx($Tk::event->x),
+                                    $design_canvas->canvasy($Tk::event->y));
+
+            $design_canvas->coords($zoomRect => @zoomRectCoords);
+        });
+                $design_canvas->CanvasBind('<B3-ButtonRelease>' => sub {
+            # Delete the rectangle.
+            $design_canvas->delete($zoomRect);
+
+            # Was the rectangle big enough?
+            return if
+                abs($zoomRectCoords[0] - $zoomRectCoords[2]) < 10 ||
+                    abs($zoomRectCoords[1] - $zoomRectCoords[3]) < 10;
+
+            # Let's find the zooming factor.
+            my $dx = $design_canvas->width  /abs($zoomRectCoords[0] - $zoomRectCoords[2]);
+            my $dy = $design_canvas->height /abs($zoomRectCoords[1] - $zoomRectCoords[3]);
+
+            my $scale = [$dx => $dy] -> [$dy <= $dx];
+
+            # Let's scale everything up.
+            $design_canvas->Subwidget('scrolled')->scale('all' => 0, 0, $scale, $scale);
+            # Modify the bounding box.
+            $_ *= $scale for @$box;
+
+            # Resize the scrollregion.
+            $design_canvas->configure(-scrollregion => $box);
+
+            # Now we change the view to center on correct area.
+            $design_canvas->xviewMoveto($zoomRectCoords[0] * $scale / $box->[2]);
+            $design_canvas->yviewMoveto($zoomRectCoords[1] * $scale / $box->[3]);
+        });
+
+            $design_canvas->CanvasBind('<2>' => sub {
+             my $scale = $guiCanvasWidth/$box->[2];
+
+            $design_canvas->Subwidget('scrolled')->scale('all' => 0, 0, $scale, $scale);
+            $box = [0, 0, $guiCanvasWidth, $guiCanvasHeight];
+            $design_canvas->configure(-scrollregion => $box);
+        });
+$DESIGN_DISPLAY = 1;
+&display_pin2pin_flyLines;
+#&description_box_binding; 
+#&retrieve_descriptionBox;
+
+}#sub dbGuiDisplayPlacement_old
+
+#########################################################################################################
+
+sub display_SpecialNets {
+if ($DESIGN_DISPLAY != 1){
+print "DATABASE UNIT is not set! You should display the Design\n";}
+else {
+foreach my $net ( keys %NETS_ALREADY ) {
+        my $netType = $NADB{$net}->dbNadbGetNetType;
+        if ( ($netType == 1) || ($netType == 2) ) {
+            if (exists $NETS_ROUTING_ALREADY{$net}) { 
+                my @data = ();
+                push(@data, $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBGetSpecialRoute);
+                push(@data, $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBGetFixedRoute);
+                foreach $segment ( @data ) {
+                     my @seg = split(/\s+/,$segment);
+                     my @routeBox = xformNetSegToSpecialRouteBox($segment);
+                     my @s1 = dbGuidatabase2Gui($routeBox[0],$routeBox[1]);
+                     my @s2 = dbGuidatabase2Gui($routeBox[2],$routeBox[3]);
+                     if ( exists $PTDB{$seg[0]} ) {
+                     my $num = $PTDB{$seg[0]}->dbTechGetLayerNum;
+                     my $color = $HashCol{$num};
+                   
+$design_canvas->createRectangle($s1[0],$s1[1],$s2[0],$s2[1], -outline=>$color, -tags=>"SPNETTAG", -state =>"normal", -fill =>$color, -stipple => "gray12");
+
+                  }
+                                                 }
+                                               
+                                                       }#if exists
+                                                   }#if type is 1 or 2
+
+                                        }#foreach net
+}#else
+}#sub display_SpecialNets
+
+###############################################################################################################################
+
+sub dbfGuiHilight {
+my $x = $design_canvas->canvasx($Tk::event->x);
+my $y = $design_canvas->canvasy($Tk::event->y);
+my $instTag = $design_canvas->find("closest", $x, $y );
+$design_canvas->itemconfigure($instTag, -outline => "white");
+}#sub dbfGuiHilight
+
+sub dbfGuiUnHilight {
+my $x = $design_canvas->canvasx($Tk::event->x);
+my $y = $design_canvas->canvasy($Tk::event->y);
+my $instTag = $design_canvas->find("closest", $x, $y);
+$design_canvas->itemconfigure($instTag, -outline => "red");
+}#sub dbfGuiUnHilight
+
+
+
+sub dbfGuiSelectInst{
+$design_canvas->bind("INSTANCE", '<Enter>', sub {if ($var1==1 ){
+
+                    $xx = $design_canvas->canvasx($Tk::event->x);
+                    $yy = $design_canvas->canvasy($Tk::event->y);
+                   @object = $design_canvas->find("overlapping", $xx,$yy,$xx,$yy);
+
+                   #$design_canvas->itemconfigure($object[0], -outline=>"green");
+                   $design_canvas->itemconfigure($object[0], -outline=>"green");
+                   }});
+#my $bal= $design_canvas->Balloon;
+#$bal->attach($design_canvas, -balloonmsg=> "instance is selected");
+
+
+$design_canvas->bind("INSTANCE", "<Leave>", sub {if($var1==1 ){                 
+                  $design_canvas->itemconfigure($object[0], -outline=>"red");}});
+
+}#sub dbfGuiSelectInst
+
+sub select ( ) {
+(my $design_canvas, $x, $y) = @_;
+@object = $design_canvas->find(closest => $x, $y);
+#print join "," , @object;
+}
+
+sub dbGuidatabase2Gui {
+my $dbX = $_[0];
+my $dbY = $_[1];
+
+$guiX = 20 + ($dbX/$DEF_DATABASE_UNIT)*$MICRONFACTOR;
+$guiY = 520 - ($dbY/$DEF_DATABASE_UNIT)*$MICRONFACTOR;
+
+return($guiX,$guiY);
+
+}#sub dbGuidatabase2Gui
+
+sub dbGuiCreatePin {
+my $originX = $_[0];
+my $originY = $_[1];
+my $orient = $_[2];
+my $dir = $_[3];
+
+if ( $dir eq "OUTPUT" || $dir eq "output" ) {
+     if ( $orient eq "E" ) {
+          $x1 = $originX ;
+          $x2 = $originX + 1 ;   
+          $x3 = $originX ;   
+          $y1 = $originY + .5;
+          $y2 = $originY;
+          $y3 = $originY - .5;
+                           }
+     elsif ( $orient eq "W" ) {
+          $x1 = $originX;
+          $x2 = $originX - 1;   
+          $x3 = $originX;   
+          $y1 = $originY + .5;
+          $y2 = $originY;
+          $y3 = $originY - .5;
+                           }
+     elsif ( $orient eq "S" ) {
+          $x1 = $originX -.5;
+          $x2 = $originX;   
+          $x3 = $originX + .5;   
+          $y1 = $originY;
+          $y2 = $originY + 1;
+          $y3 = $originY;
+                           }
+     elsif ( $orient eq "N" ) {
+          $x1 = $originX -.5;
+          $x2 = $originX;     
+          $x3 = $originX + .5;
+          $y1 = $originY;
+          $y2 = $originY - 1;
+          $y3 = $originY;
+                           }
+                        }
+elsif ( $dir eq "INPUT" || $dir eq "input" ) {
+     if ( $orient eq "W" ) {
+          $x1 = $originX - 1;
+          $x2 = $originX;
+          $x3 = $originX - 1;
+          $y1 = $originY + .5;
+          $y2 = $originY;
+          $y3 = $originY - .5;
+                           }
+     elsif ( $orient eq "E" ) {
+          $x1 = $originX + 1;
+          $x2 = $originX;
+          $x3 = $originX + 1;
+          $y1 = $originY + .5;
+          $y2 = $originY;
+          $y3 = $originY - .5;
+                           }
+     elsif ( $orient eq "N" ) {
+          $x1 = $originX -.5;
+          $x2 = $originX;
+          $x3 = $originX + .5;
+          $y1 = $originY - 1;
+          $y2 = $originY;
+          $y3 = $originY -1;
+                           }
+     elsif ( $orient eq "S" ) {
+          $x1 = $originX -.5;
+          $x2 = $originX;
+          $x3 = $originX + .5;
+          $y1 = $originY + 1;
+          $y2 = $originY;
+          $y3 = $originY + 1;
+                           }
+
+                          }
+elsif ( $dir eq "INOUT" || $dir eq "inout" ) {
+     if ( $orient eq "W" ) {
+          $x1 = $originX - 1;
+          $x2 = $originX;
+          $x3 = $originX - 1;
+          $y1 = $originY + .5;
+          $y2 = $originY;
+          $y3 = $originY - .5;
+                           }
+     elsif ( $orient eq "E" ) {
+          $x1 = $originX + 1;
+          $x2 = $originX;
+          $x3 = $originX + 1;
+          $y1 = $originY + .5;
+          $y2 = $originY;
+          $y3 = $originY - .5;
+                           }
+     elsif ( $orient eq "N" ) {
+          $x1 = $originX -.5;
+          $x2 = $originX;
+          $x3 = $originX + .5;
+          $y1 = $originY - 1;
+          $y2 = $originY;
+          $y3 = $originY -1;
+                           }
+     elsif ( $orient eq "S" ) {
+          $x1 = $originX -.5;
+          $x2 = $originX;
+          $x3 = $originX + .5;
+          $y1 = $originY + 1;
+          $y2 = $originY;
+          $y3 = $originY + 1;
+                           }
+
+                          }
+else {print "WARN : GUI-001 : unknown direction of the pin\n"; }
+
+return($x1,$y1,$x2,$y2,$x3,$y3);
+}# sub dbGuiCreatePin
+
+###########################################################################################################
+#
+#sub net_display{
+#my $netname= $_[0];
+#@array_nets  = split(/\,/,$netname);
+#my $n = @array_nets;
+#for (my $i=0;$i<$n ;$i++){
+#$net[$i] = shift @array_nets;
+#my $net = $net[$i];
+#
+# if (exists $NETS_ROUTING_ALREADY{$net}) {
+#           my @data = $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBGetRegularRoute;
+#           foreach $segment ( @data ) {
+#                   my @seg = split(/\s+/,$segment);
+#                   my @routeBox = xformNetSegToRouteBox($segment);
+#                   my @s1 = dbGuidatabase2Gui($routeBox[0],$routeBox[1]);
+#                   my @s2 = dbGuidatabase2Gui($routeBox[2],$routeBox[3]);
+#                   if ( exists $PTDB{$seg[0]} ) {
+#                   my $num = $PTDB{$seg[0]}->dbTechGetLayerNum;
+#                   my $color = $HashCol{$num};
+#                   
+#$design_canvas->createRectangle($s1[0],$s1[1],$s2[0],$s2[1], -outline=> "yellow", -tags=>"NETHIGHLIGHT", -state =>"normal", -fill =>"yellow", -stipple => "gray12");
+#                                                }#if the metal layer exists in the technology
+#                                      }#foreach segment of routing
+#                                                }# if routing data is present
+#             
+#                        }#for
+#}#sub net_display
+#
+#
+#sub Instance_pin_display {
+#my $netname = $_[0];
+# @array_nets  = split(/\,/,$netname);
+#my $n = @array_nets;
+#for (my $i=0;$i<$n ;$i++){
+#$net[$i] = shift @array_nets;
+#my $netName = $net[$i];
+#
+#foreach my $instance ( keys %{$NETS_ALREADY{$netName}} ) {
+#              my $pinName = $NETS_ALREADY{$netName}{$instance};
+#             
+#                    if ( exists $COMP_ALREADY{$instance} ) {
+#                         my $cellref = $CADB{$instance}->dbCadbGetCellref;
+#                         my @instLoc = $CADB{$instance}->dbCadbGetLoc;
+#                         my $orient = $CADB{$instance}->dbCadbGetOrient;
+#                            if ( exists $PLDB{$cellref} ) {
+#                         #---- check if the connected pin exists ----#
+#                               my @cellOrigin = $PLDB{$cellref}->dbMdbGetOrigin;
+#                               my @cellSize = $PLDB{$cellref}->dbMdbGetSize;
+#                               my @pins =     $PLDB{$cellref}->dbMdbGetPins;
+#                              
+#my $xorigin = $instLoc[0]/$DBSCALEFACTOR;
+#my $yorigin = $instLoc[1]/$DBSCALEFACTOR;
+#my $width = $cellSize[0];
+#my $height = $cellSize[1];
+#$xorigin = $xorigin*$MICRONFACTOR;
+#$yorigin = $yorigin*$MICRONFACTOR;
+#$width = $width*$MICRONFACTOR;
+#$height = $height*$MICRONFACTOR;            
+#                                           
+#
+#if( $orient eq "N") {
+#$llx = $xorigin;
+#$lly = $yorigin;
+#$urx = $xorigin+$width;
+#$ury = $yorigin+$height;
+#                    }
+#elsif( $orient eq "FN") {
+#$llx = $xorigin;
+#$lly = $yorigin+$height;
+#$urx = $xorigin+$width;
+#$ury = $yorigin;
+#                    }
+#elsif( $orient eq "FS") {
+#$llx = $xorigin;
+#$lly = $yorigin;
+#$urx = $xorigin+$width;
+#$ury = $yorigin+$height;
+#                    }
+#elsif( $orient eq "S") {
+#$llx = $xorigin;
+#$lly = $yorigin;
+#$urx = $xorigin+$width;
+#$ury = $yorigin+$height;
+#                    }
+#elsif( $orient eq "W") {
+#$llx = $xorigin;
+#$lly = $yorigin;
+#$urx = $xorigin+$height;
+#$ury = $yorigin+$width;
+#                    }
+#elsif( $orient eq "FW") {
+#$llx = $xorigin;
+#$lly = $yorigin;
+#$urx = $xorigin+$height;
+#$ury = $yorigin+$width;
+#                    }
+#elsif( $orient eq "E") {
+#$llx = $xorigin;
+#$lly = $yorigin;
+#$urx = $xorigin+$height;
+#$ury = $yorigin+$width;
+#                    }
+#elsif( $orient eq "FE") {
+#$llx = $xorigin;
+#$lly = $yorigin;
+#$urx = $xorigin+$height;
+#$ury = $yorigin+$width;
+#                    }
+#else {
+#     print "MSG : Illegal orientation $orient of $InstanceName\n";
+#     }
+#
+#if( $dieIsCentre == 1) {
+#$lly = 270-$lly;
+#$ury = 270-$ury;
+#$llx = $llx + 270;
+#$urx = $urx + 270;
+#                       }
+#else {
+#$lly = 520-$lly;
+#$ury = 520-$ury;
+#$llx = $llx + 20;
+#$urx = $urx + 20;
+#     }
+#$design_canvas->createRectangle($llx,$lly,$urx,$ury, -outline=>"yellow", -tags=>"INSTANCEHIGHLIGHT", -state =>"normal", -fill => "", -stipple => "gray12");
+#
+# foreach my $p ( @pins ) {
+#                                  if ( $p eq $pinName ) {
+#                               my @pinRects = $PLDB{$cellref}->dbMdbGetPinRect($pinName);
+#                               my $pinDire = $PLDB{$cellref}->dbMdbGetPinDir($pinName);
+#                               foreach $rectLine ( @pinRects ) {
+#                      my ($layer, $rllx1, $rlly1, $rurx1, $rury1)=(split(/\s+/,$rectLine))[0,2,3,4,5];
+####################### changing the orientation of Pin Rectangles according to Instance orientation ######################## 
+# my @PinRect = &xformCellPinToInstPin($instLoc[0],$instLoc[1],$cellOrigin[0], $cellOrigin[1],$orient,$cellSize[0],$cellSize[1],$rllx1,$rlly1,$rurx1,$rury1);
+#############################################################################################################################
+# my ($llx1,$lly1) = dbGuidatabase2Gui($PinRect[0],$PinRect[1]);  # Multiplying with database#  
+# my ($urx1,$ury1) = dbGuidatabase2Gui($PinRect[2],$PinRect[3]);  # multiplication Factor    #
+#
+#$design_canvas->createRectangle($llx1,$lly1,$urx1,$ury1, -outline=>"yellow", -tags=>"INSTANCEHIGHLIGHT", -state =>"normal", -fill => "", -stipple => "gray12");
+#                                                       }# for rectangle
+#                                  my $fortext = shift @pinRects;
+#                                  my ($layer, $llx2, $lly2, $urx2, $ury2)=(split(/\s+/,$fortext))[0,2,3,4,5];
+#        my @TextRect = &xformCellPinToInstPin($instLoc[0],$instLoc[1],$cellOrigin[0], $cellOrigin[1],$orient,$cellSize[0],$cellSize[1],$llx2,$lly2,$urx2,$ury2);
+#        my ($llx2,$lly2) = dbGuidatabase2Gui($TextRect[0],$TextRect[1]);  # Multiplying with database#  
+#        my ($urx2,$ury2) = dbGuidatabase2Gui($TextRect[2],$TextRect[3]);            
+#                                  my $midx = $llx2 + ($urx2 - $llx2)/4;
+#                                  my $midy = $lly2 + ($ury2 - $lly2)/2;
+#if ($pinDire == 0){$text = "X";}
+#elsif ($pinDire == 1){$text = "O";}
+#
+#$design_canvas->createText($midx,$midy, -text=>$text, -fill=>"yellow", -anchor=>"sw", -tags=>"INSTANCEHIGHLIGHT" );
+#
+#
+#
+##------------------------------------------------------------------------#
+#                                                         }# if pin Name
+#                                                        }#for each pinName
+#                                                          }#if instance exists
+#}#if exists cellref
+#                     }#foreach instance
+#    }#for
+#}#sub Instance_pin_display                           
+############################################################################################################
+#
+#sub Instance_display {
+#my $instances = $_[0];
+# @array_instance  = split(/\,/,$instances);
+#my $n = @array_instance;
+#for (my $i=0;$i<$n ;$i++){
+#$Instance[$i] = shift @array_instance;
+#my $instance = $Instance[$i];
+#if ( exists $COMP_ALREADY{$instance} ) {
+#                         my $cellref = $CADB{$instance}->dbCadbGetCellref;
+#                         my @instLoc = $CADB{$instance}->dbCadbGetLoc;
+#                         my $orient = $CADB{$instance}->dbCadbGetOrient;
+#                            if ( exists $PLDB{$cellref} ) {
+#                         #---- check if the connected pin exists ----#
+#                               my @cellSize = $PLDB{$cellref}->dbMdbGetSize;
+#                              
+#my $xorigin = $instLoc[0]/$DBSCALEFACTOR;
+#my $yorigin = $instLoc[1]/$DBSCALEFACTOR;
+#my $width = $cellSize[0];
+#my $height = $cellSize[1];
+#$xorigin = $xorigin*$MICRONFACTOR;
+#$yorigin = $yorigin*$MICRONFACTOR;
+#$width = $width*$MICRONFACTOR;
+#$height = $height*$MICRONFACTOR;            
+#                                           
+#
+#if( $orient eq "N") {
+#$llx = $xorigin;
+#$lly = $yorigin;
+#$urx = $xorigin+$width;
+#$ury = $yorigin+$height;
+#                    }
+#elsif( $orient eq "FN") {
+#$llx = $xorigin;
+#$lly = $yorigin+$height;
+#$urx = $xorigin+$width;
+#$ury = $yorigin;
+#                    }
+#elsif( $orient eq "FS") {
+#$llx = $xorigin;
+#$lly = $yorigin;
+#$urx = $xorigin+$width;
+#$ury = $yorigin+$height;
+#                    }
+#elsif( $orient eq "S") {
+#$llx = $xorigin;
+#$lly = $yorigin;
+#$urx = $xorigin+$width;
+#$ury = $yorigin+$height;
+#                    }
+#elsif( $orient eq "W") {
+#$llx = $xorigin;
+#$lly = $yorigin;
+#$urx = $xorigin+$height;
+#$ury = $yorigin+$width;
+#                    }
+#elsif( $orient eq "FW") {
+#$llx = $xorigin;
+#$lly = $yorigin;
+#$urx = $xorigin+$height;
+#$ury = $yorigin+$width;
+#                    }
+#elsif( $orient eq "E") {
+#$llx = $xorigin;
+#$lly = $yorigin;
+#$urx = $xorigin+$height;
+#$ury = $yorigin+$width;
+#                    }
+#elsif( $orient eq "FE") {
+#$llx = $xorigin;
+#$lly = $yorigin;
+#$urx = $xorigin+$height;
+#$ury = $yorigin+$width;
+#                    }
+#else {
+#     print "MSG : Illegal orientation $orient of $InstanceName\n";
+#     }
+#
+#if( $dieIsCentre == 1) {
+#$lly = 270-$lly;
+#$ury = 270-$ury;
+#$llx = $llx + 270;
+#$urx = $urx + 270;
+#                       }
+#else {
+#$lly = 520-$lly;
+#$ury = 520-$ury;
+#$llx = $llx + 20;
+#$urx = $urx + 20;
+#     }
+#$design_canvas->createRectangle($llx,$lly,$urx,$ury, -outline=>"yellow", -tags=>"SELECTINSTANCE", -state =>"normal", -fill => "", -stipple => "gray12");
+#
+#                              }#if exists cellref
+#                      }#if exists InstanceName
+# }#for
+#}#sub Instance_display
+#
+#
+###########################################################################################################
+#sub call_layer_InstancePin_display {
+#my $instances = $_[0];
+#my $layerName = $_[1];
+# @array_instance  = split(/\,/,$instances);
+#my $n = @array_instance;
+#for (my $i=0; $i<$n; $i++){
+#$Instance[$i] = shift @array_instance;
+#my $InstanceName = $Instance[$i];
+#
+#if ( exists $COMP_ALREADY{$InstanceName} ) {
+#        @location = $CADB{$InstanceName}->dbCadbGetLoc;
+#        $orient =   $CADB{$InstanceName}->dbCadbGetOrient;
+#        $cellref =  $CADB{$InstanceName}->dbCadbGetCellref;
+#        $status =  $CADB{$InstanceName}->dbCadbGetStatus;
+##-----------------------------------------------------------------------------------------------------#
+#       if($PLDB{$cellref}->dbMdbGetFunction eq "flop" && $PLDB{$cellref}->dbMdbGetType == 1) {$InstColor = "blueViolet";}
+#else {$InstColor="red";}       
+##-----------------------------------------------------------------------------------------------------#
+#
+#      #print "$InstanceName $cellref $location[0] $location[1] $orient\n" if ($DEBUG == 23);
+#                  if( $status eq "PLACED" || $status eq "FIXED" ) {
+#$xorigin = $location[0]/$DBSCALEFACTOR;
+#$yorigin = $location[1]/$DBSCALEFACTOR;
+#
+#
+#$xorigin = $xorigin*$MICRONFACTOR;
+#$yorigin = $yorigin*$MICRONFACTOR;
+#
+#if( exists $MACROS_ATTRIBUTE_ALREADY{$cellref} ) {
+#$size = $MACROS_ATTRIBUTE_ALREADY{$cellref}{size};
+#($width,$height)=(split(/\s+/,$size))[0,1];
+#$width = $width*$MICRONFACTOR;
+#$height = $height*$MICRONFACTOR;           } else {  print "WARNING : $InstanceName : $cellref at $location size not found\n"; 
+#                                                     next ;
+#                                                   }
+#
+#if( $orient eq "N") {
+#$llx = $xorigin;
+#$lly = $yorigin;
+#$urx = $xorigin+$width;
+#$ury = $yorigin+$height;
+#                    }
+#elsif( $orient eq "FN") {
+#$llx = $xorigin;
+#$lly = $yorigin+$height;
+#$urx = $xorigin+$width;
+#$ury = $yorigin;
+#                    }
+#elsif( $orient eq "FS") {
+#$llx = $xorigin;
+#$lly = $yorigin;
+#$urx = $xorigin+$width;
+#$ury = $yorigin+$height;
+#                    }
+#elsif( $orient eq "S") {
+#$llx = $xorigin;
+#$lly = $yorigin;
+#$urx = $xorigin+$width;
+#$ury = $yorigin+$height;
+#                    }
+#elsif( $orient eq "W") {
+#$llx = $xorigin;
+#$lly = $yorigin;
+#$urx = $xorigin+$height;
+#$ury = $yorigin+$width;
+#                    }
+#elsif( $orient eq "FW") {
+#$llx = $xorigin;
+#$lly = $yorigin;
+#$urx = $xorigin+$height;
+#$ury = $yorigin+$width;
+#                    }
+#elsif( $orient eq "E") {
+#$llx = $xorigin;
+#$lly = $yorigin;
+#$urx = $xorigin+$height;
+#$ury = $yorigin+$width;
+#                    }
+#elsif( $orient eq "FE") {
+#$llx = $xorigin;
+#$lly = $yorigin;
+#$urx = $xorigin+$height;
+#$ury = $yorigin+$width;
+#                    }
+#else {
+#     print "MSG : Illegal orientation $orient of $InstanceName\n";
+#     }
+#
+#if( $dieIsCentre == 1) {
+#$lly = 270-$lly;
+#$ury = 270-$ury;
+#$llx = $llx + 270;
+#$urx = $urx + 270;
+#                       }
+#else {
+#$lly = 520-$lly;
+#$ury = 520-$ury;
+#$llx = $llx + 20;
+#$urx = $urx + 20;
+#     }
+##$design_canvas->createRectangle($llx,$lly,$urx,$ury, -outline=>"red", -tags=>"INSTANCE", -state =>"normal", -fill => $InstColor, -stipple => "gray12");
+#
+###############################pins for each instance ################################
+#my @cellSize = $PLDB{$cellref}->dbMdbGetSize;
+#my @pins = $PLDB{$cellref}->dbMdbGetPins;
+#                      foreach $pinName ( @pins ) {
+#                      my $pinDire = $PLDB{$cellref}->dbMdbGetPinDir($pinName);
+#                      my @RECTS = $PLDB{$cellref}->dbMdbGetPinRect($pinName);
+#                         foreach $rectLine ( @RECTS ) {
+#                       ($layer, $rllx1, $rlly1, $rurx1, $rury1)=(split(/\s+/,$rectLine))[0,2,3,4,5];
+#                      my $color = $PTDB{$layer}->dbTechGetLayerColor;
+#                      my $num = $PTDB{$layer}->dbTechGetLayerNum;
+#                      my $colour;          
+#                  if (exists $HashCol{$num}){$colour =  $HashCol{$num}}
+####################### changing the orientation of Pin Rectangles according to Instance orientation ######################## 
+# my @PinRect = &xformCellPinToInstPin($location[0],$location[1],$cellOrigin[0], $cellOrigin[1],$orient,$cellSize[0],$cellSize[1],$rllx1,$rlly1,$rurx1,$rury1);
+#############################################################################################################################
+# my ($llx1,$lly1) = dbGuidatabase2Gui($PinRect[0],$PinRect[1]);  # Multiplying with database#  
+# my ($urx1,$ury1) = dbGuidatabase2Gui($PinRect[2],$PinRect[3]);  # multiplication Factor    #
+#if ($layer eq $layerName){
+#$design_canvas->createRectangle($llx1,$lly1,$urx1,$ury1, -outline=>$colour,  -fill => $colour,-tags=>"METALRECTS", -stipple => "gray12");}
+#                                                       }# foreach rectangle
+#                                                  }#foreach pin
+#                                            }#
+#                         }#if exists Instance
+#     }#for
+#}#sub call_layer_InstancePin_display  
+#
+#
+#
+############################################### add description box ##########################################################
+
+sub description_box_binding {
+
+$design_canvas->bind("INSTANCE", '<Shift-Button-1>', sub {
+
+                    $xx = $design_canvas->canvasx($Tk::event->x);
+                    $yy = $design_canvas->canvasy($Tk::event->y);
+&create_description_box($xx,$yy);
+                                      });
+
+$design_canvas->CanvasBind( '<Control-Double-1>', sub {
+
+                    $xx = $design_canvas->canvasx($Tk::event->x);
+                    $yy = $design_canvas->canvasy($Tk::event->y);
+&delete_description_box($xx,$yy);
+                                      });
+&retrieve_descriptionBox;
+}#sub description_box_binding
+
+sub create_description_box {
+my $popupgui = MainWindow->new();
+my $x = $_[0];
+my $y = $_[1];
+my $EnterText;
+$popupgui->title ("Description Box");
+my $instance_Frame= $popupgui->Frame(-background=>"cyan")->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+my $button_Frame = $popupgui->Frame (-background=>"cyan")->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
+$instance_Frame->Label(-text => "Name", -background=> "orange")->pack(-side =>'left', -anchor => 'w');
+$instance_Frame->Entry(-textvariable =>\$EnterText,-background=>"LightYellow2" )->pack(-side =>'left', );#-anchor => 'w', -fill => 'x', -expand=> '1' );
+
+my $ApplyButton = $button_Frame->Button(-text=>'Apply', -background => "orange",-foreground=>"blue",
+                                          -activebackground=>"orange",-pady=>0,
+                                          -command =>sub {
+ $textBox = $design_canvas->createLine($x, $y, $x-1, $y-1, -fill => 'yellow', -arrow => 'last',-width => 2,-tags=>"$EnterText" );
+ $textBox = $design_canvas->createRectangle($x, $y, $x+10, $y+6, -outline=>"white", -tags=>"$EnterText" ); 
+ $textBox = $design_canvas->createText($x+5,$y+3, -text=>$EnterText, -fill=>"yellow", -tags=>"$EnterText" );
+ @{$LINE{$EnterText}} = ($x, $y, $x-1, $y-1);
+ @{$RECT{$EnterText}} = ($x, $y, $x+10, $y+6);
+ @{$TEXT{$EnterText}} = ($x+5, $y+3, $EnterText);
+&save_descriptionBox;
+                                                            })->pack(-side => 'left');
+my $OkButton = $button_Frame->Button(-text=>'Ok', -background => "orange",-foreground=>"blue",
+                                     -activebackground=>"orange",-pady=>0,
+                                     -command =>sub {
+ $design_canvas->delete("$EnterText");
+ $textBox =$design_canvas->createLine($x, $y, $x-1, $y-1, -fill => 'yellow', -arrow => 'last',-width => 2,-tags=>"$EnterText" );
+ $textBox =$design_canvas->createRectangle($x, $y, $x+10, $y+6, -outline=>"white", -tags=>"$EnterText" ); 
+ $textBox =$design_canvas->createText($x+5,$y+3, -text=>$EnterText, -fill=>"yellow", -tags=>"$EnterText" );
+ @{$LINE{$EnterText}} = ($x, $y, $x-1, $y-1);
+ @{$RECT{$EnterText}} = ($x, $y, $x+10, $y+6);
+ @{$TEXT{$EnterText}} = ($x+5, $y+3, $EnterText);
+ &save_descriptionBox;
+ $popupgui->destroy;
+                                                            })->pack(-side => 'left');
+my $CancelButton = $button_Frame->Button(-text=>'Cancel', -background => "orange",-foreground=>"blue",
+                                         -activebackground=>"orange",-pady=>0,
+                                         -command =>sub {
+                                          $design_canvas->delete("$EnterText");
+                                          delete $LINE{"$EnterText"};
+                                          delete $RECT{"$EnterText"};
+                                          delete $TEXT{"$EnterText"};
+                                          &save_descriptionBox;
+                                          $popupgui->destroy;
+                                                            })->pack(-side => 'left');
+
+}#sub create_description_box
+
+sub save_descriptionBox {
+use Storable;
+mkdir("Description_box", 0777);
+store \%LINE, "Description_box/BOX_LINE";
+store \%RECT, "Description_box/BOX_RECT";
+store \%TEXT, "Description_box/BOX_TEXT";
+}#sub save_descriptionBox
+
+sub retrieve_descriptionBox {
+my $Directory = "Description_box";
+my $flag = 0;
+	if (! -d "./$Directory") {
+		print "No Description database exists!\n";
+				$flag = 1;
+	}
+
+if($flag ==0) {
+$get_Box_Line = retrieve "$Directory/BOX_LINE";
+$get_Box_Rect = retrieve "$Directory/BOX_RECT";
+$get_Box_Text = retrieve "$Directory/BOX_TEXT";
+%LINE = %{$get_Box_Line};
+%RECT = %{$get_Box_Rect};
+%TEXT = %{$get_Box_Text};
+
+
+foreach $line (keys %LINE){
+     my $coordinates = $LINE{$line};
+     my @coords = @{$coordinates};  
+$design_canvas->createLine(@coords, -fill => 'yellow', -arrow => 'last',-width => 2,-tags=>"$line" );
+                          }
+foreach $rect (keys %RECT){
+     my $coordinates = $RECT{$rect};
+     my @coords = @{$coordinates};
+$design_canvas->createRectangle(@coords, -outline=>"white", -tags=>"$rect" ); 
+                           }  
+foreach $text (keys %TEXT){
+     my $coordinates = $TEXT{$text};
+     my @coords = @{$coordinates};
+     my $x = $coords[0];
+     my $y = $coords[1];
+     my $EnterText = $coords[2];
+$design_canvas->createText($x, $y, -text=>$EnterText, -fill=>"yellow", -tags=>"$EnterText" );  
+                            }
+    }#if data base exists
+}#sub retrieve_descriptionBox
+
+sub closeDisplay_descriptionBox {
+my $Directory = "Description_box";
+my $flag = 0;
+	if (! -d "./$Directory") {
+		print "No Description database exists!\n";
+				$flag = 1;
+	}
+
+if($flag ==0) {
+$get_Box_Line = retrieve "$Directory/BOX_LINE";
+$get_Box_Rect = retrieve "$Directory/BOX_RECT";
+$get_Box_Text = retrieve "$Directory/BOX_TEXT";
+%LINE = %{$get_Box_Line};
+%RECT = %{$get_Box_Rect};
+%TEXT = %{$get_Box_Text};
+
+
+foreach $line (keys %LINE){
+     my $coordinates = $LINE{$line};
+     my @coords = @{$coordinates};  
+$design_canvas->delete("$line");
+                          }
+foreach $rect (keys %RECT){
+     my $coordinates = $RECT{$rect};
+     my @coords = @{$coordinates};
+$design_canvas->delete("$rect" ); 
+                           }  
+foreach $text (keys %TEXT){
+     my $coordinates = $TEXT{$text};
+     my @coords = @{$coordinates};
+     my $x = $coords[0];
+     my $y = $coords[1];
+     my $EnterText = $coords[2];
+$design_canvas->delete("$EnterText" );  
+                            }
+    }#if data base exists
+}#sub closeDisplay_descriptionBox
+
+
+sub delete_description_box {
+my $x = $_[0];
+my $y = $_[1];
+
+my @current = $design_canvas->find('overlapping', $x, $y, $x, $y);
+my $id = $current[0];
+my @tagName = $design_canvas->gettags($id);
+#print $design_canvas->gettags($id),' ';
+#print " tag is $tagName[0]\n";
+#my @coords = $design_canvas->coords($id);
+#print "3-> @coords\n";
+if($tagName[0] eq "INSTANCE"){}
+elsif($tagName[0] eq "ROWS"){ }
+else { 
+    $design_canvas->delete($tagName[0]);
+    delete $LINE{"$tagName[0]"};
+    delete $RECT{"$tagName[0]"};
+    delete $TEXT{"$tagName[0]"};
+#------ execute save_descriptionBox subroutine to save recent data after deleting some data ------#
+    &save_descriptionBox;
+#-------------------------------------------------------------------------------------------------#
+      }
+}#sub delete_description_box 
+
+#<----------------------------------------- finish description box code ------------------------------------------->#
+        
+########################################### PIN2PIN FlyLines Display ################################################
+
+sub display_pin2pin_flyLines {
+    my ($llx, $lly, $urx, $ury);
+    my @ll = ();
+    my @ur = ();
+       @bounding_box = ();
+$design_canvas->CanvasBind('<1>' => sub {
+            my $x = $design_canvas->canvasx($Tk::event->x);
+            my $y = $design_canvas->canvasy($Tk::event->y);
+
+            @SelectedAreaCoords = ($x, $y, $x, $y);
+
+            $SelectedAreaBox = $design_canvas->createRectangle(
+                                            @SelectedAreaCoords,
+                                            -outline => 'white',
+                                            );
+        });
+             $design_canvas->CanvasBind('<B1-Motion>' => sub {
+            @SelectedAreaCoords[2,3] = ($design_canvas->canvasx($Tk::event->x),
+                                    $design_canvas->canvasy($Tk::event->y));
+            $design_canvas->coords($SelectedAreaBox => @SelectedAreaCoords);
+        });
+            $design_canvas->CanvasBind('<B1-ButtonRelease>' => sub {
+            $design_canvas->delete($SelectedAreaBox); 
+            @ll = dbfGuiGui2Micron($SelectedAreaCoords[0],$SelectedAreaCoords[1]);
+            @ur = dbfGuiGui2Micron($SelectedAreaCoords[2],$SelectedAreaCoords[3]);
+            $llx = $ll[0]; $lly = $ur[1]; $urx = $ur[0]; $ury = $ll[1];
+
+&call_display_pin2pin_flyLines($llx, $lly, $urx, $ury);
+@bounding_box = ($llx, $lly, $urx, $ury);
+        });
+          
+             $design_canvas->CanvasBind('<Control-2>' => sub {
+             $design_canvas->delete(FLYLINES);
+        });
+
+}#sub display_pin2pin_flyLines
+
+sub call_display_pin2pin_flyLines {
+
+my ($x1, $y1, $x2, $y2) = @_;
+
+my $Sel_llx = $x1 * 2000;
+my $Sel_lly = $y1 * 2000;
+my $Sel_urx = $x2 * 2000;
+my $Sel_ury = $y2 * 2000;
+
+my (@loc,@loc_mod, $instName,$size);
+my ($xorigin, $yorigin, $llx, $lly, $urx,$ury);
+   foreach $instName ( keys %COMP_ALREADY ) {
+        #my $status = $CADB{$instName}->dbCadbGetStatus;
+        my $cellref =  $CADB{$instName}->dbCadbGetCellref;
+        my $orient = $CADB{$instance}->dbCadbGetOrient;
+        (@loc) =  $CADB{$instName}->dbCadbGetLoc;
+        $xorigin = $loc[0];
+        $yorigin = $loc[1];
+  if( exists $MACROS_ATTRIBUTE_ALREADY{$cellref} ) {
+    $size = $MACROS_ATTRIBUTE_ALREADY{$cellref}{size};
+    ($width,$height)=(split(/\s+/,$size))[0,1];
+
+    $width = $width*2000;
+    $height = $height*2000;  
+        } 
+  else { 
+   print "WARNING : $InstanceName : $cellref at $location size not found\n"; 
+                                                     next ;
+        }
+
+ if( $orient eq "N") {
+    $llx = $xorigin;
+    $lly = $yorigin;
+    $urx = $xorigin+$width;
+    $ury = $yorigin+$height;
+        }
+  elsif( $orient eq "FN")
+ {
+    $llx = $xorigin;
+    $lly = $yorigin+$height;
+    $urx = $xorigin+$width;
+    $ury = $yorigin;
+        }
+ elsif( $orient eq "FS") {
+  $llx = $xorigin;
+  $lly = $yorigin;
+  $urx = $xorigin+$width;
+  $ury = $yorigin+$height;
+        }
+ elsif( $orient eq "S") {
+  $llx = $xorigin;
+  $lly = $yorigin;
+  $urx = $xorigin+$width;
+  $ury = $yorigin+$height;
+        }
+ elsif( $orient eq "W") {
+  $llx = $xorigin;
+  $lly = $yorigin;
+  $urx = $xorigin+$height;
+  $ury = $yorigin+$width;
+        }
+ elsif( $orient eq "FW") {
+  $llx = $xorigin;
+  $lly = $yorigin;
+  $urx = $xorigin+$height;
+  $ury = $yorigin+$width;
+        }
+ elsif( $orient eq "E") {
+  $llx = $xorigin;
+  $lly = $yorigin;
+  $urx = $xorigin+$height;
+  $ury = $yorigin+$width;
+        }
+ elsif( $orient eq "FE") {
+  $llx = $xorigin;
+  $lly = $yorigin;
+  $urx = $xorigin+$height;
+  $ury = $yorigin+$width;
+         }
+        if (($llx >= $Sel_llx) && ($lly >= $Sel_lly) && ($urx<=$Sel_urx) &&($ury<=$Sel_ury)) {
+	     #@loc_mod = ($loc[0]-$Sel_llx, $loc[1]-$Sel_lly);
+             &display_connections($instName);	  
+                                                                                              }#if
+                                          }#foreach instance
+}#call_display_pin2pin_flyLines 
+
+sub display_connections {
+my $inst = $_[0];
+foreach my $pin (keys %{$COMP_ALREADY{$inst}} ){
+        my $cellRef = $CADB{$instance}->dbCadbGetCellref;
+        my $pinDirection = $PLDB{$cellRef}->dbMdbGetPinDir($pin);
+        my @sourceInst = ();
+        my @destinationInst = ();
+        my $net = $COMP_ALREADY{$inst}{$pin};
+         foreach my $instance ( keys %{$NETS_ALREADY{$net}} ) {
+                 my $pinName = $NETS_ALREADY{$net}{$instance};
+                 if($instance eq "PIN"){ }
+               else{
+                   if ( exists $COMP_ALREADY{$instance} ) {
+                            my $cellref = $CADB{$instance}->dbCadbGetCellref;
+                            my @instLoc = $CADB{$instance}->dbCadbGetLoc;
+                            my $orient = $CADB{$instance}->dbCadbGetOrient;
+                            if ( exists $PLDB{$cellref} ){
+                         #---- check if the connected pin exists ----#
+                                 my @cellOrigin = $PLDB{$cellref}->dbMdbGetOrigin;
+                                 my @cellSize = $PLDB{$cellref}->dbMdbGetSize;
+                                 my @pins =     $PLDB{$cellref}->dbMdbGetPins;
+              foreach my $p ( @pins ) {
+                                  if ( $p eq $pinName ) {
+                                  my @pinRects = $PLDB{$cellref}->dbMdbGetPinRect($pinName);
+                                  my $pinDire = $PLDB{$cellref}->dbMdbGetPinDir($pinName);
+                                  my $firstrect = shift @pinRects;
+                                  my ($layer, $llx2, $lly2, $urx2, $ury2)=(split(/\s+/,$firstrect))[0,2,3,4,5];
+        my @FirstRect = &xformCellPinToInstPin($instLoc[0],$instLoc[1],$cellOrigin[0], $cellOrigin[1],$orient,$cellSize[0],$cellSize[1],$llx2,$lly2,$urx2,$ury2);
+        my ($llx2,$lly2) = dbGuidatabase2Gui($FirstRect[0],$FirstRect[1]);  # Multiplying with database#  
+        my ($urx2,$ury2) = dbGuidatabase2Gui($FirstRect[2],$FirstRect[3]);            
+                                  my $midx = $llx2 + ($urx2 - $llx2)/4;
+                                  my $midy = $lly2 + ($ury2 - $lly2)/2;
+                              if($inst eq $instance) {push(@sourceInst, $midx, $midy);}
+                            else {push(@destinationInst, $midx, $midy);}
+                                                            }#if eqal to pin name 
+                                            }#foreach pin
+                                                         }#if cellref exists
+                                                       }#if inst exists
+                          } #else
+                                                            }#foreach instance
+       my $n = @destinationInst;
+   for(my $i = 0; $i<$n/2; $i++){
+       my $x1 = $sourceInst[0];
+       my $y1 = $sourceInst[1];
+       my $x2 = shift@destinationInst;
+       my $y2 = shift@destinationInst;
+if ($pinDirection == 0){
+   $design_canvas->createLine($x1, $y1, $x2, $y2, -fill=>"yellow",-arrow => 'first',-width=>1, -tags=>"FLYLINES");}
+else {
+   $design_canvas->createLine($x1, $y1, $x2, $y2, -fill=>"yellow",-arrow => 'last',-width=>1, -tags=>"FLYLINES");}
+                                 }#for each connection
+
+                                              }#foreach pin
+
+}#sub display_connections
+
+#<------------------------------------------- finish PIN2PIN FlyLines code -------------------------------------------->#
+#--------------------------------------- get selected Instance in bbox -------------------------------------------------#
+
+sub get_selected_instance {
+#****f* /get_selected_instance
+# NAME
+#   get_selected_instance
+# FUNCTION
+#   returns the name of selected instance.
+#   get_selected_instance has the following command line options .
+# SYNOPSIS
+#   get_selected_instance -force.
+# INPUTS
+#      options :
+#      	 -force :(to select the area greater than 10% of chip area/ greater than 1000 instance).
+#          
+# OUTPUTS
+#      return the list of instance selected. 
+#****
+
+my ($x1, $y1, $x2, $y2) = @bounding_box;
+my $arg = $_[0];
+my $setforce = 0;
+my $instcount = 0; 
+if ($_[0] eq "-force"){$setforce = 1;}
+if ($_[0] eq "-h") {print "first you should select an area by scrolling LMB then run the command below\n";
+                    print "usage: get_selected_instance   \n";
+                    print "to select large area/ instance greater than 1000\n";
+                    print "usage: get_selected_instance -force\n";
+                    return;}    
+
+my $Sel_llx = $x1 * 2000;
+my $Sel_lly = $y1 * 2000;
+my $Sel_urx = $x2 * 2000;
+my $Sel_ury = $y2 * 2000;
+if ( exists $DIE_ALREADY{dieArea} ) {
+$guiDiellx = $DIE_ALREADY{dieArea}[0];
+$guiDielly = $DIE_ALREADY{dieArea}[1];
+$guiDieurx = $DIE_ALREADY{dieArea}[2];
+$guiDieury = $DIE_ALREADY{dieArea}[3];
+my $dieArea = ($guiDieurx - $guiDiellx)*($guiDieury -$guiDielly);  
+my $bboxArea = ($Sel_urx - $Sel_llx)*($Sel_ury - $Sel_lly);  
+
+my $tenPerDieArea = (10 * $dieArea)/100;
+if (($bboxArea > $tenPerDieArea) && ($setforce == 0)){
+                               print "Warning: You have selected Large area\n";
+                               print "To select large area                 \n";
+                               print "usage: get_selected instance -force  \n";
+                               return;}
+
+
+}#if diearea exists
+else { print " DieArea not found\n"; return;}
+
+my (@loc, $instName,$size);
+my ($xorigin, $yorigin, $llx, $lly, $urx,$ury);
+   foreach $instName ( keys %COMP_ALREADY ) {
+        my $cellref =  $CADB{$instName}->dbCadbGetCellref;
+        my $orient = $CADB{$instance}->dbCadbGetOrient;
+        (@loc) =  $CADB{$instName}->dbCadbGetLoc;
+        $xorigin = $loc[0];
+        $yorigin = $loc[1];
+  if( exists $MACROS_ATTRIBUTE_ALREADY{$cellref} ) {
+    $size = $MACROS_ATTRIBUTE_ALREADY{$cellref}{size};
+    ($width,$height)=(split(/\s+/,$size))[0,1];
+
+    $width = $width*2000;
+    $height = $height*2000;  
+        } 
+  else { 
+   print "WARNING : $InstanceName : $cellref at $location size not found\n"; 
+                                                     next ;
+        }
+
+ if( $orient eq "N") {
+    $llx = $xorigin;
+    $lly = $yorigin;
+    $urx = $xorigin+$width;
+    $ury = $yorigin+$height;
+        }
+  elsif( $orient eq "FN")
+ {
+    $llx = $xorigin;
+    $lly = $yorigin+$height;
+    $urx = $xorigin+$width;
+    $ury = $yorigin;
+        }
+ elsif( $orient eq "FS") {
+  $llx = $xorigin;
+  $lly = $yorigin;
+  $urx = $xorigin+$width;
+  $ury = $yorigin+$height;
+        }
+ elsif( $orient eq "S") {
+  $llx = $xorigin;
+  $lly = $yorigin;
+  $urx = $xorigin+$width;
+  $ury = $yorigin+$height;
+        }
+ elsif( $orient eq "W") {
+  $llx = $xorigin;
+  $lly = $yorigin;
+  $urx = $xorigin+$height;
+  $ury = $yorigin+$width;
+        }
+ elsif( $orient eq "FW") {
+  $llx = $xorigin;
+  $lly = $yorigin;
+  $urx = $xorigin+$height;
+  $ury = $yorigin+$width;
+        }
+ elsif( $orient eq "E") {
+  $llx = $xorigin;
+  $lly = $yorigin;
+  $urx = $xorigin+$height;
+  $ury = $yorigin+$width;
+        }
+ elsif( $orient eq "FE") {
+  $llx = $xorigin;
+  $lly = $yorigin;
+  $urx = $xorigin+$height;
+  $ury = $yorigin+$width;
+         }
+        if (($llx >= $Sel_llx) && ($lly >= $Sel_lly) && ($urx<=$Sel_urx) &&($ury<=$Sel_ury)) {
+              $instcount ++;
+            if (($instcount > 1000) && ($setforce == 0)) {
+                                                         print "warning : you have selected more than 1000 instance\n";
+                                                         print "To select more than 1000 instances                 \n";
+                                                         print "usage: get_selected instance -force  \n";
+                                                         return;
+                                                             } 
+              print "INST: $instName\n";
+                                                }#if lies inside bbox
+                           }#foreach instance                                                  
+}#sub get_selected_instance
+
+####################################### finish get_selected_instance code ###############################################
+1;
+

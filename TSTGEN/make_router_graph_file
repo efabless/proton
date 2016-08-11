@@ -1,0 +1,1761 @@
+
+sub PTDB_asAscendingValue {
+   $LHASH_TEMP{$a} <=> $LHASH_TEMP{$b};
+}#sub PTDB_asAscendingValue
+
+
+sub write_hier_router_graph {
+
+my $noOfArguments = @_;
+#----------------- Defaults --------------------#
+my $outputFile = "router.txt";
+my $dbfact = $DEF_DATABASE_UNIT;
+print "INFO-TST-WR_HR_RTR_GRPH : 001 : dbu $dbfact\n"; 
+
+if ($_[0] eq '-h') { print "Usage : write_hier_router_graph\n";
+                     print "        -output <file name>\n";
+}
+else {
+  for ( my $i = 0; $i < $noOfArguments; $i++ ) {
+    if ($_[$i] eq "-output") { $outputFile = $_[$i+1]; }
+  }
+}
+print "MSG-TST-WR_HR_RTR_GRPH : 002 : Writing the graph file for router input\n";
+open(WRITE,">$outputFile");
+print WRITE"\n";
+print WRITE "// '//' is used for comment\n";
+print WRITE "//Note: all the brackets [] with an int or string in it.\n";
+print WRITE "//It indicates that a integer value orstring value will replace it.\n";
+print WRITE "//For example, grid [int x] [int y] [int z] would translate to grid 324 324 6\n";
+print WRITE "//(optional) at the end of aline means that this field of values are optional\n";
+print WRITE "\n";
+print WRITE "//Calculation of capacity is more complex\n";
+print WRITE "//If the minimum wire width is 20, the minimum spacing 10, and the capcity of\n";
+print WRITE "//a tile is given as 450, this corresponds to 15 minimum width tracks (15 * (20 + 10)).\n";
+print WRITE "//The capacity specified as the default value may be different than the width or\n";
+print WRITE "//height of a tile: in general, it is desirable to have routing\n";
+print WRITE "//utilization of a tile be below 70% of capacity, as higher values are difficult\n";
+print WRITE "//for detail routers to complete.\n"; 
+print WRITE"\n";
+
+##-----------------------------------------------------------------------------------------------##
+
+if ( exists $DIE_ALREADY{dieArea} ) {
+  my $guiDiellx = $DIE_ALREADY{dieArea}[0];
+  my $guiDielly = $DIE_ALREADY{dieArea}[1];
+  my $guiDieurx = $DIE_ALREADY{dieArea}[2];
+  my $guiDieury = $DIE_ALREADY{dieArea}[3];
+  my $width = ($guiDieurx - $guiDiellx);
+  my $height = ($guiDieury - $guiDielly);
+  print WRITE "die $guiDiellx $guiDielly $width $height\n";
+}
+print WRITE "DBUNITS $dbfact\n";
+print WRITE "\n";
+
+my $layerNo = 0;
+foreach $metalLayer (keys %PTDB) {
+  my $type = $PTDB{$metalLayer}->dbTechGetLayerType;
+  if ($type eq "ROUTING") {
+    $layerNo++;
+  }
+}
+print WRITE "numLayers $layerNo\n";
+print WRITE "routeDir";
+foreach $l(keys %PTDB){
+my $ln = $PTDB{$l}->dbTechGetLayerNum;
+ $LHASH_TEMP{$l}= $ln;
+}
+my @layers = sort PTDB_asAscendingValue(keys (%LHASH_TEMP));
+foreach $layer (@layers) {
+  my $type = $PTDB{$layer}->dbTechGetLayerType;
+  if ($type eq "ROUTING") {
+    my $dir = $PTDB{$layer}->dbTechGetLayerDir;
+    print WRITE " $dir";
+  }
+}
+print WRITE"\n";
+print WRITE "minWidth";
+foreach $layer (@layers) {
+  my $type = $PTDB{$layer}->dbTechGetLayerType;
+  if ($type eq "ROUTING") {
+    my $width = $PTDB{$layer}->dbTechGetLayerWidth;
+    $width = $width * $dbfact;
+    print WRITE " $width";
+  }
+}
+print WRITE"\n";
+print WRITE "minSpacing";
+foreach $layer (@layers) {
+  my $type = $PTDB{$layer}->dbTechGetLayerType;
+  if ($type eq "ROUTING") {
+    my $spacing = $PTDB{$layer}->dbTechGetLayerSpacing;
+    $spacing = $spacing * $dbfact;
+    print WRITE " $spacing";
+  }
+}
+print WRITE"\n";
+print WRITE "//if the following are not given, it will be derived.\n";
+print WRITE "viaSpacing\n";
+print WRITE "viaWidth\n";
+
+##-----------------------------------------------------------------------------------------------##
+
+print WRITE"\n";
+print WRITE "//nets description\n";
+my $netNo = 0;
+my $totalNets = keys %{$PSEUDO_VNET_ALREADY{$TOP_MODULE}};
+print WRITE "numNets $totalNets\n";
+
+foreach my $net ( keys %{$PSEUDO_VNET_ALREADY{$TOP_MODULE}} ) {
+  my @sourceInst = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net}->dbaTstgenGetPseudoNetSourceFanInList;
+  my @sinkInst = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net}->dbaTstgenGetPseudoNetSinkFanOutList;
+  #print "NET $net : Source @sourceInst : SINK @sinkInst\n";
+  my $noPins = ($#sourceInst+ $#sinkInst + 2)/2;
+  print WRITE "$net $netNo $noPins\n";
+
+  if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$sourceInst[0]}){
+##-------------------------------------------------------------------------##
+##-------------------------------------------------------------------------##
+    my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$sourceInst[0]}->dbPimDBGetInstCellref;
+    my @loc = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$sourceInst[0]}->dbPimDBGetInstRelBbox;
+    if(exists $PLDB{$cellref} ) {
+      my @cellOrigin = $PLDB{$cellref}->dbMdbGetOrigin;
+      my @cellSize = $PLDB{$cellref}->dbMdbGetSize;
+      my @pins = $PLDB{$cellref}->dbMdbGetPins;
+      foreach my $p (@pins){
+        if ($p eq $sourceInst[1]){  
+          my @pinRect = $PLDB{$cellref}->dbMdbGetPinRect($sourceInst[1]);
+          my ($layer,$pinllx,$pinlly,$pinurx,$pinury) = (split(/\s+/,$pinRect[0])) [0,2,3,4,5];
+          my $LayerNo = $PTDB{$layer}->dbTechGetLayerNum;
+#print "net $net\n";
+#print "SH $cellref ,$layer ,$pinllx ,$pinlly ,$pinurx ,$pinury\n";
+          my @pinCoords = &xformCellPinToInstPin($loc[0],$loc[1],$cellOrigin[0], $cellOrigin[1],"N",$cellSize[0],$cellSize[1],$pinllx,$pinlly,$pinurx,$pinury);
+          my $xcoord = ($pinCoords[0] + $pinCoords[2])/2;
+          my $ycoord = ($pinCoords[1] + $pinCoords[3])/2;
+          print WRITE "$xcoord $ycoord $LayerNo\n";
+        }#if pin found
+      }#foreach pin
+    }#if cellref exists 
+     else {
+       print "WARN-TST-WR_HR_RTR_GRPH : 003 : cellref of $sourceInst[0] not found for $net\n"; 
+       print WRITE "0 0 1\n"; 
+       print WRITE "//Location and layerNo of IO pins are not set, default value is 0 0 1\n"; 
+     }
+  }#if instance exists
+
+    for(my $i=0; $i<= $#sinkInst; $i = $i+ 2) {
+        if(exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$sinkInst[$i]}){
+#print "2 $sinkInst[$i] : I->$i\n";
+           my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$sinkInst[$i]}->dbPimDBGetInstCellref;
+           my @loc = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$sinkInst[$i]}->dbPimDBGetInstRelBbox;
+           if(exists $PLDB{$cellref} ) {
+#print "22 $cellref\n";
+              my @cellOrigin = $PLDB{$cellref}->dbMdbGetOrigin;
+              my @cellSize = $PLDB{$cellref}->dbMdbGetSize;
+              my @pins = $PLDB{$cellref}->dbMdbGetPins;
+#print "222 @pins\n"; 
+              foreach my $p (@pins){
+                      if ($p eq $sinkInst[$i+1]){  
+                        my @pinRect = $PLDB{$cellref}->dbMdbGetPinRect($sinkInst[$i+1]);
+                        my ($layer,$pinllx,$pinlly,$pinurx,$pinury) = (split(/\s+/,$pinRect[0])) [0,2,3,4,5];
+                        my $LayerNo = $PTDB{$layer}->dbTechGetLayerNum;
+#print "PA $cellref ,$layer ,$pinllx ,$pinlly ,$pinurx ,$pinury\n";
+              my @pinCoords = &xformCellPinToInstPin($loc[0],$loc[1],$cellOrigin[0], $cellOrigin[1],"N",$cellSize[0],$cellSize[1],$pinllx,$pinlly,$pinurx,$pinury);
+                        my $xcoord = ($pinCoords[0] + $pinCoords[2])/2;
+                        my $ycoord = ($pinCoords[1] + $pinCoords[3])/2;
+#print "$p $xcoord $ycoord\n";
+print WRITE "$xcoord $ycoord $LayerNo\n";
+                      }#if pin found
+             }#foreach pin
+          }#if cellref exists 
+          else {
+            print "WARN-TST-WR_HR_RTR_GRPH : 004 : cellref of $sinkInst[0] not found for $net\n"; 
+            print WRITE "0 0 1\n"; 
+            print WRITE "//Location and layerNo of IO pins are not set, default value is 0 0 1\n"; 
+          }
+       }#if instance exists
+    }#for sink
+  $netNo++;
+}#for each nets
+##-----------------------------------------------------------------------------------------------##
+
+print WRITE"\n";
+print WRITE "//Obstacles are described in rectangle\n";
+}#sub write_hier_router_graph
+
+###################################################################################################
+###################### Subroutins to write/read router files for hierView  ########################
+###################################################################################################
+
+sub write_hier_router_graph_new {
+my $noOfArguments = @_;
+my $outputFile = "hier_routes.grf";
+my $incr = 0;
+my @nets = ();
+my $WRITEBLKG = 1;
+my $SHRINK = 0;
+
+my $dbfact = $DEF_DATABASE_UNIT;
+
+if ($_[0] eq '-h') { print "Usage : write_hier_router_graph_new\n";
+                     print "        -output <file name>\n";
+                     print "        -nets {<net1>,<net2>,...}\n";
+                     print "        --noblkg\n";
+} else {
+  for ( my $i = 0; $i < $noOfArguments; $i++ ) {
+    if ($_[$i] eq "-output") { $outputFile = $_[$i+1]; }
+    if ($_[$i] eq "-nets") { my $netArg = $_[$i+1]; $netArg =~ s/\{(.*)\}/\1/;
+                             @nets = split(/\,/, $netArg); $incr = 1; }
+    if ($_[$i] eq "--noblkg") { $WRITEBLKG = 0; }
+    if ($_[$i] eq "--shrink") { $SHRINK = 1; }
+  }
+}
+print "MSG-TST-WR_HR_RTR_GRPH_NEW : 001 : Writing the new graph file for router input\n";
+open(WRITE,">$outputFile");
+print WRITE"\n";
+print WRITE"# '#' is used for comment.\n";
+print WRITE"# The keyword is used all capitalized word, and following with a value that needs to be replaced.\n";
+print WRITE"# Calculation of capacity is more complex.\n";
+print WRITE"# If the minimum wire width is 20, the minimum spacing 10, and the capacity of\n"; 
+print WRITE"# a tile is given as 450, this corresponds to 15 minimum width tracks (15 * (20 + 10)) .\n"; 
+print WRITE"# The capacity specified as the default value may be different than the width or\n"; 
+print WRITE"# height of a tile: in general, it is desirable to have routing\n"; 
+print WRITE"# utilization of a tile be below 70% of capacity, as higher values are difficult\n"; 
+print WRITE"# for detail routers to complete.\n";
+
+print WRITE"## The order of statement\n"; 
+print WRITE " TECHNOLOGY\n";
+print WRITE "     DBUNITS $dbfact\n";
+foreach $l(keys %PTDB){
+my $ln = $PTDB{$l}->dbTechGetLayerNum;
+ $LHASH_TEMP{$l}= $ln;
+}
+my @layers = sort PTDB_asAscendingValue(keys (%LHASH_TEMP));
+my @routingLayers = ();
+foreach my $layer (@layers) {
+  my $name = $PTDB{$layer}->dbTechGetLayerName;
+  my $type = $PTDB{$layer}->dbTechGetLayerType;
+  if ( $type eq "ROUTING" ) {
+    push(@routingLayers, $layer);
+  }
+
+  if (($type eq "ROUTING") || ($type eq "CUT")) {
+    my $dir = $PTDB{$layer}->dbTechGetLayerDir;
+    my $width = $PTDB{$layer}->dbTechGetLayerWidth;
+    my $spacing = $PTDB{$layer}->dbTechGetLayerSpacing;
+    $width = $width * $dbfact;
+    $spacing = $spacing * $dbfact;
+    print WRITE "     LAYER $name\n";
+    print WRITE "         TYPE  $type\n";
+    if ($dir eq "UND") {
+    }else {
+    print WRITE "         DIRECTION $dir\n";
+    print WRITE "         WIDTH $width\n";
+    print WRITE "         SPACING $spacing\n";
+    }
+  print WRITE "     END LAYER\n";
+  }
+}
+  print WRITE "   END TECHNOLOGY\n";
+  print WRITE "\n";
+  print WRITE "   DESIGN $TOP_MODULE\n";
+  my ($guiDiellx, $guiDielly, $guiDieurx,$guiDieury) = (0,0,0,0);
+  #if ( exists $DIE_ALREADY{dieArea} ) {
+  #   $guiDiellx = $DIE_ALREADY{dieArea}[0];# * $dbfact;
+  #   $guiDielly = $DIE_ALREADY{dieArea}[1];# * $dbfact;
+  #   $guiDieurx = $DIE_ALREADY{dieArea}[2];# * $dbfact;
+  #   $guiDieury = $DIE_ALREADY{dieArea}[3];# * $dbfact;
+  #  my $width = ($guiDieurx - $guiDiellx);
+  #  my $height = ($guiDieury - $guiDielly);
+  #  print WRITE "     DIEAREA ($guiDiellx $guiDielly) ($guiDieurx $guiDieury)\n";
+  #}else{
+    my @size = $PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenGetSize;
+    $guiDiellx = $size[0]*$dbfact;
+    $guiDielly = $size[1]*$dbfact;
+    $guiDieurx = $size[2]*$dbfact;
+    $guiDieury = $size[3]*$dbfact;
+    print WRITE "     DIEAREA ($guiDiellx $guiDielly) ($guiDieurx $guiDieury)\n";
+  #}
+
+if ( $WRITEBLKG == 1 ) {
+  my @macros = &dbfTstgenGetMacroInstList($TOP_MODULE);
+  #my @soft_mod = keys %{$PSEUDO_VINST_ALREADY{$TOP_MODULE}};
+  my $soft_blockage_count = 0;
+  foreach my $inst ( keys %{$PSEUDO_VINST_ALREADY{$TOP_MODULE}} ) {
+      if ( $inst eq "PIN" ) {
+        next;
+      }
+      my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$inst}->dbPimDBGetInstCellref;
+      if ( exists $PSEUDO_MODULE_ALREADY{$cellref} ) {
+        my @layer = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetrblkg;
+        my $nooflayer = @layer;
+        if($nooflayer == 0){
+          next; 
+        }
+      }else{
+        next;
+      }
+      my @size = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$inst}->dbPimDBGetInstRelBbox;
+      my $llx = $size[0] * $dbfact;
+      my $lly = $size[1] * $dbfact;
+      my $urx = $size[2] * $dbfact;
+      my $ury = $size[3] * $dbfact;
+      if((($llx >= $guiDiellx)&&($urx <= $guiDieurx)) && (($lly >= $guiDielly)&&($ury <= $guiDieury))){
+        if(($llx<$urx)&&($lly<$ury)){
+          push(@soft_mod, $inst);
+          my @rblkglayers = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetrblkg;
+          foreach my $layer ( @rblkglayers ) {
+            $soft_blockage_count++;
+          }
+        } 
+      }   
+    }# foreach $inst
+
+  #my $noOfblockage = (@macros * @routingLayers) + (keys %{$PSEUDO_BLKG_ALREADY{$TOP_MODULE}}) + (@soft_mod * @routingLayers);
+  my $noOfblockage = (@macros * @routingLayers) + (keys %{$PSEUDO_BLKG_ALREADY{$TOP_MODULE}}) + ($soft_blockage_count);
+  #my $noOfblockage =  keys %{$PSEUDO_BLKG_ALREADY{$TOP_MODULE}};
+  print WRITE "     BLOCKAGES $noOfblockage\n";
+
+  foreach my $inst ( @macros ) {
+    my @size = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$inst}->dbPimDBGetInstRelBbox;
+    my $llx = $size[0] * $dbfact;
+    my $lly = $size[1] * $dbfact;
+    my $urx = $size[2] * $dbfact;
+    my $ury = $size[3] * $dbfact;
+    foreach my $layer ( @routingLayers ) {
+      print WRITE "     - LAYER $layer\n";
+      print WRITE "         RECT ($llx $lly) ($urx $ury)\n";
+    }
+  }
+  foreach my $inst ( @soft_mod ) {
+    my @size = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$inst}->dbPimDBGetInstRelBbox;
+    my $llx = int(($size[0] + $SHRINK) * $dbfact);
+    my $lly = int(($size[1] + $SHRINK) * $dbfact);
+    my $urx = int(($size[2] - $SHRINK) * $dbfact);
+    my $ury = int(($size[3] - $SHRINK) * $dbfact);
+    #foreach my $layer ( @routingLayers ) {
+    #  print WRITE "     - LAYER $layer\n";
+    #  print WRITE "         RECT ($llx $lly) ($urx $ury)\n";
+    #}
+    my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$inst}->dbPimDBGetInstCellref;
+    my @rblkglayers = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetrblkg;
+    foreach my $layer ( @rblkglayers ) {
+      print WRITE "     - LAYER $layer\n";
+      print WRITE "         RECT ($llx $lly) ($urx $ury)\n";
+    }
+  }
+
+  foreach $blkgName ( keys %{$PSEUDO_BLKG_ALREADY{$TOP_MODULE}} ) {
+    my @size = $PSEUDO_BLKG_ALREADY{$TOP_MODULE}{$blkgName}->dbaTstgenGetPseudoBlkgSize;
+    my $llx = $size[0]* $dbfact;
+    my $lly = $size[1]* $dbfact;
+    my $urx = $size[2]* $dbfact;
+    my $ury = $size[3]* $dbfact;
+    my $type = $PSEUDO_BLKG_ALREADY{$TOP_MODULE}{$blkgName}->dbaTstgenGetPseudoBlkgType;
+    if ( $type eq "R" ) {
+    my $layer = $PSEUDO_BLKG_ALREADY{$TOP_MODULE}{$blkgName}->dbaTstgenGetPseudoBlkgLayer;
+      print WRITE "     - LAYER $layer\n";
+      print WRITE "         RECT ($llx $lly) ($urx $ury)\n";
+       
+    }# if routing blockage
+  }#foreach blockage
+  print WRITE "     END BLOCKAGES\n";
+    }# if WRITEBLKG is true
+  print WRITE "\n";
+  print WRITE "# If the location and layerNo of IO pins are not set, default value \n";
+  print WRITE "## + (lower_left_x lower_left_y) notset \n";
+  print WRITE "\n";
+
+  my %incrNets = ();
+  if ( $incr ) {
+    foreach my $net ( @nets ) {
+      if ( exists $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net} ) {
+        $incrNets{$net} = undef;
+      } else {
+        print "WARN-TST-WR_HR_RTR_GRPH_NEW : 002 : net $net does not exist\n";
+      }
+    }
+  }
+
+  my $totalNets = $incr ? keys %incrNets : keys %{$PSEUDO_VNET_ALREADY{$TOP_MODULE}};
+ # print WRITE "     NETS $totalNets\n";
+
+##-----------------Code to populate PORT and INST HASH--------------------##
+my %PORT_HASH = ();
+my $nodeCnt = 0;
+my $module = $TOP_MODULE;
+my @output_pins = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetOutput;
+foreach my $out (@output_pins) {
+  if ( $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetOutputType($out) == 0 ) {
+    $PORT_HASH{$out} = $nodeCnt++;
+  } else {
+    my $bits = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetOutputBits($out);
+    my $pin = $out . $bits;
+    my @portList = utilSplitBusBits($pin);
+    foreach my $port ( @portList ) {
+      $PORT_HASH{$port} = $nodeCnt++;
+    }
+  }
+}#foreach out
+
+my @input_pins = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetInput;
+foreach my $in (@input_pins) {
+  if ( $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetInputType($in) == 0 ) {
+    $PORT_HASH{$in} = $nodeCnt++;
+  } else {
+    my $bits = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetInputBits($in);
+    my $pin = $in . $bits;
+    my @portList = utilSplitBusBits($pin);
+    foreach my $port ( @portList ) {
+      $PORT_HASH{$port} = $nodeCnt++;
+    }
+  }
+}#foreach in
+
+my @bidi_pins = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetBidi;
+foreach my $bidi (@bidi_pins){
+  $PORT_HASH{$bidi} = $nodeCnt++;
+  if ( $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetBidiType($bidi) == 0 ) {
+    $PORT_HASH{$bidi} = $nodeCnt++;
+  } else {
+    my $bits = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetBidiBits($bidi);
+    my $pin = $bidi . $bits;
+    my @portList = utilSplitBusBits($pin);
+    foreach my $port ( @portList ) {
+      $PORT_HASH{$port} = $nodeCnt++;
+    }
+  }
+}#foreach bidi
+
+my %INST_HASH = ();
+foreach my $inst ( keys %{$PSEUDO_VINST_ALREADY{$module}} ) {
+  if ( $inst eq "PIN" ) {
+    next;
+  }
+  $INST_HASH{$inst} = $nodeCnt;
+  $nodeCnt++;
+}#foreach inst
+
+##-----------------Code to populate PORT and INST HASH--------------------##
+
+  my $netNo = 0;
+  my %STORE_NET_DATA = ();
+  my @router_fanin_list = ();
+  my @router_fanout_list = ();
+  foreach my $net ( keys %{$PSEUDO_VNET_ALREADY{$TOP_MODULE}} ) {
+    @router_fanin_list = ();
+    @router_fanout_list = ();
+    my @NET_DATA = ();
+    if ( $incr && !exists($incrNets{$net}) ) {
+      next;
+    }
+    my $srcPin = "";
+    my @sourceInst = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net}->dbaTstgenGetPseudoNetSourceFanInList;
+    my @sinkInst = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net}->dbaTstgenGetPseudoNetSinkFanOutList;
+    my $noPins = ($#sourceInst+ $#sinkInst + 2)/2;
+
+  my $type = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net}->dbaTstgenGetPseudoNetType;
+  unless ( $type eq "single" || $type eq "bus" ) {
+    next;
+  }
+  my $width = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net}->dbaTstgenGetPseudoNetWidth;
+
+  my @pinNameList = ();
+  my ($sourceVInst, $fanInPin) = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net}->dbaTstgenGetPseudoNetSourceFanInList;
+  my @sourcepinNameList = ();
+  if ( $sourceVInst =~ m/^\d*'b[01]+$/ ) {
+    next;
+  }
+  if ( $sourceVInst eq "") {
+    next;
+  }
+  if ( $sourceVInst eq "PIN" ) {
+    if ( $fanInPin eq "" ) {
+      $fanInPin = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net}->dbaTstgenGetPseudoNetTopConnPin;
+    }
+    my @blastedPins = ();
+    if ( $width == 1 ) {
+      push(@blastedPins, $fanInPin);
+    } else {
+      @blastedPins = &dbfTstgenBlastModuleBusPins($TOP_MODULE, $fanInPin);
+    }
+    if ( @blastedPins != $width ) {
+      print "WARN-TST : 003 : net $net width $width is inconsistent with pin $fanInPin\n"; 
+      next;  # skip this net
+    }
+    foreach my $pin ( @blastedPins ) {
+      if ( exists $PORT_HASH{$pin} ) {
+        push(@router_fanin_list, "PIN");
+        push(@router_fanin_list, $pin);
+      } else {
+        my @temp_blastedPins = &dbfTstgenBlastModuleBusPins($TOP_MODULE, $pin);
+        foreach my $temp_pin ( @temp_blastedPins ) {
+          if ( exists $PORT_HASH{$temp_pin} ) {
+            push(@router_fanin_list, "PIN");
+            push(@router_fanin_list, $temp_pin);
+            last;
+          }
+        }
+      }
+    }# foreach pin
+  } elsif ( exists $INST_HASH{$sourceVInst} ) {
+      my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$sourceVInst}->dbPimDBGetInstCellref;
+      if ( $width == 1 ) {
+         if (exists $PSEUDO_MODULE_ALREADY{$cellref}){
+           my @src_pins = &check_net_vector_lsb_eq_msb($cellref,$fanInPin);
+              foreach my $srcpin (@src_pins){
+                push(@router_fanin_list, $sourceVInst);
+                push(@router_fanin_list, $srcpin);
+              }#foreach
+         } else {
+                push(@router_fanin_list, $sourceVInst);
+                push(@router_fanin_list, $fanInPin);
+              }
+      } else {
+        my @srcPins = &dbfTstgenBlastModuleBusPins($cellref, $fanInPin);
+        if ( @srcPins != $width ) {
+          print "WARN-TST : 004 : net $net width $width is inconsistent with pin $fanInPin\n"; 
+          next;
+        }
+        foreach my $pin ( @srcPins ) {
+          push(@router_fanin_list, $sourceVInst);
+          push(@router_fanin_list, $pin);
+        }
+      }
+  }
+
+  my @fanOutList = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net}->dbaTstgenGetPseudoNetSinkFanOutList;
+  my $fanOutLen = @fanOutList;
+  my @sinkpinNameList = ();
+  for (my $k = 0; $k < $fanOutLen; $k += 2) {
+    my ($sinkVInst, $fanOutPin) = ($fanOutList[$k], $fanOutList[$k + 1]);
+    if ( $sinkVInst eq "PIN" ) {
+      if ( $fanOutPin eq "" ) {
+        $fanOutPin = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net}->dbaTstgenGetPseudoNetTopConnPin;
+      }
+      my @blastedPins = ();
+      if ( $width == 1 ) {
+        push(@blastedPins, $fanOutPin);
+      }
+      else {
+        @blastedPins = &dbfTstgenBlastModuleBusPins($TOP_MODULE, $fanOutPin);
+      }
+      if ( @blastedPins != $width ) {
+        print "WARN-TST : 005 : net $net width $width is inconsistent with pin $fanOutPin\n"; 
+        next;
+      }
+      foreach my $pin ( @blastedPins ) {
+        if ( exists $PORT_HASH{$pin} ) {
+          push(@router_fanout_list, "PIN");
+          push(@router_fanout_list, $pin);
+        } else {
+        my @temp_blastedPins = &dbfTstgenBlastModuleBusPins($TOP_MODULE, $pin);
+        foreach my $temp_pin ( @temp_blastedPins ) {
+          if ( exists $PORT_HASH{$temp_pin} ) {
+            push(@router_fanout_list, "PIN");
+            push(@router_fanout_list, $temp_pin);
+            last;
+          }
+        }
+        }
+      }# foreach pin
+    } elsif ( exists $INST_HASH{$sinkVInst} ) {
+        my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$sinkVInst}->dbPimDBGetInstCellref;
+        if ( $width == 1 ) {
+         if (exists $PSEUDO_MODULE_ALREADY{$cellref}){
+          my @snk_pins = &check_net_vector_lsb_eq_msb($cellref,$fanOutPin);
+              foreach my $snkpin (@snk_pins){
+              push(@router_fanout_list, $sinkVInst);
+              push(@router_fanout_list, $snkpin);
+           }#foreach
+         } else {
+              push(@router_fanout_list, $sinkVInst);
+              push(@router_fanout_list, $fanOutPin);
+              }
+        } else {
+          my @sinkPins = &dbfTstgenBlastModuleBusPins($cellref, $fanOutPin);
+          if ( @sinkPins != $width ) {
+            print "WARN-TST : 006 : net $net width $width is inconsistent with pin $fanOutPin\n"; 
+            next;
+          }
+          foreach my $pin ( @sinkPins ) {
+              push(@router_fanout_list, $sinkVInst);
+              push(@router_fanout_list, $pin);
+          }
+        }
+    }# if sink is inst, not port
+  }# for $k
+##------------------Code ends to blast PINS-----------------##
+  my $fanin_len = @router_fanin_list;
+  my $fanout_len = @router_fanout_list;
+  my $tmp_cnt =0;
+  my $temp_net_name = $net;
+  #for(my $tmp_index =0; $tmp_index < $fanin_len/2; $tmp_cnt++,$tmp_index = $tmp_index +2) { 
+  for(my $tmp_index =0; $tmp_index < $fanin_len; $tmp_cnt++,$tmp_index = $tmp_index +2) { 
+    $NET_DATA = [];
+    @sourceInst =();
+    @sinkInst =();
+    push (@sourceInst,$router_fanin_list[$tmp_index]);
+    push (@sourceInst,$router_fanin_list[$tmp_index+1]);
+    $net = $temp_net_name ;
+    if($fanin_len == $fanout_len){
+      push (@sinkInst,$router_fanout_list[$tmp_index]);
+      push (@sinkInst,$router_fanout_list[$tmp_index+1]);
+      if($fanin_len >2) {
+        $net = $temp_net_name ."[".$tmp_cnt."]";
+      }
+    }else{
+      push (@sinkInst,@router_fanout_list);
+    }
+    #print "net = $net\n";
+
+    if($sourceInst[0] eq "PIN"){
+      my $port = $sourceInst[1];
+      if(exists $PORT_HASH{$port}) {
+        my $curr_module = $TOP_MODULE;
+          my @rectline = $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenGetPinRect($port);
+          my ($layer, $pinllx, $pinlly,$pinurx,$pinury) = (split(/\s+/,$rectline[0])) [0,1,2,3,4];
+          my $locx = int(($pinllx+$pinurx)/2*$dbfact);
+          my $locy = int(($pinlly+$pinury)/2*$dbfact);
+          if($layer eq "NONE"){$layer = $routingLayers[0];}
+            if((($locx >= $guiDiellx)&&($locx <= $guiDieurx)) && (($locy >= $guiDielly)&&($locy <= $guiDieury))){
+                 push(@{$NET_DATA},[$locx, $locy, $layer]);
+            }else{
+                 print "WARN-TST-WR_HR_RTR_GRPH_NEW : 004 : Pin coordinates are out of chip boundry for $net\n"; 
+            }
+     }
+   }elsif (exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$sourceInst[0]}) {
+
+    my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$sourceInst[0]}->dbPimDBGetInstCellref;
+         #my $topModule = $GLOBAL->dbfGlobalGetTOP;
+         #my $floorplan = &get_floorPlan_name($topModule,$TOP_MODULE,$sourceInst[0],$topModule); 
+         #&setPseudoFloorplan("-module",$cellref,"-floorplan", $floorplan);
+
+    my @loc = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$sourceInst[0]}->dbPimDBGetInstRelBbox;
+    $loc[0] = $loc[0]*$dbfact;
+    $loc[1] = $loc[1]*$dbfact;
+    my $orient = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$sourceInst[0]}->dbPimDBGetInstOrient;
+    if(exists $PLDB{$cellref} ) {
+       my @cellOrigin = $PLDB{$cellref}->dbMdbGetOrigin;
+       my @cellSize = $PLDB{$cellref}->dbMdbGetSize;
+       my $type = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net}->dbaTstgenGetPseudoNetType;
+       $srcPin = $sourceInst[1];
+       my @pinRect = $PLDB{$cellref}->dbMdbGetPinRect($srcPin);
+       my ($layer,$pinllx,$pinlly,$pinurx,$pinury) = (split(/\s+/,$pinRect[0])) [0,2,3,4,5];
+       if ($#pinRect < 0){
+         @pinRect = $PLDB{$cellref}->dbMdbGetPinPolygon($srcPin);
+         ($layer,$pinllx,$pinlly) = (split(/\s+/,$pinRect[0])) [0,2,3];
+         $pinurx = $pinllx ;
+         $pinury = $pinlly ;
+       } 
+       my @pinCoords = &xformCellPinToInstPin($loc[0],$loc[1],$cellOrigin[0], $cellOrigin[1],$orient,$cellSize[0],$cellSize[1],$pinllx,$pinlly,$pinurx,$pinury);
+       my $xcoord = int(($pinCoords[0] + $pinCoords[2])/2);
+       my $ycoord = int(($pinCoords[1] + $pinCoords[3])/2);
+       if($layer eq "NONE"){$layer = $routingLayers[0];}
+       if((($xcoord >= $guiDiellx)&&($xcoord <= $guiDieurx)) && (($ycoord >= $guiDielly)&&($ycoord <= $guiDieury))){
+         push(@{$NET_DATA},[$xcoord, $ycoord, $layer]);
+       }else{
+                  print "WARN-TST-WR_HR_RTR_GRPH_NEW : 003 : Pin coordinates are out of chip boundry for $net\n"; 
+       }
+    }#if cellref exists 
+     else {
+       if(exists $PSEUDO_MODULE_ALREADY{$cellref}) {
+         my @rectline = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetPinRect($sourceInst[1]);
+           my ($layer, $pinllx, $pinlly,$pinurx,$pinury) = (split(/\s+/,$rectline[0])) [0,1,2,3,4];
+           my $locx = int($loc[0]+($pinllx+$pinurx)/2*$dbfact);
+           my $locy = int($loc[1]+($pinlly+$pinury)/2*$dbfact);
+           if($layer eq "NONE"){$layer = $routingLayers[0];}
+             if((($locx >= $guiDiellx)&&($locx <= $guiDieurx)) && (($locy >= $guiDielly)&&($locy <= $guiDieury))){
+                  push(@{$NET_DATA},[$locx, $locy, $layer]);
+             }else{
+                  print "WARN-TST-WR_HR_RTR_GRPH_NEW : 004 : Pin coordinates are out of chip boundry for $net\n"; 
+             }
+       } else {
+                  print "WARN-TST-WR_HR_RTR_GRPH_NEW : 005 : cellref of $sourceInst[0] not found for $net\n"; 
+                  push(@{$NET_DATA},['0', '0', 'notset']);
+       }
+     }
+  }#if instance exists
+
+    for(my $i=0; $i<= $#sinkInst; $i = $i+ 2) {
+        my $sinkPin = "";
+    if($sinkInst[$i] eq "PIN"){
+      my $instance = $sinkInst[$i+1];
+      if(exists $PORT_HASH{$instance}) {
+        my $curr_module = $TOP_MODULE;
+          my @rectline = $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenGetPinRect($instance);
+          my ($layer, $pinllx, $pinlly,$pinurx,$pinury) = (split(/\s+/,$rectline[0])) [0,1,2,3,4];
+          my $locx = int(($pinllx+$pinurx)/2*$dbfact);
+          my $locy = int(($pinlly+$pinury)/2*$dbfact);
+          if($layer eq "NONE"){$layer = $routingLayers[0];}
+            if((($locx >= $guiDiellx)&&($locx <= $guiDieurx)) && (($locy >= $guiDielly)&&($locy <= $guiDieury))){
+                 push(@{$NET_DATA},[$locx, $locy, $layer]);
+            }else{
+                 print "WARN-TST-WR_HR_RTR_GRPH_NEW : 004 : Pin coordinates are out of chip boundry for $net\n"; 
+            }
+       }
+     }elsif (exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$sinkInst[$i]}){
+           my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$sinkInst[$i]}->dbPimDBGetInstCellref;
+
+           my $orient = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$sinkInst[$i]}->dbPimDBGetInstOrient;
+         #my $topModule = $GLOBAL->dbfGlobalGetTOP;
+         #my $floorplan = &get_floorPlan_name($topModule,$TOP_MODULE,$sinkInst[$i],$topModule); 
+         #&setPseudoFloorplan("-module",$cellref,"-floorplan", $floorplan);
+
+           my @loc = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$sinkInst[$i]}->dbPimDBGetInstRelBbox;
+           $loc[0] = $loc[0]*$dbfact; 
+           $loc[1] = $loc[1]*$dbfact;
+           if(exists $PLDB{$cellref} ) {
+              my @cellOrigin = $PLDB{$cellref}->dbMdbGetOrigin;
+              my @cellSize = $PLDB{$cellref}->dbMdbGetSize;
+              my $type = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net}->dbaTstgenGetPseudoNetType;
+              $sinkPin = $sinkInst[$i+1];
+              my @pinRect = $PLDB{$cellref}->dbMdbGetPinRect($sinkPin);
+              my ($layer,$pinllx,$pinlly,$pinurx,$pinury) = (split(/\s+/,$pinRect[0])) [0,2,3,4,5];
+              if ($#pinRect < 0){
+                @pinRect = $PLDB{$cellref}->dbMdbGetPinPolygon($sinkPin);
+                ($layer,$pinllx,$pinlly) = (split(/\s+/,$pinRect[0])) [0,2,3];
+                $pinurx = $pinllx ;
+                $pinury = $pinlly ;
+              } 
+              my @pinCoords = &xformCellPinToInstPin($loc[0],$loc[1],$cellOrigin[0], $cellOrigin[1],$orient,$cellSize[0],$cellSize[1],$pinllx,$pinlly,$pinurx,$pinury);
+              my $xcoord = int(($pinCoords[0] + $pinCoords[2])/2);
+              my $ycoord = int(($pinCoords[1] + $pinCoords[3])/2);
+              if($layer eq "NONE"){$layer = $routingLayers[0];}
+              if((($xcoord >= $guiDiellx)&&($xcoord <= $guiDieurx)) && (($ycoord >= $guiDielly)&&($ycoord <= $guiDieury))){
+              push(@{$NET_DATA},[$xcoord, $ycoord, $layer]);
+              }else{
+                  print "WARN-TST-WR_HR_RTR_GRPH_NEW : 006 : Pin coordinates are out of chip boundry for $net\n"; 
+              }
+          }#if cellref exists 
+          else {
+            if(exists $PSEUDO_MODULE_ALREADY{$cellref}) {
+              my @rectline = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetPinRect($sinkInst[$i+1]);
+                my ($layer, $pinllx, $pinlly,$pinurx,$pinury) = (split(/\s+/,$rectline[0])) [0,1,2,3,4];
+                #print "$layer, $pinllx, $pinlly,$pinurx,$pinury\n";
+                my $locx = int($loc[0]+($pinllx+$pinurx)/2*$dbfact);
+                my $locy = int($loc[1]+($pinlly+$pinury)/2*$dbfact);
+                if($layer eq "NONE"){$layer = $routingLayers[0];}
+                  if((($locx >= $guiDiellx)&&($locx <= $guiDieurx)) && (($locy >= $guiDielly)&&($locy <= $guiDieury))){
+                    push(@{$NET_DATA},[$locx, $locy, $layer]);
+                    #print "$locx, $locy, $layer\n";
+                  }else{
+                  print "WARN-TST-WR_HR_RTR_GRPH_NEW : 007 : Pin coordinates are out of chip boundry for $net\n"; 
+                  }
+            } else {
+                  print "WARN-TST-WR_HR_RTR_GRPH_NEW : 008 : cellref of $sinkInst[0] not found for $net\n"; 
+                  push(@{$NET_DATA},['0', '0', 'notset']);
+            }
+          }
+       }#if instance exists
+    }#for sink
+      #$netNo++;
+      $STORE_NET_DATA{$net} = $NET_DATA if ($#{$NET_DATA} >= 1);
+    }
+  }#foreach nets
+
+my $totalNets = keys %STORE_NET_DATA;
+print WRITE "     NETS $totalNets\n";
+$netNo = 0;
+      foreach my $netName(keys %STORE_NET_DATA){
+        my $netdataref = $STORE_NET_DATA{$netName};
+        my $noPins = $#{$netdataref} +1;
+        print WRITE "     - $netName $netNo $noPins\n";
+        foreach my $net_coords (@{$netdataref}){
+                my $locx= @$net_coords[0];
+                my $locy= @$net_coords[1];
+                my $layer= @$net_coords[2];
+                print WRITE "       + ($locx $locy) $layer\n";
+         }
+$netNo++;
+      }
+  print WRITE "     END NETS\n";
+  print WRITE "   END DESIGN\n";
+close(WRITE);
+return($outputFile);
+}#sub write_hier_router_graph_new
+
+
+sub read_hier_router {
+ #****f* / read_hier_router
+ # NAME
+ #   read_hier_router
+ # FUNCTION
+ #  read hierarical router data
+ # SYNOPSIS
+ #   read_hier_router -file <input fileName>
+ # INPUTS
+ #   options:
+ #   -file <input file>
+ # OUTPUTS
+ #    add the router data in database
+ # ****
+ 
+ my $inputFile;
+
+ my $noOfArguments = @_;
+ if($noOfArguments < 2 || $_[0] eq '-h' || $_[0] eq 'help' || $_[0] eq 'HELP'){ 
+    print "Usage : read_hier_router -file <input_router_file>\n";
+ }else {  
+    for ( my $i = 0; $i < $noOfArguments; $i++ ) {
+      if ($_[$i] eq "-file") { $inputFile = $_[$i+1]; }
+    }
+    if(-e $inputFile) {
+       open(READ_ROUTER_FILE, "$inputFile");
+       print "INFO-TST-RD_HR_RTR : 001 : Begin reading the input router file\n";
+       my %temp_layer_hash = ();
+       foreach my $layer(keys %PTDB){
+         my $layerType = $PTDB{$layer}->dbTechGetLayerType; 
+         my $layerNum = $PTDB{$layer}->dbTechGetLayerNum; 
+         if($layerType eq "ROUTING"){
+            $temp_layer_hash{$layer} = $layerNum;
+         }#if layer is routing
+       }#foreach layer
+
+       my @RLayers = sort {$temp_layer_hash{$a}<=>$temp_layer_hash{$b}} (keys %temp_layer_hash);
+
+       my $netName = "";
+       my @regularRoutes = ();
+       my $read_net_start = 0;
+       my $dbu = $GLOBAL->dbfGlobalGetDBU;
+       my $moduleName = $TOP_MODULE;
+       
+       while(<READ_ROUTER_FILE>){
+          chomp($_);
+          $_ =~ s/^\s+//;
+          if($_ =~ /^\s*#/) { next; }
+          if($_ =~ /^\s*$/) { next; }
+          
+          if($read_net_start == 0) {
+             $read_net_start = 1;
+             @regularRoutes = ();
+             ($netName, $netId) = (split(/\s+/, $_))[0,1];
+             if(!exists $PSEUDO_VNET_ALREADY{$moduleName}->{$netName}){
+                $PSEUDO_VNET_ALREADY{$moduleName}->{$netName} = PseudoNetModelDB::new();
+             }
+             $PSEUDO_VNET_ALREADY{$moduleName}->{$netName}->dbaTstgenSetPseudoNetId($netId);
+          }
+          elsif($_ =~ /^!/) {
+             $PSEUDO_VNET_ALREADY{$moduleName}->{$netName}->dbaTstgenSetPseudoExtNetCoords(@regularRoutes);
+             $PSEUDO_VNET_ALREADY{$moduleName}->{$netName}->dbaTstgenSetPseudoNetCoords("");
+             @regularRoutes = ();
+             $read_net_start = 0;
+             $netName = "";
+          }else{
+             if($read_net_start == 1) {
+                if($_ =~m/\((\d+)\,(\d+)\,(\d+)\)\-\((\d+)\,(\d+)\,(\d+)\)/){ 
+                   if($3 == $6){
+                      my $layer = $RLayers[$3-1]; 
+                      if(exists $PTDB{$layer}){
+                         my $llx = $1;
+                         my $lly = $2;
+                         my $urx = $4;
+                         my $ury = $5;
+                         my $new_llx = min($llx,$urx);
+                         my $new_lly = min($lly,$ury);
+                         my $new_urx = max($llx,$urx);
+                         my $new_ury = max($lly,$ury);
+                         my $LLx = $new_llx/$dbu;
+                         my $LLy = $new_lly/$dbu;
+                         my $URx = $new_urx/$dbu;
+                         my $URy = $new_ury/$dbu;
+                         push(@regularRoutes, [$layer, $LLx, $LLy, $URx, $URy]);
+                      }#if the routiung layer exists
+                   }else{
+                      my $first_layer = $RLayers[$3-1]; 
+                      my $second_layer = $RLayers[$6-1]; 
+                      if(exists $PTDB{$first_layer} && $PTDB{$second_layer}){
+                         my $llx = $1/$dbu;
+                         my $lly = $2/$dbu;
+                         my $urx = $4/$dbu;
+                         my $ury = $5/$dbu;
+                         push(@regularRoutes, [$first_layer, $second_layer, $llx, $lly, $urx, $ury]);
+                      }
+                   }
+                }
+             }  
+          }
+       }
+       close(READ_ROUTER_FILE);
+    }else{
+     print "WARN-TST-RD_HR_RTR : 002 : $inputFile DOES NOT EXIST\n";
+    }
+ }
+}#sub read_hier_router
+
+sub route_hier {
+
+#****f* / route_hier
+# NAME
+#   route_hier
+# FUNCTION
+#   runs router on design and storing router data in pseudo database 
+# Assumptions
+#   works for all nets
+# SYNOPSIS
+#   route_hier 
+# OUTPUTS
+#    router data is stored in pseudo DB
+# ****
+
+if($_[0] eq "-h" || $_[0] eq "-help" || $_[0] eq "-HELP"){
+   print "Usage: route_hier\n";
+   return;
+}
+my $env_proton_home = $GLOBAL->dbfGlobalGetProtonHome;
+#if(-e "router_new.txt"){system("rm router_new.txt");}
+#if(-e "router_new.txt.output"){system("rm router_new.txt.output");}
+if(-e "hier_routes.grf"){system("rm hier_routes.grf");}
+if(-e "hier_routes.grf.output"){system("rm hier_routes.grf.output");}
+my $INPUT_NET_FILE = &write_hier_router_graph_new("--shrink");
+#my $INPUT_NET_FILE = &write_hier_router_graph_new("--noblkg");
+print "INFO-TST-ROUTE_HIER : 001 : PROTON_HOME is $env_proton_home\n";
+if ( -e $INPUT_NET_FILE) {
+  system("cp $env_proton_home/3RDBIN/._po* .");
+  system("$env_proton_home/3RDBIN/eeRouter $INPUT_NET_FILE");
+  system("rm -rf ._po*");
+  &read_hier_router("-file" ,"$INPUT_NET_FILE.output");
+  ##----------------------------------------------------------#
+  ##my $flplan = $PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenGetFloorplan;
+  ##&hier_route_display("-floorplan", $flplan);
+  ##----------------------------------------------------------#
+} else {
+  print "WARN-TST-ROUTE_HIER : 002 : $INPUT_NET_FILE FILE DOES NOT EXIST\n";
+}
+$GLOBAL->dbGlobalSetHRouterStatus(1);
+}#sub route_hier
+
+###################################################################################################
+###################### Subroutins to write/read router files for flat view ########################
+###################################################################################################
+
+sub write_flat_router_graph {
+my $noOfArguments = @_;
+my $outputFile = "router_new.txt";
+my $includefile = "";
+my $excludefile = "";
+my $maxNetDegree = 500 ;
+my $minNetDegree = 2;
+my $dbfact = $DEF_DATABASE_UNIT;
+print "INFO-TST-WR_FLT_RTR_GRPH : 001 : dbu $dbfact\n"; 
+
+my $incr = 0;
+my $include = 0;
+my $exclude = 0;
+my $VAR = 0;
+my @nets = ();
+if ($_[0] eq '-h') { print "Usage : write_flat_router_graph_new\n";
+                     print "        -output <file name>\n";
+                     print "        -include <file name>\n";
+                     print "        -exclude <file name>\n";
+                     print "        -nets {<net1>,<net2>,...}\n";
+}
+else {
+  for ( my $i = 0; $i < $noOfArguments; $i++ ) {
+    if ($_[$i] eq "-output") { $outputFile = $_[$i+1]; }
+    if ($_[$i] eq "-include") { $includefile = $_[$i+1]; $include = 1;}
+    if ($_[$i] eq "-exclude") { $excludefile = $_[$i+1]; $exclude = 1;}
+    if ($_[$i] eq "-max_net_degree") { $maxNetDegree = $_[$i+1];}
+    if ($_[$i] eq "-min_net_degree") { $minNetDegree = $_[$i+1];}
+    if ($_[$i] eq "-nets") { my $netArg = $_[$i+1]; $netArg =~ s/\{(.*)\}/\1/;
+                             @nets = split(/\,/, $netArg); $incr = 1; }
+  }
+}
+print "MSG-TST-WR_FLT_RTR_GRPH : 002 : Writing the new graph file for router input\n";
+open(WRITE,">$outputFile");
+print WRITE"\n";
+print WRITE"# '#' is used for comment.\n";
+print WRITE"# The keyword is used all capitalized word, and following with a value that needs to be replaced.\n";
+print WRITE"# Calculation of capacity is more complex.\n";
+print WRITE"# If the minimum wire width is 20, the minimum spacing 10, and the capacity of\n"; 
+print WRITE"# a tile is given as 450, this corresponds to 15 minimum width tracks (15 * (20 + 10)) .\n"; 
+print WRITE"# The capacity specified as the default value may be different than the width or\n"; 
+print WRITE"# height of a tile: in general, it is desirable to have routing\n"; 
+print WRITE"# utilization of a tile be below 70% of capacity, as higher values are difficult\n"; 
+print WRITE"# for detail routers to complete.\n";
+
+print WRITE"## The order of statement\n"; 
+print WRITE " TECHNOLOGY\n";
+print WRITE "     DBUNITS $dbfact\n";
+foreach $l(keys %PTDB){
+my $ln = $PTDB{$l}->dbTechGetLayerNum;
+ $LHASH_TEMP{$l}= $ln;
+}
+my @layers = sort PTDB_asAscendingValue(keys (%LHASH_TEMP));
+my @routingLayers = ();
+my $firstRoutingLayerName = "" ;
+foreach my $layer (@layers) {
+  my $name = $PTDB{$layer}->dbTechGetLayerName;
+  my $type = $PTDB{$layer}->dbTechGetLayerType;
+  if ( $type eq "ROUTING" ) {
+    if($firstRoutingLayerName eq ""){
+      $firstRoutingLayerName = $name ;
+    }
+    push(@routingLayers, $layer);
+  }
+  if (($type eq "ROUTING") || ($type eq "CUT")) {
+    my $dir = $PTDB{$layer}->dbTechGetLayerDir;
+    my $width = $PTDB{$layer}->dbTechGetLayerWidth;
+    my $spacing = $PTDB{$layer}->dbTechGetLayerSpacing;
+    $width = $width * $dbfact;
+    $spacing = $spacing * $dbfact;
+    print WRITE "     LAYER $name\n";
+    print WRITE "         TYPE  $type\n";
+    if ($dir eq "UND") {}
+    else {
+    print WRITE "         DIRECTION $dir\n";
+    print WRITE "         WIDTH $width\n";
+    print WRITE "         SPACING $spacing\n";
+    }
+  print WRITE "     END LAYER\n";
+  }
+}
+  print WRITE "   END TECHNOLOGY\n";
+  print WRITE "\n";
+  print WRITE "   DESIGN $TOP_MODULE\n";
+  if ( exists $DIE_ALREADY{dieArea} ) {
+    my $guiDiellx = $DIE_ALREADY{dieArea}[0];
+    my $guiDielly = $DIE_ALREADY{dieArea}[1];
+    my $guiDieurx = $DIE_ALREADY{dieArea}[2];
+    my $guiDieury = $DIE_ALREADY{dieArea}[3];
+    my $width = ($guiDieurx - $guiDiellx);
+    my $height = ($guiDieury - $guiDielly);
+    print WRITE "     DIEAREA ($guiDiellx $guiDielly) ($guiDieurx $guiDieury)\n";
+  }
+
+  my @macros = &dbfTstgenGetFlatMacroInstList;
+  my $noOfblockage = @macros * @routingLayers;
+  print WRITE "     BLOCKAGES $noOfblockage\n";
+
+  foreach my $inst ( @macros ) {
+    my @loc = $CADB{$inst}->dbCadbGetLoc;
+    my $orient = $CADB{$inst}->dbCadbGetOrient;
+    my @size = $PLDB{$cellref}->dbMdbGetSize;
+    my $width = $size[0] * $dbfact;
+    my $height = $size[1] * $dbfact;
+    my ($llx, $lly, $urx, $ury) = &utilLocToBbox($loc[0], $loc[1], $orient, $width, $height);
+    foreach my $layer ( @routingLayers ) {
+      print WRITE "     - LAYER $layer\n";
+      print WRITE "         RECT ($llx $lly) ($urx $ury)\n";
+    }
+  }
+
+  #my @routing_blockages = $FLOORPLAN_ALREADY{"$TOP_MODULE/_self_"}->dbFlplanGetRblkg;
+  #my $noOfblockage = @routing_blockages;
+  #print WRITE "     BLOCKAGES $noOfblockage\n";
+  #    foreach $Rblockage (@routing_blockages) {
+  #       my @size = split(/\,/, $Rblockage) ;
+  #       my $layer = shift @size;  
+  #       print WRITE "     - LAYER $layer\n";
+  #       for($i = 0;$i<=$#size;$i=$i+4){
+  #         print WRITE "         RECT ($size[$i] $size[$i+1]) ($size[$i+2] $size[$i+3])\n";
+  #       }#for routing blockage size
+  #    }#foreach routing blockage
+ 
+  print WRITE "     END BLOCKAGES\n";
+  print WRITE "\n";
+##-----------------------------------------------------------------------------------------------------------------##
+
+  print WRITE "# If the location and layerNo of IO pins are not set, default value \n";
+  print WRITE "## + (lower_left_x lower_left_y) $firstRoutingLayerName \n";
+  print WRITE "\n";
+##---------------------------------read nets file for include or exclude---------------------------##
+
+  if ($include == 1){
+    @nets = &read_file($includefile);
+  }
+  if ($exclude == 1){
+    @nets = &read_file($excludefile);
+  }
+##-------------------------------------------------------------------------------------------------##
+
+  my %incrNets = ();
+  if ( $incr || $include || $exclude) {
+    $VAR = 1;
+    foreach my $net ( @nets ) {
+      #if ( exists $NETS_ALREADY->{$net} ) {
+      if ( exists ($NETS_ALREADY{$net}) ) {
+        $incrNets{$net} = undef;
+      }
+      else {
+        print "WARN-TST-WR_FLT_RTR_GRPH : 003 : net $net does not exist\n";
+      }
+    }
+  }
+  my $no_of_high_fanout_nets = 0;
+  foreach my $net ( keys %NETS_ALREADY ) {
+    if ( $incr && !exists($incrNets{$net}) ) {
+      next;
+    }
+    if ( $include && !exists($incrNets{$net}) ) {
+      next;
+    }
+    if ( $exclude && exists($incrNets{$net}) ) {
+      next;
+    }
+    my @driverInst = &getNetDriver($net);
+    my @sinkInst = &getNetSink($net);
+    my @instList = ();
+    if($driverInst[0] eq "UND"){
+      push(@instList,@sinkInst);
+    } else {
+      push(@instList,@driverInst) if ($#driverInst >0);
+      push(@instList,@sinkInst) if ($#sinkInst > 0);
+    }
+    my $noPins = ($#instList + 1)/2;
+    if(($noPins > $maxNetDegree) || ($noPins < $minNetDegree)){
+      $no_of_high_fanout_nets++;
+    }
+  }
+  if ($exclude) {
+    my $a = keys %NETS_ALREADY;
+    my $b = keys %incrNets;
+    my $totalNets = $a -$b -$no_of_high_fanout_nets;
+    #my $totalNets = (keys %NETS_ALREADY) - (keys %incrNets) ;
+    print WRITE "     NETS $totalNets\n" ;
+  }else{
+    my $totalNets = $VAR ? keys %incrNets : keys %NETS_ALREADY;
+    $totalNets -= $no_of_high_fanout_nets;
+    print WRITE "     NETS $totalNets\n";
+    my $a = keys %NETS_ALREADY;
+  }
+
+  my $netNo = 0;
+  foreach my $net ( keys %NETS_ALREADY ) {
+    if ( $incr && !exists($incrNets{$net}) ) {
+      next;
+    }
+    if ( $include && !exists($incrNets{$net}) ) {
+      next;
+    }
+    if ( $exclude && exists($incrNets{$net}) ) {
+      next;
+    }
+##-------------------------------------------------------##
+    my @driverInst = &getNetDriver($net);
+    my @sinkInst = &getNetSink($net);
+#print "NET $net :: driver @driverInst :: sink @sinkInst\n";
+    my @instList = ();
+    if($driverInst[0] eq "UND"){
+    push(@instList,@sinkInst);
+    } else {
+#print "dr \"@driverInst\"\n";
+#print "si \"@sinkInst\"\n";
+    push(@instList,@driverInst) if ($#driverInst >0);
+    push(@instList,@sinkInst) if ($#sinkInst > 0);
+    }
+#print "total \"@instList\"\n";
+##-------------------------------------------------------##
+#my $x = $#instList;
+#print "x is $x\n";
+    my $noPins = ($#instList + 1)/2;
+    if(($noPins > $maxNetDegree) || ($noPins < $minNetDegree)){
+      next;
+    }
+#    print "pins $noPins\n";
+print WRITE "     - $net $netNo $noPins\n";
+    for($i = 0;$i<=$#instList;$i=$i+2){
+        if(exists $PORTS_ALREADY{$TOP_MODULE}{$instList[$i]}) {
+             my ($xcoord, $ycoord) = $PORTS_ALREADY{$TOP_MODULE}{$instList[$i]}->dbPortGetLoc;
+             my $layer = $PORTS_ALREADY{$TOP_MODULE}{$instList[$i]}->dbPortGetLayer;
+             my $layertype = $PTDB{$layer}->dbTechGetLayerType if($layer eq "");
+             if ($layertype eq "ROUTING"){
+                             print WRITE "        + ($xcoord $ycoord) $layer\n";
+             }else{
+                             print WRITE "        + ($xcoord $ycoord) $firstRoutingLayerName\n";
+             }
+
+
+        }elsif( exists $COMP_ALREADY{$instList[$i]} ) {
+              my $cellref = $CADB{$instList[$i]}->dbCadbGetCellref;
+              my @instLoc = $CADB{$instList[$i]}->dbCadbGetLoc;
+              my $orient = $CADB{$instList[$i]}->dbCadbGetOrient;
+                 if ( exists $PLDB{$cellref} ){
+                    #---- check if the connected pin exists ----#
+                      my @cellOrigin = $PLDB{$cellref}->dbMdbGetOrigin;
+                      my @cellSize = $PLDB{$cellref}->dbMdbGetSize;
+                      my @pins =     $PLDB{$cellref}->dbMdbGetPins;
+                        foreach my $p ( @pins ) {
+                           if ( $p eq $instList[$i+1] ) {
+                             my @pinRects = $PLDB{$cellref}->dbMdbGetPinRect($p);
+
+## -------------------------Code for selecting rect with routing layer----------------------------------------------------------------##
+                             foreach my $pin_rect(@pinRects) {
+                               my $pinDire = $PLDB{$cellref}->dbMdbGetPinDir($p);
+                               my $firstrect = shift @pinRects;
+                               my ($layer, $llx2, $lly2, $urx2, $ury2)=(split(/\s+/,$firstrect))[0,2,3,4,5];
+                               my $layertype = $PTDB{$layer}->dbTechGetLayerType;
+                               if ($layertype eq "ROUTING") {  
+                                 my @pinCoords = &xformCellPinToInstPin($instLoc[0],$instLoc[1],$cellOrigin[0], $cellOrigin[1],$orient,$cellSize[0],$cellSize[1],$llx2,$lly2,$urx2,$ury2); 
+                                 my $xcoord = int(($pinCoords[0] + $pinCoords[2])/2);
+                                 my $ycoord = int(($pinCoords[1] + $pinCoords[3])/2);
+                                 print WRITE "        + ($xcoord $ycoord) $layer\n";
+                                 last;
+                               }
+                             }
+##--------------------------------------------------------------------------------------------------------------------------------------##
+                           }#if pinName is equal
+                        }#foreach pin
+                 }#if exist cellref
+       }else{
+                             print WRITE "        + (0 0) $firstRoutingLayerName\n";
+       } 
+     }#foreach instance
+    $netNo++;
+  }#foreach net 
+  print WRITE "     END NETS\n";
+  print WRITE "   END DESIGN\n";
+
+close(WRITE);
+return($outputFile);
+}#sub write_flat_router_graph
+
+sub read_file {
+
+  my @inputnets = ();
+  my $inputFile = $_[0];
+  if ( -e $inputFile) {
+    open(READ_FILE, "$inputFile");
+    print "INFO-TST : 001 : Begin reading the input nets file\n";
+    my $netName = "";
+    while(<READ_FILE>){
+      chomp($_);
+      $_ =~ s/^\s+//;
+      $_ =~ s/\s+$//;
+      if($_ =~ /^\s*#/) { next; }
+      if($_ =~ /^\s*$/) { next; }
+      push(@inputnets, $_);
+    }
+    close(READ_FILE);
+    return(@inputnets);
+  }else{
+     print "WARN-TST : 002 : $inputFile file does not exists\n"; 
+  }
+
+}#read_file
+#
+# collect all block instances in flat view
+#
+sub dbfTstgenGetFlatMacroInstList {
+my @macros = ();
+foreach my $inst ( keys %{COMP_ALREADY} ) {
+  my $cellref = $CADB{$inst}->dbCadbGetCellref;
+  unless ( exists $PLDB{$cellref} ) {
+    print "DBG-TST : 001 : instance $inst cell $cellref has no physical library\n" if ($DEBUG == 328);
+    next;
+  }
+  my $type = $PLDB{$cellref}->dbMdbGetClass;
+  unless ( $type eq "BLOCK" ) {
+    next;
+  }
+  push(@macros, $inst);
+}
+return @macros;
+}# sub dbfTstgenGetFlatMacroInstList
+
+
+sub read_flat_router {
+ #****f* / read_flat_router
+ # NAME
+ #   read_flat_router
+ # FUNCTION
+ #  read flat router data
+ # SYNOPSIS
+ #   read_flat_router -file <input fileName>
+ # INPUTS
+ #   options:
+ #   -file <input file>
+ # OUTPUTS
+ #    add the router data in database
+ # ****
+ 
+ %NETS_ROUTING_ALREADY = ();
+ my $inputFile;
+ 
+ my $noOfArguments = @_;
+ if($noOfArguments < 2 || $_[0] eq '-h' || $_[0] eq "-help" || $_[0] eq "-HELP"){ 
+    print "Usage : read_flat_router -file <input_router_file>\n";
+ }else {  
+    for ( my $i = 0; $i < $noOfArguments; $i++ ) {
+      if ($_[$i] eq "-file") { $inputFile = $_[$i+1]; }
+    }
+    if(-e $inputFile) {
+       open(READ_ROUTER_FILE, "$inputFile");
+       print "INFO-TST-RD_FLT_RTR : 001 : Begin reading the input router file\n";
+       my %temp_layer_hash = ();
+       #my %via_layer_hash = ();
+       foreach my $layer(keys %PTDB){
+         my $layerType = $PTDB{$layer}->dbTechGetLayerType; 
+         my $layerNum = $PTDB{$layer}->dbTechGetLayerNum; 
+         if($layerType eq "ROUTING"){
+            $temp_layer_hash{$layer} = $layerNum;
+         }#if layer is routing
+         #elsif($layerType eq "CUT"){
+         #   $via_layer_hash{$layerNum} = $layer;
+         #}
+       }#foreach layer
+
+       my @RLayers = sort {$temp_layer_hash{$a}<=>$temp_layer_hash{$b}} (keys %temp_layer_hash);
+
+       my $netName = "";
+       my $read_net_start = 0;
+       my $dbu = $GLOBAL->dbfGlobalGetDBU;
+       my $moduleName = $TOP_MODULE;
+       
+       while(<READ_ROUTER_FILE>){
+          chomp($_);
+          $_ =~ s/^\s+//;
+          if($_ =~ /^\s*#/) { next; }
+          if($_ =~ /^\s*$/) { next; }
+          
+          if($read_net_start == 0) {
+             $read_net_start = 1;
+             ($netName, $netId) = (split(/\s+/, $_))[0,1];
+             if(!exists $NETS_ROUTING_ALREADY{$netName}){
+                $NETS_ROUTING_ALREADY{$netName} = NetRoutingDB::new();
+             }
+             $NETS_ROUTING_ALREADY{$netName}->dbNetSetId($netId);
+          }elsif($_ =~ /^!/) {
+             $read_net_start = 0;
+             $netName = "";
+          }else{
+             if($read_net_start == 1) {
+                if($_ =~m/\((\d+)\,(\d+)\,(\d+)\)\-\((\d+)\,(\d+)\,(\d+)\)/){ 
+                   my ($llx, $lly, $urx, $ury) = ($1, $2, $4, $5);
+                   if($3 == $6){
+                      my $layer = $RLayers[$3-1]; 
+                      if(exists $PTDB{$layer}){
+                         if((sprintf($llx) == sprintf($urx)) && (sprintf($lly) == sprintf($ury))){
+                             #my $regularRoute = "$layer ( $llx $lly ) VIA"; #adding temp via
+                             #$NETS_ROUTING_ALREADY{$netName}->dbNetRoutingDBSetRegularRoute($regularRoute);
+                         }elsif(sprintf($llx) == sprintf($urx)){
+                             my $regularRoute; 
+                             if($lly < $ury){
+                                $regularRoute = "$layer ( $llx $lly ) ( * $ury )";
+                             }else{
+                                $regularRoute = "$layer ( $llx $ury ) ( * $lly )";
+                             }
+                             $NETS_ROUTING_ALREADY{$netName}->dbNetRoutingDBSetRegularRoute($regularRoute);
+                         }elsif(sprintf($lly) == sprintf($ury)){
+                             my $regularRoute; 
+                             if($llx < $urx){
+                                $regularRoute = "$layer ( $llx $lly ) ( $urx * )";
+                             }else{
+                                $regularRoute = "$layer ( $urx $lly ) ( $llx * )";
+                             }
+                             $NETS_ROUTING_ALREADY{$netName}->dbNetRoutingDBSetRegularRoute($regularRoute);
+                         }else{
+                            print "WARN:routing data $_ is not correct ...\n";
+                         }
+                      }#if the routiung layer exists
+                   }else{
+                      #my $lowerRoutingLayerNum;
+                      #if($3 < $6){
+                      #   $lowerRoutingLayerNum = $3;
+                      #}else{ 
+                      #   $lowerRoutingLayerNum = $3;
+                      #} 
+                      #my $lowerRoutingLayer = $RLayers[$lowerRoutingLayerNum-1];
+                      #my $realLayerNum = $PTDB{$lowerRoutingLayer}->dbTechGetLayerNum;   
+                      #my $viaLayer = $via_layer_hash{$realLayerNum + 1};
+                      #my $regularRoute = "$layer ( $llx $lly ) $viaLayer"; #adding temp via
+                      #$NETS_ROUTING_ALREADY{$netName}->dbNetRoutingDBSetRegularRoute($regularRoute);
+                   }
+                }
+             }  
+          }
+       }
+       close(READ_ROUTER_FILE);
+    }else{
+     print "WARN-TST-RD_HR_RTR : 002 : $inputFile DOES NOT EXIST\n";
+    }
+ }
+}#sub read_flat_router
+
+sub route_flat {
+use Benchmark;
+my $t0 = new Benchmark;
+
+
+#****f* / route_flat
+# NAME
+#   route_flat
+# FUNCTION
+#   runs router on design and storing router data in database 
+# Assumptions
+#   works for all nets
+# SYNOPSIS
+#   route_flat 
+# OUTPUTS
+#    router data is stored in DB
+# ****
+my $INPUT_NET_FILE = "";
+my $includefile = "";
+my $includefile = "";
+my $include = 0;
+my $exclude = 0;
+if($_[0] eq "-h" || $_[0] eq "-help" || $_[0] eq "-HELP"){
+                     print "Usage: route_flat\n";
+                     print "        -include <file name>\n";
+                     print "        -exclude <file name>\n";
+   return;
+}
+else {
+  for ( my $i = 0; $i < $noOfArguments; $i++ ) {
+    if ($_[$i] eq "-include") { $includefile = $_[$i+1]; $include = 1;}
+    if ($_[$i] eq "-exclude") { $excludefile = $_[$i+1]; $exclude = 1;}
+  }
+}
+my $env_proton_home = $GLOBAL->dbfGlobalGetProtonHome;
+if(-e "router_new.txt"){system("rm router_new.txt");}
+if(-e "router_new.txt.output"){system("rm router_new.txt.output");}
+if($include == 1){
+  $INPUT_NET_FILE = &write_flat_router_graph("-include", $includefile);
+}
+elsif($exclude == 1){
+  $INPUT_NET_FILE = &write_flat_router_graph("-exclude", $excludefile);
+}
+else{
+  $INPUT_NET_FILE = &write_flat_router_graph();
+}
+
+print "INFO-TST-ROUTE_FLT : 001 : PROTON_HOME is $env_proton_home\n";
+if ( -e $INPUT_NET_FILE) {
+  system("cp $env_proton_home/3RDBIN/._po* .");
+  system("$env_proton_home/3RDBIN/eeRouter-g");
+  system("rm -rf ._po*");
+  &read_flat_router("-file" ,"router_new.txt.output");
+} else {
+  print "WARN-TST-ROUTE_FLT : 002 : $INPUT_NET_FILE FILE DOES NOT EXIST\n";
+}
+my $t1 = new Benchmark;
+my $td = timediff($t1,$t0);
+print "route_flat :",timestr($td),"\n";
+}#sub route_flat
+
+#sub specify_module_rblkg {
+#
+#my $noOfArguments = @_;
+#my $moduleName = "";
+#my $layerName = "";
+#my @layers = ();
+#if($_[0] eq "-h" || $_[0] eq "-help" || $_[0] eq "-HELP" || $noOfArguments < 4){
+#                     print "Usage: specify_module_rblkg\n";
+#                     print "        -module <module name>\n";
+#                     print "        -layer <layer names ex {1,2}>\n";
+#   return;
+#}
+#else {
+#  for ( my $i = 0; $i < $noOfArguments; $i++ ) {
+#    if ($_[$i] eq "-module") { $moduleName = $_[$i+1];}
+#    if($_[$i] eq "-layer"){my $line = $_[$i+1]; $line =~ s/\{//; $line =~ s/\}//; @layers = split(/\,/,$line);}
+#  }
+#  if ( exists $PSEUDO_MODULE_ALREADY{$moduleName} ) {
+#    $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetrblkg(@layers);
+#  }else{
+#    print "Module $moduleName does not exist\n";
+#  }
+#  #if ( exists $PSEUDO_MODULE_ALREADY{$moduleName} ) {
+#  #  my @layer = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetrblkg;
+#  #  print"module $moduleName, @layer\n";
+#  #}
+#}
+#}#sub specify_module_rblkg
+
+sub specify_module_rblkg {
+
+my $noOfArguments = @_;
+my $moduleName = "";
+my $layerName = "";
+my $allModules = 0;
+my $exact = 0;
+my @layers = ();
+if($_[0] eq "-h" || $_[0] eq "-help" || $_[0] eq "-HELP" || $noOfArguments < 4){
+                     print "Usage: specify_module_rblkg\n";
+                     print "        -module <partial module name is taken into acount>\n";
+                     print "        -layer <layer names ex {1,2}>\n";
+                     print "        --all <routing blockages will be set on all modules for given layers>\n";
+                     print "        --exact <module name given will be taken as exact and full>\n";
+   return;
+}
+else {
+  for ( my $i = 0; $i < $noOfArguments; $i++ ) {
+    if ($_[$i] eq "-module") { $moduleName = $_[$i+1];}
+    if($_[$i] eq "-layer"){my $line = $_[$i+1]; $line =~ s/\{//; $line =~ s/\}//; @layers = split(/\,/,$line);}
+    if ($_[$i] eq "--all") { $allModules = 1;}
+    if ($_[$i] eq "--exact") { $exact = 1;}
+  }
+  if ($allModules == 1){
+    foreach my $moduleInst (keys %{PSEUDO_MODULE_ALREADY} ) {
+      $PSEUDO_MODULE_ALREADY{$moduleInst}->dbaTstgenSetrblkg(@layers);
+    }
+  }else{
+    if ($exact == 1){
+      foreach my $moduleInst (keys %{PSEUDO_MODULE_ALREADY} ) {
+        if ($moduleInst =~ /\b$moduleName\b/) {
+          $PSEUDO_MODULE_ALREADY{$moduleInst}->dbaTstgenSetrblkg(@layers);
+        }else{
+          print "Module $moduleName does not exists in database\n";
+        }       
+      }  
+    }else{
+      foreach my $moduleInst (keys %{PSEUDO_MODULE_ALREADY} ) {
+        if ($moduleInst =~ /$moduleName/) {
+          $PSEUDO_MODULE_ALREADY{$moduleInst}->dbaTstgenSetrblkg(@layers);
+        }  
+      }  
+    }  
+  }
+  #if ( exists $PSEUDO_MODULE_ALREADY{$moduleName} ) {
+  #  $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetrblkg(@layers);
+  #}else{
+  #  print "Module $moduleName does not exist\n";
+  #}
+  #if ( exists $PSEUDO_MODULE_ALREADY{$moduleName} ) {
+  #  my @layer = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetrblkg;
+  #  print"module $moduleName, @layer\n";
+  #}
+}
+}#sub specify_module_rblkg
+#---------------------------------------------------------------------#
+sub route_flat_for_spice {
+
+#****f* / route_flat_for_spice
+# NAME
+#   route_flat_for_spice
+# FUNCTION
+#   runs router on design and storing router data in database 
+# Assumptions
+#   works for all nets
+# SYNOPSIS
+#   route_flat_for_spice 
+# OUTPUTS
+#    router data is stored in DB
+# ****
+my $INPUT_NET_FILE = "";
+if($_[0] eq "-h" || $_[0] eq "-help" || $_[0] eq "-HELP"){
+                     print "Usage: route_flat_for_spice\n";
+   return;
+}
+my $env_proton_home = $GLOBAL->dbfGlobalGetProtonHome;
+if(-e "router_new.txt"){system("rm router_new.txt");}
+if(-e "router_new.txt.output"){system("rm router_new.txt.output");}
+$INPUT_NET_FILE = &write_flat_router_graph_for_spice();
+print "INFO-TST-ROUTE_FLT : 001 : PROTON_HOME is $env_proton_home\n";
+if ( -e $INPUT_NET_FILE) {
+  system("cp $env_proton_home/3RDBIN/._po* .");
+  system("$env_proton_home/3RDBIN/eeRouter");
+  system("rm -rf ._po*");
+  &read_flat_router("-file" ,"router_new.txt.output");
+} else {
+  print "WARN-TST-ROUTE_FLT : 002 : $INPUT_NET_FILE FILE DOES NOT EXIST\n";
+}
+}#sub route_flat_for_spice
+#---------------------------------------------------------------------#
+sub write_flat_router_graph_for_spice {
+my $noOfArguments = @_;
+my $outputFile = "router_new.txt";
+my $includefile = "";
+my $excludefile = "";
+my $dbfact = $DEF_DATABASE_UNIT;
+print "INFO-TST-WR_FLT_RTR_GRPH : 001 : dbu $dbfact\n"; 
+
+my $incr = 0;
+my $include = 0;
+my $exclude = 0;
+my $VAR = 0;
+my @nets = ();
+if ($_[0] eq '-h') { print "Usage : write_flat_router_graph_new\n";
+                     print "        -output <file name>\n";
+}
+else {
+  for ( my $i = 0; $i < $noOfArguments; $i++ ) {
+    if ($_[$i] eq "-output") { $outputFile = $_[$i+1]; }
+  }
+}
+print "MSG-TST-WR_FLT_RTR_GRPH : 002 : Writing the new graph file for router input\n";
+open(WRITE,">$outputFile");
+print WRITE"\n";
+print WRITE"# '#' is used for comment.\n";
+print WRITE"# The keyword is used all capitalized word, and following with a value that needs to be replaced.\n";
+print WRITE"# Calculation of capacity is more complex.\n";
+print WRITE"# If the minimum wire width is 20, the minimum spacing 10, and the capacity of\n"; 
+print WRITE"# a tile is given as 450, this corresponds to 15 minimum width tracks (15 * (20 + 10)) .\n"; 
+print WRITE"# The capacity specified as the default value may be different than the width or\n"; 
+print WRITE"# height of a tile: in general, it is desirable to have routing\n"; 
+print WRITE"# utilization of a tile be below 70% of capacity, as higher values are difficult\n"; 
+print WRITE"# for detail routers to complete.\n";
+
+print WRITE"## The order of statement\n"; 
+print WRITE " TECHNOLOGY\n";
+print WRITE "     DBUNITS $dbfact\n";
+foreach $l(keys %PTDB){
+my $ln = $PTDB{$l}->dbTechGetLayerNum;
+ $LHASH_TEMP{$l}= $ln;
+}
+my @layers = sort PTDB_asAscendingValue(keys (%LHASH_TEMP));
+my @routingLayers = ();
+foreach my $layer (@layers) {
+  my $name = $PTDB{$layer}->dbTechGetLayerName;
+  my $type = $PTDB{$layer}->dbTechGetLayerType;
+  if ( $type eq "ROUTING" ) {
+    push(@routingLayers, $layer);
+  }
+  if (($type eq "ROUTING") || ($type eq "CUT")) {
+    my $dir = $PTDB{$layer}->dbTechGetLayerDir;
+    my $width = $PTDB{$layer}->dbTechGetLayerWidth;
+    my $spacing = $PTDB{$layer}->dbTechGetLayerSpacing;
+    $width = $width * $dbfact;
+    $spacing = $spacing * $dbfact;
+    print WRITE "     LAYER $name\n";
+    print WRITE "         TYPE  $type\n";
+    if ($dir eq "UND") {}
+    else {
+    print WRITE "         DIRECTION $dir\n";
+    print WRITE "         WIDTH $width\n";
+    print WRITE "         SPACING $spacing\n";
+    }
+  print WRITE "     END LAYER\n";
+  }
+}
+  print WRITE "   END TECHNOLOGY\n";
+  print WRITE "\n";
+  print WRITE "   DESIGN $TOP_MODULE\n";
+  if ( exists $DIE_ALREADY{dieArea} ) {
+    my $guiDiellx = $DIE_ALREADY{dieArea}[0];
+    my $guiDielly = $DIE_ALREADY{dieArea}[1];
+    my $guiDieurx = $DIE_ALREADY{dieArea}[2];
+    my $guiDieury = $DIE_ALREADY{dieArea}[3];
+    my $width = ($guiDieurx - $guiDiellx);
+    my $height = ($guiDieury - $guiDielly);
+    print WRITE "     DIEAREA ($guiDiellx $guiDielly) ($guiDieurx $guiDieury)\n";
+  }
+
+  my @macros = &dbfTstgenGetFlatMacroInstList;
+  my $noOfblockage = @macros * @routingLayers;
+  print WRITE "     BLOCKAGES $noOfblockage\n";
+
+  foreach my $inst ( @macros ) {
+    my @loc = $CADB{$inst}->dbCadbGetLoc;
+    my $orient = $CADB{$inst}->dbCadbGetOrient;
+    my @size = $PLDB{$cellref}->dbMdbGetSize;
+    my $width = $size[0] * $dbfact;
+    my $height = $size[1] * $dbfact;
+    my ($llx, $lly, $urx, $ury) = &utilLocToBbox($loc[0], $loc[1], $orient, $width, $height);
+    foreach my $layer ( @routingLayers ) {
+      print WRITE "     - LAYER $layer\n";
+      print WRITE "         RECT ($llx $lly) ($urx $ury)\n";
+    }
+  }
+
+  print WRITE "     END BLOCKAGES\n";
+  print WRITE "\n";
+##-----------------------------------------------------------------------------------------------------------------##
+
+  print WRITE "# If the location and layerNo of IO pins are not set, default value \n";
+  print WRITE "## + (lower_left_x lower_left_y) notset \n";
+  print WRITE "\n";
+##---------------------------------read nets file for include or exclude---------------------------##
+
+##-------------------------------------------------------------------------------------------------##
+  my $netNo = 0;
+  my $netcnt = 0;
+  foreach my $net ( keys %NETS_ALREADY ) {
+    my $new_net = "";
+    if($net =~ /^\d+_tmpslvr_/){
+      $netcnt++;
+    }elsif($net !~/^\d+/){
+      $netcnt++;
+    }
+  }
+  print WRITE "     NETS $netcnt\n";
+  foreach my $net ( keys %NETS_ALREADY ) {
+    my $new_net = "";
+    if($net =~ /^\d+_tmpslvr_/){
+      $new_net = $net;
+    }elsif($net !~/^\d+/){
+      $new_net = $net;
+    }
+    my @instList = &get_inst_list($new_net);
+    my $noPins = ($#instList + 1)/2;
+    print WRITE "     - $new_net $netNo $noPins\n" if($new_net ne "");
+    for($i = 0;$i<=$#instList;$i=$i+2){
+      if(exists $PORTS_ALREADY{$TOP_MODULE}{$instList[$i]}) {
+        my ($xcoord, $ycoord) = $PORTS_ALREADY{$TOP_MODULE}{$instList[$i]}->dbPortGetLoc;
+        my $layer = $PORTS_ALREADY{$TOP_MODULE}{$instList[$i]}->dbPortGetLayer;
+        my $layertype = $PTDB{$layer}->dbTechGetLayerType if($layer != 0);
+        if ($layertype eq "ROUTING"){
+          print WRITE "        + ($xcoord $ycoord) $layer\n";
+        }else{
+          print WRITE "        + ($xcoord $ycoord) notset\n";
+        }
+      }elsif( exists $COMP_ALREADY{$instList[$i]} ) {
+        my $cellref = $CADB{$instList[$i]}->dbCadbGetCellref;
+        my @instLoc = $CADB{$instList[$i]}->dbCadbGetLoc;
+        my $orient = $CADB{$instList[$i]}->dbCadbGetOrient;
+        if ( exists $PLDB{$cellref} ){
+        #---- check if the connected pin exists ----#
+          my @cellOrigin = $PLDB{$cellref}->dbMdbGetOrigin;
+          my @cellSize = $PLDB{$cellref}->dbMdbGetSize;
+          my @pins =     $PLDB{$cellref}->dbMdbGetPins;
+            foreach my $p ( @pins ) {
+              if ( $p eq $instList[$i+1] ) {
+                my @pinRects = $PLDB{$cellref}->dbMdbGetPinRect($p);
+## -------------------------Code for selecting rect with routing layer----------------------------------------------------------------##
+                foreach my $pin_rect(@pinRects) {
+                  my $pinDire = $PLDB{$cellref}->dbMdbGetPinDir($p);
+                  my $firstrect = shift @pinRects;
+                  my ($layer, $llx2, $lly2, $urx2, $ury2)=(split(/\s+/,$firstrect))[0,2,3,4,5];
+                  my $layertype = $PTDB{$layer}->dbTechGetLayerType;
+                  if ($layertype eq "ROUTING") {  
+                    my @pinCoords = &xformCellPinToInstPin($instLoc[0],$instLoc[1],$cellOrigin[0], $cellOrigin[1],$orient,$cellSize[0],$cellSize[1],$llx2,$lly2,$urx2,$ury2); 
+                    my $xcoord = int(($pinCoords[0] + $pinCoords[2])/2);
+                    my $ycoord = int(($pinCoords[1] + $pinCoords[3])/2);
+                    print WRITE "        + ($xcoord $ycoord) $layer\n";
+                    last;
+                  }
+                }
+##--------------------------------------------------------------------------------------------------------------------------------------##
+              }#if pinName is equal
+            }#foreach pin
+          }#if exist cellref
+       }else{
+         print WRITE "        + (0 0) notset\n";
+       } 
+     }#foreach instance
+    $netNo++;
+  }#foreach net 
+  print WRITE "     END NETS\n";
+  print WRITE "   END DESIGN\n";
+
+close(WRITE);
+return($outputFile);
+}#sub write_flat_router_graph_for_spice 
+##--------------------------------------------------------------------------------------------------------------------------------------##
+sub get_inst_list {
+  my $netName = $_[0];
+  my @instList = ();
+  if ( exists $NETS_ALREADY{$netName} ) {
+    foreach my $instance ( keys %{$NETS_ALREADY{$netName}} ) {
+      if ( exists $COMP_ALREADY{$instance} ) {
+        my $cellref = $CADB{$instance}->dbCadbGetCellref;
+        my @pins = $PLDB{$cellref}->dbMdbGetPins;
+        foreach my $pinName ( @pins ) {
+          my $conn_net = $COMP_ALREADY{$instance}{$pinName};
+          if($netName eq  $conn_net){
+            push(@instList,$instance,$pinName);
+          }
+        }
+      }
+    }
+  } 
+return(@instList);
+}#sub get_inst_list
+##--------------------------------------------------------------------------------------------------------------------------------------##
+1;
+
+
+
+
+
+

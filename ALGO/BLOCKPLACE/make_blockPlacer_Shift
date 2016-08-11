@@ -1,0 +1,553 @@
+#!/usr/bin/perl -w
+#use strict;
+use POSIX qw(ceil floor);
+use Graph::Directed;
+#use Graph::Layouter qw(layout);
+#use Graph::Renderer;
+#use GraphViz;
+use List::Util qw[min max];
+use Getopt::Long;
+use Benchmark;
+
+my ($fpdef, $fpdefout, $dir, $genGx);
+my ($help, $debug, $verbose) = (0,1,1);
+my ($hcellSx, $hcellSy) = (100000,100000);
+my ($hcellMaxX, $hcellMaxY) = (0,0);
+my ($maxMove, $maxIter) = (10000,10000);
+my ($fuzzyLogic) = (1);
+
+my @MACRO;
+my %MACRO;
+my %HCELL;
+my @DIEAREA;
+my $eps = 0.1;
+
+#&make_blockplacer(@ARGV);
+#&make_blockplacer_displayHcell();
+########################################################################
+sub dbBlockPlacer_Shift {
+  my $t0 = new Benchmark;
+
+  # initialize vars
+  my (@args) = @_;
+  ($fpdef, $fpdefout, $dir, $genGx) = ();
+  ($help, $debug, $verbose) = (0,0,0);
+  @MACRO = ();
+  %MACRO = ();
+  %HCELL = ();
+  @DIEAREA = ();
+
+
+  $help = 0;
+  &make_blockplacer_readArgs(@args);
+  if ($help) {
+    &make_blockplacer_usage();
+  } else {
+    &make_blockplacer_readFpdef;
+    &init_bp;
+    &make_blockplacer_hcellGrid;
+    &make_blockplacer_displayHcell();
+    &make_blockplacer_place;
+    &make_blockplacer_writeFpdef;
+    &read_hier_floorplan("-fpdef", "t6.fpdef");
+    &make_blockplacer_displayHcell();
+  } #if...else
+
+  &finish();
+  my $t1 = new Benchmark;
+  my $td = timediff($t1, $t0);
+  print "make_blockplacer took:",timestr($td),"\n";
+} #sub make_blockplacer
+
+########################################################################
+sub init_bp {
+  # initialize %HCELL
+  $hcellMaxX = floor(($DIEAREA[2]-$eps)/$hcellSx);
+  $hcellMaxY = floor(($DIEAREA[3]-$eps)/$hcellSy);
+  for (my $hx = 0; $hx <= $hcellMaxX; $hx++) {
+    for (my $hy = 0; $hy <= $hcellMaxY; $hy++) {
+      $HCELL{$hx}{$hy}{occupancy} = 0;
+      $HCELL{$hx}{$hy}{iter}  = 0;
+      $HCELL{$hx}{$hy}{moved} = 1;
+      @{$HCELL{$hx}{$hy}{macros}} = ();
+    } #for
+  } #for
+  # populate macros
+  foreach my $macro (keys %MACRO) {
+    $MACRO{$macro}{h_llx} = floor($MACRO{$macro}{llx}/$hcellSx);
+    $MACRO{$macro}{h_lly} = floor($MACRO{$macro}{lly}/$hcellSy);
+    $MACRO{$macro}{h_urx} = floor($MACRO{$macro}{urx}/$hcellSx);
+    $MACRO{$macro}{h_ury} = floor($MACRO{$macro}{ury}/$hcellSy);
+    for (my $hx = $MACRO{$macro}{h_llx}; $hx <= $MACRO{$macro}{h_urx}; $hx++) {
+      for (my $hy = $MACRO{$macro}{h_lly}; $hy <= $MACRO{$macro}{h_ury}; $hy++) {
+        push(@{$HCELL{$hx}{$hy}{macros}},$macro); 
+        $HCELL{$hx}{$hy}{occupancy}++;
+        push(@{$MACRO{$macro}{hcellX}},$hx); 
+        push(@{$MACRO{$macro}{hcellY}},$hy); 
+      } #for
+    } # for
+  } #foreach
+  print "1\n";
+}
+########################################################################
+sub make_blockplacer_hcellGrid {
+  # initialize %HCELL
+  $hcellMaxX = floor(($DIEAREA[2]-$eps)/$hcellSx);
+  $hcellMaxY = floor(($DIEAREA[3]-$eps)/$hcellSy);
+  for (my $hx = 0; $hx <= $hcellMaxX; $hx++) {
+    for (my $hy = 0; $hy <= $hcellMaxY; $hy++) {
+      $HCELL{$hx}{$hy}{occupancy} = 0;
+      @{$HCELL{$hx}{$hy}{macros}} = ();
+    } #for
+  } #for
+  # populate macros
+  foreach my $macro (keys %MACRO) {
+    $MACRO{$macro}{h_llx} = floor($MACRO{$macro}{llx}/$hcellSx);
+    $MACRO{$macro}{h_lly} = floor($MACRO{$macro}{lly}/$hcellSy);
+    $MACRO{$macro}{h_urx} = floor($MACRO{$macro}{urx}/$hcellSx);
+    $MACRO{$macro}{h_ury} = floor($MACRO{$macro}{ury}/$hcellSy);
+    for (my $hx = $MACRO{$macro}{h_llx}; $hx <= $MACRO{$macro}{h_urx}; $hx++) {
+      for (my $hy = $MACRO{$macro}{h_lly}; $hy <= $MACRO{$macro}{h_ury}; $hy++) {
+        push(@{$HCELL{$hx}{$hy}{macros}},$macro); 
+        $HCELL{$hx}{$hy}{occupancy}++;
+        push(@{$MACRO{$macro}{hcellX}},$hx); 
+        push(@{$MACRO{$macro}{hcellY}},$hy); 
+      } #for
+    } # for
+  } #foreach
+  print "test";
+
+} #sub make_blockplacer_hcellGrid
+########################################################################
+sub make_blockplacer_readArgs {
+  my (@args) =  @_;
+  my $args = join(' ',@args);
+  if (!defined($args)) {
+	$args = "";
+  }
+  my $parseResult = Getopt::Long::GetOptionsFromString($args , 
+						       # read args here
+						       "fpdef=s"    => \$fpdef,
+						       "output=s"   => \$fpdefout,
+						       "dir"        => \$dir,
+						       "genGx"      => \$genGx,
+						       "help"       => \$help,
+						       "debug"      => \$debug,
+						       "verbose"    => \$verbose,
+						      );
+$debug = 1;
+} #sub make_blockplacer_readArgs
+
+########################################################################
+sub finish() {
+  #anything special to be done when this script exits
+print "Finished\n";
+} #sub finish
+
+########################################################################
+sub make_blockplacer_place {
+  my $moveCnt = 0;
+  my $solved = 0;
+  my $iterCnt = 0;
+  my $move = 0;
+  my $totPos = 0;
+  my $lastMoveIterCnt = 0;
+  my @dirOrder = ("W","E","N","S");
+  while (!$solved && ($moveCnt < $maxMove) && ($iterCnt < $maxIter)) {
+    my ($selMacro, $selDir);
+    $iterCnt++;
+    $totPos = 0;
+    #find max overlapping hcell
+    my ($maxX, $maxY, $occupancy) = &make_blockplacer_maxOverlapHcell($iterCnt,$lastMoveIterCnt);
+    my %Move = (); 
+    if ($occupancy == 1) {
+      my ($tempX, $tempY, $maxOccupancy) = &make_blockplacer_findMaxOccupancy();
+      if ($maxOccupancy > 1) {
+        print "make_blockplacer: Unable to find solution for hcell:$tempX,$tempY\n";
+      } else {
+        $solved = 1; print"Solved...\n"; last;
+      } #if
+    } # if
+    ### find the required move
+    if ($fuzzyLogic) {
+	my ($selMacro, $hx1, $hy1, $move) = &make_blockplacer_findFuzzyDest($maxX, $maxY);
+        print "Iter:$iterCnt FuzzyMove x:$maxX y:$maxY macro:$selMacro to $hx1,$hy1  move:$move\n";
+        if ($move) { &make_blockplacer_fuzzyMove($selMacro,$maxX, $maxY, $hx1, $hy1);} #if $move
+        $HCELL{$maxX}{$maxY}{iter} = $iterCnt;
+        $HCELL{$maxX}{$maxY}{moved} = $move;
+        if ($move) {$lastMoveIterCnt = $iterCnt;}
+    } else { #not fuzzy logic
+      foreach my $macro (@{$HCELL{$maxX}{$maxY}{macros}}) {
+        my @move = make_blockplacer_macroMoveReqd($maxX, $maxY, $macro);
+        my $idx = 0;
+        foreach my $dir (@dirOrder) {
+          my $str1 = $macro."...".$dir;
+          $Move{$str1}{req} = $move[$idx];
+          $idx++;
+        } # foreach dir
+      } #foreach macro
+
+      ### find max possible move for each macro
+      foreach my $macro (@{$HCELL{$maxX}{$maxY}{macros}}) {
+        foreach my $dir (@dirOrder) {
+         my $str1 = $macro."...".$dir;       
+         $Move{$str1}{pos}= make_blockplacer_movePossible($macro,$dir,$Move{$str1}{req});
+         $Move{$str1}{diff}= $Move{$str1}{req} - $Move{$str1}{pos};
+         print" Macro:$macro x,y=$maxX,$maxY dir:$dir req:$Move{$str1}{req}  pos:$Move{$str1}{pos}\n" if ($debug);
+        } # foreach dir
+      } #foreach macro
+
+      ### decide which one to move
+      my ($diff, $req, $first) = (-1,-1,1); 
+      foreach my $macro (@{$HCELL{$maxX}{$maxY}{macros}}) {
+      foreach my $dir (@dirOrder) {
+          my $str1 = $macro."...".$dir;
+    	  if ($first) {
+	    $diff = $Move{$str1}{diff}; 
+            $req = $Move{$str1}{req}; 
+           ($selMacro, $selDir) = ($macro, $dir);
+	    $first = 0;
+	  }
+          if (($Move{$str1}{diff} < $diff) || ((($Move{$str1}{diff} == $diff)) && ($Move{$str1}{req} < $req)) ) {
+  	    $diff = $Move{$str1}{diff}; 
+            $req = $Move{$str1}{req};
+           ($selMacro, $selDir) = ($macro, $dir);
+          }
+        } #foreach dir
+      } #foreach macro
+
+      ### make a move
+      my $str1 = $selMacro."...".$selDir;
+      print "Iter:$iterCnt x:$maxX y:$maxY macro:$selMacro dir:$selDir move:$Move{$str1}{pos}\n";
+      &make_blockplacer_move($selMacro,$selDir,$Move{$str1}{pos}); 
+      $HCELL{$maxX}{$maxY}{iter} = $iterCnt;
+      $HCELL{$maxX}{$maxY}{moved} = $Move{$str1}{pos};
+      if ($Move{$str1}{pos} > 0) {$lastMoveIterCnt = $iterCnt;}
+    } #fuzzy logic 
+
+  } #while
+  print"test";
+} # sub make_blockplacer_place
+########################################################################
+sub make_blockplacer_fuzzyMove {
+  my ($macro,$maxX, $maxY, $hx1, $hy1) = @_;
+  my @macroHx = @{$MACRO{$macro}{hcellX}};
+  my @macroHy = @{$MACRO{$macro}{hcellY}};
+  my $i = 0;
+  for ($i = 0; $i<= $#macroHx; $i++) {
+    if (($macroHx[$i] == $maxX) && ($macroHy[$i] == $maxY)) {last;}
+  } # for
+  $MACRO{$macro}{hcellX}[$i] = $hx1;
+  $MACRO{$macro}{hcellY}[$i] = $hy1;
+  $HCELL{$maxX}{$maxY}{occupancy}--;
+  $HCELL{$hx1}{$hy1}{occupancy}++;
+  push(@{$HCELL{$hx1}{$hy1}{macros}},$macro);
+
+  my @hcellMacro = @{$HCELL{$maxX}{$maxY}{macros}};
+  for ($i = 0; $i<= $#hcellMacro; $i++) {
+    if ($hcellMacro[$i] eq $macro) {last;}
+  } # for
+  splice(@hcellMacro, $i,1);
+  @{$HCELL{$maxX}{$maxY}{macros}} = @hcellMacro;
+  #print"3\n";
+} # sub make_blockplacer_fuzzyMove 
+########################################################################
+sub make_blockplacer_macroMoveReqd {
+  my ($hx, $hy, $macro) = @_;
+  my $moveW = $MACRO{$macro}{h_urx} -$hx + 1;
+  if ($moveW <= 0) {die("Possible error in make_blockplacer:macroMoveReq in W");}
+  my $moveE = $hx - $MACRO{$macro}{h_llx} + 1;
+  if ($moveE <= 0) {die("Possible error in make_blockplacer:macroMoveReq in E");}
+  my $moveN = $hy - $MACRO{$macro}{h_lly} + 1;
+  if ($moveN <= 0) {die("Possible error in make_blockplacer:macroMoveReq in N");}
+  my $moveS = $MACRO{$macro}{h_ury} -$hy + 1;
+  if ($moveS <= 0) {die("Possible error in make_blockplacer:macroMoveReq in S");}
+ my @move = ($moveW,$moveE,$moveN,$moveS);
+ return(@move);
+} # sub make_blockplacer_macroMoveReqd
+
+########################################################################
+sub make_blockplacer_maxOverlapHcell {
+  my ($iterCnt, $lastMoveIterCnt) = @_;
+  my ($maxX, $maxY, $occupancy) = (0,0,-1);
+  for (my $hx = 0; $hx <= $hcellMaxX; $hx++) {
+    for (my $hy = 0; $hy <= $hcellMaxY; $hy++) {
+      if (($HCELL{$hx}{$hy}{moved}) || ($HCELL{$hx}{$hy}{iter}<$lastMoveIterCnt)) {
+        if ($HCELL{$hx}{$hy}{occupancy} > $occupancy) {
+          ($maxX, $maxY, $occupancy) = ($hx, $hy, $HCELL{$hx}{$hy}{occupancy});
+        } #if
+      } #if
+    } #for
+  } #for
+  return($maxX,$maxY,$occupancy);
+} # sub make_blockplacer_maxOverlapHcell
+
+########################################################################
+sub make_blockplacer_findMacroCost {
+  my ($hx, $hy) = @_;
+  foreach my $macro (@{$HCELL{$hx}{$hy}{macros}}) {
+    #unused
+  } #foreach
+} # sub make_blockplacer_maxOverlapHcell
+
+########################################################################
+sub make_blockplacer_findFuzzyDest() {
+  my ($hx,$hy) = @_;
+  my ($hx1, $hy1, $found, $tgtMacro) = (-1, -1, 0, 0);
+  foreach my $macro (@{$HCELL{$hx}{$hy}{macros}}) {
+    $tgtMacro = $macro;
+    ($hx1, $hy1, $found) = &make_blockplacer_findFreeMacroNeighbor($macro,$hx,$hy);
+    if ($found) {last;}
+  } #foreach
+  print "make_blockplacer_findFuzzyDest: Plan to move macro:$tgtMacro form $hx,$hy to $hx1,$hy1\n";
+  return ($tgtMacro, $hx1, $hy1, $found);
+} #make_blockplacer_findFuzzyDest
+########################################################################
+sub make_blockplacer_findFreeMacroNeighbor() {
+  my ($macro,$hx,$hy) = @_;
+  my @macroHx = @{$MACRO{$macro}{hcellX}};
+  my @macroHy = @{$MACRO{$macro}{hcellY}};
+  my %Neighbor = ();
+  my ($hx1, $hy1, $found) = (-1, -1, 0);
+  foreach my $macroHx (@macroHx) {
+      foreach my $macroHy (@macroHy) {
+        ($hx1, $hy1) = ($macroHx + 1, $macroHy);
+        if (defined($HCELL{$hx1}{$hy1}) && ($HCELL{$hx1}{$hy1}{occupancy}==0)) {
+          $found = 1; last;
+        } #if
+        ($hx1, $hy1) = ($macroHx -1 , $macroHy);
+        if (defined($HCELL{$hx1}{$hy1}) && ($HCELL{$hx1}{$hy1}{occupancy}==0)) {
+          $found = 1; last;
+        } #if
+        ($hx1, $hy1) = ($macroHx, $macroHy + 1);
+        if (defined($HCELL{$hx1}{$hy1}) && ($HCELL{$hx1}{$hy1}{occupancy}==0)) {
+          $found = 1; last;
+        } #if
+        ($hx1, $hy1) = ($macroHx, $macroHy - 1);
+        if (defined($HCELL{$hx1}{$hy1}) && ($HCELL{$hx1}{$hy1}{occupancy}==0)) {
+          $found = 1; last;
+        } #if
+      }  # foreach
+      if ($found) {last;}
+   } # foreach
+   return ($hx1, $hy1, $found);
+  print "2\n";
+} #sub make_blockplacer_findFreeMacroNeighbor
+########################################################################
+sub make_blockplacer_movePossible {
+  # is move possible for a macro in dir direction 
+  my ($macro, $dir, $maxLen) = @_;
+  my $possible = 1;
+  my $possibleLen = 0;
+  my $h_llx = $MACRO{$macro}{h_llx};
+  my $h_urx = $MACRO{$macro}{h_urx};
+  my $h_lly = $MACRO{$macro}{h_lly};
+  my $h_ury = $MACRO{$macro}{h_ury};
+  my $len = 0;
+  if ($dir eq "W") {
+      for ($len = 1; $len <= $maxLen; $len++) {
+        if ($h_llx-$len < 0) {$possible = 0;} else { 
+          for (my $y = $h_lly; $y <= $h_ury; $y++) {
+            if ($HCELL{$h_llx-$len}{$y}{occupancy} > 0) {$possible = 0; last;}
+          } #for
+        } #if
+        if ($possible == 0) {$possibleLen = $len-1; last;}
+        $possibleLen = $len;
+        } #for
+  } elsif ($dir eq "E") {
+    for ($len = 1; $len <= $maxLen; $len++) {
+      if ($h_urx + $len > $hcellMaxX) {$possible = 0;} else {
+        for (my $y = $h_lly; $y <= $h_ury; $y++) {
+          if ($HCELL{$h_urx+$len}{$y}{occupancy} > 0) {$possible = 0; last;}
+        } #for
+      } #if
+      if ($possible == 0) {$possibleLen = $len-1; last;}
+      $possibleLen = $len;
+    } #for
+  } elsif ($dir eq "N") {
+    for ($len = 1; $len <= $maxLen; $len++) {
+      if ($h_ury +$len > $hcellMaxY) {$possibleLen = 0;} else {
+        for (my $x = $h_llx; $x <= $h_urx; $x++) {
+          if ($HCELL{$x}{$h_ury+$len}{occupancy} > 0) {$possible = 0; last;}
+        } #for
+      } #if
+      if ($possible == 0) {$possibleLen = $len-1; last;}
+      $possibleLen = $len;
+    } #for
+  } elsif ($dir eq "S") {
+    for ($len = 1; $len <= $maxLen; $len++) {
+      if ($h_lly -$len < 0) {$possible = 0;} else {
+        for (my $x = $h_llx; $x <= $h_urx; $x++) {
+          if ($HCELL{$x}{$h_lly-$len}{occupancy} > 0) {$possible = 0; last;}
+        } #for
+       } #if
+       if ($possible == 0) {$possibleLen = $len-1; last;}
+       $possibleLen = $len;
+    } #for
+  } #elseif
+  return($possibleLen);
+} #sub 
+
+########################################################################
+sub make_blockplacer_move {
+  # move macro in dir direction by distance dist
+  my ($macro, $dir, $dist) = @_;
+  if ($dir eq "W") {
+    my $new_llx = $MACRO{$macro}{llx}-($dist*$hcellSx);
+    my $new_urx = $MACRO{$macro}{urx}-($dist*$hcellSx);
+    $MACRO{$macro}{llx} = $new_llx;
+    $MACRO{$macro}{urx} = $new_urx;
+  } elsif ($dir eq "E") {
+    my $new_llx = $MACRO{$macro}{llx}+($dist*$hcellSx);
+    my $new_urx = $MACRO{$macro}{urx}+($dist*$hcellSx);
+    $MACRO{$macro}{llx} = $new_llx;
+    $MACRO{$macro}{urx} = $new_urx;
+  } elsif ($dir eq "N") {
+    my $new_lly = $MACRO{$macro}{lly}+($dist*$hcellSy);
+    my $new_ury = $MACRO{$macro}{ury}+($dist*$hcellSy);
+    $MACRO{$macro}{lly} = $new_lly;
+    $MACRO{$macro}{ury} = $new_ury;
+  } elsif ($dir eq "S") {
+    my $new_lly = $MACRO{$macro}{lly}-($dist*$hcellSy);
+    my $new_ury = $MACRO{$macro}{ury}-($dist*$hcellSy);
+    $MACRO{$macro}{lly} = $new_lly;
+    $MACRO{$macro}{ury} = $new_ury;
+  }
+  &make_blockplacer_hcellGrid;
+} #sub 
+
+########################################################################
+sub make_blockplacer_findMaxOccupancy {
+  my ($maxX, $maxY, $occupancy) = (-1,-1,0);
+  for (my $hx = 0; $hx <= $hcellMaxX; $hx++) {
+    for (my $hy = 0; $hy <= $hcellMaxY; $hy++) {
+      if ($HCELL{$hx}{$hy}{occupancy} > $occupancy) {
+        ($maxX, $maxY, $occupancy) = ($hx, $hy, $HCELL{$hx}{$hy}{occupancy});
+      } # if
+    } #for
+  } #for
+  return ($maxX, $maxY, $occupancy);
+
+} #sub make_blockplacer_findMaxOccupancy 
+
+########################################################################
+sub make_blockplacer_displayHcell {
+  $hcellMaxX = floor(($DIEAREA[2]-$eps)/$hcellSx);
+  $hcellMaxY = floor(($DIEAREA[3]-$eps)/$hcellSy);
+  my $str = "-"x(($hcellMaxX+1)*9);
+  print "$str\n";
+  for (my $hy = $hcellMaxY; $hy >= 0; $hy--) {
+    print "|";
+    for (my $hx = 0; $hx <= $hcellMaxX; $hx++) {
+      my $mstr = "Nil	";
+      if (defined($HCELL{$hx}{$hy}{macros})) {
+        my @mstr = sort @{$HCELL{$hx}{$hy}{macros}};
+        $mstr = join(",",@mstr);
+      }
+      printf(" %-6s |",$mstr);
+    } #for
+    print "\n$str\n";
+  } #for
+  print "test\n";
+} #sub make_blockplacer_displayHcell
+
+########################################################################
+sub make_blockplacer_sortHashValueCurr {
+   $MACRO{$a}{curr} <=> $MACRO{$b}{curr};
+} #sub make_blockplacer_sortHashValueCurr
+
+########################################################################
+sub make_blockplacer_readFpdef {
+
+  open(FPDEF, $fpdef)    or &finish( "$! : $fpdef",__LINE__);
+
+  my $readComps = 0;
+  my $line = <FPDEF>;
+  my $lineCount = 0;
+  while ($line) {
+    chomp $line;
+    if ($line =~ /^\s*DIEAREA\s*\(\s*(.*)\s*\)\s*;/ ) {
+      #print "Found $1\n";
+      my @DIEAREA1 = split(/\s+/,$1);
+      @DIEAREA = ($DIEAREA1[0], $DIEAREA1[1], $DIEAREA1[4], $DIEAREA1[5]);
+      $hcellSx = ($DIEAREA1[4] - $DIEAREA1[0])/20;
+      $hcellSy = ($DIEAREA1[5] - $DIEAREA1[1])/20;
+    } elsif ($line =~ /^\s*COMPONENTS/ ) {
+      $readComps = 1;
+      while ($readComps) {
+	$line = <FPDEF>; $lineCount++; 
+	#read components
+	if ($line =~ /^\s*([A-Za-z]\w*)\s+\(\s*(.*)\s*\)\s*\(\s*(.*)\s*\)\s*;/ ) {
+	  ($MACRO{$1}{llx},$MACRO{$1}{lly}) = split(/\s+/,$2);
+	  ($MACRO{$1}{urx},$MACRO{$1}{ury}) = split(/\s+/,$3);
+	} elsif ($line =~ /^\s*END COMPONENTS/ ) {
+	  $readComps = 0;
+	}
+      } #while
+    } #elsif
+      $line = <FPDEF>; $lineCount++; 
+  } #while
+  close(FPDEF);
+} # sub make_blockplacer_readFpdef
+
+## ########################################################################
+sub make_blockplacer_writeFpdef {
+
+  open(FPDEFRD, $fpdef)           or &finish( "$! : $fpdef"   ,__LINE__);
+  open(FPDEFWR, "> $fpdefout")    or &finish( "$! : $fpdefout",__LINE__);
+  
+  my $readComps = 0;
+  my $line = <FPDEFRD>;
+  my $lineCount = 0;
+  while ($line) {
+    chomp $line;
+    if ($line =~ /^\s*COMPONENTS/ ) {
+      $readComps = 1;
+      print FPDEFWR "$line\n";
+      while ($readComps) {
+	$line = <FPDEFRD>; $lineCount++; 
+	#read components
+	if ($line =~ /^\s*([A-Za-z]\w*)\s+\(\s*(.*)\s*\)\s*\(\s*(.*)\s*\)\s*;/ ) {
+	  print FPDEFWR "$1 ( $MACRO{$1}{llx} $MACRO{$1}{lly} ) ( $MACRO{$1}{urx} $MACRO{$1}{ury} ) ;\n";
+	} else {
+	  if ($line =~ /^\s*END COMPONENTS/ ) {
+	    $readComps = 0;
+	  } #if
+	  print FPDEFWR "$line\n";
+	} #else
+      } #while
+    } else {
+      print FPDEFWR "$line\n";
+    } #else
+    $line = <FPDEFRD>; $lineCount++; 
+  } #while
+  close(FPDEFRD);
+  close(FPDEFWR);
+} #sub make_blockplacer_writeFpdef
+
+########################################################################
+sub XXX {
+
+} # sub XXX
+########################################################################
+sub make_blockplacer_usage {
+    print"\nmake_blockplacer Usage: make_blockplacer -fpdef <fpdef file> -output <output fpdef file> -dir <x/y> [-verbose -debug -norun -help]\n";
+	# add details of each switch here
+    return;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

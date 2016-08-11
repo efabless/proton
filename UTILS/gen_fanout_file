@@ -1,0 +1,201 @@
+sub gen_fanout_file {
+
+use Benchmark;
+my $t0 = new Benchmark;
+my $noOfArguments = @_;
+my $OUTPUT_FILE = "eqa_fanout_file.txt";
+my $DETAIL_FANOUT_FILE = "eqa_detail_fanout_file.txt";
+my %INST_COUNT = ();
+my $count = 0;
+
+if($_[0] eq "-h" )  {
+    print "Usage :  gen_fanout_file -output <output fanout file> -detail_fanout_file <detail_fanout_file>\n";
+  }
+else {
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-output"){$OUTPUT_FILE = $_[$i+1];}
+if($_[$i] eq "-detail_fanout_file"){$DETAIL_FANOUT_FILE = $_[$i+1];}
+
+
+}#end for
+if (-e $OUTPUT_FILE) {
+    print "WARN-UTS-GEN_FANOUT_FILE : 001 : $OUTPUT_FILE exists, overwriting existing file\n";
+}
+if (-e $DETAIL_FANOUT_FILE) {
+    print "WARN-UTS-GEN_FANOUT_FILE : 002 : $DETAIL_FANOUT_FILE exists, overwriting existing file\n";
+}
+
+open (WRITE, ">$OUTPUT_FILE");
+open (WRITE1, ">$DETAIL_FANOUT_FILE");
+
+foreach $net (keys %{NETS_ALREADY} ) {
+$count = 0;	
+print "DBG-UTS-GEN_FANOUT_FILE : 003 : ================Net is : $net \n" if ($debug);
+if ( $net =~ /1\'b/ ) { next ; } 
+	foreach $inst ( keys %{$NETS_ALREADY{$net}}  )  {
+		print "DBG-UTS-GEN_FANOUT_FILE : 004 : Instance is $inst\n" if ($debug);
+		if ($inst eq "PIN" ){
+			my $port_conn = 0;	
+			foreach my $port ( keys %{$PORTS_ALREADY{$TOP_MODULE}} ) {
+				my @port_nets = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetConn;
+				print "DBG-UTS-GEN_FANOUT_FILE : 005 : $net:$port:$NETS_ALREADY{$net}{PIN}: @port_nets\n" if ($debug);
+				if ($net eq $port_nets[0]){
+					$port_conn++;
+				}
+			}
+			if ($port_conn > 1) {
+				print "DBG-UTS-GEN_FANOUT_FILE : 006 : Net connected to $port_conn ports of design\n" if ($debug);
+			}
+			$count = $count + ($port_conn - 1) +1;
+		} elsif (exists $PORTS_ALREADY{$TOP_MODULE}{$inst}) {
+			$count ++;
+		}else {
+		my $cellref = $CADB{$inst}->dbCadbGetCellref;
+		my @pins = $PLDB{$cellref}->dbMdbGetPins;
+		my $same_inst_conn = 0;
+		foreach $pinName ( @pins ) {
+			$net_Name = $COMP_ALREADY{$inst}{$pinName};
+			if ($net_Name eq $net) {
+				$same_inst_conn ++;
+				print "DBG-UTS-GEN_FANOUT_FILE : 007 : $net_Name : Same inst conn : $same_inst_conn \n" if ($debug);
+			}
+			print "DBG-UTS-GEN_FANOUT_FILE : 008 : $inst : $pinName : $net_Name \n " if ($debug);
+		}
+		if ($same_inst_conn > 1) {
+			print "DBG-UTS-GEN_FANOUT_FILE : 009 : Net connected to $same_inst_conn pins of same instance\n" if ($debug);
+		}
+		$count = $count + ($same_inst_conn - 1) +1;
+		}
+	}
+print "DBG-UTS-GEN_FANOUT_FILE : 010 : Count for net $net is : $count \n" if ($debug);
+
+if ( exists $NADB{$net} ) {
+	#print "Storing in NADB database\n";
+	$NADB{$net}->dbNadbSetNetFanout($count);
+}
+print WRITE1 "$net : $count \n";
+$INST_COUNT{$count} +=1;
+}
+
+print WRITE "#Degree    No of nets \n";
+foreach (sort{ $a <=> $b } keys %INST_COUNT) {
+    print WRITE "$_\t$INST_COUNT{$_}\n";
+}
+
+
+
+close (WRITE);
+close (WRITE1);
+
+} #end else
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "subroutine gen_fanout_file took:",timestr($td),"\n";
+}#sub gen_fanout_file
+
+sub gen_fanout_file_fast {
+
+use Benchmark;
+my $t0 = new Benchmark;
+my $noOfArguments = @_;
+my $OUTPUT_FILE = "eqa_fanout_file_fast.txt";
+my $DETAIL_FANOUT_FILE = "eqa_detail_fanout_file_fast.txt";
+my %INST_COUNT = ();
+my $count = 0;
+
+if($_[0] eq "-h" )  {
+    print "Usage :  gen_fanout_file_fast -output <output fanout file> -detail_fanout_file <detail_fanout_file>\n";
+  }
+else {
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-output"){$OUTPUT_FILE = $_[$i+1];}
+if($_[$i] eq "-detail_fanout_file"){$DETAIL_FANOUT_FILE = $_[$i+1];}
+
+
+}#end for
+if (-e $OUTPUT_FILE) {
+    print "WARN-UTS-GEN_FANOUT_FILE_FAST : 001 : $OUTPUT_FILE exists, overwriting existing file\n";
+}
+if (-e $DETAIL_FANOUT_FILE) {
+    print "WARN-UTS-GEN_FANOUT_FILE_FAST : 002 : $DETAIL_FANOUT_FILE exists, overwriting existing file\n";
+}
+
+&populate_net_connected_instances_name_and_number;
+
+open (WRITE, ">$OUTPUT_FILE");
+open (WRITE1, ">$DETAIL_FANOUT_FILE");
+
+foreach $net (keys %{NETS_ALREADY} ) {
+$count = $NET_INST_PIN_CONN_NO{$net};;	
+if ( exists $NADB{$net} ) {
+	#print "Storing in NADB database\n";
+	$NADB{$net}->dbNadbSetNetFanout($count);
+}
+print WRITE1 "$net : $count \n";
+$INST_COUNT{$count} +=1;
+}
+
+print WRITE "#Degree    No of nets \n";
+foreach (sort{ $a <=> $b } keys %INST_COUNT) {
+    print WRITE "$_\t$INST_COUNT{$_}\n";
+}
+
+
+
+close (WRITE);
+close (WRITE1);
+
+} #end else
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "subroutine gen_fanout_file_fast took:",timestr($td),"\n";
+}#sub gen_fanout_file_fast
+
+sub get_net_degree {
+
+my $noOfArguments = @_;
+my $net_degree = 0;
+my $curr_net = $_[0];
+	foreach $inst ( keys %{$NETS_ALREADY{$curr_net}}  )  {
+		if ($inst eq "PIN" ){
+			my $port_conn = 0;	
+			foreach my $port ( keys %{$PORTS_ALREADY{$TOP_MODULE}} ) {
+				my @port_nets = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetConn;
+				if ($curr_net eq $port_nets[0]){
+					$port_conn++;
+				}
+			}
+			$net_degree = $net_degree + ($port_conn - 1) +1;
+		} elsif (exists $PORTS_ALREADY{$TOP_MODULE}{$inst}) {
+			$net_degree ++;
+		}else {
+		my $cellref = $CADB{$inst}->dbCadbGetCellref;
+		my @pins = $PLDB{$cellref}->dbMdbGetPins;
+		my $same_inst_conn = 0;
+		foreach $pinName ( @pins ) {
+			$net_Name = $COMP_ALREADY{$inst}{$pinName};
+			if ($net_Name eq $curr_net) {
+				$same_inst_conn ++;
+			}
+		}
+		$net_degree = $net_degree + ($same_inst_conn - 1) +1;
+		}
+	}
+return $net_degree;
+}#sub get_net_degree
+
+sub get_net_count_lesser_degree {
+my $max_net_degree = $_[0];
+my $net_count = 0;
+  foreach my $netName (keys %NETS_ALREADY){
+    if($max_net_degree != -1){
+      my $temp_net_degree = &get_net_degree($netName);
+      if($temp_net_degree >  $max_net_degree){
+        next;
+      }
+    }
+    $net_count++;
+  }
+return $net_count;
+}#sub get_net_count_lesser_degree
+1;

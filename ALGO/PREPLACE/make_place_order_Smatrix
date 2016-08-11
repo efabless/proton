@@ -1,0 +1,311 @@
+#!/bin/perl -w
+
+sub arrange_datamatrix {
+#****f* /arrange_datamatrix 
+# NAME
+#   arrange_datamatrix
+# FUNCTION
+#    reads the preplaced database and reorders the S-matrix row|column in the inc|dec order as specified by the user
+#    arrange_datamatrix has the following command line options and switches.
+# SYNOPSIS
+# arrange_datamatrix [-arrange <row|column>] [-order <inc|dec>] <-debug>
+#
+# INPUTS
+#      options :
+#      	-arrange <row|column> : to specify whether row|col has to be rearranged 
+#       -order <inc|dec> : to arrange in inc or dec order
+#       -debug : This is optional to run the program in debug mode
+# OUTPUTS
+#      The S-matrix will be reordered either rowwise or columnwise in the order specified by the user
+#****
+$debug =0;
+my $noOfArguments = @_;
+my $order,$arr_type;
+my $f1,$f2;
+my $address1,$address2;
+my @fanIn1,@fanIn2, @fanOut1, @fanOut2;
+my $no_fanIn1 , $no_fanIn2 , $no_fanOut1, $no_fanOut2  ;
+my $flop1,$flop2;
+
+print "INFO-ALGO-PREPL-ARRANJ_DATA_MTRX : 001 :  No of arguments: $noOfArguments\n";
+if(($_[0] eq "-h" ) || ($noOfArguments <1)) { 
+ 	print "Usage :  arrange_datamatrix\n"; 
+        print "                       -arrange <row|column>\n";
+        print "                       -order <inc|dec>\n";
+        print "                       <-debug>\n";
+	
+  }
+  else {
+  for(my $i = 0; $i < $noOfArguments; $i++){ 
+  if($_[$i] eq "-order"){  
+    $order = $_[$i+1];
+  }
+  elsif ($_[$i] eq "-arrange") {
+   $arr_type = $_[$i+1] ;
+  }
+  elsif ($_[$i] eq "-debug") {
+   $debug = 1;
+  }
+} # for
+
+$PLACE{$TOP_MODULE}->dbgPlaceGetTpath;
+
+my @flops = $PLACE{$TOP_MODULE}->dbPlaceGetFlopList;
+my @in_port = $PLACE{$TOP_MODULE}->dbPlaceGetInPortList;
+my @out_port = $PLACE{$TOP_MODULE}->dbPlaceGetOutPortList;
+
+print "DBG-ALGO_PREPL-ARRANJ_DATA_MTRX : 002 : Flops are: @flops\n" if ($debug);
+print "DBG-ALGO_PREPL-ARRANJ_DATA_MTRX : 003 : Input ports are: @in_port\n" if ($debug);
+print "DBG-ALGO_PREPL-ARRANJ_DATA_MTRX : 004 : Output ports are: @out_port\n" if ($debug);
+my $no_flops = @flops;
+my $no_inp = @in_port;
+my $no_out = @out_port;
+
+
+if ($order eq "inc") {
+######For increasing order##########
+if ($arr_type eq "row") {
+	##For row###
+	for( $f1 = 0; $f1 < ($no_flops-1); $f1++) {
+		$flop1 = $flops[$f1];
+		$address1 = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByNameRow($flop1);
+		@fanIn1 = $PLACE{$TOP_MODULE}->dbPlaceGetFanIns($address1);
+		$no_fanIn1 = @fanIn1;
+		for( $f2 = $f1+1; $f2 < $no_flops; $f2++) {
+			$flop2 = $flops[$f2];
+			$address2 = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByNameRow($flop2);
+			@fanIn2 = $PLACE{$TOP_MODULE}->dbPlaceGetFanIns($address2);
+			$no_fanIn2 = @fanIn2;
+			print "DBG-ALGO_PREPL-ARRANJ_DATA_MTRX : 005 : Flop1: $flop1 Fanin1: $no_fanIn1 Flop2: $flop2 Fanin2: $no_fanIn2 \n" if ($debug);
+			if ($no_fanIn2 < $no_fanIn1) {
+				print "DBG-ALGO_PREPL-ARRANJ_DATA_MTRX : 006 : Row being swapped\n" if ($debug);
+				$PLACE{$TOP_MODULE}->dbPlaceRowSwap($address1,$address2);
+				my $temp = $flop1;
+				$flops[$f1] = $flops[$f2];
+				$flops[$f2]= $temp ;
+				print "DBG-ALGO_PREPL-ARRANJ_DATA_MTRX : 007 : After swapping: @flops\n" if ($debug);
+				$flop1 =$PLACE{$TOP_MODULE}->dbPlaceGetNameByNumberRow($address1) ;
+				@fanIn1 = $PLACE{$TOP_MODULE}->dbPlaceGetFanIns($address1);
+				$no_fanIn1 = @fanIn1;
+				$PLACE{$TOP_MODULE}->dbgPlaceGetTpath if ($debug);
+				#print "Flop1: $flop1 Fanout1: $no_fanIn1 Flop2: $flop2 Fanout2: $no_fanIn2 \n" if ($debug);
+			}
+		}
+	}#end for
+	
+	for( $f1 = 0; $f1 < ($no_out-1); $f1++) {
+		$out1 = $out_port[$f1];
+		$address1 = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByNameRow($out1);
+		@fanIn1 = $PLACE{$TOP_MODULE}->dbPlaceGetFanIns($address1);
+		$no_fanIn1 = @fanIn1;
+		for( $f2 = $f1+1; $f2 < $no_out; $f2++) {
+			$out2 = $out_port[$f2];
+			$address2 = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByNameRow($out2);
+			@fanIn2 = $PLACE{$TOP_MODULE}->dbPlaceGetFanIns($address2);
+			$no_fanIn2 = @fanIn2;
+			print "DBG-ALGO_PREPL-ARRANJ_DATA_MTRX : 008 : Out1: $out1 Fanin1: $no_fanIn1 Out2: $out2 Fanin2: $no_fanIn2  \n" if ($debug);
+			if ($no_fanIn2 < $no_fanIn1) {
+				print "DBG-ALGO_PREPL-ARRANJ_DATA_MTRX : 009 : Row being swapped\n" if ($debug);
+				$PLACE{$TOP_MODULE}->dbPlaceRowSwap($address1,$address2);
+				my $temp = $out1;
+				$out_port[$f1] = $out_port[$f2];
+				$out_port[$f2]= $temp ;
+				print "DBG-ALGO_PREPL-ARRANJ_DATA_MTRX : 010 : After swapping: @flops\n" if ($debug);
+				$out1 =$PLACE{$TOP_MODULE}->dbPlaceGetNameByNumberRow($address1) ;
+				@fanIn1 = $PLACE{$TOP_MODULE}->dbPlaceGetFanIns($address1);
+				$no_fanIn1 = @fanIn1;
+				$PLACE{$TOP_MODULE}->dbgPlaceGetTpath if ($debug);
+			}
+		}
+	}#end for
+
+	print "INFO-ALGO_PREPL-ARRANJ_DATA_MTRX : 011 : Arranged datamatrix:\n" ;
+	$PLACE{$TOP_MODULE}->dbgPlaceGetTpath ;
+
+} else {
+	###For column####
+	for( $f1 = 0; $f1 < ($no_flops-1); $f1++) {
+		$flop1 = $flops[$f1];
+		$address1 = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByNameCol($flop1);
+		@fanOut1 = $PLACE{$TOP_MODULE}->dbPlaceGetFanOuts($address1);
+		$no_fanOut1 = @fanOut1;
+		for( $f2 = $f1+1; $f2 < $no_flops; $f2++) {
+			$flop2 = $flops[$f2];
+			$address2 = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByNameCol($flop2);
+			@fanOut2 = $PLACE{$TOP_MODULE}->dbPlaceGetFanOuts($address2);
+			$no_fanOut2 = @fanOut2;
+			print "DBG-ALGO_PREPL-ARRANJ_DATA_MTRX : 012 : Flop1: $flop1 Fanout1: $no_fanOut1 Flop2: $flop2 Fanout2: $no_fanOut2 \n" if ($debug);
+			if ($no_fanOut2 < $no_fanOut1) {
+				print "DBG-ALGO_PREPL-ARRANJ_DATA_MTRX : 013 : Column being swapped\n" if ($debug);
+				$PLACE{$TOP_MODULE}->dbPlaceColumnSwap($address1,$address2);
+				my $temp = $flop1;
+				$flops[$f1] = $flops[$f2];
+				$flops[$f2]= $temp ;
+				print "DBG-ALGO_PREPL-ARRANJ_DATA_MTRX : 014 : After swapping: @flops\n" if ($debug);
+				$flop1 =$PLACE{$TOP_MODULE}->dbPlaceGetNameByNumberCol($address1) ;
+				@fanOut1 = $PLACE{$TOP_MODULE}->dbPlaceGetFanOuts($address1);
+				$no_fanOut1 = @fanOut1;
+				$PLACE{$TOP_MODULE}->dbgPlaceGetTpath if ($debug);
+				#print "Flop1: $flop1 Fanout1: $no_fanOut1 Flop2: $flop2 Fanout2: $no_fanOut2 \n" if ($debug);
+			}
+		}
+	}#end for
+	
+	for( $f1 = 0; $f1 < ($no_inp-1); $f1++) {
+		$in1 = $in_port[$f1];
+		$address1 = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByNameCol($in1);
+		@fanOut1 = $PLACE{$TOP_MODULE}->dbPlaceGetFanOuts($address1);
+		$no_fanOut1 = @fanOut1;
+		for( $f2 = $f1+1; $f2 < $no_inp; $f2++) {
+			$in2 = $in_port[$f2];
+			$address2 = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByNameCol($in2);
+			@fanOut2 = $PLACE{$TOP_MODULE}->dbPlaceGetFanOuts($address2);
+			$no_fanOut2 = @fanOut2;
+			print "DBG-ALGO_PREPL-ARRANJ_DATA_MTRX : 015 : In1: $in1 Fanout1: $no_fanOut1 In2: $in2 Fanout2: $no_fanOut2  \n" if ($debug);
+			if ($no_fanOut2 < $no_fanOut1) {
+				print "DBG-ALGO_PREPL-ARRANJ_DATA_MTRX : 016 : Column being swapped\n" if ($debug);
+				$PLACE{$TOP_MODULE}->dbPlaceColumnSwap($address1,$address2);
+				my $temp = $in1;
+				$in_port[$f1] = $in_port[$f2];
+				$in_port[$f2]= $temp ;
+				print "DBG-ALGO_PREPL-ARRANJ_DATA_MTRX : 017 : After swapping: @flops\n" if ($debug);
+				$in1 =$PLACE{$TOP_MODULE}->dbPlaceGetNameByNumberCol($address1) ;
+				@fanOut1 = $PLACE{$TOP_MODULE}->dbPlaceGetFanOuts($address1);
+				$no_fanOut1 = @fanOut1;
+				$PLACE{$TOP_MODULE}->dbgPlaceGetTpath if ($debug);
+			}
+		}
+	}#end for
+
+	print "INFO-ALGO_PREPL-ARRANJ_DATA_MTRX : 018 : Arranged datamatrix:\n" ;
+	$PLACE{$TOP_MODULE}->dbgPlaceGetTpath ;
+}#end else
+}#end if for inc order
+
+####For dec order####
+else {
+	if ($arr_type eq "row") {
+	##For row###
+	for( $f1 = 0; $f1 < ($no_flops-1); $f1++) {
+		$flop1 = $flops[$f1];
+		$address1 = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByNameRow($flop1);
+		@fanIn1 = $PLACE{$TOP_MODULE}->dbPlaceGetFanIns($address1);
+		$no_fanIn1 = @fanIn1;
+		for( $f2 = $f1+1; $f2 < $no_flops; $f2++) {
+			$flop2 = $flops[$f2];
+			$address2 = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByNameRow($flop2);
+			@fanIn2 = $PLACE{$TOP_MODULE}->dbPlaceGetFanIns($address2);
+			$no_fanIn2 = @fanIn2;
+			print "DBG-ALGO_PREPL-ARRANJ_DATA_MTRX : 019 : Flop1: $flop1 Fanin1: $no_fanIn1 Flop2: $flop2 Fanin2: $no_fanIn2 \n" if ($debug);
+			if ($no_fanIn2 > $no_fanIn1) {
+				print "DBG-ALGO_PREPL-ARRANJ_DATA_MTRX : 020 : Row being swapped\n" if ($debug);
+				$PLACE{$TOP_MODULE}->dbPlaceRowSwap($address1,$address2);
+				my $temp = $flop1;
+				$flops[$f1] = $flops[$f2];
+				$flops[$f2]= $temp ;
+				print "DBG-ALGO_PREPL-ARRANJ_DATA_MTRX : 021 : After swapping: @flops\n" if ($debug);
+				$flop1 =$PLACE{$TOP_MODULE}->dbPlaceGetNameByNumberRow($address1) ;
+				@fanIn1 = $PLACE{$TOP_MODULE}->dbPlaceGetFanIns($address1);
+				$no_fanIn1 = @fanIn1;
+				$PLACE{$TOP_MODULE}->dbgPlaceGetTpath if ($debug);
+				#print "Flop1: $flop1 Fanout1: $no_fanIn1 Flop2: $flop2 Fanout2: $no_fanIn2 \n" if ($debug);
+			}
+		}
+	}#end for
+	
+	for( $f1 = 0; $f1 < ($no_out-1); $f1++) {
+		$out1 = $out_port[$f1];
+		$address1 = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByNameRow($out1);
+		@fanIn1 = $PLACE{$TOP_MODULE}->dbPlaceGetFanIns($address1);
+		$no_fanIn1 = @fanIn1;
+		for( $f2 = $f1+1; $f2 < $no_out; $f2++) {
+			$out2 = $out_port[$f2];
+			$address2 = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByNameRow($out2);
+			@fanIn2 = $PLACE{$TOP_MODULE}->dbPlaceGetFanIns($address2);
+			$no_fanIn2 = @fanIn2;
+			print "DBG-ALGO_PREPL-ARRANJ_DATA_MTRX : 022 : Out1: $out1 Fanin1: $no_fanIn1 Out2: $out2 Fanin2: $no_fanIn2  \n" if ($debug);
+			if ($no_fanIn2 > $no_fanIn1) {
+				print "DBG-ALGO_PREPL-ARRANJ_DATA_MTRX : 023 : Row being swapped\n" if ($debug);
+				$PLACE{$TOP_MODULE}->dbPlaceRowSwap($address1,$address2);
+				my $temp = $out1;
+				$out_port[$f1] = $out_port[$f2];
+				$out_port[$f2]= $temp ;
+				print "DBG-ALGO_PREPL-ARRANJ_DATA_MTRX : 024 : After swapping: @flops\n" if ($debug);
+				$out1 =$PLACE{$TOP_MODULE}->dbPlaceGetNameByNumberRow($address1) ;
+				@fanIn1 = $PLACE{$TOP_MODULE}->dbPlaceGetFanIns($address1);
+				$no_fanIn1 = @fanIn1;
+				$PLACE{$TOP_MODULE}->dbgPlaceGetTpath if ($debug);
+			}
+		}
+	}#end for
+
+	print "INFO-ALGO_PREPL-ARRANJ_DATA_MTRX : 025 : Arranged datamatrix:\n" ;
+	$PLACE{$TOP_MODULE}->dbgPlaceGetTpath ;
+
+} else {
+	###For column####
+	for( $f1 = 0; $f1 < ($no_flops-1); $f1++) {
+		$flop1 = $flops[$f1];
+		$address1 = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByNameCol($flop1);
+		@fanOut1 = $PLACE{$TOP_MODULE}->dbPlaceGetFanOuts($address1);
+		$no_fanOut1 = @fanOut1;
+		for( $f2 = $f1+1; $f2 < $no_flops; $f2++) {
+			$flop2 = $flops[$f2];
+			$address2 = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByNameCol($flop2);
+			@fanOut2 = $PLACE{$TOP_MODULE}->dbPlaceGetFanOuts($address2);
+			$no_fanOut2 = @fanOut2;
+			print "DBG-ALGO_PREPL-ARRANJ_DATA_MTRX : 026 : Flop1: $flop1 Fanout1: $no_fanOut1 Flop2: $flop2 Fanout2: $no_fanOut2 \n" if ($debug);
+			if ($no_fanOut2 > $no_fanOut1) {
+				print "DBG-ALGO_PREPL-ARRANJ_DATA_MTRX : 027 : Column being swapped\n" if ($debug);
+				$PLACE{$TOP_MODULE}->dbPlaceColumnSwap($address1,$address2);
+				my $temp = $flop1;
+				$flops[$f1] = $flops[$f2];
+				$flops[$f2]= $temp ;
+				print "DBG-ALGO_PREPL-ARRANJ_DATA_MTRX : 028 : After swapping: @flops\n" if ($debug);
+				$flop1 =$PLACE{$TOP_MODULE}->dbPlaceGetNameByNumberCol($address1) ;
+				@fanOut1 = $PLACE{$TOP_MODULE}->dbPlaceGetFanOuts($address1);
+				$no_fanOut1 = @fanOut1;
+				$PLACE{$TOP_MODULE}->dbgPlaceGetTpath if ($debug);
+				#print "Flop1: $flop1 Fanout1: $no_fanOut1 Flop2: $flop2 Fanout2: $no_fanOut2 \n" if ($debug);
+			}
+		}
+	}#end for
+	
+	for( $f1 = 0; $f1 < ($no_inp-1); $f1++) {
+		$in1 = $in_port[$f1];
+		$address1 = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByNameCol($in1);
+		@fanOut1 = $PLACE{$TOP_MODULE}->dbPlaceGetFanOuts($address1);
+		$no_fanOut1 = @fanOut1;
+		for( $f2 = $f1+1; $f2 < $no_inp; $f2++) {
+			$in2 = $in_port[$f2];
+			$address2 = $PLACE{$TOP_MODULE}->dbPlaceGetNumberByNameCol($in2);
+			@fanOut2 = $PLACE{$TOP_MODULE}->dbPlaceGetFanOuts($address2);
+			$no_fanOut2 = @fanOut2;
+			print "DBG-ALGO_PREPL-ARRANJ_DATA_MTRX : 029 : In1: $in1 Fanout1: $no_fanOut1 In2: $in2 Fanout2: $no_fanOut2  \n" if ($debug);
+			if ($no_fanOut2 > $no_fanOut1) {
+				print "DBG-ALGO_PREPL-ARRANJ_DATA_MTRX : 030 : Column being swapped\n" if ($debug);
+				$PLACE{$TOP_MODULE}->dbPlaceColumnSwap($address1,$address2);
+				my $temp = $in1;
+				$in_port[$f1] = $in_port[$f2];
+				$in_port[$f2]= $temp ;
+				print "DBG-ALGO_PREPL-ARRANJ_DATA_MTRX : 031 : After swapping: @flops\n" if ($debug);
+				$in1 =$PLACE{$TOP_MODULE}->dbPlaceGetNameByNumberCol($address1) ;
+				@fanOut1 = $PLACE{$TOP_MODULE}->dbPlaceGetFanOuts($address1);
+				$no_fanOut1 = @fanOut1;
+				$PLACE{$TOP_MODULE}->dbgPlaceGetTpath if ($debug);
+			}
+		}
+	}#end for
+
+	print "INFO-ALGO_PREPL-ARRANJ_DATA_MTRX : 032 : Arranged datamatrix:\n" ;
+	$PLACE{$TOP_MODULE}->dbgPlaceGetTpath ;
+}#end else
+
+}#end else for dec order
+
+
+
+}#end else
+}#sub arrange_datamatrix
+
+1;

@@ -1,0 +1,35 @@
+#   memusage subroutine
+#
+#   usage: memusage [processid]
+#
+#   this subroutine takes only one parameter, the process id for 
+#   which memory usage information is to be returned.  If 
+#   undefined, the current process id is assumed.
+#
+#   Returns array of two values, raw process memory size and 
+#   percentage memory utilisation, in this order.  Returns 
+#   undefined if these values cannot be determined.
+
+sub memusage {
+    use Proc::ProcessTable;
+    my @results;
+    my $pid = (defined($_[0])) ? $_[0] : $$;
+    my $proc = Proc::ProcessTable->new;
+    my %fields = map { $_ => 1 } $proc->fields;
+    return undef unless exists $fields{'pid'};
+    foreach (@{$proc->table}) {
+        if ($_->pid eq $pid) {
+            push (@results, $_->size) if exists $fields{'size'};
+            push (@results, $_->pctcpu) if exists $fields{'pctcpu'};
+            push (@results, $_->pctmem) if exists $fields{'pctmem'};
+            push (@results, $_->pid) if exists $fields{'pid'};
+            push (@results, $_->fname) if exists $fields{'fname'};
+        };
+    };
+    print "INFO-UTS-MEMUSAGE : 001 : $results[0] : $results[1] : $results[2] : $results[3] : $results[4]\n";
+    print "INFO-UTS-MEMUSAGE : 002 : Virtual memory size used by process is $results[0] bytes \n";
+    print "INFO-UTS-MEMUSAGE : 003 : Percent cpu used since process started $results[1] \n";
+    return @results;
+}
+
+1;

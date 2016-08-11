@@ -1,0 +1,292 @@
+sub read_lef_gui {
+
+# use Tk;
+
+@lef_Files = ();
+
+
+
+#$popupgui = MainWindow->new();
+$lefgui_menubar = $cellTab->Frame(-relief=>"raised", -borderwidth=>2);
+##############################################################################################
+#         LEF Menu                                                                          #
+##############################################################################################
+$dir="data";
+$lefDirectory = $lefgui_menubar->pack(-side =>'top', -fill =>'x');
+$lefDirectory->Label(-text => "cellname")->pack(-side =>'left', -anchor => 'w');
+$lefDirectory->Entry(-textvariable => $cellname)->pack(-side =>'left', -anchor => 'w',
+                                                    -fill => 'x', -expand=> '1' );
+$lefFileList = $cellTab->Scrolled("HList",
+                        -header => 1,
+                        -columns => 7,
+                        -scrollbars => 'osoe',
+                        -width => 70,
+                        -font => 'Arial -9',
+                        -selectbackground => 'DeepSkyBlue4',
+                        -selectmode => 'single',
+                        -browsecmd  => sub {
+                         $dbgGuiSelectedMacro = shift;
+                                           }
+
+                       )->pack(-expand => 1, -fill => 'both');
+$lefFileList->header('create', 0, -text => 'Physical');
+$lefFileList->header('create', 1, -text => 'Logial');
+$lefFileList->header('create', 2, -text => 'Power');
+$lefFileList->header('create', 3, -text => 'Function');
+$lefFileList->header('create', 4, -text => 'DFM');
+$lefFileList->header('create', 5, -text => 'DFY');
+$lefFileList->header('create', 6, -text => 'Dont Use');
+
+
+$button_menubar = $cellTab->Frame(-relief=>"raised", -borderwidth=>2);
+$Button = $button_menubar->pack(-side =>'bottom', -fill =>'x');
+
+##################################################
+#   Load Components button                       #
+##################################################
+
+$LoadComponentKButton = $Button->Button ( -text=>"Load Components",
+                               -command => \&call_read_lef
+                             );
+$LoadComponentKButton->pack( -side=> 'left', -expand => '1');
+#################################################
+
+################################################
+#  MAIN MENU READ_LEF                          #
+################################################
+
+$DISPLAYbutton = $Button->Button( -text=>"Display Component",
+                              -command => \&call_dbGuiDisplayLef
+                             );
+$DISPLAYbutton->pack( -side=> 'left' , -expand => '1');
+#################################################
+
+##################################################
+#       HELP BUTTON                              #
+##################################################
+
+$Helpbutton = $Button->Button ( -text=>"Help",
+                               #-command => \&call_read_lef
+                             );
+$Helpbutton->pack( -side=> 'left', -expand => '1');
+&call_read_lef;
+
+MainLoop();
+}#sub read_lef_gui
+
+sub call_read_lef {
+
+foreach $macroName ( keys %PLDB ) { push @lef_Macro , $macroName; }
+###Load the list with MACRO names###
+#$lefFileList->delete(0,'end');
+#$lefFileList->gtdelete('end', sort @lef_Macro );
+####### Added new type of list ######
+$lefFileList->delete(all);
+my $len = @lef_Macro;
+for (my $xx = 0; $xx < $len ; $xx++ ) {
+$lefFileList->add($xx);
+my $macroName = $lef_Macro[$xx];
+# print "$xx : $macroName\n";
+if (exists $TLDB{$macroName} ) { $dbgGUIMacroLibExist = "yes"; } else { $dbgGUIMacroLibExist = "no"; }
+my $func = $PLDB{$macroName}->dbMdbGetFunction;
+$lefFileList->itemCreate($xx, 0, -text => "$macroName");
+$lefFileList->itemCreate($xx, 1, -text => "$dbgGUIMacroLibExist");
+$lefFileList->itemCreate($xx, 2, -text => "-");
+$lefFileList->itemCreate($xx, 3, -text => "$func");
+$lefFileList->itemCreate($xx, 4, -text => "-");
+$lefFileList->itemCreate($xx, 5, -text => "-");
+$lefFileList->itemCreate($xx, 6, -text => "X");
+                                  }# for
+
+
+}#sub call_read_lef
+
+sub load_lef_files {
+@lef_Files = ();
+## If user presses Load button more than once ##
+
+if ($lefFileList->size() != 0 ){
+$lefFileList->delete(0,'end');
+                              }
+## If user presses Load button more than once ##
+opendir DirHandle , $dir;
+@files =  readdir DirHandle;
+closedir DirHandle;
+foreach $FileName (@files){
+chomp($FileName);
+if ($FileName =~ /(\.lef)$/){
+push @lef_Files , $FileName;
+                }
+                         }
+#print @lef_Files;
+$lefFileList->insert('end', sort @lef_Files );
+
+
+}#sub load_lef_files
+
+sub call_dbGuiDisplayLef {
+#$MacroToDisplay = $lefFileList->get('active');
+#$MacroToDisplay = $lefFileList->selectionSet('active');
+$MacroToDisplay = $lef_Macro[$dbgGuiSelectedMacro];
+
+print "Displayed Macro : $MacroToDisplay \n";
+&dbGuiDisplayLef(-cell, $MacroToDisplay);
+
+} #sub call_dbGuiDisplayLef 
+
+
+sub exit_lef_choice {
+    #print @lef_Files;
+    undef @files;
+    undef @lef_Files;
+    undef @lef_Macro;
+    print "Closing the LEF Display : proton P&R system ....\n";
+    $cellTab->destroy();
+    return;
+} #sub exit_lef_choice
+
+sub dbGuiDisplayLef {
+
+my $noOfArguments = @_;
+if($noOfArguments < 1 || $_[0] eq '-h'){ print "Usage : dbGuiDisplayLef -cell <cell name>\n";
+                      }
+else{ 
+############# since correct no of arguments ################
+############# registering the inputs        ################
+for(my $x = 0; $x < $noOfArguments ; $x++){
+if($_[$x] eq "-cell"){$MACRO_TO_DISPLAY = $_[$x+1];}
+                                          }#for all the arguments
+
+# printing the cell Name if it exists in the data base
+# else give a message that the cell is not in data base
+# possible reasons could be that the lef file for that cell is not read
+# or a typo on users part.
+
+            if( exists $PLDB{$MACRO_TO_DISPLAY} ) {
+            my @size = $PLDB{$MACRO_TO_DISPLAY}->dbMdbGetSize;
+            $width = $size[0];
+            $height = $size[1];
+            
+      
+
+################################################################################################################
+###   open the canvas widget 
+
+$guiCanvasWidth = 300;
+$guiCanvasHeight = 300;
+
+#### Calculate Scaling Factor ####
+
+$LefDisplayXFact = abs(240/$width);
+$LefDisplayYFact = abs(240/$height);
+if ($LefDisplayXFact <= $LefDisplayYFact ) { $LefDisplayFact  = $LefDisplayXFact;} else { $LefDisplayFact  =  $LefDisplayYFact }
+
+
+################################################################################################################
+#   Display the inners of the lef macro
+##################################################################################################################
+              $llx = 0;
+              $lly = 0; 
+              $urx = $width;
+              $ury = $height;
+        $llx = $llx*$LefDisplayFact;
+        $lly = $lly*$LefDisplayFact;
+        $urx = $urx*$LefDisplayFact;
+        $ury = $ury*$LefDisplayFact;
+
+        ###### make the display upside down
+        $lly = 240 - $lly;
+        $ury = 240 - $ury;
+
+        $LefCanvas->createRectangle($llx+20,$lly+20,$urx+20,$ury+20, -outline,"azure");
+
+                      #$PLDB{$MACRO_TO_DISPLAY}->dbgMdbGetOrient;
+                      my @pins = $PLDB{$MACRO_TO_DISPLAY}->dbMdbGetPins;
+                      foreach $pinName ( @pins ) {
+                      $PLDB{$MACRO_TO_DISPLAY}->dbMdbGetPinDir($pinName);
+                      my @RECTS = $PLDB{$MACRO_TO_DISPLAY}->dbMdbGetPinRect($pinName);
+                         foreach $rectLine ( @RECTS ) {
+                      my ($layer, $llx, $lly, $urx, $ury)=(split(/\s+/,$rectLine))[0,2,3,4,5];
+        $llx = $llx*$LefDisplayFact;
+        $lly = $lly*$LefDisplayFact;
+        $urx = $urx*$LefDisplayFact;
+        $ury = $ury*$LefDisplayFact;
+
+        ###### make the display upside down
+        $lly = 240 - $lly;
+        $ury = 240 - $ury;
+        my $t = $LefCanvas->createRectangle($llx+20,$lly+20,$urx+20,$ury+20, -outline,"blue",-fill,"blue",-stipple,"gray12");
+
+my $bal= $t->Balloon;
+$bal->attach($t, -balloonmsg=> "pin is selected");
+                                                 }
+                                       }
+##################################################################################################################
+###  add the zoom in and zoom out code 
+##################################################################################################################
+
+        my $zoomRect;
+        my @zoomRectCoords;
+        $LefCanvas->CanvasBind('<3>' => sub {
+            my $x = $LefCanvas->canvasx($Tk::event->x);
+            my $y = $LefCanvas->canvasy($Tk::event->y);
+
+            @zoomRectCoords = ($x, $y, $x, $y);
+
+            $zoomRect = $LefCanvas->createRectangle(
+                                            @zoomRectCoords,
+                                            -outline => 'red',
+                                            );
+        });
+                $LefCanvas->CanvasBind('<B3-Motion>' => sub {
+            @zoomRectCoords[2,3] = ($LefCanvas->canvasx($Tk::event->x),
+                                    $LefCanvas->canvasy($Tk::event->y));
+
+            $LefCanvas->coords($zoomRect => @zoomRectCoords);
+        });
+                $LefCanvas->CanvasBind('<B3-ButtonRelease>' => sub {
+            # Delete the rectangle.
+            $LefCanvas->delete($zoomRect);
+
+            # Was the rectangle big enough?
+            return if
+                abs($zoomRectCoords[0] - $zoomRectCoords[2]) < 10 ||
+                    abs($zoomRectCoords[1] - $zoomRectCoords[3]) < 10;
+
+            # Let's find the zooming factor.
+            my $dx = $LefCanvas->width  /abs($zoomRectCoords[0] - $zoomRectCoords[2]);
+            my $dy = $LefCanvas->height /abs($zoomRectCoords[1] - $zoomRectCoords[3]);
+
+            my $scale = [$dx => $dy] -> [$dy <= $dx];
+
+            # Let's scale everything up.
+            $LefCanvas->Subwidget('scrolled')->scale('all' => 0, 0, $scale, $scale);
+
+            # Modify the bounding box.
+            $_ *= $scale for @$box;
+
+            # Resize the scrollregion.
+            $LefCanvas->configure(-scrollregion => $box);
+
+            # Now we change the view to center on correct area.
+            $LefCanvas->xviewMoveto($zoomRectCoords[0] * $scale / $box->[2]);
+            $LefCanvas->yviewMoveto($zoomRectCoords[1] * $scale / $box->[3]);
+        });
+
+        $LefCanvas->CanvasBind('<2>' => sub {
+            my $scale = $guiCanvasWidth/$box->[2];
+
+            $LefCanvas->Subwidget('scrolled')->scale('all' => 0, 0, $scale, $scale);
+            $box = [0, 0, $guiCanvasWidth, $guiCanvasHeight];
+            $LefCanvas->configure(-scrollregion => $box);
+        });
+MainLoop();
+                
+                                                } # if the cell exists in the data base
+else { print "WARN : the cell \"$MACRO_TO_DISPLAY\" does not exist ... \n"; }
+
+    }# if correct no of inputs
+
+}#sub dbGuiDisplayLef
+
+1;

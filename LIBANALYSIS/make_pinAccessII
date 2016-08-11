@@ -1,0 +1,446 @@
+
+sub analyze_pin_access_II {
+my $noOfArguments = @_;
+my $routePref = 1;
+my $routeNonPref = 0;
+my @cells = ();
+if($_[0] eq "-h" ){ print "Usage :  analyze_pin_access\n";
+                                          print "                            [-cells] <{cell name}> \n";
+                                          print "                            [--pref] : route in preferred direction\n"; 
+                                          print "                            [--nonpref ] : route in non-preferred direction\n";
+                                        } else{ 
+   for(my $x = 0; $x < $noOfArguments ; $x++){
+      if($_[$x] eq "-cells"){ $list = $_[$x+1]; 
+                              if ( $list =~ /{/ ) { #}
+                              $list =~ s/{//; $list =~ s/}//; 
+                              @cells = split(/\,/, $list);
+                                                  } else { push (@cells,$list);
+                            }
+                            }
+      elsif($_[$x] eq "--pref"){ $routePref = 1; } 
+      elsif($_[$x] eq "--nonpref"){ $routeNonPref = 1; } 
+                                             }#for all the arguments
+#--------------------#
+my $len = @cells;
+if ( $len > 0 ) {
+    foreach $macroName ( @cells ) {
+     print "INFO-LIBLYIS-ANLYZE_PN_AESS : 001 : processing $macroName...\n";
+     &dbRouteCellInSingleLayer("-cell", $macroName, "-layer", "M1", "-reflayer", "M2");
+     &dbRouteCellInSingleLayer("-cell", $macroName, "-layer", "M2", "-reflayer", "M1");
+                                  }
+                }# only for few cells
+else {
+     foreach $macroName ( keys %PLDB ) {
+     &dbRouteCellInSingleLayer("-cell", $macroName, "-layer", "M1", "-reflayer", "M2");
+     &dbRouteCellInSingleLayer("-cell", $macroName, "-layer", "M2", "-reflayer", "M1");
+                                       }
+     }# if not limited to few cells
+
+        }#else correct no of arguments
+}#sub analyze_pin_access_II
+###################################################################################################
+
+
+sub dbRouteCellInSingleLayer {
+my $noOfArguments = @_;
+my $oneD = 0;
+if($noOfArguments < 2 || $_[0] eq "-h" ){ print "Usage :  dbRouteCellInSingleLayer -cell <cell name>\n";
+                                          print "Usage :                     -layer <layer name>\n";
+                                          print "Usage :                     -reflayer <layer name> : referece layer \
+with respect to which the other direction routing grid is overlapped\n";
+                                          print "Usage :                     --1D | --2D \n";
+                                        } else{
+   for(my $x = 0; $x < $noOfArguments ; $x++){
+      if($_[$x] eq "-cell"){$macroName = $_[$x+1];}
+      if($_[$x] eq "-layer"){$layerName = $_[$x+1];}
+      if($_[$x] eq "-reflayer"){$refLayerName = $_[$x+1];}
+      if($_[$x] eq "--1D"){$oneD = 1;}
+                                             }#for all the arguments
+
+print "DBG-LIBLYIS-RTE_CL_SIN_LYER : 001 : finding pin access fot $macroName on $layerName ref to $refLayerName\n" if ($DEBUG);
+            if( exists $PLDB{$macroName} ) {
+            my @size = $PLDB{$macroName}->dbMdbGetSize;
+            $width = $size[0]; $cellwidth = $width;
+            $height = $size[1]; $cellheight = $height;
+                                    if ( exists $PTDB{$layerName} ) {
+                                    my $type =  $PTDB{$layerName}->dbTechGetLayerType;
+                                       if ( $type eq 'ROUTING' ) {
+                                       my $dir   = $PTDB{$layerName}->dbTechGetLayerDir;
+                                       $pitch = $PTDB{$layerName}->dbTechGetLayerPitch;
+                                       $offset = $PTDB{$layerName}->dbTechGetLayerOffset;
+                                          if ( $offset eq "UND" ) { $offset = $pitch/2; }
+                                                if ( $dir eq 'HORIZONTAL' ) { $yPitch = $pitch; $yOffset = $offset; }
+                                                if ( $dir eq 'VERTICAL' ) { $xPitch = $pitch; $xOffset = $offset;}
+                                                                 }# if a routing layer
+                                                             }#if layer exist in technology
+                                    if ( exists $PTDB{$refLayerName} ) {
+                                    my $type =  $PTDB{$refLayerName}->dbTechGetLayerType;
+                                       if ( $type eq 'ROUTING' ) {
+                                       my $dir   = $PTDB{$refLayerName}->dbTechGetLayerDir;
+                                       $pitch = $PTDB{$refLayerName}->dbTechGetLayerPitch;
+                                       $offset = $PTDB{$refLayerName}->dbTechGetLayerOffset;
+                                          if ( $offset eq "UND" ) { $offset = $pitch/2; }
+                                                if ( $dir eq 'HORIZONTAL' ) { $yPitch = $pitch; $yOffset = $offset; }
+                                                if ( $dir eq 'VERTICAL' ) { $xPitch = $pitch; $xOffset = $offset;}
+                                                                 }# if a routing layer
+                                                             }#if reflayer exist in technology
+
+print "DBG-LIBLYIS-RTE_CL_SIN_LYER : 002 : $xPitch,$xOffset : $yPitch,$yOffset\n" if ($DEBUG);
+$col = int ($width/$xPitch);
+$row = int ($height/$yPitch);
+$ROUTE{$macroName} = RouteCellDB::new();
+$ROUTE{$macroName}->dbInit($col,$row);
+                                      
+#-------------------------- find all blocked grid points in the cell layer -------------------------------#
+                            @obs = $PLDB{$macroName}->dbMdbGetObs;
+                                 foreach $l ( @obs ) {
+                                        my ($layer,$llx,$lly,$urx,$ury) = (split(/\s+/,$l))[0,2,3,4,5];
+                              #---------- if the same layer as needed for routing, find the blocked grid points -------#
+            $nv = int ($width/$xPitch);
+           for($i = 0; $i <= $nv; $i++) {
+               $xx = $xPitch*$i + $xOffset;
+
+            $nh = int ($height/$yPitch);
+           for($j = 0; $j <=$nh; $j++) {
+               $yy = $yPitch*$j + $yOffset;
+          if(($xx>=$llx && $xx<=$urx) && ($yy>=$lly && $yy<=$ury))
+                         {
+                              print "DBG-LIBLYIS-RTE_CL_SIN_LYER : 003 :\tOBS layer $layer, ($llx, $lly, $urx, $ury)\t crossovers are $i,$j\n" if ($DEBUG);
+                              $ROUTE{$macroName}->dbRouteCellSetTpathVal($layer,$i+1,$j+1,'b');
+                          }
+
+                                      }#for horizontal lines
+                                    }#for vertical lines
+                              #---------- if the same layer as needed for routing, find the blocked grid points -------#
+
+                                                                     }
+$ROUTE{$macroName}->dbgRouteCellGetTpath('L1') if ($DEBUG);
+
+#-------------------------- find all grid points in the this layer that have pins -------------------------------#
+                            my @pins = $PLDB{$macroName}->dbMdbGetPins;
+                            foreach my $pinName ( @pins ) {
+                            @rects = $PLDB{$macroName}->dbMdbGetPinRect($pinName);
+                                 foreach $l ( @rects ) {
+                                        my ($layer,$llx,$lly,$urx,$ury) = (split(/\s+/,$l))[0,2,3,4,5];
+                              #---------- if the same layer as needed for routing, find the blocked grid points -------#
+            $nv = int ($width/$xPitch);
+           for($i = 0; $i <= $nv; $i++) {
+               $xx = $xPitch*$i + $xOffset;
+
+            $nh = int ($height/$yPitch);
+           for($j = 0; $j <=$nh; $j++) {
+               $yy = $yPitch*$j + $yOffset;
+ 
+#-- populate pin crossovers --#
+          if(($xx>=$llx && $xx<=$urx) && ($yy>=$lly && $yy<=$ury))
+                         {
+                              print "DBG-LIBLYIS-RTE_CL_SIN_LYER : 004 :\tpin $pinName layer $layer, ($llx, $lly, $urx, $ury)\t crossovers are $i,$j : $xx,$yy\n" if ($DEBUG);
+                              $ROUTE{$macroName}->dbRouteCellSetTpathVal($layer,$i+1,$j+1,'p');
+                              $ROUTE{$macroName}->dbRouteCellSetPinBoxes($pinName,$layer,[$i+1,$j+1]);
+                          }
+
+                                      }#for horizontal lines
+                                    }#for vertical lines
+                              #---------- if the same layer as needed for routing, find the blocked grid points -------#
+
+                                                     }#foreach rect
+                                                         }#foreach pin
+#-- check : that there are no grid points are common in blocked_gdb and pins_gdb for the same layer ----#
+
+#-- populate the target grids --#
+            $nv = int ($width/$xPitch);
+           for($i = 0; $i <= $nv; $i++) {
+               $xx = $xPitch*$i + $xOffset;
+
+            $nh = int ($height/$yPitch);
+           for($j = 0; $j <=$nh; $j++) {
+               $yy = $yPitch*$j + $yOffset;
+              if ( $i == 0 || $i == $nv ) { print "DBG-LIBLYIS-RTE_CL_SIN_LYER : 005 : target grids are $i,$j\n" if ($DEBUG); 
+                                          $TARGET{$i.$j}=1;
+                                          }
+              elsif ( $j == 0 || $j == $nh ) { print "DBG-LIBLYIS-RTE_CL_SIN_LYER : 005 : target grids are $i,$j\n" if ($DEBUG); 
+                                          $TARGET{$i.$j}=1;
+                                          }
+
+                                      }#for horizontal lines
+                                    }#for vertical lines
+
+#-------------------------- start maze routing on this layer ----------------#
+                            my @pins = $PLDB{$macroName}->dbMdbGetPins;
+                            foreach my $pinName ( @pins ) {
+                            @rects = $PLDB{$macroName}->dbMdbGetPinRect($pinName);
+                            $type = $PLDB{$macroName}->dbMdbGetPinType($pinName);
+                                    if ( $type == 0 ) {
+                            #---------------------- reset the cost function database ------------------#
+                            $ROUTE{$macroName}->dbRouteCellResetCost; 
+#                            $ROUTE{$macroName}->dbgRouteCellGetCost;
+#                            my $numberOfRoutes = &dbMazeRoutePinInCell($macroName,$pinName,'L1',$layerName);
+                            &dbRoutePinLayerPrefAccess($macroName,$pinName,$layerName);
+                            my $pinLayerNum = $PTDB{$layerName}->dbTechGetLayerNum;
+                            my $upRouteLayer = &dbTechGetNextRLayer($pinLayerNum);
+                            &dbRouteUpLayerOnPinAccess($macroName,$pinName,$layerName,$upRouteLayer);
+                                                       } 
+                                                         }#foreach pin
+                
+      
+
+                                             }#if the macro exists
+                                             }#correct arguments
+}#sub dbRouteCellInSingleLayer
+
+
+sub dbMazeRoutePinInCell {
+my $macroName = $_[0];
+my $pinName = $_[1];
+my $routeLayer = $_[2];
+my $pinLayer = $_[3];
+my $dimension = $_[4];
+$dimension = 1;
+print "DBG-LIBLYIS : 001 : starting to route $pinName in $pinLayer on layer $routeLayer\n" if ($DEBUG);
+
+my @sourceBoxs = $ROUTE{$macroName}->dbRouteCellGetPinBoxes($pinName,$pinLayer);
+print "DBG-LIBLYIS : 002 : starting to find route from pin $pinName\n" if ($DEBUG);
+my @wavefront = ();
+   foreach $start ( @sourceBoxs ) {
+push (@wavefront,[$$start[0],$$start[1]]);
+while ( @wavefront ) {
+        $len = @wavefront;
+        print "DBG-LIBLYIS : 003 : Number of entries in wavefron are $len\n" if ($DEBUG);
+        @currLoc = shift @wavefront;
+        print "DBG-LIBLYIS  : 004 : processing  $$currLoc[0],$$currLoc[1]\n" if ($DEBUG);
+        my $prevCost = $ROUTE{$macroName}->dbRouteCellGetCostVal($currLoc[0]->[1],$currLoc[0]->[0]);
+        #--------------- update neigbours ---------#
+                if ( $dimension == 1 ) {
+        @next = $ROUTE{$macroName}->dbRouteCellGetAdjHBox('L1',$currLoc[0]->[1],$currLoc[0]->[0]);
+                                       }
+                elsif ( $dimension == 2 ) {
+        @next = $ROUTE{$macroName}->dbRouteCellGetAdjVBox('L1',$currLoc[0]->[1],$currLoc[0]->[0]);
+                                       }
+                elsif ( $dimension == 3 ) {
+        @next = $ROUTE{$macroName}->dbRouteCellGetAdjHVBox('L1',$currLoc[0]->[1],$currLoc[0]->[0]);
+                                       }
+                elsif ( $dimension == 4 ) {
+        @next = $ROUTE{$macroName}->dbRouteCellGetAdjHVZBox('L1',$currLoc[0]->[1],$currLoc[0]->[0]);
+                                       }
+        for $n ( @next ) {
+                   my $status = $ROUTE{$macroName}->dbRouteCellGetTpathVal('L1',$$n[1],$$n[0]);
+                   print "DBG-LIBLYIS : 005 : $$n[0],$$n[1] $status\n" if ($DEBUG);
+                   if ( $status eq 'p' || $status eq 'b' ) { # skip updating cost
+                                                       }
+                   else {
+                   my $currentCost = $ROUTE{$macroName}->dbRouteCellGetCostVal($$n[1],$$n[0]);
+                   print "DBG-LIBLYIS : 006 : prevCost : $prevCost  and currCost : $currentCost\n" if ($DEBUG);
+                   if ( $currentCost > $prevCost || $currentCost == 0 ) {
+                   #------- add to the new wavefront only if you update the cost function--------#
+                   print "DBG-LIBLYIS : 007 : pushing [ @$n ] to wavefront\n" if ($DEBUG);
+                   push(@wavefront,$n);
+                                  $ROUTE{$macroName}->dbRouteCellSetCostVal($$n[0],$$n[1],$prevCost+1);
+                                            }
+                        }
+                               }#for
+        $ROUTE{$macroName}->dbgRouteCellGetCost if ($DEBUG);
+        
+                     }#while wavefront is not empty
+                           }#foreach start box on pin
+
+
+
+}# sub dbMazeRoutePinInCell
+
+sub dbRoutePinLayerPrefAccess {
+my $macroName = $_[0];
+my $pinName =   $_[1];
+my $pinLayer =  $_[2];
+
+print "DBG-LIBLYIS : 001 : finding preferref direction pin access for $pinName of cell $macroName in layer $pinLayer\n" if ($DEBUG);
+my $layerDir = $PTDB{$pinLayer}->dbTechGetLayerDir;
+my @sourceBoxs = $ROUTE{$macroName}->dbRouteCellGetPinBoxes($pinName,$pinLayer);
+my $maxX = $ROUTE{$macroName}->dbRouteCellGetMaxCol;
+my $maxY = $ROUTE{$macroName}->dbRouteCellGetMaxRow;
+my %shared = ();
+my %unique = ();
+
+       #-------------- temporarly mark all grid points on the pin as s -----------#
+             foreach $box ( @sourceBoxs ) {
+                     $ROUTE{$macroName}->dbRouteCellSetTpathVal($pinLayer,$$box[0],$$box[1],'s');
+                                          }
+#$ROUTE{$macroName}->dbgRouteCellGetTpath($pinLayer) if ($DEBUG);
+
+   if ( $layerDir eq 'HORIZONTAL' ) {
+       #-------------- examine the horizontal boxes ----------------------#
+             foreach $box ( @sourceBoxs ) {
+                     $yy = $$box[1];
+             my $leftBlocked = 0 ;
+             my $rightBlocked = 0;
+             for(my $xx = 1; $xx < $maxX ; $xx++ ) {
+                    my @testGrid = ($xx,$yy);
+                    my $gridStatus = $ROUTE{$macroName}->dbRouteCellGetTpathVal($pinLayer,@testGrid);
+                    if ( $gridStatus eq 'p' || $gridStatus eq 'b') {
+                        if ( $xx < $$box[0] ) { $leftBlocked = 1; }
+                        if ( $xx > $$box[0] ) { $rightBlocked = 1; }
+                                                                   }#if we get a grid that is blocked
+                                                   }#for the whole horizontal track
+                    if ( $rightBlocked == 0 && $leftBlocked == 0 ) { print "DBG-LIBLYIS : 002 : pin $pinName has unique access track on $pinLayer\n" if ($DEBUG); 
+                                                                     $unique{$yy} = 1;
+                                                                   }
+                    elsif ( $rightBlocked == 1 && $leftBlocked == 1 ) { 
+                                                                     print "DBG-LIBLYIS : 003 : pin $pinName has NO access track on $pinLayer\n" if ($DEBUG);
+                                                                   }
+                    elsif ( $rightBlocked == 1 || $leftBlocked == 1 ) { 
+                                                                     print "DBG-LIBLYIS : 004 : pin $pinName has shared access track on $pinLayer\n" if ($DEBUG);
+                                                                     $shared{$yy} = 1;
+                                                                   }
+                                          }#foreach source box grid point
+                                     }# if checking horizontal direction
+   if ( $layerDir eq 'VERTICAL' ) {
+       #-------------- examine the horizontal boxes ----------------------#
+             foreach $box ( @sourceBoxs ) {
+                     $xx = $$box[0];
+             my $topBlocked = 0 ;
+             my $bottomBlocked = 0;
+             for(my $yy = 1; $yy < $maxY ; $yy++ ) {
+                    my @testGrid = ($xx,$yy);
+                    my $gridStatus = $ROUTE{$macroName}->dbRouteCellGetTpathVal($pinLayer,@testGrid);
+                    if ( $gridStatus eq 'p' || $gridStatus eq 'b') {
+                        if ( $yy < $$box[1] ) { $topBlocked = 1; }
+                        if ( $yy > $$box[1] ) { $bottomBlocked = 1; }
+                                                                   }#if we get a grid that is blocked
+                                                   }#for the whole vertical track
+                    if ( $bottomBlocked == 0 && $topBlocked == 0 ) { print "DBG-LIBLYIS : 005 : pin $pinName has unique access track on $pinLayer\n" if ($DEBUG);
+                                                                     $unique{$xx} = 1;
+                                                                   }
+                    elsif ( $bottomBlocked == 1 && $topBlocked == 1 ) {
+                                                                     print "DBG-LIBLYIS : 006 : pin $pinName has NO access track on $pinLayer\n" if ($DEBUG);
+                                                                   }
+                    elsif ( $bottomBlocked == 1 || $topBlocked == 1 ) {
+                                                                     print "DBG-LIBLYIS : 007 : pin $pinName has shared access track on $pinLayer\n" if ($DEBUG);
+                                                                     $shared{$xx} = 1;
+                                                                   }
+                                          }#foreach source box grid point
+                                     }# if checking verical direction
+
+       #-------------- resettion all grid points on the pin as p -----------#
+             foreach $box ( @sourceBoxs ) {
+                     $ROUTE{$macroName}->dbRouteCellSetTpathVal($pinLayer,$$box[0],$$box[1],'p');
+                                          }
+#$ROUTE{$macroName}->dbgRouteCellGetTpath($pinLayer) if ($DEBUG);
+my $uniq = keys %unique;
+my $shrd = keys %shared;
+print "DBG-LIBLYIS : 008 : pin $pinName has $uniq unique and $shrd shared access on $pinLayer\n" if ($DEBUG);
+my @prevAccessData = $PLDB{$macroName}->dbMdbGetPinAccess($pinName);
+$PLDB{$macroName}->dbMdbSetPinAccess($pinName,0,$uniq+$prevAccessData[0]);
+$PLDB{$macroName}->dbMdbSetPinAccess($pinName,4,$shrd+$prevAccessData[4]);
+}#sub dbRoutePinLayerPrefAccess
+
+
+sub dbRoutePinLayerNonPrefAccess {
+
+
+
+
+}#sub dbRoutePinLayerNonPrefAccess
+
+sub dbRouteUpLayerOnPinAccess {
+my $macroName = $_[0];
+my $pinName =   $_[1];
+my $pinLayer =  $_[2];
+my $pinLayerDir = $PTDB{$pinLayer}->dbTechGetLayerDir;
+my $routeLayer = $_[3];
+my $routeLayerDir = $PTDB{$routeLayer}->dbTechGetLayerDir;
+
+print "DBG-LIBLYIS : 001 : finding onPin access for $pinName of cell $macroName in layer $pinLayer and route from $routeLayer\n" if ($DEBUG);
+my @sourceBoxs = $ROUTE{$macroName}->dbRouteCellGetPinBoxes($pinName,$pinLayer);
+my @upLayerSourceBoxs = ();
+my $maxX = $ROUTE{$macroName}->dbRouteCellGetMaxCol;
+my $maxY = $ROUTE{$macroName}->dbRouteCellGetMaxRow;
+my %shared = ();
+my %unique = ();
+$ROUTE{$macroName}->dbgRouteCellGetTpath($pinLayer) if ($DEBUG);
+       #-------------- temporarly mark all grid points on the pin layer as 's' on route layer if it is '0' on route layer -----------#
+             foreach $box ( @sourceBoxs ) {
+                     my $S = $ROUTE{$macroName}->dbRouteCellGetTpathVal($routeLayer,$$box[0],$$box[1]);
+                     if ( $S eq 'p' || $S eq 'b' ) {  }
+                     elsif ( $S == 0 ) {
+                     print "DBG-LIBLYIS : 002 : $$box[0],$$box[1] are source on $pinLayer getting promoted as source on $routeLayer\n" if ($DEBUG);
+                     $ROUTE{$macroName}->dbRouteCellSetTpathVal($routeLayer,$$box[0],$$box[1],'s');
+                     push(@upLayerSourceBoxs,[$$box[0],$$box[1]]); 
+                                       }
+                                          }
+$ROUTE{$macroName}->dbgRouteCellGetTpath($routeLayer) if ($DEBUG);
+
+
+   if ( $routeLayerDir eq 'HORIZONTAL' ) {
+       #-------------- examine the horizontal boxes in route layer----------------------#
+             foreach $box ( @upLayerSourceBoxs ) {
+                     $yy = $$box[1];
+             my $leftBlocked = 0 ;
+             my $rightBlocked = 0;
+             for(my $xx = 1; $xx < $maxX ; $xx++ ) {
+                    my @testGrid = ($xx,$yy);
+                    my $gridStatus = $ROUTE{$macroName}->dbRouteCellGetTpathVal($routeLayer,@testGrid);
+                    if ( $gridStatus eq 'p' || $gridStatus eq 'b') {
+                        if ( $xx < $$box[0] ) { $leftBlocked = 1; }
+                        if ( $xx > $$box[0] ) { $rightBlocked = 1; }
+                                                                   }#if we get a grid that is blocked
+                                                   }#for the whole horizontal track
+                    if ( $rightBlocked == 0 && $leftBlocked == 0 ) { print "DBG-LIBLYIS : 003 : pin $pinName has unique access track on $pinLayer\n" if ($DEBUG); 
+                                                                     $unique{$yy} = 1;
+                                                                   }
+                    elsif ( $rightBlocked == 1 && $leftBlocked == 1 ) { 
+                                                                     print "DBG-LIBLYIS : 004 : pin $pinName has NO access track on $pinLayer\n" if ($DEBUG);
+                                                                   }
+                    elsif ( $rightBlocked == 1 || $leftBlocked == 1 ) { 
+                                                                     print "DBG-LIBLYIS : 005 : pin $pinName has shared access track on $pinLayer\n" if ($DEBUG);
+                                                                     $shared{$yy} = 1;
+                                                                   }
+                                          }#foreach source box grid point
+                                     }# if checking horizontal direction
+   if ( $routeLayerDir eq 'VERTICAL' ) {
+       #-------------- examine the verical boxes in route layer ----------------------#
+             foreach $box ( @upLayerSourceBoxs ) {
+                     $xx = $$box[0];
+             my $topBlocked = 0 ;
+             my $bottomBlocked = 0;
+             for(my $yy = 1; $yy < $maxY ; $yy++ ) {
+                    my @testGrid = ($xx,$yy);
+                    my $gridStatus = $ROUTE{$macroName}->dbRouteCellGetTpathVal($routeLayer,@testGrid);
+                    if ( $gridStatus eq 'p' || $gridStatus eq 'b') {
+                        if ( $yy < $$box[1] ) { $topBlocked = 1; }
+                        if ( $yy > $$box[1] ) { $bottomBlocked = 1; }
+                                                                   }#if we get a grid that is blocked
+                                                   }#for the whole vertical track
+                    if ( $bottomBlocked == 0 && $topBlocked == 0 ) { print "DBG-LIBLYIS : 006 : pin $pinName has unique access track on $pinLayer\n" if ($DEBUG);
+                                                                     $unique{$xx} = 1;
+                                                                   }
+                    elsif ( $bottomBlocked == 1 && $topBlocked == 1 ) {
+                                                                     print "DBG-LIBLYIS : 007 : pin $pinName has NO access track on $pinLayer\n" if ($DEBUG);
+                                                                   }
+                    elsif ( $bottomBlocked == 1 || $topBlocked == 1 ) {
+                                                                     print "DBG-LIBLYIS : 008 : pin $pinName has shared access track on $pinLayer\n" if ($DEBUG);
+                                                                     $shared{$xx} = 1;
+                                                                   }
+                                          }#foreach source box grid point
+                                     }# if checking verical direction
+
+       #-------------- resettion all grid points on the pin as p -----------#
+             foreach $box ( @upLayerSourceBoxs ) {
+                     $ROUTE{$macroName}->dbRouteCellSetTpathVal($routeLayer,$$box[0],$$box[1],'0');
+                                          }
+$ROUTE{$macroName}->dbgRouteCellGetTpath($routeLayer) if ($DEBUG);
+my $uniq = keys %unique;
+my $shrd = keys %shared;
+print "DBG-LIBLYIS : 009 : pin $pinName has $uniq unique and $shrd shared access on $pinLayer\n" if ($DEBUG);
+my @prevAccessData = $PLDB{$macroName}->dbMdbGetPinAccess($pinName);
+$PLDB{$macroName}->dbMdbSetPinAccess($pinName,2,$uniq+$prevAccessData[2]);
+$PLDB{$macroName}->dbMdbSetPinAccess($pinName,6,$shrd+$prevAccessData[6]);
+}#sub dbRouteUpLayerOnPinAccess
+
+sub dbRouteUpLayerOffPinAccess {
+
+
+
+
+}#sub dbRouteUpLayerOffPinAccess
+
+
+1;

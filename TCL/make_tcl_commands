@@ -1,0 +1,238 @@
+
+# this command checks if the vaiable is set to something and pring Pass or Fail accordingly
+sub checkIf {
+
+my $var = shift @_;
+my $val = shift @_;
+if ($var =~ /\$/ ) { $var =~ s/\$//; }
+
+if ( ${$var} eq $val ) { print ".... Ok\n"; }  else { print " .. fail\n"; }
+
+}#sub checkIf
+
+sub reportFileSize {
+my $file = shift @_;
+if ( -e $file ) {
+    my $fileSize = -s $file;
+    return($fileSize);
+                }
+else { return("und"); }
+}#sub reportFileSize
+
+
+sub set {
+my $varName = shift @_;
+my @args = @_;
+my $lenArgs = @args;
+if ($lenArgs == 1) { 
+                     $varVal = $args[0]; 
+                     ${$varName} = $varVal;
+                     print "DBG-TCL-SET : 001 : setting $varName to $varVal\n" if ($DEBUG > 10); 
+                   }# if 2 argumnets ..set scalar variable
+elsif( $lenArgs > 1) {
+     print "DBG-TCL-SET : 002 : evaluating expression to set the value\n" if ($DEBUG > 20);
+     if ( $args[0] =~ /^\s*\[/ ) {
+                              ## turn everything between [] into a big string ##
+          my $str = "";
+          foreach my $tag ( @args) { $str = $str." ".$tag; }
+          $str =~ s/^\s*\[\s*//;
+          $str =~ s/\s*\]\s*$//;
+          my @newArgs = split(/\s+/, $str);
+          my $newCmd = shift @newArgs;
+#-------------------------------------$newCmd check in cmds hash------------------------------------------------------#
+          if(exists $cmds{$newCmd}){
+          my $value_newCmd = $cmds{$newCmd};
+         # my $retVal = &{$newCmd}(@newArgs);
+         my $retVal = &{$value_newCmd}(@newArgs);
+            ${$varName} = $retVal;
+                                 }#if exists 
+#---------------------------------------------------------------------------------------------------------------------#
+                              }# if the expression has to be evaulated
+                     }# if more than 2 argiments evaluate the expression to set the value
+}
+
+sub puts {
+my $var = $_[0];
+if ($var =~ /\$/ ) { $var =~ s/\$//; }
+print "${$var}\n";
+}#sub puts
+
+sub query {
+my $instance = "";
+my $cellref = "";
+my $net = "";
+my $port = "";
+my $module = "";
+
+my $instCount = keys %COMP_ALREADY;
+print "INFO-TCL-QRY : 001 : there are $instCount instances in the design\n";
+my $netcount = keys %NETS_ALREADY;
+print "INFO-TCL-QRY : 002 : there are $netcount nets in the design\n";
+my $registercount = keys %TEMP_MACROS ;
+print "INFO-TCL-QRY : 003 : there are $registercount register  in the design\n";
+
+#Finding register
+my $regcount = 0;
+foreach my $inst (keys %COMP_ALREADY) {
+     my $cellref = $CADB{$inst}->dbCadbGetCellref;
+
+    if ( $PLDB{$cellref}->dbMdbGetFunction eq "flop" && $PLDB{$cellref}->dbMdbGetType == 1 ) { # concerned only about flops now
+$regcount++;
+                                                                                      }
+                                       }# foreach instance
+print "INFO-TCL-QRY : 004 : there are $regcount register  in the design\n";
+
+#Finding buffer
+#Finding inverter
+my @bufList = ();
+my @invList = ();
+foreach $inst ( keys %{COMP_ALREADY} ) {
+        my $cellref = $CADB{$inst}->dbCadbGetCellref;
+        my $func = $PLDB{$cellref}->dbMdbGetFunction;
+        if ($func eq "buf" ) {
+                push(@bufList,$inst);
+                             }# if cell is a buffer        
+        elsif ($func eq "inv" ) {
+                push(@invList,$inst);
+                             }# if cell is a inverter        
+                                       }# foreach inst
+my $bufs = @bufList;
+my $invs = @invList;
+print "INFO-TCL-QRY : 005 : buffer $bufs , inverter $invs\n";
+
+#finding fillers
+
+#for Pad
+my $SeqCompCount = 0;
+my $CombCompCount = 0;
+my $BlockCompCount = 0;
+my $PadCompCount = 0;
+
+foreach my $instanceName ( keys %COMP_ALREADY ) {
+        my $cellref = $CADB{$instanceName}->dbCadbGetCellref;
+        my $cellType = $PLDB{$cellref}->dbMdbGetType;
+        my $cellFuction = $PLDB{$cellref}->dbMdbGetFunction;
+        if ( $cellType == 0 )    { $CombCompCount++; }
+        elsif ( $cellType == 1 ) { $SeqCompCount++; 
+                                   $colCount++; $rowCount++; 
+                                   $Col_Hash{$instanceName}=$colCount; 
+                                   $Row_Hash{$instanceName}=$rowCount; 
+                                 }
+        elsif ( $cellType == 2 ) { $BlockCompCount++; }
+        elsif ( $cellType == 3 ) { $PadCompCount++; }
+        else { print "INFO-TCL-QRY : 006 : instance $instanceName has unknown cell type $cellType\n"; }
+}
+print "INFO-TCL-QRY : 007 : comb $CombCompCount\n";
+print "INFO-TCL-QRY : 008 : Pad $PadCompCount\n";
+print "INFO-TCL-QRY : 009 : Block $BlockCompCount \n";
+print "INFO-TCL-QRY : 010 : Seq $SeqCompCount\n";
+foreach $name (keys %Col_Hash){
+        print "INFO-TCL-QRY : 011 : $name $Col_Hash{$name}\n";}
+#pins distribution
+my $Net0PinCount = 0;
+my $Net1PinCount = 0;
+my $Net2PinCount = 0;
+my $Net3PinCount = 0;
+my $Net4PinCount = 0;
+my $Net5orMorePinCount = 0;
+
+foreach my $netName ( keys %NETS_ALREADY ) {
+        my $noOfPinsOnNet = 0;
+        foreach (keys %{$NETS_ALREADY{$netName}} ) { $noOfPinsOnNet++; }
+        if ( $noOfPinsOnNet == 0 )    { $Net0PinCount++;}
+        elsif ( $noOfPinsOnNet == 1 ) { $Net1PinCount++;}
+        elsif ( $noOfPinsOnNet == 2 ) { $Net2PinCount++;}
+        elsif ( $noOfPinsOnNet == 3 ) { $Net3PinCount++;}
+        elsif ( $noOfPinsOnNet == 4 ) { $Net4PinCount++;}
+        else { $Net5orMorePinCount++; }
+                                           }
+print"INFO-TCL-QRY : 012 : 0-pin nets are $Net0PinCount\n"; 
+print"INFO-TCL-QRY : 013 : 1-pin nets are $Net1PinCount\n"; 
+print"INFO-TCL-QRY : 014 : 2-pin nets are $Net2PinCount\n"; 
+print"INFO-TCL-QRY : 015 : 3-pin nets are $Net3PinCount\n"; 
+print"INFO-TCL-QRY : 016 : 4-pin nets are $Net4PinCount\n"; 
+print"INFO-TCL-QRY : 017 : 5+ -pin nets are $Net5orMorePinCount\n"; 
+
+ 
+}#sub query
+
+sub getCellPinRect {
+my $noOfArguments = @_;
+
+if( $noOfArguments < 2 || $_[0] eq '-h') { print "Usage : read_lef -lef <input_lef> \n";
+                           print "                 [-tech < only / also / dont>]\n";
+                         }
+if( $noOfArguments > 4 || $_[0] eq '-h') { print "Usage : read_lef -lef <input_lef> \n";
+                           print "                 [-tech < only / also / dont>]\n";
+                         }
+else {
+
+my $READ_TECHNOLOGY = "dont";
+
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-cell"){$cellref = $_[$i+1];}
+if($_[$i] eq "-pin"){$pinName = $_[$i+1];}
+                                         } # for
+my %temp_hash = ();
+my %temp_hash2 = ();
+my %temp_hash3 = ();
+
+print "INFO-TCL-GT_CL_PN_RET : 001 : $cellref\n";
+if (exists $PLDB{$cellref} ) {
+#$PLDB{$cellref}->dbgMdbGetPinRect($pinName);
+my @data = sort($PLDB{$cellref}->dbMdbGetPinRect($pinName));
+   $firstline = shift @data;
+      my $count = 0;
+   my $prevX = (split(/\s+/, $firstline))[2]; 
+      $temp_hash{$count}  = $prevX;
+      $temp_hash2{$firstline} = $count;
+      while (defined ($line = shift @data) ) {
+            my ($x,$y) = (split(/\s+/, $line))[2,3];
+            my $xdiff = abs($prevX - $x);
+            if ($xdiff > 100) { $count++; $temp_hash{$count} = $x ; 
+                                $prevX = $x;
+                              }
+#                print "$line : $count\n";
+                $temp_hash2{$line} = $count;
+                                             }#while
+foreach $l ( keys %temp_hash2 ) {
+       my $val = $temp_hash2{$l};
+       if (exists $temp_hash3{$val} ) { push (@{$temp_hash3{$val}}, $l); }
+       else { $pA = []; $temp_hash3{$val} = $pA; }
+                                }
+open (WRITE,">$pinName");
+print WRITE  "PIN $pinName \n";
+foreach my $val ( keys %temp_hash3 ) {
+#        print "$val \n";
+        my @rectArray = @{$temp_hash3{$val}};
+#        print join "\n", @rectArray;
+         my @inArray = ();
+         my @outArray = ();
+         foreach $l ( @rectArray ) {
+         my $y = (split(/\s+/, $l))[3];
+         if ($y <300 ) { push(@outArray, $l); }
+         else { push(@inArray, $l); }
+                                   }
+         print WRITE  "\tPORT\n";
+         print WRITE  "\t\tLAYER metal6 \;\n";
+         foreach $l ( @inArray ) {
+         $l =~ s/^metal6//;
+         print WRITE  "\t\t$l\n";
+                                   } 
+         print WRITE  "\tEND\n";
+         print WRITE  "\tPORT\n";
+         print WRITE  "\t\tLAYER metal6 \;\n";
+         foreach $l ( @outArray ) {
+         $l =~ s/^metal6//;
+         print WRITE  "\t\t$l\n";
+                                   } 
+         print WRITE  "\tEND\n";
+                                     }
+close(WRITE);
+                             }#if cell exists
+                                                 }
+
+
+}#sub getCellPinRect
+
+1;

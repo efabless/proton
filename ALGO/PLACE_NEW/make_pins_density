@@ -1,0 +1,82 @@
+sub pins_density {
+
+#****f /*
+# NAME
+#   pins_density
+# FUNCTION
+#   find pins density foreach row
+# Assumptions
+#   not working in power and ground pins
+# SYNOPSIS
+#   pins_density
+# INPUTS
+#   pin density = per row/no of tracks layer M1 || METAL1
+# OUTPUTS
+#   pin density foreach row 
+#****
+
+
+
+#------------------------------------------------------------------------------------------------------#
+    if ( exists $DIE_ALREADY{dieArea}){
+     #print "$DIE_ALREADY{dieArea}[0] $DIE_ALREADY{dieArea}[1] $DIE_ALREADY{dieArea}[2] $DIE_ALREADY{dieArea}[3]\n";
+                                }#if exists
+#--------------------------------------- tracks layer M1-----------------------------------------------#
+   foreach my $layerName (keys %PTDB){
+      if(($layerName eq "METAL1") || ($layerName eq "M1")) {
+      $layerPitch = $PTDB{$layerName}->dbTechGetLayerPitch *2000 ;
+      $start = $layerPitch/2;
+      $tracks = int(($DIE_ALREADY{dieArea}[2]-$DIE_ALREADY{dieArea}[0]-$start)/$layerPitch);
+                                     }#if $layerName
+                             }#foreach layerName
+#---------------------------------------pin density foreach row----------------------------------------#
+    my @row_Name =();
+    my @row_no_pins =();
+    my @rows = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetRows;
+    my $no_of_pins = 0 ;
+  foreach $tag (@rows ){
+    my ($rowName,$x,$y,$row_orient) = (split(/\s+/,$tag))[0,2,3,4];
+     #print "$rowName $x $y $row_orient\n";  
+     $no_of_pins = 0 ; 
+    foreach $inst(keys %COMP_ALREADY){
+    my @loc  = $CADB{$inst}->dbCadbGetLoc;
+    if ($y == $loc[1]){
+    my $cellref = $CADB{$inst}->dbCadbGetCellref;
+    my @pin_array = $PLDB{$cellref}->dbMdbGetPins;
+         foreach $pinName (@pin_array){
+         $pinType = $PLDB{$cellref}->dbMdbGetPinType($pinName);
+         if (($pinType != 1) && ($pinType != 2)) {               
+           push (@temp1,$pinName);
+                                    }#if 
+                               }# foreach
+    my @pin_array = @temp1;
+    my $pins = @pin_array;
+    #print "$rowName $cellref  $pins\n";
+       @temp1 =(); 
+       $no_of_pins = $no_of_pins + $pins ;
+                              }#if 
+                       }#foreach
+    push(@row_no_pins, $no_of_pins) ;
+                               }#foreach
+    # print join "\n",@row_no_pins ;
+    # print "\n" ; 
+    # print " $tracks\n";
+  foreach $rows(@row_no_pins){
+    my $pin_density =  int ($rows/$tracks * 100);
+    print "INFO-ALGO_PL_NW-PNS_DNSTY : 001 : pin density  $pin_density\n";
+                       }#foreach rows
+ 
+}#sub pins_density
+
+1;
+
+
+
+
+
+
+
+
+
+
+

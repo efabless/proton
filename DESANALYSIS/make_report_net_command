@@ -1,0 +1,148 @@
+
+sub report_net {
+my $t0 = new Benchmark;
+my $DETAILRPT = 0;
+my $RPTFILE = $TOP_MODULE."_netRpt.rpt";
+my $USERLIST = 0;
+my $PINLIMIT = 0;
+my $DEBUG = 0;
+my $pinBoundLo = 1;
+my $pinBoundHi = 1000;
+my $noOfArguments = @_;
+my @WL = (); # len count
+my @NC = (); # net count
+if ($noOfArguments < 0 || $_[0] eq '-h'){print "Usage : -nets <{list of nets Name}> \n";
+                                         print "      :       by default all nets \n";
+                                         print "      : -noOfPins n:m <limit analysis on nets with nor m pins>\n";
+                                         print "      : -output <detailed report is provided in the file>\n";
+                                         print "      : --summary <only summary of report is provided on the prompt>\n";
+                                         print "      : --reportWireLength <fileName>\n";
+                                         print "      : --reportCumWireLength <fileName>\n";
+                                                                        }#if
+else {
+     my $summary =0;
+     my $detail = 0;
+     for (my $i = 0;$i < $noOfArguments; $i++){
+          if ($_[$i] eq "-nets"){$nets = $_[$i+1];
+          $nets =~ s/\{\s*//;
+          $nets =~ s/\s*\}//;
+          @nets = split(/\,/,$nets);
+          $USERLIST = 1;}
+          if($_[$i] eq "--summary"){$DETAILRPT = 0;}
+          if($_[$i] eq "--detail"){$DETAILRPT = 1;}
+          if($_[$i] eq "--debug"){$DEBUG = 0;}
+          if($_[$i] eq "-output"){$RPTFILE=$_[$i+1];$DETAILRPT =1; open(WRITE,">$RPTFILE");}
+          if($_[$i] eq "-noOfPins"){
+                                    $PINLIMIT=1;
+                                    ($pinBoundLo,$pinBoundHi) = (split(/\:/,$_[$i+1]))[0,1];
+                                    }
+                         }#for
+
+foreach my $netName ( keys %{NETS_ALREADY} ) {
+        my $noOfKeys = keys %{$NETS_ALREADY{$netName}}  ;
+        if (($noOfKeys <= $pinBoundHi) && ($noOfKeys >= $pinBoundLo )) {
+                       print WRITE "$netName\n" if ($DETAILRPT == 1);
+                       my $netWl = get_net_est_length($netName);
+                       $WL[$noOfKeys] = $WL[$noOfKeys] + $netWl;  
+                       $NC[$noOfKeys]++;
+                                                                   }
+                       
+
+                                             }# foreach all nets in the design
+
+close(WRITE);
+}
+my $t1 = new Benchmark;
+my $td = timediff($t1,$t0);
+print "command report_net completed in:",timestr($td),"\n";
+print "\n\n";
+print "       WireLength Stat     \n";
+print "num-pins   : nets analysed :  wire-length \n";
+my $totalLen = 0;
+my $totalNet = 0;
+for(my $x = 0 ; $x < @WL ; $x++) {
+       my $l = sprintf("%.2f", $WL[$x]/2000);
+       print "$x pin net : $NC[$x]        : $l (um)\n" if ($WL[$x] != "");
+       $totalLen += $l;
+       $totalNet += $NC[$x];
+                                 }
+print "INFO-DES-RPT_NET : 001 : Total wirelength of $totalNet analyzed nets is $totalLen (um)\n";
+return(\@WL, \@NC);
+}#sub report_net
+
+
+sub get_net_est_length {
+# returns the estimated wirelength of the net 1/2 perimeter of bbox
+#------------------ find wl of a net from its pin locations -----------------#
+my $net = $_[0];
+if ( exists $NETS_ALREADY{$net} ) {
+my $totalmhd =0;
+my @boxlistX = ();
+my @boxlistY = ();
+
+# find the components connected
+         foreach $inst ( keys %{$NETS_ALREADY{$net}} ) {
+                    my $pinName = $NETS_ALREADY{$net}{$inst};
+                    if ( exists $CADB{$inst}) {
+                    my $cellref = $CADB{$inst}->dbCadbGetCellref;
+                    my @instLoc = $CADB{$inst}->dbCadbGetLoc;
+                       push(@boxlistX,$instLoc[0]);  
+                       push(@boxlistY,$instLoc[1]);  
+                                              }# if instance exists 	         
+                    elsif ($pinName == "PIN") {
+                                              }
+        }#foreach inst 
+print join ",",@boxlistX if ($DEBUG); print "\n" if ($DEBUG);
+my $llx = min(@boxlistX);
+my $lly = min(@boxlistY);
+my $urx = max(@boxlistX);
+my $ury = max(@boxlistY);
+my $totalmhd = ($urx - $llx) + ($ury - $lly);
+print "DBG-DES : 001 : MHD=$totalmhd\n"  if ($DEBUG);
+return($totalmhd);
+                               }# if net exists in nets database
+}#sub get_net_est_length
+#----------------------------------------------------------------------------#
+sub write_conn_info_of_net {
+use Benchmark;
+my $t0 = new Benchmark;
+open(WRITE,">net_conn_info.txt");
+foreach my $net (keys %NETS_ALREADY){
+  foreach my $instance ( keys %{$NETS_ALREADY{$net}} ) {
+    if ( exists $COMP_ALREADY{$instance} ) {
+      my $cellref = $CADB{$instance}->dbCadbGetCellref;
+      if(exists $PLDB{$cellref}){
+        my @pins = $PLDB{$cellref}->dbMdbGetPins;
+        foreach my $pinName ( @pins ) {
+          my $conn_net = $COMP_ALREADY{$instance}{$pinName};
+          if($conn_net eq $net){
+            print WRITE "$instance/$pinName $conn_net\n";
+          }
+        }
+      }else {
+        print "ERR : 001 : $cellref not exists in PLDB of $instance\n";
+      }
+    }elsif(exists $PORTS_ALREADY{$TOP_MODULE}{$instance}){
+      foreach my $port ( keys %{$PORTS_ALREADY{$TOP_MODULE}} ) {
+   	my @port_nets = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetConn;
+        if ($net eq $port_nets[0]){
+            print WRITE "$port $net\n";
+        }
+      }
+    }elsif($instance eq "PIN"){
+      foreach my $port ( keys %{$PORTS_ALREADY{$TOP_MODULE}} ) {
+   	my @port_nets = $PORTS_ALREADY{$TOP_MODULE}{$port}->dbPortGetConn;
+        if ($net eq $port_nets[0]){
+            print WRITE "$port $net\n";
+        }
+      }
+    }
+  }
+}#foreach 
+close(WRITE);
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "Command write_conn_info_of_net took:",timestr($td),"\n";
+}#sub write_conn_info_of_net
+#----------------------------------------------------------------------------#
+1;

@@ -1,0 +1,423 @@
+#!/bin/perl 
+
+sub report_worst_timing_path {
+my $startInst = $_[0];
+
+if ( exists $COMP_ALREADY{$startInst} ) {
+        $worstSlack = 0;
+        @WORST_PATH = ();
+        @TEMP_PATH=();
+        $count2 = 0;
+        push(@TEMP_PATH,$startInst);
+                 &dbgDtaTraceWrstPath($startInst,$count2);
+        print "INFO-TE-RPT_WRST_TMNG_PTH : 001 : Worst slack is $worstSlack\n"; 
+        if ( $DISPLAY_TABLE{TAPATH} == 1 ) {
+                             my $inst = shift @WORST_PATH;
+                             my @sloc = $CADB{$inst}->dbCadbGetLoc;
+                     foreach ( @WORST_PATH ) {
+                                $inst = (split(/\s+/, $_))[0];
+                             my @eloc = $CADB{$inst}->dbCadbGetLoc;                             
+                                ($llx,$lly) = dbGuidatabase2Gui(@sloc);
+                                ($urx,$ury) = dbGuidatabase2Gui(@eloc);
+                                $design_canvas->createLine($llx,$lly,$urx,$ury, -fill,"yellow", -tag => "tfline");
+                                @sloc = @eloc;
+                                                      }# foreach 
+                                         }# if the path has to be hilighted
+                                        }
+else { print "WARN-TE-RPT_WRST_TMNG_PTH  : 002 : The component $_[0] does not exist in design\n"; }
+
+
+}#sub report_worst_timing_path
+
+sub dbgDtaTraceWrstPath  {
+
+local $instanceName = $_[0];
+local $noOfComponentsBeforeBranch = $_[1];
+local $cellref = $CADB{$instanceName}->dbCadbGetCellref;
+local $fwdNetName;
+
+#print "tracing forward through $instanceName\n";
+local @pins = $PLDB{$cellref}->dbMdbGetPins;
+
+foreach $pinName ( @pins ) {
+                   if ( $PLDB{$cellref}->dbMdbGetPinDir($pinName) == 1 ) {
+                   if( exists $COMP_ALREADY{$instanceName}{$pinName} ) {
+                   $fwdNetName = $COMP_ALREADY{$instanceName}{$pinName};
+                   $noOfComponentsOnNet = keys %{$NETS_ALREADY{$fwdNetName}};
+                   if($noOfComponentsOnNet > 2) {
+                                             #   print "possible branching of path \n"; 
+                   $noOfComponentsBeforeBranch = @TEMP_PATH;
+                                             #   print "$noOfComponentsBeforeBranch to be saved before branching\n";
+                                                } else { $noOfComponentsBeforeBranch  = $noOfComponentsBeforeBranch; }
+                   foreach $newInstanceName ( keys %{$NETS_ALREADY{$fwdNetName}} ) {
+                        if( $newInstanceName eq "PIN" ) { } else {
+
+                        $newCellref = $CADB{$newInstanceName}->dbCadbGetCellref;
+                   if ( $newInstanceName eq $instanceName ) { }
+                   elsif($MACROS_ATTRIBUTE_ALREADY{$newCellref}{func} eq "reg" ) {
+                          push(@TEMP_PATH,"$newInstanceName $fwdNetName");
+######################################################################################################################
+# timing report being generated ...
+######################################################################################################################
+#&dbgSpiceReport1PathTiming;
+$presentSlack = dbDtaReport1PathTiming(@TEMP_PATH);
+    if ( $presentSlack < $worstSlack ) {
+             $worstSlack = $presentSlack; 
+             @WORST_PATH = @TEMP_PATH;
+                                       }
+######################################################################################################################
+                                              $pathNum++;
+                                       $presentNoOfComponents = @TEMP_PATH;
+                                       $removeNoOfComponents = $presentNoOfComponents - $noOfComponentsBeforeBranch;
+                                        #print "removing $removeNoOfComponents components \n";
+                                        for(my $xx = 0; $xx <= $removeNoOfComponents;$xx++) {
+                                                     my $yy = $presentNoOfComponents - $xx;
+                                                     delete $TEMP_PATH[$yy];
+                                                                                                 }#for
+
+                                                                              }
+                   else {
+                          push(@TEMP_PATH,"$newInstanceName $fwdNetName");
+                          &dbgDtaTraceWrstPath($newInstanceName,$noOfComponentsBeforeBranch);
+                          #print "$noOfComponentsBeforeBranch after split\n";
+                                       $presentNoOfComponents = @TEMP_PATH;
+                                       $removeNoOfComponents = $presentNoOfComponents - $noOfComponentsBeforeBranch;
+                                        #print "removing $removeNoOfComponents components \n";
+                                        for(my $xx = 0; $xx <= $removeNoOfComponents;$xx++) {
+                                                     my $yy = $presentNoOfComponents - $xx;
+                                                     delete $TEMP_PATH[$yy];
+                                                                                                 }#for
+                        }
+
+                                                         }#if instance is a block PIN
+                                                                                   }#foreach
+                                                                       }# if pin has some connectivity
+                                                                                }#if pin is an output pin
+
+                                                    }# foreach pin of instance
+}# sub dbgDtaTraceWrstPath
+
+
+sub report_timing {
+
+my $noOfArguments = @_;
+                                                                                                                                            
+if( $noOfArguments < 2 || $_[0] eq '-h') { print "Usage : report_timing -rep_path_cmmd <fileName> \n";
+                           print "                        -outfile     <fileName> \n";
+                         }
+else {
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-rep_path_cmmd"){$PKS_CMD_FILE = $_[$i+1];}
+if($_[$i] eq "-outfile"){$REPORT_FILE = $_[$i+1];}
+                                         } # for
+
+print "INFO-TE-RPT_TMNG : 001 : Writing timing report to file \"$REPORT_FILE\"\n";
+open (WRITE,">$REPORT_FILE");
+print WRITE "Report of Dynamic Timing Analysis from proton tool\n";
+print WRITE "----------------------------------------\n";
+print WRITE "\n";
+print WRITE "\n";
+&build_timing_graph;
+
+close(WRITE);
+     }# if correct arguments
+}#sub report_timing
+
+sub build_timing_graph {
+# Right now only doing for reg 2 reg
+&dbgDtaReg2RegTrace;
+}# sub build_timing_graph
+
+
+sub dbgDtaReg2RegTrace {
+
+$count2 = 0;
+$pathNum = 1;
+
+foreach $instance ( keys %COMP_ALREADY ) {
+        $cellref = $CADB{$instance}->dbCadbGetCellref;
+        #print "$instance : $cellref\n";
+        if ( $MACROS_ATTRIBUTE_ALREADY{$cellref}{func} eq "reg" ) {
+        print "INFO-TE : 001 : tracing the output cone of $instance ....\n";
+        @TEMP_PATH=();
+        push(@TEMP_PATH,$instance);
+                 &dbgDtaTraceReg2Reg($instance,$count2);
+                                                                  }#if instance is a register
+
+                                         }# foreach component
+
+
+}#sub dbgDtaReg2RegTrace
+
+sub dbgDtaTraceReg2Reg  {
+
+local $instanceName = $_[0];
+local $noOfComponentsBeforeBranch = $_[1];
+local $cellref = $CADB{$instanceName}->dbCadbGetCellref;
+local $fwdNetName;
+
+#print "tracing forward through $instanceName\n";
+local @pins = $PLDB{$cellref}->dbMdbGetPins;
+
+foreach $pinName ( @pins ) {
+                   if ( $PLDB{$cellref}->dbMdbGetPinDir($pinName) == 1 ) {
+                   if( exists $COMP_ALREADY{$instanceName}{$pinName} ) {
+                   $fwdNetName = $COMP_ALREADY{$instanceName}{$pinName};
+                   $noOfComponentsOnNet = keys %{$NETS_ALREADY{$fwdNetName}};
+                   if($noOfComponentsOnNet > 2) {
+                                             #   print "possible branching of path \n"; 
+                   $noOfComponentsBeforeBranch = @TEMP_PATH;
+                                             #   print "$noOfComponentsBeforeBranch to be saved before branching\n";
+                                                } else { $noOfComponentsBeforeBranch  = $noOfComponentsBeforeBranch; }
+                   foreach $newInstanceName ( keys %{$NETS_ALREADY{$fwdNetName}} ) {
+                        if( $newInstanceName eq "PIN" ) { } else {
+
+                        $newCellref = $CADB{$newInstanceName}->dbCadbGetCellref;
+                   if ( $newInstanceName eq $instanceName ) { }
+                   elsif($MACROS_ATTRIBUTE_ALREADY{$newCellref}{func} eq "reg" ) {
+                          push(@TEMP_PATH,"$newInstanceName $fwdNetName");
+######################################################################################################################
+# timing report being generated ...
+######################################################################################################################
+#&dbgSpiceReport1PathTiming;
+&dbgDtaReport1PathTiming(@TEMP_PATH);
+######################################################################################################################
+                                              $pathNum++;
+                                       $presentNoOfComponents = @TEMP_PATH;
+                                       $removeNoOfComponents = $presentNoOfComponents - $noOfComponentsBeforeBranch;
+                                        #print "removing $removeNoOfComponents components \n";
+                                        for(my $xx = 0; $xx <= $removeNoOfComponents;$xx++) {
+                                                     my $yy = $presentNoOfComponents - $xx;
+                                                     delete $TEMP_PATH[$yy];
+                                                                                                 }#for
+
+                                                                              }
+                   else {
+                          push(@TEMP_PATH,"$newInstanceName $fwdNetName");
+                          &dbgDtaTraceReg2Reg($newInstanceName,$noOfComponentsBeforeBranch); 
+                          #print "$noOfComponentsBeforeBranch after split\n";
+                                       $presentNoOfComponents = @TEMP_PATH;
+                                       $removeNoOfComponents = $presentNoOfComponents - $noOfComponentsBeforeBranch;
+                                        #print "removing $removeNoOfComponents components \n";
+                                        for(my $xx = 0; $xx <= $removeNoOfComponents;$xx++) {
+                                                     my $yy = $presentNoOfComponents - $xx;
+                                                     delete $TEMP_PATH[$yy];
+                                                                                                 }#for
+                        }
+
+                                                         }#if instance is a block PIN
+                                                                                   }#foreach
+                                                                       }# if pin has some connectivity
+                                                                                }#if pin is an output pin
+
+                                                    }# foreach pin of instance
+}# sub dbgDtaTraceReg2Reg
+
+
+
+
+sub dbgDtaReport1PathTiming {
+my @PATHLIST = @_;
+   my $cumlativeDelay = 0;
+   my $clock_period = 20000;
+   my $uncertanity = 100; 
+   my $setup_time = 200;
+   my $startInst = shift @PATHLIST;
+   my $noOfInstOnPath = @PATHLIST;
+   my $stopInst = (split(/\s+/,$PATHLIST[$noOfInstOnPath-1]))[0];
+
+                                 print WRITE "Path # $pathNum\n";
+                                 print WRITE "StartPoint : $startInst\n";
+                                 print WRITE "EndPoint : $stopInst\n";
+                                 print WRITE "-----------------------------------------------------------\n";
+                                 print WRITE "inst     macro   arc    delay   tdelay  tran\n";
+                                 print WRITE "-----------------------------------------------------------\n";
+                                 my $cellref = $CADB{$startInst}->dbCadbGetCellref;
+                                 if ( $MACROS_ATTRIBUTE_ALREADY{$cellref}{func} eq "reg" ) { $previousInstInPin = CK }
+                                 print WRITE "$startInst $cellref ";
+                                 my $previousInst = $startInst;
+                                 foreach $inst ( @PATHLIST ) {
+                                         my ($i,$n) = (split(/\s+/,$inst))[0,1];
+                                         my $previousInstOutPin = $NETS_ALREADY{$n}{$previousInst};
+                                         my $arc = "$previousInstInPin $previousInstOutPin";
+                                         my @instDelayTran = $TADB{$previousInst}->dbTimingInstGetArcDly($previousInstInPin,$previousInstOutPin);
+                                            $cumlativeDelay = $cumlativeDelay + $instDelayTran[0];
+                                         print WRITE " $previousInstInPin->$previousInstOutPin $instDelayTran[0] $cumlativeDelay $instDelayTran[1]\n";
+                                         my $c = $CADB{$i}->dbCadbGetCellref;
+                                       print WRITE "$i $c ";
+                                         $previousInst = $i;
+                                         $previousInstInPin = $NETS_ALREADY{$n}{$i};
+                                                              }#foreach
+
+                                       print WRITE "\n";
+                                 print WRITE "-----------------------------------------------------------\n";
+print WRITE "clock period : $clock_period\n";
+my $reqTime = $clock_period - $uncertanity - $setup_time;
+print WRITE "required time : $reqTime\n";
+print WRITE "arrival time : $cumlativeDelay\n";
+my $slack = $reqTime - $cumlativeDelay;
+print WRITE "slack : $slack\n";
+                                 print WRITE "-----------------------------------------------------------\n";
+                                       print WRITE "\n\n";
+
+}#sub dbgDtaReport1PathTiming
+
+
+
+sub dbDtaReport1PathTiming {
+my @PATHLIST = @_;
+   my $cumlativeDelay = 0;
+   my $clock_period = 20000;
+   my $uncertanity = 100;
+   my $setup_time = 200;
+   my $startInst = shift @PATHLIST;
+   my $noOfInstOnPath = @PATHLIST;
+   my $stopInst = (split(/\s+/,$PATHLIST[$noOfInstOnPath-1]))[0];
+
+                                 my $cellref = $CADB{$startInst}->dbCadbGetCellref;
+                                 if ( $MACROS_ATTRIBUTE_ALREADY{$cellref}{func} eq "reg" ) { $previousInstInPin = CK }
+                                 my $previousInst = $startInst;
+                                 
+                                 foreach $inst ( @PATHLIST ) {
+                                         my ($i,$n) = (split(/\s+/,$inst))[0,1];
+                                         my $previousInstOutPin = $NETS_ALREADY{$n}{$previousInst};
+                                         my $arc = "$previousInstInPin $previousInstOutPin";
+                                         my @instDelayTran = $TADB{$previousInst}->dbTimingInstGetArcDly($previousInstInPin,$previousInstOutPin);
+                                            $cumlativeDelay = $cumlativeDelay + $instDelayTran[0];
+                                         my $c = $CADB{$i}->dbCadbGetCellref;
+                                         $previousInst = $i;
+                                         $previousInstInPin = $NETS_ALREADY{$n}{$i};
+                                                              }#foreach
+
+my $reqTime = $clock_period - $uncertanity - $setup_time;
+my $slack = $reqTime - $cumlativeDelay;
+#print "slack : $slack\n";
+return($slack);
+}#sub dbDtaReport1PathTiming
+
+
+
+
+
+sub reportP2Ptiming {
+my $noOfArguments = @_;
+
+if( $noOfArguments < 2 || $_[0] eq '-h') { print "Usage : reportP2Ptiming -from <hierPin> \n";
+                           print "                        -to <hierPin> \n";
+                           print "                        -through <hierPin> \n";
+                           print "                        -outfile <fileName> \n";
+                         }
+else {
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-from"){$StartPoint = $_[$i+1];}
+if($_[$i] eq "-to"){$EndPoint = $_[$i+1];}
+if($_[$i] eq "-through"){$ThroughPoint = $_[$i+1]; push(@DTA_THROUGH_INSTS,$ThroughPoint); }
+if($_[$i] eq "-outfile"){$REPORT_FILE = $_[$i+1];}
+                                         } # for
+
+open(WRITE_REPORT,"> $REPORT_FILE");
+use File::Basename;
+$startInstPin = basename($StartPoint);
+$startInst  = dirname($StartPoint);
+$stopInstPin = basename($EndPoint);
+$stopInst = dirname($EndPoint);
+$count2 = 0;
+$pathNum = 1;
+
+        $cellref = $COMP_ATTRIBUTE_ALREADY{$startInst}{cellref};
+        if ( $MACROS_ATTRIBUTE_ALREADY{$cellref}{func} eq "reg" ) {
+        @TEMP_PATH=();
+        push(@TEMP_PATH,$startInst);
+                 &dbgDtaSpiceTraceReg2RegP2P($startInst,$count2);
+                 print "INFO-TE-RPT_P2P_TMNG : 001 : ended reportP2Ptiming trace from starting flop : $startInst\n";
+                                                                  }#if instance is a register
+
+
+
+
+close(WRITE_REPORT);
+    }#if correct arguments
+
+}#sub reportP2Ptiming
+
+sub dbgDtaSpiceTraceReg2RegP2P  {
+                                                                                                                                
+                      
+local $instanceName = $_[0];
+local $noOfComponentsBeforeBranch = $_[1];
+local $cellref = $COMP_ATTRIBUTE_ALREADY{$instanceName}{cellref};
+local $fwdNetName;
+
+foreach $pinName ( keys %{$MACROS_ALREADY{$cellref}} ) {
+               if ( $MACROS_ALREADY{$cellref}{$pinName}{direction} eq "output" ) {
+                   if( exists $COMP_ALREADY{$instanceName}{$pinName} ) {
+                   $fwdNetName = $COMP_ALREADY{$instanceName}{$pinName};
+                   $noOfComponentsOnNet = keys %{$NETS_ALREADY{$fwdNetName}};
+                   if($noOfComponentsOnNet > 2) {
+                   $noOfComponentsBeforeBranch = @TEMP_PATH;
+                                                } else { $noOfComponentsBeforeBranch  = $noOfComponentsBeforeBranch; }
+                   foreach $newInstanceName ( keys %{$NETS_ALREADY{$fwdNetName}} ) {
+                        $newCellref = $COMP_ATTRIBUTE_ALREADY{$newInstanceName}{cellref};
+
+                   if ( $newInstanceName eq $instanceName ) {
+                                                            }
+                   elsif($MACROS_ATTRIBUTE_ALREADY{$newCellref}{func} eq "reg" ) {
+                          push(@TEMP_PATH,"$newInstanceName $fwdNetName");
+                                       $pathNum++;
+                                       $presentNoOfComponents = @TEMP_PATH;
+###########################################################################################################################################
+# since end flop is reached check if the begin and end points are the one which we want
+         $instStart = (split(/\s+/, $TEMP_PATH[0]))[0];
+         $instEnd = (split(/\s+/, $TEMP_PATH[$presentNoOfComponents-1]))[0];
+         if ( $startInst eq $instStart && $stopInst eq $instEnd ) {
+              my $PATH_FOUND = 1;
+              my %JUNK = ();
+         print " INFO-TE : 001 : Found the path from $startInst to $stopInst\n";
+                 foreach ( @TEMP_PATH ) {
+                            $tempInst = (split(/\s+/, $_))[0];
+                            $JUNK{$tempInst} = 1;
+                                                    }
+                         foreach $throughInstandPin ( @DTA_THROUGH_INSTS ) { 
+                            $throughInstPin = basename($throughInstandPin);
+                            $throughInst  = dirname($throughInstandPin);
+                                    if( exists $JUNK{$throughInst} ) { $PATH_FOUND = $PATH_FOUND*1;  }
+                                    else { $PATH_FOUND = $PATH_FOUND*0; }
+                                                                        }
+                          if ( $PATH_FOUND == 1 ) {
+&dbgSpiceCompileSpice3Deck;
+###  the above commands simulates and reports a path 1 at a time ###
+### there is no need of the command below ##### 
+# &dbgSpiceReport1PathTiming;
+                                                  } else { print "WARN-TE : 002 : Path did not match the through pins\n"; }
+                                                                  }# path found
+###########################################################################################################################################
+                                       $removeNoOfComponents = $presentNoOfComponents - $noOfComponentsBeforeBranch;
+                                        for(my $xx = 0; $xx <= $removeNoOfComponents;$xx++) {
+                                                     my $yy = $presentNoOfComponents - $xx;
+                                                     delete $TEMP_PATH[$yy];
+                                                                                                 }#for
+                                                                              }
+                   else {
+                          push(@TEMP_PATH,"$newInstanceName $fwdNetName");
+                          &dbgDtaSpiceTraceReg2RegP2P($newInstanceName,$noOfComponentsBeforeBranch);
+                                       $presentNoOfComponents = @TEMP_PATH;
+                                       $removeNoOfComponents = $presentNoOfComponents - $noOfComponentsBeforeBranch;
+                                        for(my $xx = 0; $xx <= $removeNoOfComponents;$xx++) {
+                                                     my $yy = $presentNoOfComponents - $xx;
+                                                     delete $TEMP_PATH[$yy];
+                                                                                                 }#for
+                        }
+                                                                                                                                
+                      
+                                                                                                                                
+                      
+                                                                                   }#foreach
+                                                                       }# if pin has some connectivity
+                                                                                }#if pin is an output pin
+                                                                                                                                
+                      
+                                                    }# foreach pin of instance
+}# sub dbgDtaSpiceTraceReg2RegP2P
+
+
+1;

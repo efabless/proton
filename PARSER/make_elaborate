@@ -1,0 +1,2008 @@
+
+sub elaborate {
+use Benchmark;
+my $t0 = new Benchmark;
+
+#my %TEMP_HIER_PORT_NET_MAP = ();
+$is_to_do_selective_flatten = $GLOBAL->dbGlobalGetFlattenSelectively();
+$CURRENT_MODULE_FLAT_START_POINT = "" ;
+print "INFO-PAR-ELA : 001 : elaborating the Top level $TOP_MODULE\n";
+print "INFO-PAR-ELA : 002 : Building the component database\n";
+      if ( exists $MODULE_ALREADY{$TOP_MODULE} ) {
+   #my %hierHash = ();
+   #my @hierInsts = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetHierInst;   # immediate children
+   my @conns = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetConn;
+      #foreach my $h ( @hierInsts ) {
+      #                             $hierHash{$h} = 1; 
+      #                             }
+#---------------------------------------------------------------------------------------------------#
+# Set the top level ports for the TOP module in the ports_already database                          #
+#---------------------------------------------------------------------------------------------------#
+print "INFO-PAR-ELA : 003 : Setting the ports of $TOP_MODULE\n";
+my @inputs  = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetInput ;
+my @outputs  = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetOutput ;
+my @bidis  = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetBidi ;
+            #------------ INPUTS ------------------#
+            foreach my $in ( @inputs ) {
+                           my $type = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetInputType($in);
+                           print "DBG-PAR-ELA : 004 : Type is $type for $in\n" if($DEBUG == 300);
+                           if ($type == 0 ) {
+                           print "DBG-PAR-ELA : 005 : creating single port $in on $TOP_MODULE \n" if ($DEBUG == 300 );
+                           $PORTS_ALREADY{$TOP_MODULE}{$in} = PortDB::new();
+                           $PORTS_ALREADY{$TOP_MODULE}{$in}->dbPortSetConn($in);
+                           $PORTS_ALREADY{$TOP_MODULE}{$in}->dbPortSetDir('input');
+                                             }# if the pin is single signal
+                           elsif ( $type == 1 ) {
+                           my $busWidth = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetInputBits($in);
+                           $busWidth =~ s/\[\s*//;
+                           $busWidth =~ s/\s*\]//;
+                           my @B = split(/\s*\:\s*/, $busWidth );
+                           if (( $B[0] < $B[1] ) || ($B[0] > $B[1])){
+                           my $step = 1;
+                           if($B[0] > $B[1]) {$step = -1;}
+                           for ( my $xx = $B[0]; $xx != $B[1]+$step ; $xx += $step ) {
+                                 my $inbus = $in."[".$xx."]";
+                           print "DBG-PAR-ELA : 006 : creating bussed input port $inbus on $TOP_MODULE \n" if ($DEBUG == 300 );
+                           $PORTS_ALREADY{$TOP_MODULE}{$inbus} = PortDB::new();
+                           $PORTS_ALREADY{$TOP_MODULE}{$inbus}->dbPortSetConn($inbus);
+                           $PORTS_ALREADY{$TOP_MODULE}{$inbus}->dbPortSetDir('input');
+                                                                        }#for all pins in the BUS
+                                                                    }#if MSB and LSB is different
+                           else{
+                                 my $inbus = $in."[".$B[0]."]";
+                           print "DBG-PAR-ELA : 006 : creating bussed input port $inbus on $TOP_MODULE \n" if ($DEBUG == 300 );
+                           $PORTS_ALREADY{$TOP_MODULE}{$inbus} = PortDB::new();
+                           $PORTS_ALREADY{$TOP_MODULE}{$inbus}->dbPortSetConn($inbus);
+                           $PORTS_ALREADY{$TOP_MODULE}{$inbus}->dbPortSetDir('input');
+                               }
+                                                }# if pin is type bus
+
+                                       }
+            #------------ OUTPUTS ------------------#
+            foreach my $out ( @outputs ) {
+                          my $type = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetOutputType($out);
+                           if ($type == 0 ) {
+                           print "DBG-PAR-ELA : 007 : creating single port $out on $TOP_MODULE \n" if ($DEBUG == 300 );
+                           $PORTS_ALREADY{$TOP_MODULE}{$out} = PortDB::new();
+                           $PORTS_ALREADY{$TOP_MODULE}{$out}->dbPortSetConn($out);
+                           $PORTS_ALREADY{$TOP_MODULE}{$out}->dbPortSetDir("output");
+                                             }# if the pin is single signal
+                           elsif ( $type == 1 ) {
+                           my $busWidth = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetOutputBits($out);
+                           $busWidth =~ s/\[\s*//;
+                           $busWidth =~ s/\s*\]//;
+                           my @B = split(/\s*\:\s*/, $busWidth );
+                           if (( $B[0] < $B[1] ) || ($B[0] > $B[1])){
+                           my $step = 1;
+                           if($B[0] > $B[1]) {$step = -1;}
+                           for ( my $xx = $B[0]; $xx != $B[1]+$step ; $xx += $step ) {
+                                 my $outbus = $out."[".$xx."]";
+                           print "DBG-PAR-ELA : 008 : creating bussed output port $outbus on $TOP_MODULE \n" if ($DEBUG == 300 );
+                           $PORTS_ALREADY{$TOP_MODULE}{$outbus} = PortDB::new();
+                           $PORTS_ALREADY{$TOP_MODULE}{$outbus}->dbPortSetConn($outbus);
+                           $PORTS_ALREADY{$TOP_MODULE}{$outbus}->dbPortSetDir("output");
+                                                                        }#for all pins in the BUS
+                                                                    }#if MSB and LSB is different
+                           else {
+                                 my $outbus = $out."[".$B[0]."]";
+                           print "DBG-PAR-ELA : 008 : creating bussed output port $outbus on $TOP_MODULE \n" if ($DEBUG == 300 );
+                           $PORTS_ALREADY{$TOP_MODULE}{$outbus} = PortDB::new();
+                           $PORTS_ALREADY{$TOP_MODULE}{$outbus}->dbPortSetConn($outbus);
+                           $PORTS_ALREADY{$TOP_MODULE}{$outbus}->dbPortSetDir("output");
+                                }
+                                                }# if pin is type bus
+                                       }
+            #------------ BIDI   ------------------#
+            foreach my $bidi ( @bidis ) {
+                          my $type = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetBidiType($bidi);
+                           if ($type == 0 ) {
+                           print "DBG-PAR-ELA : 009 : creating single port $bidi on $TOP_MODULE \n" if ($DEBUG == 300 );
+                           $PORTS_ALREADY{$TOP_MODULE}{$bidi} = PortDB::new();
+                           $PORTS_ALREADY{$TOP_MODULE}{$bidi}->dbPortSetConn($bidi);
+                           $PORTS_ALREADY{$TOP_MODULE}{$bidi}->dbPortSetDir("inout");
+                                             }# if the pin is single signal
+                           elsif ( $type == 1 ) {
+                           my $busWidth = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetBidiBits($bidi);
+                           $busWidth =~ s/\[\s*//;
+                           $busWidth =~ s/\s*\]//;
+                           my @B = split(/\s*\:\s*/, $busWidth );
+                           if (( $B[0] < $B[1] ) || ($B[0] > $B[1])){
+                           my $step = 1;
+                           if($B[0] > $B[1]) {$step = -1;}
+                           for ( my $xx = $B[0]; $xx != $B[1]+$step ; $xx += $step ) {
+                                 my $bidibus = $bidi."[".$xx."]";
+                           print "DBG-PAR-ELA : 010 : creating bussed inout port $bidibus on $TOP_MODULE \n" if ($DEBUG == 300 );
+                           $PORTS_ALREADY{$TOP_MODULE}{$bidibus} = PortDB::new();
+                           $PORTS_ALREADY{$TOP_MODULE}{$bidibus}->dbPortSetConn($bidibus);
+                           $PORTS_ALREADY{$TOP_MODULE}{$bidibus}->dbPortSetDir("inout");
+                                                                        }#for all pins in the BUS
+                                                                    }#if MSB and LSB is different
+                           else {
+                                 my $bidibus = $bidi."[".$B[0]."]";
+                           print "DBG-PAR-ELA : 010 : creating bussed inout port $bidibus on $TOP_MODULE \n" if ($DEBUG == 300 );
+                           $PORTS_ALREADY{$TOP_MODULE}{$bidibus} = PortDB::new();
+                           $PORTS_ALREADY{$TOP_MODULE}{$bidibus}->dbPortSetConn($bidibus);
+                           $PORTS_ALREADY{$TOP_MODULE}{$bidibus}->dbPortSetDir("inout");
+                                }
+                                                }# if pin is type bus
+                                       }
+
+#---------------------------------------------------------------------------------------------------#
+# extract connections
+#---------------------------------------------------------------------------------------------------#
+foreach $connLine ( @conns ) {
+$connLine =~ s/\(/\)\,/;
+$connLine =~ s/\)\s*\;//;
+my ($cell,$inst) = ( split(/\s+/, $connLine ))[0,1];
+#if ( exists $hierHash{$inst} ) {}
+if ( $MODULE_ALREADY{$TOP_MODULE}->dbVNOMHasHierInst($inst) ) {
+print "DBG-PAR-ELA : 011 : $inst in $TOP_MODULE is a hierachical instance\n" if($DEBUG == 300);
+print "DBG-PAR-ELA : 012 : Add outside port conn of $inst\n" if($DEBUG == 300);
+   #--- recursively create the COMP db  for hierarchical instances ---#
+   #print "$inst is hierarchcal cell of module $cell .. elaborating it now\n";
+   my $inst_hash_key = $inst."_0";
+   @TEMP_PATH = ();
+   push(@TEMP_PATH,$inst);
+               @nets = split(/\s*\)\s*\,\s*/, $connLine);
+               my  $noOfPins = @nets;
+               for(my $i = 1 ; $i < $noOfPins ; $i++){
+               $nets[$i] =~ s/\s*\(\s*/\|/;
+               $nets[$i] =~ s/\s*\)\s*//;
+               my ($pin,$net)=(split(/\s*\|\s*/, $nets[$i]))[0,1];
+               $pin =~ s/\.//;
+               $netName = $net;
+# check if the hier pin for this coneection is  bus
+               print "DBG-PAR-ELA : 013 : checking type of $pin\n" if($DEBUG == 300);
+               my $pinType = 0 ; # signal by default
+               my $pinDir = 0 ; # signal by default
+               if ( exists $MODULE_ALREADY{$cell}->{ins}{$pin} ) {
+               $pinType = $MODULE_ALREADY{$cell}->dbVNOMGetInputType($pin);
+               $pinDir = 1;
+                                                                 }
+               elsif ( exists $MODULE_ALREADY{$cell}->{outs}{$pin} ) {
+               $pinType = $MODULE_ALREADY{$cell}->dbVNOMGetOutputType($pin);
+               $pinDir = 2;
+                                                                    }
+               elsif ( exists $MODULE_ALREADY{$cell}->{bidis}{$pin} ) {
+               $pinType = $MODULE_ALREADY{$cell}->dbVNOMGetBidiType($pin);
+               $pinDir = 3;
+                                                                    }
+               else {
+               print "DBG-ERR-PAR-ELA : 014 : $pin on $cell for instance $inst is neither input nor output\n" if($DEBUG == 300);
+                    }
+               if ( $pinType == 1 ) { print "DBG-PAR-ELA : 015 : it is a bus\n" if($DEBUG == 300); } else { print "DBG-PAR-ELA : 016 : it is a single\n" if($DEBUG == 300); }
+#---------------------------------------- if bus is explictly connected to the hier module ports -----------------#
+               if ( $net =~ /\{/ ) { 
+                    print "DBG-PAR-ELA : 017 :\t$pin \=\> $net\n" if ($DEBUG == 300); 
+                    $net =~ s/\{//; $net =~ s/\}//;
+                    $net =~ s/\s+//g;
+                    print "DBG-PAR-ELA : 018 : After subs $net\n" if($DEBUG == 300);
+                    my @allnets = split(/\s*\,\s*/, $net);
+                    my $len = @allnets;
+                    print "DBG-PAR-ELA : 019 : $len nets connect to this bus\n" if($DEBUG == 300);
+                    if ( exists $MODULE_ALREADY{$cell}->{ins}{$pin} ) {
+                    print "DBG-PAR-ELA : 020 : $pin is an input bus\n" if($DEBUG == 300);
+                    my $type = $MODULE_ALREADY{$cell}->dbVNOMGetInputType($pin);
+                    if ( $type == 0 ) {
+                               $TEMP_HIER_PORT_NET_MAP{$inst_hash_key}{$pin} = $net;
+                               print "DBG-PAR-ELA : 021 : $pin connects $netName on $cell\n" if($DEBUG == 300);
+                               
+                                      }
+                    else {
+                    my $width = $MODULE_ALREADY{$cell}->dbVNOMGetInputBits($pin);
+                    $width =~ s/\[//; $width =~ s/\]//;
+                    my @W = split(/\s*\:\s*/,$width);
+                    print "DBG-PAR-ELA : 022 : MSB is $W[0]\n" if($DEBUG == 300);
+                    my $busWidth = abs($W[1] - $W[0])+1;
+                    print "DBG-PAR-ELA : 023 : Bus $pin it connects to is of $busWidth width\n" if($DEBUG == 300);
+                    if ( $busWidth == $len ) {
+                         if ( $W[0] <= $W[1] ) {
+                              my $cnt = 0;
+                              for (my $xx = $W[0] ; $xx <=$W[1]; $xx++ ) {
+                               my $pinName = $pin."[".$xx."]";
+                               $TEMP_HIER_PORT_NET_MAP{$inst_hash_key}{$pinName} = $allnets[$cnt];
+                               print "DBG-PAR-ELA : 024 : $pinName connects $allnets[$cnt]\n" if($DEBUG == 300);
+                                 $cnt++;
+                                                                         }
+                                              }
+                         elsif ( $W[0] > $W[1] ) {
+                               my $cnt = 0;
+                              for (my $xx = $W[0] ; $xx >=$W[1]; $xx-- ) {
+                               my $pinName = $pin."[".$xx."]";
+                               $TEMP_HIER_PORT_NET_MAP{$inst_hash_key}{$pinName} = $allnets[$cnt];
+                               print "DBG-PAR-ELA : 025 : $pinName connects $allnets[$cnt]\n" if($DEBUG == 300);
+                                  $cnt++;
+                                                                          }
+                                                 }
+          
+                                             }
+                    else { print "WARN-PAR-ELA : 026 : the bus width $busWidth of $pin does not match with $len connections\n";
+                         #Needs to handle this, connect from LHS bit till minimum of two busWidth and expression length
+                         }
+                         }#if pin is of type '1' or bus
+                                                                      }# if pin is an input
+                    elsif (exists $MODULE_ALREADY{$cell}->{outs}{$pin} ) {
+                    print "DBG-PAR-ELA : 027 : $pin is an output bus\n" if($DEBUG == 300);
+                    my $type = $MODULE_ALREADY{$cell}->dbVNOMGetOutputType($pin);
+                    if ( $type == 0 ) {
+                               $TEMP_HIER_PORT_NET_MAP{$inst_hash_key}{$pin} = $net;
+                               print "DBG-PAR-ELA : 028 : $pin connects $netName on $cell\n" if($DEBUG == 300);
+                               
+                                      }
+                    else {
+                    my $width = $MODULE_ALREADY{$cell}->dbVNOMGetOutputBits($pin);
+                    $width =~ s/\[//; $width =~ s/\]//;
+                    my @W = split(/\s*\:\s*/,$width);
+                    print "DBG-PAR-ELA : 029 : MSB is $W[0]\n" if($DEBUG == 300);
+                    my $busWidth = abs($W[1] - $W[0])+1;
+                    print "DBG-PAR-ELA : 030 : Bus $pin it connects to is of $busWidth width\n" if($DEBUG == 300);
+                    if ( $busWidth == $len ) {
+                         if ( $W[0] <= $W[1] ) {
+                              my $cnt = 0;
+                              for (my $xx = $W[0] ; $xx <=$W[1]; $xx++ ) {
+                               my $pinName = $pin."[".$xx."]";
+                               $TEMP_HIER_PORT_NET_MAP{$inst_hash_key}{$pinName} = $allnets[$cnt];
+                               print "DBG-PAR-ELA : 031 : $pinName connects $allnets[$cnt]\n" if($DEBUG == 300);
+                                 $cnt++;
+                                                                         }
+                                              }
+                         elsif ( $W[0] > $W[1] ) {
+                               my $cnt = 0;
+                              for (my $xx = $W[0] ; $xx >=$W[1]; $xx-- ) {
+                               my $pinName = $pin."[".$xx."]";
+                               $TEMP_HIER_PORT_NET_MAP{$inst_hash_key}{$pinName} = $allnets[$cnt];
+                               print "DBG-PAR-ELA : 032 : $pinName connects $allnets[$cnt]\n" if($DEBUG == 300);
+                                  $cnt++;
+                                                                          }
+                                                 }
+
+                                             }
+                    else { print "WARN-PAR-ELA : 033 : the bus width $busWidth of $pin does not match with $len connections\n";
+                         #Needs to handle this, connect from LHS bit till minimum of two busWidth and expression length
+                         }
+                         }#if pin is of type '1' or bus
+
+                                                                      }# if pin is an output
+                    elsif (exists $MODULE_ALREADY{$cell}->{bidis}{$pin} ) {
+                    print "DBG-PAR-ELA : 027 : $pin is an bidi bus\n" if($DEBUG == 300);
+                    my $type = $MODULE_ALREADY{$cell}->dbVNOMGetBidiType($pin);
+                    if ( $type == 0 ) {
+                               $TEMP_HIER_PORT_NET_MAP{$inst_hash_key}{$pin} = $net;
+                               print "DBG-PAR-ELA : 028 : $pin connects $netName on $cell\n" if($DEBUG == 300);
+                               
+                                      }
+                    else {
+                    my $width = $MODULE_ALREADY{$cell}->dbVNOMGetBidiBits($pin);
+                    $width =~ s/\[//; $width =~ s/\]//;
+                    my @W = split(/\s*\:\s*/,$width);
+                    print "DBG-PAR-ELA : 029 : MSB is $W[0]\n" if($DEBUG == 300);
+                    my $busWidth = abs($W[1] - $W[0])+1;
+                    print "DBG-PAR-ELA : 030 : Bus $pin it connects to is of $busWidth width\n" if($DEBUG == 300);
+                    if ( $busWidth == $len ) {
+                         if ( $W[0] <= $W[1] ) {
+                              my $cnt = 0;
+                              for (my $xx = $W[0] ; $xx <=$W[1]; $xx++ ) {
+                               my $pinName = $pin."[".$xx."]";
+                               $TEMP_HIER_PORT_NET_MAP{$inst_hash_key}{$pinName} = $allnets[$cnt];
+                               print "DBG-PAR-ELA : 031 : $pinName connects $allnets[$cnt]\n" if($DEBUG == 300);
+                                 $cnt++;
+                                                                         }
+                                              }
+                         elsif ( $W[0] > $W[1] ) {
+                               my $cnt = 0;
+                              for (my $xx = $W[0] ; $xx >=$W[1]; $xx-- ) {
+                               my $pinName = $pin."[".$xx."]";
+                               $TEMP_HIER_PORT_NET_MAP{$inst_hash_key}{$pinName} = $allnets[$cnt];
+                               print "DBG-PAR-ELA : 032 : $pinName connects $allnets[$cnt]\n" if($DEBUG == 300);
+                                  $cnt++;
+                                                                          }
+                                                 }
+
+                                             }
+                    else { print "WARN-PAR-ELA : 033 : the bus width $busWidth of $pin does not match with $len connections\n";
+                         #Needs to handle this, connect from LHS bit till minimum of two busWidth and expression length
+                         }
+                         }#if pin is of type '1' or bus
+
+                                                                      }# if pin is an bidi
+                                                   }
+                #{} to match the pattern closing for debugging purposes
+#---------------------------------------- if no connection to the hier module ports -----------------#
+                               elsif ( $net eq "" || $net eq "+" ) { next ; } 
+#---------------------------------------- if simple connection to the hier module ports -----------------#
+                               else {
+                                    if ( $net =~ /\s+/ ) {
+                                                         print "DBG-PAR-ELA : 034 : substituting space in netname $net\n" if($DEBUG == 300);
+                                                         $net =~ s/\s+//;
+                                                         }
+                                    if ( $pinType == 1 ) {
+#---------------------------------------- if bus is implictly connected to the hier module ports -----------------#
+                               print "INFO-PAR-ELA : 035 : implicit connection between $pin and $net\n" if($DEBUG == 300);
+                    my $width = 0;
+                    if ($pinDir == 1){$width = $MODULE_ALREADY{$cell}->dbVNOMGetInputBits($pin);}
+                    elsif ($pinDir == 2){$width = $MODULE_ALREADY{$cell}->dbVNOMGetOutputBits($pin);}
+                    elsif ($pinDir == 3){$width = $MODULE_ALREADY{$cell}->dbVNOMGetBidiBits($pin);}
+                    $width =~ s/\[//; $width =~ s/\]//;
+                    my @W = split(/\s*\:\s*/,$width);
+                    print "DBG-PAR-ELA : 036 : MSB is $W[0]\n" if($DEBUG == 300);
+                    my $busWidth = abs($W[1] - $W[0])+1;
+                    print "DBG-PAR-ELA : 037 : Bus $pin it connects to is of $busWidth width\n" if($DEBUG == 300);
+                      if ( $net =~ /\[\s*[0-9]+\s*\:\s*[0-9]+\s*\]/ ) {# partial bus connection
+                           $net =~ s/\[/ /; $net =~ s/\]//; $net =~ s/\:/ /;
+                          my ($name,$from,$to) = (split(/\s+/,$net))[0,1,2];
+                           my @allnets = (); 
+                           print "\nINFO-PAR-ELA : 038 : In part select net is  $name and from is $from and to $to\n" ;
+                           if ( $from <= $to ) {
+                           for ( my $xx = $from ; $xx <= $to ; $xx++ ){
+                                 my $newNetName = $name."[".$xx."]";
+                                 push(@allnets,$newNetName);
+                                                                      }#for
+                                              }#if ( $from < $to )
+                           else {
+                           for ( my $xx = $from ; $xx >= $to ; $xx-- ){
+                                 my $newNetName = $name."[".$xx."]";
+                                 push(@allnets,$newNetName);
+                                                                      }#for
+                                              }#if ( $from > $to )
+                           if ( $W[0] <= $W[1] ) {
+                              my $cnt = 0;
+                              for (my $xx = $W[0] ; $xx <=$W[1]; $xx++ ) {
+                               my $pinName = $pin."[".$xx."]";
+                               $netName = $allnets[$cnt];
+                               $TEMP_HIER_PORT_NET_MAP{$inst_hash_key}{$pinName} = $netName;
+                               print "DBG-PAR-ELA : 039 : $pinName on $cell connected to $netName $TOP_MODULE\n" if($DEBUG == 300);
+                                 $cnt++;
+                                                                         }
+                                              }
+                         elsif ( $W[0] > $W[1] ) {
+                               my $cnt = 0;
+                              for (my $xx = $W[0] ; $xx >=$W[1]; $xx-- ) {
+                               my $pinName = $pin."[".$xx."]";
+                               my $netName = $allnets[$cnt];
+                               $TEMP_HIER_PORT_NET_MAP{$inst_hash_key}{$pinName} = $netName;
+                               print "DBG-PAR-ELA : 040 : $pinName on $cell connected to $netName $TOP_MODULE\n" if($DEBUG == 300);
+                                  $cnt++;
+                                                                          }
+                                                 }
+                                                          }# partial bus connection
+                      else { # full bus to bus connection
+                         if ( $W[0] <= $W[1] ) {
+                               if($W[0] == $W[1]) {
+                                 my $xx = $W[0] ;
+                                 my $pinName = $pin."[".$xx."]";
+                                 my $netName = $net."[".$xx."]";
+                                 if (($MODULE_ALREADY{$TOP_MODULE}->dbVNOMHasInput($net)) ==1) {
+                                   my $type = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetInputType($net);
+                                   if($type == 1) {
+                                     my $busWidth = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetInputBits($net);
+                                     $busWidth =~ s/\[\s*//;
+                                     $busWidth =~ s/\s*\]//;
+                                     my @B = split(/\s*\:\s*/, $busWidth );
+                                     my $temp_index = $B[0] ;
+                                     $netName = $net."[".$temp_index."]";
+                                   }else{
+                                     $netName = $net;
+                                   }
+                                 }elsif (($MODULE_ALREADY{$TOP_MODULE}->dbVNOMHasOutput($net)) ==1) {
+                                   my $type = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetOutputType($net);
+                                   if($type == 1) {
+                                     my $busWidth = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetOutputBits($net);
+                                     $busWidth =~ s/\[\s*//;
+                                     $busWidth =~ s/\s*\]//;
+                                     my @B = split(/\s*\:\s*/, $busWidth );
+                                     my $temp_index = $B[0] ;
+                                     $netName = $net."[".$temp_index."]";
+                                   }else{
+                                     $netName = $net;
+                                   }
+                                 } elsif (($MODULE_ALREADY{$TOP_MODULE}->dbVNOMHasBidi($net)) ==1) {
+                                   my $type = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetBidiType($net);
+                                   if($type == 1) {
+                                     my $busWidth = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetBidiBits($net);
+                                     $busWidth =~ s/\[\s*//;
+                                     $busWidth =~ s/\s*\]//;
+                                     my @B = split(/\s*\:\s*/, $busWidth );
+                                     my $temp_index = $B[0] ;
+                                     $netName = $net."[".$temp_index."]";
+                                   }else{
+                                     $netName = $net;
+                                   }
+                                 } elsif (($MODULE_ALREADY{$TOP_MODULE}->dbVNOMHasNet($net)) ==1) {
+                                   my $type = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetNetType($net);
+                                   if($type == 1) {
+                                     my $busWidth = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetNetBits($net);
+                                     $busWidth =~ s/\[\s*//;
+                                     $busWidth =~ s/\s*\]//;
+                                     my @B = split(/\s*\:\s*/, $busWidth );
+                                     my $temp_index = $B[0] ;
+                                     $netName = $net."[".$temp_index."]";
+                                   }else{
+                                     $netName = $net;
+                                   }
+                                 }else {
+                                   $netName = $net;
+                                 }
+                                 $TEMP_HIER_PORT_NET_MAP{$inst_hash_key}{$pinName} = $netName;
+                               }else {
+                                 my $start_index = -100000;
+                                 my $end_index = -100000;
+                                 if (($MODULE_ALREADY{$TOP_MODULE}->dbVNOMHasInput($net)) ==1) {
+                                   my $type = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetInputType($net);
+                                   if($type == 1) {
+                                     my $busWidth = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetInputBits($net);
+                                     $busWidth =~ s/\[\s*//;
+                                     $busWidth =~ s/\s*\]//;
+                                     my @B = split(/\s*\:\s*/, $busWidth );
+                                     $start_index = $B[0] ;
+                                     $end_index = $B[1] ;
+                                   }
+                                 } elsif (($MODULE_ALREADY{$TOP_MODULE}->dbVNOMHasOutput($net)) ==1) {
+                                   my $type = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetOutputType($net);
+                                   if($type == 1) {
+                                     my $busWidth = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetOutputBits($net);
+                                     $busWidth =~ s/\[\s*//;
+                                     $busWidth =~ s/\s*\]//;
+                                     my @B = split(/\s*\:\s*/, $busWidth );
+                                     $start_index = $B[0] ;
+                                     $end_index = $B[1] ;
+                                   }
+                                 } elsif (($MODULE_ALREADY{$TOP_MODULE}->dbVNOMHasBidi($net)) ==1) {
+                                   my $type = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetBidiType($net);
+                                   if($type == 1) {
+                                     my $busWidth = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetBidiBits($net);
+                                     $busWidth =~ s/\[\s*//;
+                                     $busWidth =~ s/\s*\]//;
+                                     my @B = split(/\s*\:\s*/, $busWidth );
+                                     $start_index = $B[0] ;
+                                     $end_index = $B[1] ;
+                                   }
+                                 } elsif (($MODULE_ALREADY{$TOP_MODULE}->dbVNOMHasNet($net)) ==1) {
+                                   my $type = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetNetType($net);
+                                   if($type == 1) {
+                                     my $busWidth = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetNetBits($net);
+                                     $busWidth =~ s/\[\s*//;
+                                     $busWidth =~ s/\s*\]//;
+                                     my @B = split(/\s*\:\s*/, $busWidth );
+                                     $start_index = $B[0] ;
+                                     $end_index = $B[1] ;
+                                   }
+                                 }
+                              my $net_step = -100000 ;
+                              if($start_index != -100000) {
+                                $net_step = 1 ;
+                                if($start_index > $end_index) {
+                                  $net_step = -1 ;
+                                }elsif($start_index == $end_index) {
+                                  $net_step = 0 ;
+                                }
+                              }
+                              my $cnt = 0;
+                              for (my $xx = $W[0] ; $xx <=$W[1]; $xx++ ) {
+                               my $pinName = $pin."[".$xx."]";
+                               my $netName = $net."[".$xx."]";
+                               if($net_step != -100000){
+                                 my $net_index = $start_index + $cnt * $net_step ;
+                                 $netName = $net."[".$net_index."]";
+                               }else {
+                                 $netName = $net;
+                               }
+                               $TEMP_HIER_PORT_NET_MAP{$inst_hash_key}{$pinName} = $netName;
+                               print "DBG-PAR-ELA : 041 : $pinName on $cell connected to $netName $TOP_MODULE\n" if($DEBUG == 300);
+                                 $cnt++;
+                                                                         }
+                               }
+                                              }
+                         elsif ( $W[0] > $W[1] ) {
+                                 my $start_index = -100000;
+                                 my $end_index = -100000;
+                                 if (($MODULE_ALREADY{$TOP_MODULE}->dbVNOMHasInput($net)) ==1) {
+                                   my $type = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetInputType($net);
+                                   if($type == 1) {
+                                     my $busWidth = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetInputBits($net);
+                                     $busWidth =~ s/\[\s*//;
+                                     $busWidth =~ s/\s*\]//;
+                                     my @B = split(/\s*\:\s*/, $busWidth );
+                                     $start_index = $B[0] ;
+                                     $end_index = $B[1] ;
+                                   }
+                                 } elsif (($MODULE_ALREADY{$TOP_MODULE}->dbVNOMHasOutput($net)) ==1) {
+                                   my $type = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetOutputType($net);
+                                   if($type == 1) {
+                                     my $busWidth = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetOutputBits($net);
+                                     $busWidth =~ s/\[\s*//;
+                                     $busWidth =~ s/\s*\]//;
+                                     my @B = split(/\s*\:\s*/, $busWidth );
+                                     $start_index = $B[0] ;
+                                     $end_index = $B[1] ;
+                                   }
+                                 } elsif (($MODULE_ALREADY{$TOP_MODULE}->dbVNOMHasBidi($net)) ==1) {
+                                   my $type = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetBidiType($net);
+                                   if($type == 1) {
+                                     my $busWidth = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetBidiBits($net);
+                                     $busWidth =~ s/\[\s*//;
+                                     $busWidth =~ s/\s*\]//;
+                                     my @B = split(/\s*\:\s*/, $busWidth );
+                                     $start_index = $B[0] ;
+                                     $end_index = $B[1] ;
+                                   }
+                                 } elsif (($MODULE_ALREADY{$TOP_MODULE}->dbVNOMHasNet($net)) ==1) {
+                                   my $type = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetNetType($net);
+                                   if($type == 1) {
+                                     my $busWidth = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetNetBits($net);
+                                     $busWidth =~ s/\[\s*//;
+                                     $busWidth =~ s/\s*\]//;
+                                     my @B = split(/\s*\:\s*/, $busWidth );
+                                     $start_index = $B[0] ;
+                                     $end_index = $B[1] ;
+                                   }
+                                 }
+                              my $net_step = -100000 ;
+                              if($start_index != -100000) {
+                                $net_step = 1 ;
+                                if($start_index > $end_index) {
+                                  $net_step = -1 ;
+                                }elsif($start_index == $end_index) {
+                                  $net_step = 0 ;
+                                }
+                              }
+                               my $cnt = 0;
+                              for (my $xx = $W[0] ; $xx >=$W[1]; $xx-- ) {
+                               my $pinName = $pin."[".$xx."]";
+                               my $netName = $net."[".$xx."]";
+                               if($net_step != -100000){
+                                 my $net_index = $start_index + $cnt * $net_step ;
+                                 $netName = $net."[".$net_index."]";
+                               }else{
+                                 $netName = $net;
+                               }
+                               $TEMP_HIER_PORT_NET_MAP{$inst_hash_key}{$pinName} = $netName;
+                               print "DBG-PAR-ELA : 042 : $pinName on $cell connected to $netName $TOP_MODULE\n" if($DEBUG == 300);
+                                  $cnt++;
+                                                                          }
+                                                 }
+                             }# full bus to bus connection
+                                                         }# if implicit connection to a bus
+                                    else {
+                               $TEMP_HIER_PORT_NET_MAP{$inst_hash_key}{$pin} = $net;
+                               print "DBG-PAR-ELA : 043 : $pin in $cell connects to $netName from $TOP_MODULE\n" if($DEBUG == 300);
+                                         }# if implicit connection to a single pin
+                                     }
+                                                                     }#for
+   my $class = $MODULE_ALREADY{$cell}->dbVNOMGetClass;
+   print "DBG-PAR-ELA : 044 : checking if $cell is a blackbox hierarchical instance, it is class : $class\n" if ( $DEBUG == 300 );
+   if ( $class == 11 ) { 
+   print "DBG-PAR-ELA : 045 : since $cell is a blockbox, elaborate it as a leaf instance\n" if ($DEBUG == 300);
+
+                                                $CADB{$inst}=CompAttDB::new();
+                                                $CADB{$inst}->dbCadbSetCellref($cell);
+@nets = split(/\s*\)\s*\,\s*/, $connLine);
+$noOfPins = @nets;
+#-------------------------------------------------------------------------------------------------------#
+# if the leaf-pin to net connection contains a curly brace, i am expecting a bussed connection #
+print "DBG-PAR-ELA : 046 : leaf connection  : $connLine\n" if($DEBUG == 300);
+#-------------------------------------------------------------------------------------------------------#
+               for(my $i = 1 ; $i < $noOfPins ; $i++){
+               $nets[$i] =~ s/\s*\(\s*/\|/;
+               $nets[$i] =~ s/\s*\)\s*//;
+               my ($pin,$net)=(split(/\s*\|\s*/, $nets[$i]))[0,1];
+               $pin =~ s/\.//;
+               $netName = $net;
+               if ( $net =~ /\{/ ) { 
+                    print "DBG-PAR-ELA : 047 :\t$pin \=\> $net\n" if($DEBUG == 300); 
+                    $net =~ s/\{//; $net =~ s/\}//;
+                    $net =~ s/\s+//g;
+                    print "DBG-PAR-ELA : 048 : After subs $net\n" if($DEBUG == 300);
+                    my @allnets = split(/\s*\,\s*/, $net);
+                    my $len = @allnets;
+                    print "DBG-PAR-ELA : 049 : $len nets connect to this bus leaf pin $pin\n" if($DEBUG == 300);
+# if one connection
+                    if ( $len == 1) {
+                               my $netName = $allnets[0];
+                               if(defined $netName ){
+                                                $COMP_ALREADY{$inst}{$pin} = $netName;
+                                              }
+                                              else {
+                                                $COMP_ALREADY{$inst}{$pin} = SHIVA_PIN_UNCONNECTED;
+                                              }
+                           
+                                    }
+                     else { print "DBG-PAR-ELA : 050 : leaf instance $inst has a bus connection for pin $pin\n" if($DEBUG == 300); }
+# if more than one connection
+# get the width of the macro pin
+# if matches with the number of nets
+# make the connection in the database
+                                     }
+                #{} to match the pattern closing for debugging purposes
+#--------------------------------leaf pin connects to bus-----------------------------------------------#
+#--------------------------------leaf pin connects normal single net ------------------------------------#
+                    elsif ( $net eq "" || $net eq "+" ) { next ; } 
+                          else {
+                               if ( $net =~ /\s+/ ) {
+                                    print "DBG-PAR-ELA : 051 : substituting space in netname $net\n" if($DEBUG == 300);
+                                    $net =~ s/\s+//;
+                                                    }
+                               $netName = $net;
+                               if(defined $netName ){
+                                                $COMP_ALREADY{$inst}{$pin} = $netName;
+                                              }
+                                              else {
+                                                $COMP_ALREADY{$inst}{$pin} = SHIVA_PIN_UNCONNECTED;
+                                              }
+
+                                }
+#--------------------------------leaf pin connects normal single net ------------------------------------#
+                                                          }#for
+
+                                                  }#if inst is a black box leaf inst
+   else {
+   print "DBG-PAR-ELA : 052 : since $cell is a hierarchical instance elaborate it recursively\n" if ($DEBUG == 300);
+   if($is_to_do_selective_flatten ==1) {
+     &check_and_remove_inst_from_vnom_module_and_set_flat_start_module($TOP_MODULE,$inst);
+   }
+   &dbgElaborateHierInsts($inst,$cell);
+   if($is_to_do_selective_flatten ==1) {
+     &check_and_reset_flat_start_module($TOP_MODULE);
+   }
+#   undef %TEMP_HIER_PORT_NET_MAP ;
+   delete $TEMP_HIER_PORT_NET_MAP{$inst_hash_key} ;
+   pop(@TEMP_PATH);
+        }
+                               } elsif ( $MODULE_ALREADY{$TOP_MODULE}->dbVNOMHasLeafInst($inst) ) {
+# if the instance is a leaf instance at the top level
+                                                $CADB{$inst}=CompAttDB::new();
+                                                $CADB{$inst}->dbCadbSetCellref($cell);
+@nets = split(/\s*\)\s*\,\s*/, $connLine);
+$noOfPins = @nets;
+#-------------------------------------------------------------------------------------------------------#
+# if the leaf-pin to net connection contains a curly brace, i am expecting a bussed connection #
+print "DBG-PAR-ELA : 053 : leaf connection  : $connLine\n" if($DEBUG == 300);
+#-------------------------------------------------------------------------------------------------------#
+               for(my $i = 1 ; $i < $noOfPins ; $i++){
+               $nets[$i] =~ s/\s*\(\s*/\|/;
+               $nets[$i] =~ s/\s*\)\s*//g;
+               my ($pin,$net)=(split(/\s*\|\s*/, $nets[$i]))[0,1];
+               $pin =~ s/\.//;
+               $netName = $net;
+               print "working on $net\n" if ($DEBUG == 300) ;
+               if ( $net =~ /\{/ ) { 
+                    print "DBG-PAR-ELA : 054 :\t$pin \=\> $net\n" if($DEBUG == 300); 
+                    $net =~ s/\{//; $net =~ s/\}//;
+                    $net =~ s/\s+//g;
+                    print "DBG-PAR-ELA : 055 : After subs $net\n" if($DEBUG == 300);
+                    my @allnets = split(/\s*\,\s*/, $net);
+                    my $len = @allnets;
+                    print "DBG-PAR-ELA : 056 : $len nets connect to this bus leaf pin $pin\n" if($DEBUG == 300);
+# if one connection
+                    if ( $len == 1) {
+                               my $netName = $allnets[0];
+                               if(defined $netName ){
+                                                $COMP_ALREADY{$inst}{$pin} = $netName;
+                                              }
+                                              else {
+                                                $COMP_ALREADY{$inst}{$pin} = SHIVA_PIN_UNCONNECTED;
+                                              }
+                           
+                                    }
+                     else { print "DBG-PAR-ELA : 057 : leaf instance $inst has a bus connection for pin $pin : It is not subbported right now\n" if($DEBUG == 300); }
+                                   for(my $i = 0 ; $i < $len ; $i ++ ) {
+                                         print "$pin\[$i\] ==> $allnets[$i]\n" if ($DEBUG == 300);
+                                         my $pinName = $pin."[".$i."]" ;
+                                         my $netName = $allnets[$i];
+                              if(defined $netName ){
+                                                $COMP_ALREADY{$inst}{$pinName} = $netName;
+                                              }
+                                              else {
+                                                $COMP_ALREADY{$inst}{$pin} = SHIVA_PIN_UNCONNECTED;
+                                              }
+
+                                                                       }
+# if more than one connection
+# get the width of the macro pin
+# if matches with the number of nets
+# make the connection in the database
+                                     }
+                #{} to match the pattern closing for debugging purposes
+#--------------------------------leaf pin connects to bus-----------------------------------------------#
+#--------------------------------leaf pin connects normal single net ------------------------------------#
+                    elsif ( $net eq "" || $net eq "+" ) { next ; } 
+                          else {
+                               if ( $net =~ /\s+/ ) {
+                                    print "DBG-PAR-ELA : 058 : substituting space in netname $net\n" if($DEBUG == 300);
+                                    $net =~ s/\s+//;
+                                                    }
+                               $netName = $net;
+                                    print "DBG-PAR-ELA : 058 : connecting inst $inst pin $pin netname $netName\n" if($DEBUG == 300);
+                               if(defined $netName ){
+                                                $COMP_ALREADY{$inst}{$pin} = $netName;
+                                              }
+                                              else {
+                                                $COMP_ALREADY{$inst}{$pin} = SHIVA_PIN_UNCONNECTED;
+                                              }
+
+                                }
+#--------------------------------leaf pin connects normal single net ------------------------------------#
+                                                          }#for
+
+                                                  }#if inst is a leaf inst
+                                  }#foreach connection line
+#----------- delete the conn in MODULE_ALREADY----------------------#
+#----------- to save the memory        -----------------------------#
+# $MODULE_ALREADY{$TOP_MODULE}->dbVNOMWipeConn;
+
+#-------------------------------------------------------------------#
+# make the NETS_ALREADY from component database                     #
+#-------------------------------------------------------------------#
+print "INFO-PAR-ELA : 059 :\: \tBuilding Net Database\n";
+foreach $instance (keys %COMP_ALREADY){
+    foreach $pinName (keys %{$COMP_ALREADY{$instance}} ){
+          $netName = $COMP_ALREADY{$instance}{$pinName};
+          if( $netName =~ "1'b0"){
+            $COMP_ALREADY{$instance}{$pinName} = "1'b0";
+            next ;
+          }
+          if( $netName =~ "1'b1"){
+            $COMP_ALREADY{$instance}{$pinName} = "1'b1";
+            next ;
+          }
+
+          if(exists $NETS_ALREADY{$netName}) {
+                        $NETS_ALREADY{$netName}{$instance} = $pinName ;
+                                      } else  {
+                        $NETS_ALREADY{$netName}{$instance} = $pinName ;
+                                              }
+                       } # foreach pin
+                           } # foreach instance
+print "INFO-PAR-ELA : 060 :\: \tAdding port connection to net database\n";
+foreach $portName ( keys %{$PORTS_ALREADY{$TOP_MODULE}} ) {
+        my @conn = $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortGetConn;
+        $netName = $conn[0];
+        if ( exists $NETS_ALREADY{$netName}) {
+             $NETS_ALREADY{$netName}{$portName} = $portName ;
+                                             }
+        else { print "WARN-PAR-ELA : 061 : net $netName does not exist .... adding a 1-pin net $netName\n"; 
+             $NETS_ALREADY{$netName}{$portName} = $portName ;
+             }
+                                                          }#foreach ports
+
+
+
+                                                 }# if module definition for top level module exists
+      else {
+      print "WAR-PAR-ELA : 062 : $TOP_MODULE definition does not exist, probably you forgot to read the verilog for it\n";
+           }
+
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "subroutine elaborate took:",timestr($td),"\n";
+&report_verilog_area("-module",$TOP_MODULE);
+}#sub elaborate
+
+sub dbgElaborateHierInsts {
+local $hierInstName = $_[0];
+local $cellName = $_[1];
+local $hierPath = "";
+#local %TEMP_HIER_PORT_NET_MAP = ();
+print "INFO-PAR : 001 : processing $hierInstName of module $cellName ....\n";
+my $len = @TEMP_PATH;
+   #print join( "/", @TEMP_PATH) . "\n";
+   $hierPath = join( "/", @TEMP_PATH);
+
+if ( exists $MODULE_ALREADY{$cellName} ) {
+print "INFO-PAR : 002 : elaborating module $cellName for instance $hierInstName\n";
+   #local %hierHash = ();
+   #local @hierInsts = $MODULE_ALREADY{$cellName}->dbVNOMGetHierInst;
+   local @conns = $MODULE_ALREADY{$cellName}->dbVNOMGetConn;
+      #foreach my $h ( @hierInsts ) {$hierHash{$h} = 1; }
+#---------------------------------------------------------------------------------------------------#
+# extract connections
+#---------------------------------------------------------------------------------------------------#
+foreach $connLine ( @conns ) {
+$connLine =~ s/\(/\)\,/;
+$connLine =~ s/\)\s*\;//;
+my ($cell,$inst) = ( split(/\s+/, $connLine ))[0,1];
+my $inst_hash_key = $inst."_".$len ;
+my $len_one_less = $len - 1 ;
+my $hierInstName_hash_key = $hierInstName."_".$len_one_less ;
+#if ( exists $hierHash{$inst} ) {}
+if ( $MODULE_ALREADY{$cellName}->dbVNOMHasHierInst($inst) ) {
+   print "INFO-PAR : 003 : found hierarchical instance $inst in $cellName\n";
+   #--- recursively create the COMP db  for hierarchical instances ---#
+   my $class = $MODULE_ALREADY{$cell}->dbVNOMGetClass;
+   push(@TEMP_PATH,$inst)if($class != 11);
+   #push(@TEMP_PATH,$inst);
+                               @nets = split(/\s*\)\s*\,\s*/, $connLine);
+                               my  $noOfPins = @nets;
+               for(my $i = 1 ; $i < $noOfPins ; $i++){
+               $nets[$i] =~ s/\s*\(\s*/\|/;
+               $nets[$i] =~ s/\s*\)\s*//;
+               my ($pin,$net)=(split(/\s*\|\s*/, $nets[$i]))[0,1];
+               $pin =~ s/\.//;
+#              $netName = $net;
+# check if the hier pin for this coneection is  bus
+               print "DBG-PAR : 004 : checking type of $pin\n" if($DEBUG == 300);
+               my $pinType = 0 ; # signal by default
+               my $pinDir = 0 ; # signal by default
+               if ( exists $MODULE_ALREADY{$cell}->{ins}{$pin} ) {
+               $pinType = $MODULE_ALREADY{$cell}->dbVNOMGetInputType($pin);
+               $pinDir = 1;
+                                                                 }
+               elsif ( exists $MODULE_ALREADY{$cell}->{outs}{$pin} ) {
+               $pinType = $MODULE_ALREADY{$cell}->dbVNOMGetOutputType($pin);
+               $pinDir = 2;
+                                                                    }
+               elsif ( exists $MODULE_ALREADY{$cell}->{bidis}{$pin} ) {
+               $pinType = $MODULE_ALREADY{$cell}->dbVNOMGetBidiType($pin);
+               $pinDir = 3;
+                                                                    }
+               else {
+               print "DBG-ERR-PAR : 005 : $pin on $cell for instance $inst is neither input nor output\n" if($DEBUG == 300);
+                    }
+               if ( $pinType == 1 ) { print "DBG-PAR : 006 : it is a bus\n" if($DEBUG == 300); } else { print "DBG-PAR : 007 : it is a single\n" if($DEBUG == 300); }
+#------------------------------------------------------------ if explicit connection -----------------------------------#
+               if ( $net =~ /\{/ ) { 
+                    print "DBG-PAR : 008 :\t$pin \=\> $net\n" if($DEBUG == 300); 
+                    $net =~ s/\{//; $net =~ s/\}//;
+                    $net =~ s/\s+//g;
+                    print "DBG-PAR : 009 : After subs $net\n" if($DEBUG == 300);
+                    my @allnets = split(/\s*\,\s*/, $net);
+                    my $len = @allnets;
+                    print "DBG-PAR : 010 : $len nets connect to this bus\n" if($DEBUG == 300);
+                    if ( exists $MODULE_ALREADY{$cell}->{ins}{$pin} ) {
+                    print "DBG-PAR : 011 : $pin is an input bus\n" if($DEBUG == 300);
+                    my $type = $MODULE_ALREADY{$cell}->dbVNOMGetInputType($pin);
+                    if ( $type == 0 ) {
+                               $TEMP_HIER_PORT_NET_MAP{$inst_hash_key}{$pin} = $net;
+                               print "DBG-PAR : 012 : $pin connects $netName on $cell\n" if($DEBUG == 300);
+                               
+                                      }
+                    else {
+                    my $width = $MODULE_ALREADY{$cell}->dbVNOMGetInputBits($pin);
+                    $width =~ s/\[//; $width =~ s/\]//;
+                    my @W = split(/\s*\:\s*/,$width);
+                    print "DBG-PAR : 013 : MSB is $W[0]\n" if($DEBUG == 300);
+                    my $busWidth = abs($W[1] - $W[0])+1;
+                    print "DBG-PAR : 014 : Bus $pin it connects to is of $busWidth width\n" if($DEBUG == 300);
+                    if ( $busWidth == $len ) {
+                         if ( $W[0] <= $W[1] ) {
+                              my $cnt = 0;
+                              for (my $xx = $W[0] ; $xx <=$W[1]; $xx++ ) {
+                               my $pinName = $pin."[".$xx."]";
+                               #$netName = $hierPath."/".$allnets[$cnt];
+                               $netName = $allnets[$cnt];
+                               $TEMP_HIER_PORT_NET_MAP{$inst_hash_key}{$pinName} = $netName;
+                               print "DBG-PAR : 015 : $pinName connects $netName\n" if($DEBUG == 300);
+                                 $cnt++;
+                                                                         }
+                                              }
+                         elsif ( $W[0] > $W[1] ) {
+                               my $cnt = 0;
+                              for (my $xx = $W[0] ; $xx >=$W[1]; $xx-- ) {
+                               my $pinName = $pin."[".$xx."]";
+                               #$netName = $hierPath."/".$allnets[$cnt];
+                               $netName = $allnets[$cnt];
+                               $TEMP_HIER_PORT_NET_MAP{$inst_hash_key}{$pinName} = $netName;
+                               print "DBG-PAR : 016 : $pinName connects $netName\n" if($DEBUG == 300);
+                                  $cnt++;
+                                                                          }
+                                                 }
+          
+                                             }
+                    else { print "WARN-PAR : 017 : the bus width $busWidth of $pin does not match with $len connections\n";
+                         }
+                         }#if pin is of type '1' or bus
+                                                                      }# if pin is an input
+                    elsif (exists $MODULE_ALREADY{$cell}->{outs}{$pin} ) {
+                    print "DBG-PAR : 018 : $pin is an output bus\n" if($DEBUG == 300);
+                    my $type = $MODULE_ALREADY{$cell}->dbVNOMGetOutputType($pin);
+                    if ( $type == 0 ) {
+                               $TEMP_HIER_PORT_NET_MAP{$inst_hash_key}{$pin} = $net;
+                               print "DBG-PAR : 019 : $pin connects $netName on $cell\n" if($DEBUG == 300);
+                               
+                                      }
+                    else {
+                    my $width = $MODULE_ALREADY{$cell}->dbVNOMGetOutputBits($pin);
+                    $width =~ s/\[//; $width =~ s/\]//;
+                    my @W = split(/\s*\:\s*/,$width);
+                    print "DBG-PAR : 020 : MSB is $W[0]\n" if($DEBUG == 300);
+                    my $busWidth = abs($W[1] - $W[0])+1;
+                    print "DBG-PAR : 021 : Bus $pin it connects to is of $busWidth width\n" if($DEBUG == 300);
+                    if ( $busWidth == $len ) {
+                         if ( $W[0] <= $W[1] ) {
+                              my $cnt = 0;
+                              for (my $xx = $W[0] ; $xx <=$W[1]; $xx++ ) {
+                               my $pinName = $pin."[".$xx."]";
+                               #$netName = $hierPath."/".$allnets[$cnt];
+                               $netName = $allnets[$cnt];
+                               $TEMP_HIER_PORT_NET_MAP{$inst_hash_key}{$pinName} = $netName;
+                               print "DBG-PAR : 022 : $pinName connects $netName\n" if($DEBUG == 300);
+                                 $cnt++;
+                                                                         }
+                                              }
+                         elsif ( $W[0] > $W[1] ) {
+                               my $cnt = 0;
+                              for (my $xx = $W[0] ; $xx >=$W[1]; $xx-- ) {
+                               my $pinName = $pin."[".$xx."]";
+                               #$netName = $hierPath."/".$allnets[$cnt];
+                               $netName = $allnets[$cnt];
+                               $TEMP_HIER_PORT_NET_MAP{$inst_hash_key}{$pinName} = $netName;
+                               print "DBG-PAR : 023 : $pinName connects $netName\n" if($DEBUG == 300);
+                                  $cnt++;
+                                                                          }
+                                                 }
+
+                                             }
+                    else { print "WARN-PAR : 024 : the bus width $busWidth of $pin does not match with $len connections\n";
+                         }
+                         }#if pin is of type '1' or bus
+
+                                                                      }# if pin is an output
+                    elsif (exists $MODULE_ALREADY{$cell}->{bidis}{$pin} ) {
+                    print "DBG-PAR : 018 : $pin is an bidi bus\n" if($DEBUG == 300);
+                    my $type = $MODULE_ALREADY{$cell}->dbVNOMGetBidiType($pin);
+                    if ( $type == 0 ) {
+                               $TEMP_HIER_PORT_NET_MAP{$inst_hash_key}{$pin} = $net;
+                               print "DBG-PAR : 019 : $pin connects $netName on $cell\n" if($DEBUG == 300);
+                               
+                                      }
+                    else {
+                    my $width = $MODULE_ALREADY{$cell}->dbVNOMGetBidiBits($pin);
+                    $width =~ s/\[//; $width =~ s/\]//;
+                    my @W = split(/\s*\:\s*/,$width);
+                    print "DBG-PAR : 020 : MSB is $W[0]\n" if($DEBUG == 300);
+                    my $busWidth = abs($W[1] - $W[0])+1;
+                    print "DBG-PAR : 021 : Bus $pin it connects to is of $busWidth width\n" if($DEBUG == 300);
+                    if ( $busWidth == $len ) {
+                         if ( $W[0] <= $W[1] ) {
+                              my $cnt = 0;
+                              for (my $xx = $W[0] ; $xx <=$W[1]; $xx++ ) {
+                               my $pinName = $pin."[".$xx."]";
+                               #$netName = $hierPath."/".$allnets[$cnt];
+                               $netName = $allnets[$cnt];
+                               $TEMP_HIER_PORT_NET_MAP{$inst_hash_key}{$pinName} = $netName;
+                               print "DBG-PAR : 022 : $pinName connects $netName\n" if($DEBUG == 300);
+                                 $cnt++;
+                                                                         }
+                                              }
+                         elsif ( $W[0] > $W[1] ) {
+                               my $cnt = 0;
+                              for (my $xx = $W[0] ; $xx >=$W[1]; $xx-- ) {
+                               my $pinName = $pin."[".$xx."]";
+                               #$netName = $hierPath."/".$allnets[$cnt];
+                               $netName = $allnets[$cnt];
+                               $TEMP_HIER_PORT_NET_MAP{$inst_hash_key}{$pinName} = $netName;
+                               print "DBG-PAR : 023 : $pinName connects $netName\n" if($DEBUG == 300);
+                                  $cnt++;
+                                                                          }
+                                                 }
+
+                                             }
+                    else { print "WARN-PAR : 024 : the bus width $busWidth of $pin does not match with $len connections\n";
+                         }
+                         }#if pin is of type '1' or bus
+
+                                                                      }# if pin is an bidi
+                                                   }
+                #{} to match the pattern closing for debugging purposes
+                               elsif ( $net eq "" || $net eq "+" ) { next ; } 
+                               else {
+                               if ( $net =~ /\s+/ ) {
+                                                    print "DBG-PAR : 025 : substituting space in the netname $net\n" if($DEBUG == 300);
+                                                    $net =~ s/\s+//;
+                                                    }
+                                    if ( $pinType == 1 ) {
+#---------------------------------------- if bus is implictly connected to the hier module ports -----------------#
+                               print "DBG-PAR : 026 : implicit connection between $pin and $net\n" if($DEBUG == 300);
+                    my $width = 0;
+                    if ($pinDir == 1){$width = $MODULE_ALREADY{$cell}->dbVNOMGetInputBits($pin);}
+                    elsif ($pinDir == 2){$width = $MODULE_ALREADY{$cell}->dbVNOMGetOutputBits($pin);}
+                    elsif ($pinDir == 3){$width = $MODULE_ALREADY{$cell}->dbVNOMGetBidiBits($pin);}
+                    $width =~ s/\[//; $width =~ s/\]//;
+                    my @W = split(/\s*\:\s*/,$width);
+                    print "DBG-PAR : 027 : MSB is $W[0]\n" if($DEBUG == 300);
+                    my $busWidth = abs($W[1] - $W[0])+1;
+                    print "DBG-PAR : 028 : Bus $pin it connects to is of $busWidth width\n" if($DEBUG == 300);
+# partial and full bus to bus connection
+                      if ( $net =~ /\[\s*[0-9]+\s*\:\s*[0-9]+\s*\]/ ) {# partial bus connection
+                           $net =~ s/\[/ /; $net =~ s/\]//; $net =~ s/\:/ /;
+                           my ($name,$from,$to) = (split(/\s+/,$net))[0,1,2];
+                           print "\nDBG-PAR : 029 : Bus to partial bus connection from $from to $to" if($DEBUG ==300);
+                           my @allnets = (); 
+                           if ( $from <= $to ) {
+                           for ( my $xx = $from ; $xx <= $to ; $xx++ ){
+                                 my $newNetName = $name."[".$xx."]";
+                                 push(@allnets,$newNetName);
+                                                                      }#for
+                                               }#if ( $from < $to )
+                                               else { #if ( $from > $to )
+                           for ( my $xx = $from ; $xx >= $to ; $xx-- ){
+                                 my $newNetName = $name."[".$xx."]";
+                                 push(@allnets,$newNetName);
+                                                                      }#for
+                                               }#if ( $from > $to )
+                           if ( $W[0] <= $W[1] ) {
+                              my $cnt = 0;
+                              for (my $xx = $W[0] ; $xx <=$W[1]; $xx++ ) {
+                               my $pinName = $pin."[".$xx."]";
+                               $netName = $allnets[$cnt];
+                               $TEMP_HIER_PORT_NET_MAP{$inst_hash_key}{$pinName} = $netName;
+                               print "DBG-PAR : 030 : $pinName on $cell connected to $netName $TOP_MODULE\n" if($DEBUG == 300);
+                                 $cnt++;
+                                                                         }
+                                              }
+                         elsif ( $W[0] > $W[1] ) {
+                               my $cnt = 0;
+                              for (my $xx = $W[0] ; $xx >=$W[1]; $xx-- ) {
+                               my $pinName = $pin."[".$xx."]";
+                               my $netName = $allnets[$cnt];
+                               $TEMP_HIER_PORT_NET_MAP{$inst_hash_key}{$pinName} = $netName;
+                               print "DBG-PAR : 031 : $pinName on $cell connected to $netName $TOP_MODULE\n" if($DEBUG == 300);
+                                  $cnt++;
+                                                                          }
+                                                 }
+                                                          }# partial bus connection
+                          else {# full bus to bus connection
+                           print "\nDBG-PAR : 032 : Bus to bus connection from $from to $to" if($DEBUG ==300);
+                         if ( $W[0] <= $W[1] ) {
+                               if($W[0] == $W[1]) {
+                                 my $xx = $W[0] ;
+                                 my $pinName = $pin."[".$xx."]";
+                                 my $netName = $net."[".$xx."]";
+                                 if (($MODULE_ALREADY{$cellName}->dbVNOMHasInput($net)) ==1) {
+                                   my $type = $MODULE_ALREADY{$cellName}->dbVNOMGetInputType($net);
+                                   if($type == 1) {
+                                     my $busWidth = $MODULE_ALREADY{$cellName}->dbVNOMGetInputBits($net);
+                                     $busWidth =~ s/\[\s*//;
+                                     $busWidth =~ s/\s*\]//;
+                                     my @B = split(/\s*\:\s*/, $busWidth );
+                                     my $temp_index = $B[0] ;
+                                     $netName = $net."[".$temp_index."]";
+                                   }else{
+                                     $netName = $net;
+                                   }
+                                 } elsif (($MODULE_ALREADY{$cellName}->dbVNOMHasOutput($net)) ==1) {
+                                   my $type = $MODULE_ALREADY{$cellName}->dbVNOMGetOutputType($net);
+                                   if($type == 1) {
+                                     my $busWidth = $MODULE_ALREADY{$cellName}->dbVNOMGetOutputBits($net);
+                                     $busWidth =~ s/\[\s*//;
+                                     $busWidth =~ s/\s*\]//;
+                                     my @B = split(/\s*\:\s*/, $busWidth );
+                                     my $temp_index = $B[0] ;
+                                     $netName = $net."[".$temp_index."]";
+                                   }else{
+                                     $netName = $net;
+                                   }
+                                 } elsif (($MODULE_ALREADY{$cellName}->dbVNOMHasBidi($net)) ==1) {
+                                   my $type = $MODULE_ALREADY{$cellName}->dbVNOMGetBidiType($net);
+                                   if($type == 1) {
+                                     my $busWidth = $MODULE_ALREADY{$cellName}->dbVNOMGetBidiBits($net);
+                                     $busWidth =~ s/\[\s*//;
+                                     $busWidth =~ s/\s*\]//;
+                                     my @B = split(/\s*\:\s*/, $busWidth );
+                                     my $temp_index = $B[0] ;
+                                     $netName = $net."[".$temp_index."]";
+                                   }else{
+                                     $netName = $net;
+                                   }
+                                 } elsif (($MODULE_ALREADY{$cellName}->dbVNOMHasNet($net)) ==1) {
+                                   my $type = $MODULE_ALREADY{$cellName}->dbVNOMGetNetType($net);
+                                   if($type == 1) {
+                                     my $busWidth = $MODULE_ALREADY{$cellName}->dbVNOMGetNetBits($net);
+                                     $busWidth =~ s/\[\s*//;
+                                     $busWidth =~ s/\s*\]//;
+                                     my @B = split(/\s*\:\s*/, $busWidth );
+                                     my $temp_index = $B[0] ;
+                                     $netName = $net."[".$temp_index."]";
+                                   }else{
+                                     $netName = $net;
+                                   }
+                                 }else {
+                                   $netName = $net;
+                                 }
+                                 $TEMP_HIER_PORT_NET_MAP{$inst_hash_key}{$pinName} = $netName;
+                               }else {
+                                 my $start_index = -100000;
+                                 my $end_index = -100000;
+                                 if (($MODULE_ALREADY{$cellName}->dbVNOMHasInput($net)) ==1) {
+                                   my $type = $MODULE_ALREADY{$cellName}->dbVNOMGetInputType($net);
+                                   if($type == 1) {
+                                     my $busWidth = $MODULE_ALREADY{$cellName}->dbVNOMGetInputBits($net);
+                                     $busWidth =~ s/\[\s*//;
+                                     $busWidth =~ s/\s*\]//;
+                                     my @B = split(/\s*\:\s*/, $busWidth );
+                                     $start_index = $B[0] ;
+                                     $end_index = $B[1] ;
+                                   }
+                                 } elsif (($MODULE_ALREADY{$cellName}->dbVNOMHasOutput($net)) ==1) {
+                                   my $type = $MODULE_ALREADY{$cellName}->dbVNOMGetOutputType($net);
+                                   if($type == 1) {
+                                     my $busWidth = $MODULE_ALREADY{$cellName}->dbVNOMGetOutputBits($net);
+                                     $busWidth =~ s/\[\s*//;
+                                     $busWidth =~ s/\s*\]//;
+                                     my @B = split(/\s*\:\s*/, $busWidth );
+                                     $start_index = $B[0] ;
+                                     $end_index = $B[1] ;
+                                   }
+                                 } elsif (($MODULE_ALREADY{$cellName}->dbVNOMHasBidi($net)) ==1) {
+                                   my $type = $MODULE_ALREADY{$cellName}->dbVNOMGetBidiType($net);
+                                   if($type == 1) {
+                                     my $busWidth = $MODULE_ALREADY{$cellName}->dbVNOMGetBidiBits($net);
+                                     $busWidth =~ s/\[\s*//;
+                                     $busWidth =~ s/\s*\]//;
+                                     my @B = split(/\s*\:\s*/, $busWidth );
+                                     $start_index = $B[0] ;
+                                     $end_index = $B[1] ;
+                                   }
+                                 } elsif (($MODULE_ALREADY{$cellName}->dbVNOMHasNet($net)) ==1) {
+                                   my $type = $MODULE_ALREADY{$cellName}->dbVNOMGetNetType($net);
+                                   if($type == 1) {
+                                     my $busWidth = $MODULE_ALREADY{$cellName}->dbVNOMGetNetBits($net);
+                                     $busWidth =~ s/\[\s*//;
+                                     $busWidth =~ s/\s*\]//;
+                                     my @B = split(/\s*\:\s*/, $busWidth );
+                                     $start_index = $B[0] ;
+                                     $end_index = $B[1] ;
+                                   }
+                                 }
+                              my $net_step = -100000 ;
+                              if($start_index != -100000) {
+                                $net_step = 1 ;
+                                if($start_index > $end_index) {
+                                  $net_step = -1 ;
+                                }elsif($start_index == $end_index) {
+                                  $net_step = 0 ;
+                                }
+                              }
+                              my $cnt = 0;
+                              for (my $xx = $W[0] ; $xx <=$W[1]; $xx++ ) {
+                               my $pinName = $pin."[".$xx."]";
+                               my $netName = $net."[".$xx."]";
+                               if($net_step != -100000){
+                                 my $net_index = $start_index + $cnt * $net_step ; 
+                                 $netName = $net."[".$net_index."]";
+                               }else {
+                                 $netName = $net;
+                               }
+                               $TEMP_HIER_PORT_NET_MAP{$inst_hash_key}{$pinName} = $netName;
+                               print "DBG-PAR : 033 : $pinName on $cell connected to $netName $TOP_MODULE\n" if($DEBUG == 300);
+                                 $cnt++;
+                                                                         }
+                                      }
+                                              }
+                         elsif ( $W[0] > $W[1] ) {
+                                 my $start_index = -100000;
+                                 my $end_index = -100000;
+                                 if (($MODULE_ALREADY{$cellName}->dbVNOMHasInput($net)) ==1) {
+                                   my $type = $MODULE_ALREADY{$cellName}->dbVNOMGetInputType($net);
+                                   if($type == 1) {
+                                     my $busWidth = $MODULE_ALREADY{$cellName}->dbVNOMGetInputBits($net);
+                                     $busWidth =~ s/\[\s*//;
+                                     $busWidth =~ s/\s*\]//;
+                                     my @B = split(/\s*\:\s*/, $busWidth );
+                                     $start_index = $B[0] ;
+                                     $end_index = $B[1] ;
+                                   }
+                                 } elsif (($MODULE_ALREADY{$cellName}->dbVNOMHasOutput($net)) ==1) {
+                                   my $type = $MODULE_ALREADY{$cellName}->dbVNOMGetOutputType($net);
+                                   if($type == 1) {
+                                     my $busWidth = $MODULE_ALREADY{$cellName}->dbVNOMGetOutputBits($net);
+                                     $busWidth =~ s/\[\s*//;
+                                     $busWidth =~ s/\s*\]//;
+                                     my @B = split(/\s*\:\s*/, $busWidth );
+                                     $start_index = $B[0] ;
+                                     $end_index = $B[1] ;
+                                   }
+                                 } elsif (($MODULE_ALREADY{$cellName}->dbVNOMHasBidi($net)) ==1) {
+                                   my $type = $MODULE_ALREADY{$cellName}->dbVNOMGetBidiType($net);
+                                   if($type == 1) {
+                                     my $busWidth = $MODULE_ALREADY{$cellName}->dbVNOMGetBidiBits($net);
+                                     $busWidth =~ s/\[\s*//;
+                                     $busWidth =~ s/\s*\]//;
+                                     my @B = split(/\s*\:\s*/, $busWidth );
+                                     $start_index = $B[0] ;
+                                     $end_index = $B[1] ;
+                                   }
+                                 } elsif (($MODULE_ALREADY{$cellName}->dbVNOMHasNet($net)) ==1) {
+                                   my $type = $MODULE_ALREADY{$cellName}->dbVNOMGetNetType($net);
+                                   if($type == 1) {
+                                     my $busWidth = $MODULE_ALREADY{$cellName}->dbVNOMGetNetBits($net);
+                                     $busWidth =~ s/\[\s*//;
+                                     $busWidth =~ s/\s*\]//;
+                                     my @B = split(/\s*\:\s*/, $busWidth );
+                                     $start_index = $B[0] ;
+                                     $end_index = $B[1] ;
+                                   }
+                                 }
+                              my $net_step = -100000 ;
+                              if($start_index != -100000) {
+                                $net_step = 1 ;
+                                if($start_index > $end_index) {
+                                  $net_step = -1 ;
+                                }elsif($start_index == $end_index) {
+                                  $net_step = 0 ;
+                                }
+                              }
+                               my $cnt = 0;
+                              for (my $xx = $W[0] ; $xx >=$W[1]; $xx-- ) {
+                               my $pinName = $pin."[".$xx."]";
+                               my $netName = $net."[".$xx."]";
+                               if($net_step != -100000){
+                                 my $net_index = $start_index + $cnt * $net_step ;
+                                 $netName = $net."[".$net_index."]";
+                               }else {
+                                 $netName = $net;
+                               }
+                               $TEMP_HIER_PORT_NET_MAP{$inst_hash_key}{$pinName} = $netName;
+                               print "DBG-PAR : 034 : $pinName on $cell connected to $netName $TOP_MODULE\n" if($DEBUG == 300);
+                                  $cnt++;
+                                                                          }
+                                                 }
+                                 }#full bus to bus connection
+                                                         }# if implicit connection to a bus
+                                     else {
+                               $TEMP_HIER_PORT_NET_MAP{$inst_hash_key}{$pin} = $net;
+                                      my $temp_instName = $hierPath."/".$inst;
+                               print "DBG-PAR : 035 : $pin in $cell connects to $net of path $temp_instName\n" if($DEBUG == 300);
+                                     }
+                                      }
+                                                                     }#for
+   my $class = $MODULE_ALREADY{$cell}->dbVNOMGetClass;
+   print "DBG-PAR-ELA : 036 : checking if $cell is a blackbox hierarchical instance, it is class : $class\n" if ( $DEBUG == 300 );
+   if ( $class == 11 ) { 
+     print "DBG-PAR-ELA : 037 : since $cell is a blockbox, elaborate it as a leaf instance\n" if ($DEBUG == 300);
+     $instName = $hierPath."/".$inst;
+     $CADB{$instName}=CompAttDB::new();
+     $CADB{$instName}->dbCadbSetCellref($cell);
+     if($CURRENT_MODULE_FLAT_START_POINT ne "") {
+       &start_creating_leaf_instance_in_CURRENT_MODULE_FLAT_START_POINT;
+     }
+     #@nets = split(/\s*\)\s*\,\s*/, $connLine);
+     @nets = split(/\s*\,\s*/, $connLine);
+     my $noOfPins = @nets;
+#-------------------------------------------------------------------------------------------------------#
+# if the leaf-pin to net connection contains a curly brace, i am expecting a bussed connection #
+     print "DBG-PAR-ELA : 038 : leaf connection  : $connLine\n" if($DEBUG == 300);
+#-------------------------------------------------------------------------------------------------------#
+               for(my $i = 1 ; $i < $noOfPins ; $i++){
+                 $nets[$i] =~ s/\s*\(\s*/\|/;
+                 $nets[$i] =~ s/\s*\)\s*$//;
+                 my ($pin,$net)=(split(/\s*\|\s*/, $nets[$i]))[0,1];
+                 $pin =~ s/\.//;
+                 $netName = $net;
+                 if ( $net =~ /\{/ ) { 
+                   print "DBG-PAR-ELA : 039 :\t$pin \=\> $net\n" if($DEBUG == 300); 
+                   $net =~ s/\{//; $net =~ s/\}//;
+                   $net =~ s/\s+//g;
+                   print "DBG-PAR-ELA : 040 : After subs $net\n" if($DEBUG == 300);
+                   my @allnets = split(/\s*\,\s*/, $net);
+                   my $len = @allnets;
+                   print "DBG-PAR-ELA : 041 : $len nets connect to this bus leaf pin $pin\n" if($DEBUG == 300);
+# if one connection
+                   if ($len == 1) {
+                     #my $netName = $allnets[0];
+                     $netName = $hierPath."/".$allnets[0];
+                     if ( exists $TEMP_HIER_PORT_NET_MAP{$hierInstName_hash_key}{$allnets[0]} ) {
+                       $netName = $allnets[0];
+                       my $depth = @TEMP_PATH;
+                       for(my $xx = $depth -1; $xx >=0; $xx--){
+                         my $parent = $TEMP_PATH[$xx];
+                         if($parent eq $TOP_MODULE){last;}
+                         else {
+                           my $temp_inst_hash_key = $TEMP_PATH[$xx];
+                           $temp_inst_hash_key = $temp_inst_hash_key."_".$xx; 
+                           if ( exists $TEMP_HIER_PORT_NET_MAP{$temp_inst_hash_key}{$netName} ) {
+                             $netName = $TEMP_HIER_PORT_NET_MAP{$temp_inst_hash_key}{$netName};
+                           }
+                           else {
+                             my $temp_hier_name = "" ;
+                             for(my $yy = $xx ; $yy >= 0 ; $yy--) {
+                               if($temp_hier_name eq "") {  
+                                 $temp_hier_name = $TEMP_PATH[$yy];
+                               }else {
+                                 $temp_hier_name = $TEMP_PATH[$yy]."/".$temp_hier_name;
+                               }
+                             }#for
+                             $netName = $temp_hier_name."/".$netName;
+                             last;
+                           }#else
+                         }#else
+                       }#for all parent insts in hierPath
+                     }#if exists
+                     if(defined $netName ){
+                       $COMP_ALREADY{$instName}{$pin} = $netName;
+                     }else {
+                       $COMP_ALREADY{$instName}{$pin} = SHIVA_PIN_UNCONNECTED;
+                     }
+                     if($CURRENT_MODULE_FLAT_START_POINT ne "") {
+                       &add_expr_to_port_net_connection($pin,$allnets[0],$hierInstName);
+                     }
+                   }else { print "DBG-PAR-ELA : 042 : leaf instance $inst has a bus connection for pin $pin\n" if($DEBUG == 300); }
+# if more than one connection
+# get the width of the macro pin
+# if matches with the number of nets
+# make the connection in the database
+                 }#if connection has curly brace
+                #{} to match the pattern closing for debugging purposes
+#--------------------------------leaf pin connects to bus-----------------------------------------------#
+#--------------------------------leaf pin connects normal single net ------------------------------------#
+                 elsif ( $net eq "" || $net eq "+" ) { next ; } 
+                 else {
+                   if ( $net =~ /\s+/ ) {
+                     print "DBG-PAR-ELA : 043 : substituting space in netname $net\n" if($DEBUG == 300);
+                     $net =~ s/\s+//;
+                   }
+                   $netName = $hierPath."/".$net;
+                   if($CURRENT_MODULE_FLAT_START_POINT ne "") {
+                     &add_expr_to_port_net_connection($pin,$net,$hierInstName);
+                   }
+                   if ( exists $TEMP_HIER_PORT_NET_MAP{$hierInstName_hash_key}{$net} ) {
+                     $netName = $net;
+                     my $depth = @TEMP_PATH;
+                     for(my $xx = $depth -1 ; $xx >= 0 ; $xx--) {
+                       my $parent = $TEMP_PATH[$xx];
+                       if ($parent eq $TOP_MODULE ) { last; }
+                       else { 
+                         my $temp_inst_hash_key = $TEMP_PATH[$xx] ;
+                         $temp_inst_hash_key = $temp_inst_hash_key."_".$xx;
+                         if ( exists $TEMP_HIER_PORT_NET_MAP{$temp_inst_hash_key}{$netName} ) {
+                           $netName = $TEMP_HIER_PORT_NET_MAP{$temp_inst_hash_key}{$netName};
+                         }else {
+                           my $temp_hier_name = "" ;
+                           for(my $yy = $xx ; $yy >= 0 ; $yy--) {
+                             if($temp_hier_name eq "") {
+                               $temp_hier_name = $TEMP_PATH[$yy];
+                             }else {
+                               $temp_hier_name = $TEMP_PATH[$yy]."/".$temp_hier_name;
+                             }
+                           }#for
+                           $netName = $temp_hier_name."/".$netName;
+                           last;
+                         }#else
+                       }#else
+                     }#for
+                     my $temp_instName = $hierPath."/".$inst;
+                   }else {
+                     if ($net =~ /(\(|\)|\!|\~|\&|\||\~\&|\~\||\^|\~\^|\^\~|\+\s*(?!:)|\-\s*(?!:)|\*|\/|\%|\<\<|\>\>|\<|\<=|\>|\>=|\=\=|\!\=|\!\=\=|&&|\|\||\?.*\:)/){
+                       my $new_netName = "";
+                       my @oprnd_oprtr_list = &calculate_operand_and_operator_list($net,1);
+                       foreach my $data (@oprnd_oprtr_list){
+                         if($data =~ /^[A-z]/){
+                           $netName = "_tmpslvr_param_$data";
+                           my $depth = @TEMP_PATH;
+                           for(my $xx = $depth -1 ; $xx >= 0 ; $xx--) {
+                             my $parent = $TEMP_PATH[$xx];
+                             if ($parent eq $TOP_MODULE ) { last; }
+                             my $temp_inst_hash_key = $TEMP_PATH[$xx] ;
+                             $temp_inst_hash_key = $temp_inst_hash_key."_".$xx;
+                             my @key_list = keys %{$TEMP_HIER_PORT_NET_MAP{$temp_inst_hash_key}};
+                             my @return_key = grep(/$netName/, @key_list);
+                             if($#return_key >=0){
+                               my $key_str = $return_key[0];
+                               my $net_vl = $TEMP_HIER_PORT_NET_MAP{$temp_inst_hash_key}{$key_str}; 
+                               $netName = $net_vl;
+                             }else{
+                               last;
+                             }
+                           }#for
+                           $new_netName = $new_netName."".$netName;
+                         }else {
+                           $new_netName = $new_netName."".$data;
+                         }  
+                       }#foreach
+                       $netName = $new_netName;
+                     }#if
+                   }#else
+                 if(defined $netName ){
+                   $COMP_ALREADY{$instName}{$pin} = $netName;
+                 }else {
+                   $COMP_ALREADY{$instName}{$pin} = SHIVA_PIN_UNCONNECTED;
+                 }
+               }#else
+#--------------------------------leaf pin connects normal single net ------------------------------------#
+               }#for
+             }#if inst is a black box leaf inst
+   else {
+     if($is_to_do_selective_flatten ==1) {
+       &check_and_remove_inst_from_vnom_module_and_set_flat_start_module($cellName,$inst);
+     }
+     &dbgElaborateHierInsts($inst,$cell);
+     if($is_to_do_selective_flatten ==1) {
+       &check_and_reset_flat_start_module($cellName);
+     }
+#     undef %TEMP_HIER_PORT_NET_MAP ;
+     delete $TEMP_HIER_PORT_NET_MAP{$inst_hash_key} ;
+     pop(@TEMP_PATH);
+   }#else
+
+                               } elsif ( $MODULE_ALREADY{$cellName}->dbVNOMHasLeafInst($inst) ) {
+print "DBG-PAR : 044 : $inst is a leaf cell\n" if($DEBUG == 300);
+                                      $instName = $hierPath."/".$inst;
+                                                $CADB{$instName}=CompAttDB::new();
+                                                $CADB{$instName}->dbCadbSetCellref($cell);
+                               if($CURRENT_MODULE_FLAT_START_POINT ne "") {
+                                 &start_creating_leaf_instance_in_CURRENT_MODULE_FLAT_START_POINT;
+                               }
+                               @nets = split(/\s*\)\s*\,\s*/, $connLine);
+                               my  $noOfPins = @nets;
+#-------------------------------------------------------------------------------------------------------#
+# if the leaf-pin to net connection contains a curly brace, i am expecting a bussed connection #
+print "DBG-PAR : 045 : leaf connection  : $connLine\n" if($DEBUG == 300);
+#-------------------------------------------------------------------------------------------------------#
+               for(my $i = 1 ; $i < $noOfPins ; $i++){
+               $nets[$i] =~ s/\s*\(\s*/\|/;
+               $nets[$i] =~ s/\s*\)\s*//;
+               my ($pin,$net)=(split(/\s*\|\s*/, $nets[$i]))[0,1];
+               print "DBG-PAR : 046 : LEAF $net\n" if($DEBUG == 300);
+               $pin =~ s/\.//;
+#               print "check if the pin $pin exists on the leaf cell $cell\n";
+               my $pinExist = $PLDB{$cell}->dbMdbDoesPinExist($pin);
+               my $busExist = 0;
+               if ( $pinExist == 1 ) {
+                                     }
+               else {
+               print "DBG-PAR : 047 : check if its a bus pin $pin connectted to $net which has not been blasted\n" if ($DEBUG == 300) ; 
+               $busExist = $PLDB{$cell}->dbMdbDoesBusExist($pin);
+               print "DBG-PAR : 048 : Yes! is a bus pin on the leaf macro $cell\n" if ($busExist ==1 && $DEBUG == 300 );
+                    }
+               $netName = $net;
+               if ( $net =~ /\{/ ) { 
+                    print "DBG-PAR : 049 :\t$pin \=\> $net\n" if($DEBUG == 300); 
+                    $net =~ s/\{//; $net =~ s/\}//;
+                    $net =~ s/\s+//g;
+                    print "DBG-PAR : 050 : After subs $net\n" if($DEBUG == 300);
+                    my @allnets = split(/\s*\,\s*/, $net);
+                    my $len = @allnets;
+                    print "DBG-PAR : 051 : $len nets connect to this bus leaf pin $pin\n" if($DEBUG == 300);
+# if one connection
+                    if ( $len == 1) {
+                               $netName = $hierPath."/".$allnets[0];
+                               print "DBG-PAR : 052 : check leaf conn in curly if $allnets[0] is a ports to $hierInstName at  $hierPath\n" if($DEBUG == 300);
+                               if ( exists $TEMP_HIER_PORT_NET_MAP{$hierInstName_hash_key}{$allnets[0]} ) {
+                               print "DBG-PAR : 053 : Yes! is connects to $TEMP_HIER_PORT_NET_MAP{$hierInstName_hash_key}{$allnets[0]} net coming from parent of current module\n" if($DEBUG == 300);
+                               #$netName = $TEMP_HIER_PORT_NET_MAP{$hierInstName_hash_key}{$allnets[0]};
+                               $netName = $allnets[0];
+                               my $depth = @TEMP_PATH;
+                               for(my $xx = $depth -1 ; $xx >= 0 ; $xx--) {
+                               print "DBG-PAR : 054 : depth is $xx\n" if ($DEBUG == 300);
+                               my $parent = $TEMP_PATH[$xx];
+                               print "DBG-PAR : 055 : parent of the leaf is $TEMP_PATH[$xx]\n" if($DEBUG == 300);;
+                               if ($parent eq $TOP_MODULE ) { last; }
+                               else { 
+                               print "DBG-PAR : 056 : check the driver of the $netName in $TEMP_PATH[$xx]\n" if($DEBUG == 300);
+                                    my $temp_inst_hash_key = $TEMP_PATH[$xx] ;
+                                    $temp_inst_hash_key = $temp_inst_hash_key."_".$xx;
+                                    if ( exists $TEMP_HIER_PORT_NET_MAP{$temp_inst_hash_key}{$netName} ) {
+                                                print "DBG-PAR : 057 : found driver for $netName at $xx" if ($DEBUG == 300);    
+                                                $netName = $TEMP_HIER_PORT_NET_MAP{$temp_inst_hash_key}{$netName};
+                                                print "DBG-PAR : 058 : new net name is $netName\n" if ($DEBUG == 300);
+                                                                                                     }
+                                    else {
+                                                my $temp_hier_name = "" ;
+                                                for(my $yy = $xx ; $yy >= 0 ; $yy--) {
+                                                  if($temp_hier_name eq "") {
+                                                    $temp_hier_name = $TEMP_PATH[$yy];
+                                                                             }
+                                                  else {
+                                                    $temp_hier_name = $TEMP_PATH[$yy]."/".$temp_hier_name;
+                                                       }
+                                                                                      }
+                                                $netName = $temp_hier_name."/".$netName;
+                                                last;
+                                          }
+                                    }
+                                                                         }#for all parent insts in hierPath
+                                                                                  }
+                               if(defined $netName ){
+                                                $COMP_ALREADY{$instName}{$pin} = $netName;
+                                              }
+                                              else {
+                                                $COMP_ALREADY{$instName}{$pin} = SHIVA_PIN_UNCONNECTED;
+                                              }
+                           
+                               if($CURRENT_MODULE_FLAT_START_POINT ne "") {
+                                 &add_expr_to_port_net_connection($pin,$allnets[0],$hierInstName);
+                               }
+                                    }
+                     else { print "DBG-PAR : 059 : leaf instance $instName has a bus connection for pin $pin\n" if($DEBUG == 300); 
+# if more than one connection
+# get the width of the macro pin
+# if matches with the number of nets
+# make the connection in the database
+# FIX-IT : the bus pin names do not appreat in sorted manner .. fix it in BD level ... it will create logical issues in the design ...
+                         if ( $busExist == 1 ) {
+                         my @busPins = $PLDB{$cell}->dbMdbGetPinsFromBus($pin);
+                         my $noOfPinsInBus = @busPins;
+                         if ( $noOfPinsInBus == $len ) {
+                                          for(my $xx = 0; $xx < $noOfPinsInBus ; $xx++ ) {
+                                                  print "INFO-PAR : 060 : bus pin $busPins[$xx] connects to $allnets[$xx]\n";
+                               $netName = $hierPath."/".$allnets[$xx];
+                               print "DBG-PAR : 061 : check leaf conn in curly if $allnets[$xx] is a ports to $hierInstName at  $hierPath\n" if($DEBUG == 300);
+                               if ( exists $TEMP_HIER_PORT_NET_MAP{$hierInstName_hash_key}{$allnets[$xx]} ) {
+                               print "DBG-PAR : 062 : Yes! is connects to $TEMP_HIER_PORT_NET_MAP{$hierInstName_hash_key}{$allnets[$xx]} net coming from parent of current module\n" if($DEBUG == 300);
+                               #$netName = $TEMP_HIER_PORT_NET_MAP{$hierInstName_hash_key}{$allnets[$xx]};
+                               $netName = $allnets[$xx];
+                               my $depth = @TEMP_PATH;
+                               for(my $zz = $depth -1 ; $zz >= 0 ; $zz--) {
+                               print "DBG-PAR : 063 : depth is $zz\n" if ($DEBUG == 300);
+                               my $parent = $TEMP_PATH[$zz];
+                               print "DBG-PAR : 064 : parent of the leaf is $TEMP_PATH[$zz]\n" if($DEBUG == 300);;
+                               if ($parent eq $TOP_MODULE ) { last; }
+                               else { 
+                               print "DBG-PAR : 065 : check the driver of the $netName in $TEMP_PATH[$zz]\n" if($DEBUG == 300);
+                                    my $temp_inst_hash_key = $TEMP_PATH[$zz] ;
+                                    $temp_inst_hash_key = $temp_inst_hash_key."_".$zz;
+                                    if ( exists $TEMP_HIER_PORT_NET_MAP{$temp_inst_hash_key}{$netName} ) {
+                                                print "DBG-PAR : 066 : found driver for $netName at $zz" if ($DEBUG == 300);    
+                                                $netName = $TEMP_HIER_PORT_NET_MAP{$temp_inst_hash_key}{$netName};
+                                                print "DBG-PAR : 067 : new net name is $netName\n" if ($DEBUG == 300);
+                                                                                                     }
+                                    else {
+                                                my $temp_hier_name = "" ;
+                                                for(my $yy = $zz ; $yy >= 0 ; $yy--) {
+                                                  if($temp_hier_name eq "") {
+                                                    $temp_hier_name = $TEMP_PATH[$yy];
+                                                                             }
+                                                  else {
+                                                    $temp_hier_name = $TEMP_PATH[$yy]."/".$temp_hier_name;
+                                                       }
+                                                                                      }
+                                                $netName = $temp_hier_name."/".$netName;
+                                                last;
+                                          }
+                                    }
+                                                                         }#for all parent insts in hierPath
+                                                                                  }
+                               if(defined $netName ){
+                                                $COMP_ALREADY{$instName}{$busPins[$xx]} = $netName;
+                                              }
+                                              else {
+                                                $COMP_ALREADY{$instName}{$busPins[$xx]} = SHIVA_PIN_UNCONNECTED;
+                                              }
+
+                                              if($CURRENT_MODULE_FLAT_START_POINT ne "") {
+                                                &add_expr_to_port_net_connection($busPins[$xx],$allnets[$xx],$hierInstName);
+                                              }
+                                                                     }
+                                                     }# if number of bits on the pin and connecting bus net is same
+                                               }# if the cell pin is a bus pin
+                          }
+                                     }# if connection has curly brace
+                #{} to match the pattern closing for debugging purposes
+#--------------------------------leaf pin connects to bus-----------------------------------------------#
+                    elsif ( $net eq "" || $net eq "+" ) { next ; } 
+                          else {
+                               if ( $pinExist == 1 ) { # its a single pin to single net connection
+#--------------------------------BEGIN leaf pin connects normal single net ------------------------------------#
+                               if ( $net =~ /\s+/ ) {
+                                    print "DBG-PAR : 068 : substituting space in netname $net\n" if($DEBUG == 300);
+                                    $net =~ s/\s+//;
+                                                    }
+                               $netName = $hierPath."/".$net;
+                               if($CURRENT_MODULE_FLAT_START_POINT ne "") {
+                                 &add_expr_to_port_net_connection($pin,$net,$hierInstName);
+                               }
+                               print "DBG-PAR : 069 : check on leaf if $net is a ports to $hierInstName at  $hierPath\n" if($DEBUG == 300);
+                               if ( exists $TEMP_HIER_PORT_NET_MAP{$hierInstName_hash_key}{$net} ) {
+    print "DBG-PAR : 062 : Yes! is connects to $TEMP_HIER_PORT_NET_MAP{$hierInstName_hash_key}{$net} net coming from parent of current module\n" if($DEBUG == 300);
+                               #$netName = $TEMP_HIER_PORT_NET_MAP{$hierInstName_hash_key}{$net};
+                               $netName = $net;
+                               my $depth = @TEMP_PATH;
+                               for(my $xx = $depth -1 ; $xx >= 0 ; $xx--) {
+                               print "DBG-PAR : 070 : depth is $xx\n" if ($DEBUG == 300);
+                               my $parent = $TEMP_PATH[$xx];
+                               print "DBG-PAR : 071 : parent of the leaf is $TEMP_PATH[$xx]\n" if($DEBUG == 300);;
+                               if ($parent eq $TOP_MODULE ) { last; }
+                               else { 
+                               print "DBG-PAR : 072 : check the driver of the $netName in $TEMP_PATH[$xx]\n" if($DEBUG == 300);
+                                    my $temp_inst_hash_key = $TEMP_PATH[$xx] ;
+                                    $temp_inst_hash_key = $temp_inst_hash_key."_".$xx;
+                                    if ( exists $TEMP_HIER_PORT_NET_MAP{$temp_inst_hash_key}{$netName} ) {
+                                                print "DBG-PAR : 073 : found driver for $netName at $xx" if ($DEBUG == 300);    
+                                                $netName = $TEMP_HIER_PORT_NET_MAP{$temp_inst_hash_key}{$netName};
+                                                print "DBG-PAR : 074 : new net name is $netName\n" if ($DEBUG == 300);
+                                                                                                     }
+                                    else {
+                                                my $temp_hier_name = "" ;
+                                                for(my $yy = $xx ; $yy >= 0 ; $yy--) {
+                                                  if($temp_hier_name eq "") {
+                                                    $temp_hier_name = $TEMP_PATH[$yy];
+                                                                             }
+                                                  else {
+                                                    $temp_hier_name = $TEMP_PATH[$yy]."/".$temp_hier_name;
+                                                       }
+                                                                                      }
+                                                $netName = $temp_hier_name."/".$netName;
+                                                last;
+                                          }
+                                    }
+                                                                         }#for all parent insts in hierPath
+                                      my $temp_instName = $hierPath."/".$inst;
+                               print "DBG-PAR : 075 : final net name is $netName for path $temp_instName\n" if($DEBUG == 300);
+                                                                           }
+                               if(defined $netName){
+                                                $COMP_ALREADY{$instName}{$pin} = $netName;
+                                              }
+                                              else {
+                                                $COMP_ALREADY{$instName}{$pin} = SHIVA_PIN_UNCONNECTED;
+                                              }
+
+#-------------------------------- END leaf pin connects normal single net ------------------------------------#
+                                } elsif ( $busExist == 1 ) {
+#------------------------------- BEGIN bus bin on the leaf cell connects to implicit bus net ---------------------------#
+               if ( exists $MODULE_ALREADY{$cellName}->{ins}{$net} ) {
+               $pinType = $MODULE_ALREADY{$cellName}->dbVNOMGetInputType($net);
+               $pinDir = 1;
+                                                                 }
+               elsif ( exists $MODULE_ALREADY{$cellName}->{outs}{$net} ) {
+               $pinType = $MODULE_ALREADY{$cellName}->dbVNOMGetOutputType($net);
+               $pinDir = 2;
+                                                                    }
+               elsif ( exists $MODULE_ALREADY{$cellName}->{bidis}{$net} ) {
+               $pinType = $MODULE_ALREADY{$cellName}->dbVNOMGetBidiType($net);
+               $pinDir = 3;
+                                                                  }
+
+                    print "DBG-PAR : 076 : Leaf conn implicit connection between $pin and $net\n" if($DEBUG == 300);
+                    my $width = 0;
+                    if ($pinDir == 1){$width = $MODULE_ALREADY{$cellName}->dbVNOMGetInputBits($net);}
+                    elsif ($pinDir == 2){$width = $MODULE_ALREADY{$cellName}->dbVNOMGetOutputBits($net);}
+                    elsif ($pinDir == 3){$width = $MODULE_ALREADY{$cellName}->dbVNOMGetBidiBits($net);}
+                    $width =~ s/\[//; $width =~ s/\]//;
+                    my @W = split(/\s*\:\s*/,$width);
+                    print "DBG-PAR : 077 : MSB is $W[0]\n" if($DEBUG == 300);
+                    my $busWidth = abs($W[1] - $W[0])+1;
+                    print "DBG-PAR : 078 : Leaf connection bus $net it connects to is of $busWidth width\n" if($DEBUG == 300);
+          # partial and full bus to bus connection
+                      if ( $net =~ /\[\s*[0-9]+\s*\:\s*[0-9]+\s*\]/ ) {# partial bus connection
+                           $net =~ s/\[/ /; $net =~ s/\]//; $net =~ s/\:/ /;
+                          my ($name,$from,$to) = (split(/\s+/,$net))[0,1,2];
+                           my @allnets = (); 
+                           if ( $from <= $to ) {
+                           for ( my $xx = $from ; $xx <= $to ; $xx++ ){
+                                 my $newNetName = $name."[".$xx."]";
+                                 push(@allnets,$newNetName);
+                                                                      }#for
+                                              }#if ( $from < $to )
+                           else{
+                           for ( my $xx = $from ; $xx >= $to ; $xx-- ){
+                                 my $newNetName = $name."[".$xx."]";
+                                 push(@allnets,$newNetName);
+                                                                      }#for
+                               }#if ( $from > $to )
+                           if ( $W[0] <= $W[1] ) {
+                              my $cnt = 0;
+                              for (my $xx = $W[0] ; $xx <=$W[1]; $xx++ ) {
+                               my $pinName = $pin."[".$xx."]";
+                               $netName = $allnets[$cnt];
+                               print "DBG-PAR : 079 : $pinName on $cell connected to $netName $cellName\n" if($DEBUG == 300);
+#---------------------------------------------------------#
+                               $hierNetName = $hierPath."/".$netName;
+                               print "DBG-PAR : 080 : check on leaf if $netName is a ports to $hierInstName at  $hierPath\n" if($DEBUG == 300);
+                               if($CURRENT_MODULE_FLAT_START_POINT ne "") {
+                                 &add_expr_to_port_net_connection($pinName,$netName,$hierInstName);
+                               }
+                               if ( exists $TEMP_HIER_PORT_NET_MAP{$hierInstName_hash_key}{$netName} ) {
+    print "DBG-PAR : 074 : Yes! is connects to $TEMP_HIER_PORT_NET_MAP{$hierInstName_hash_key}{$netName} net coming from parent of current module\n" if($DEBUG == 300);
+                               #$netName = $TEMP_HIER_PORT_NET_MAP{$hierInstName_hash_key}{$netName};
+                               my $depth = @TEMP_PATH;
+                               for(my $zz = $depth -1 ; $zz >= 0 ; $zz--) {
+                               print "DBG-PAR : 081 : depth is $zz\n" if ($DEBUG == 300);
+                               my $parent = $TEMP_PATH[$zz];
+                               print "DBG-PAR : 082 : parent of the leaf is $TEMP_PATH[$zz]\n" if($DEBUG == 300);;
+                               if ($parent eq $TOP_MODULE ) { last; }
+                               else {
+                               print "DBG-PAR : 083 : check the driver of the $netName in $TEMP_PATH[$zz]\n" if($DEBUG == 300);
+                                    my $temp_inst_hash_key = $TEMP_PATH[$zz] ;
+                                    $temp_inst_hash_key = $temp_inst_hash_key."_".$zz;
+                                    if ( exists $TEMP_HIER_PORT_NET_MAP{$temp_inst_hash_key}{$netName} ) {
+                                                print "DBG-PAR : 084 : found driver for $netName at $zz" if ($DEBUG == 300);    
+                                                $netName = $TEMP_HIER_PORT_NET_MAP{$temp_inst_hash_key}{$netName};
+                                                print "DBG-PAR : 085 : new net name is $netName\n" if ($DEBUG == 300);
+                                                                                                     }
+                                    else {
+                                                my $temp_hier_name = "" ;
+                                                for(my $yy = $zz ; $yy >= 0 ; $yy--) {
+                                                  if($temp_hier_name eq "") {
+                                                    $temp_hier_name = $TEMP_PATH[$yy];
+                                                                             }
+                                                  else {
+                                                    $temp_hier_name = $TEMP_PATH[$yy]."/".$temp_hier_name;
+                                                       }
+                                                                                      }
+                                                $netName = $temp_hier_name."/".$netName;
+                                                last;
+                                          }
+                                    }
+                                                                         }#for all parent insts in hierPath
+                               print "DBG-PAR : 086 : final net name is $netName\n" if($DEBUG == 300);
+                                                                           }
+                               if(defined $netName){
+                                                $COMP_ALREADY{$instName}{$pinName} = $netName;
+                                              }
+                                              else {
+                                                $COMP_ALREADY{$instName}{$pinName} = SHIVA_PIN_UNCONNECTED;
+                                              }
+#---------------------------------------------------------#
+                                 $cnt++;
+                                                                         }
+                                              }
+                         elsif ( $W[0] > $W[1] ) {
+                               my $cnt = 0;
+                              for (my $xx = $W[0] ; $xx >=$W[1]; $xx-- ) {
+                               my $pinName = $pin."[".$xx."]";
+                               my $netName = $allnets[$cnt];
+                               print "DBG-PAR : 087 : $pinName on $cell connected to $netName $cellName\n" if($DEBUG == 300);
+#---------------------------------------------------------#
+                               $hierNetName = $hierPath."/".$netName;
+                               print "DBG-PAR : 088 : check on leaf if $netName is a ports to $hierInstName at  $hierPath\n" if($DEBUG == 300);
+                               if($CURRENT_MODULE_FLAT_START_POINT ne "") {
+                                 &add_expr_to_port_net_connection($pinName,$netName,$hierInstName);
+                               }
+                               if ( exists $TEMP_HIER_PORT_NET_MAP{$hierInstName_hash_key}{$netName} ) {
+    print "DBG-PAR : 083 : Yes! is connects to $TEMP_HIER_PORT_NET_MAP{$hierInstName_hash_key}{$netName} net coming from parent of current module\n" if($DEBUG == 300);
+                               #$netName = $TEMP_HIER_PORT_NET_MAP{$hierInstName_hash_key}{$netName};
+                               my $depth = @TEMP_PATH;
+                               for(my $zz = $depth -1 ; $zz >= 0 ; $zz--) {
+                               print "DBG-PAR : 089 : depth is $zz\n" if ($DEBUG == 300);
+                               my $parent = $TEMP_PATH[$zz];
+                               print "DBG-PAR : 090 : parent of the leaf is $TEMP_PATH[$zz]\n" if($DEBUG == 300);;
+                               if ($parent eq $TOP_MODULE ) { last; }
+                               else {
+                               print "DBG-PAR : 091 : check the driver of the $netName in $TEMP_PATH[$zz]\n" if($DEBUG == 300);
+                                    my $temp_inst_hash_key = $TEMP_PATH[$zz] ;
+                                    $temp_inst_hash_key = $temp_inst_hash_key."_".$zz;
+                                    if ( exists $TEMP_HIER_PORT_NET_MAP{$temp_inst_hash_key}{$netName} ) {
+                                                print "DBG-PAR : 092 : found driver for $netName at $zz" if ($DEBUG == 300);    
+                                                $netName = $TEMP_HIER_PORT_NET_MAP{$temp_inst_hash_key}{$netName};
+                                                print "DBG-PAR : 093 : new net name is $netName\n" if ($DEBUG == 300);
+                                                                                                     }
+                                    else {
+                                                my $temp_hier_name = "" ;
+                                                for(my $yy = $zz ; $yy >= 0 ; $yy--) {
+                                                  if($temp_hier_name eq "") {
+                                                    $temp_hier_name = $TEMP_PATH[$yy];
+                                                                             }
+                                                  else {
+                                                    $temp_hier_name = $TEMP_PATH[$yy]."/".$temp_hier_name;
+                                                       }
+                                                                                      }
+                                                $netName = $temp_hier_name."/".$netName;
+                                                last;
+                                          }
+                                    }
+                                                                         }#for all parent insts in hierPath
+                               print "DBG-PAR : 094 : final net name is $netName\n" if($DEBUG == 300);
+                                                                           }
+                               if(defined $netName){
+                                                $COMP_ALREADY{$instName}{$pinName} = $netName;
+                                              }
+                                              else {
+                                                $COMP_ALREADY{$instName}{$pinName} = SHIVA_PIN_UNCONNECTED;
+                                              }
+#---------------------------------------------------------#
+                                  $cnt++;
+                                                                          }
+                                                 }
+                                                          }# partial bus connection
+                          else {# full bus to bus connection
+                         if ( $W[0] <= $W[1] ) {
+                              my $cnt = 0;
+                              for (my $xx = $W[0] ; $xx <=$W[1]; $xx++ ) {
+                               my $pinName = $pin."[".$xx."]";
+                               my $netName = $net."[".$xx."]";
+                               print "DBG-PAR : 095 : Leaf conn implicit full bus :  $pinName on $cell connected to $netName $cellName\n" if($DEBUG == 300);
+#---------------------------------------------------------#
+                               $hierNetName = $hierPath."/".$netName;
+                               print "DBG-PAR : 096 : check on leaf if $netName is a ports to $hierInstName at  $hierPath\n" if($DEBUG == 300);
+                               if($CURRENT_MODULE_FLAT_START_POINT ne "") {
+                                 &add_expr_to_port_net_connection($pinName,$netName,$hierInstName);
+                               }
+                               if ( exists $TEMP_HIER_PORT_NET_MAP{$hierInstName_hash_key}{$netName} ) {
+    print "DBG-PAR : 092 : Yes! is connects to $TEMP_HIER_PORT_NET_MAP{$hierInstName_hash_key}{$netName} net coming from parent of current module\n" if($DEBUG == 300);
+                               #$netName = $TEMP_HIER_PORT_NET_MAP{$hierInstName_hash_key}{$netName};
+                               my $depth = @TEMP_PATH;
+                               for(my $zz = $depth -1 ; $zz >= 0 ; $zz--) {
+                               print "DBG-PAR : 097 : depth is $zz\n" if ($DEBUG == 300);
+                               my $parent = $TEMP_PATH[$zz];
+                               print "DBG-PAR : 098 : parent of the leaf is $TEMP_PATH[$zz]\n" if($DEBUG == 300);;
+                               if ($parent eq $TOP_MODULE ) { last; }
+                               else {
+                               print "DBG-PAR : 099 : check the driver of the $netName in $TEMP_PATH[$zz]\n" if($DEBUG == 300);
+                                    my $temp_inst_hash_key = $TEMP_PATH[$zz] ;
+                                    $temp_inst_hash_key = $temp_inst_hash_key."_".$zz;
+                                    if ( exists $TEMP_HIER_PORT_NET_MAP{$temp_inst_hash_key}{$netName} ) {
+                                                print "DBG-PAR : 100 : found driver for $netName at $zz" if ($DEBUG == 300);    
+                                                $netName = $TEMP_HIER_PORT_NET_MAP{$temp_inst_hash_key}{$netName};
+                                                print "DBG-PAR : 101 : new net name is $netName\n" if ($DEBUG == 300);
+                                                                                                     }
+                                     else {
+                                                my $temp_hier_name = "" ;
+                                                for(my $yy = $zz ; $yy >= 0 ; $yy--) {
+                                                  if($temp_hier_name eq "") {
+                                                    $temp_hier_name = $TEMP_PATH[$yy];
+                                                                             }
+                                                  else {
+                                                    $temp_hier_name = $TEMP_PATH[$yy]."/".$temp_hier_name;
+                                                       }
+                                                                                      }
+                                                $netName = $temp_hier_name."/".$netName;
+                                                last;
+                                          } 
+                                    }
+                                                                         }#for all parent insts in hierPath
+                               print "DBG-PAR : 102 : final net name is $netName\n" if($DEBUG == 300);
+                                                                           }
+                               if(defined $net){
+                                                $COMP_ALREADY{$instName}{$pinName} = $netName;
+                                              }
+                                              else {
+                                                $COMP_ALREADY{$instName}{$pinName} = SHIVA_PIN_UNCONNECTED;
+                                              }
+#---------------------------------------------------------#
+
+                                 $cnt++;
+                                                                         }
+                                              }
+                         elsif ( $W[0] > $W[1] ) {
+                               my $cnt = 0;
+                              for (my $xx = $W[0] ; $xx >=$W[1]; $xx-- ) {
+                               my $pinName = $pin."[".$xx."]";
+                               my $netName = $net."[".$xx."]";
+                               print "DBG-PAR : 103 :  Leaf conn implicit full bus :  $pinName on $cell connected to $netName $cellName\n" if($DEBUG == 300);
+#---------------------------------------------------------#
+                               $hierNetName = $hierPath."/".$netName;
+                               print "DBG-PAR : 104 : check on leaf if $netName is a ports to $hierInstName at  $hierPath\n" if($DEBUG == 300);
+                               if($CURRENT_MODULE_FLAT_START_POINT ne "") {
+                                 &add_expr_to_port_net_connection($pinName,$netName,$hierInstName);
+                               }
+                               if ( exists $TEMP_HIER_PORT_NET_MAP{$hierInstName_hash_key}{$netName} ) {
+    print "DBG-PAR : 101 : Yes! is connects to $TEMP_HIER_PORT_NET_MAP{$hierInstName_hash_key}{$netName} net coming from parent of current module\n" if($DEBUG == 300);
+                               #$netName = $TEMP_HIER_PORT_NET_MAP{$hierInstName_hash_key}{$netName};
+                               my $depth = @TEMP_PATH;
+                               for(my $zz = $depth -1 ; $zz >= 0 ; $zz--) {
+                               print "DBG-PAR : 105 : depth is $zz\n" if ($DEBUG == 300);
+                               my $parent = $TEMP_PATH[$zz];
+                               print "DBG-PAR : 106 : parent of the leaf is $TEMP_PATH[$zz]\n" if($DEBUG == 300);;
+                               if ($parent eq $TOP_MODULE ) { last; }
+                               else {
+                               print "DBG-PAR : 107 : check the driver of the $netName in $TEMP_PATH[$zz]\n" if($DEBUG == 300);
+                                    my $temp_inst_hash_key = $TEMP_PATH[$zz] ;
+                                    $temp_inst_hash_key = $temp_inst_hash_key."_".$zz;
+                                    if ( exists $TEMP_HIER_PORT_NET_MAP{$temp_inst_hash_key}{$netName} ) {
+                                                print "DBG-PAR : 108 : found driver for $netName at $zz" if ($DEBUG == 300);    
+                                                $netName = $TEMP_HIER_PORT_NET_MAP{$temp_inst_hash_key}{$netName};
+                                                print "DBG-PAR : 109 : new net name is $netName\n" if ($DEBUG == 300);
+                                                                                                     }
+                                     else {
+                                                my $temp_hier_name = "" ;
+                                                for(my $yy = $zz ; $yy >= 0 ; $yy--) {
+                                                  if($temp_hier_name eq "") {
+                                                    $temp_hier_name = $TEMP_PATH[$yy];
+                                                                             }
+                                                  else {
+                                                    $temp_hier_name = $TEMP_PATH[$yy]."/".$temp_hier_name;
+                                                       }
+                                                                                      }
+                                                $netName = $temp_hier_name."/".$netName;
+                                                last;
+                                          }
+                                    }
+                                                                         }#for all parent insts in hierPath
+                               print "DBG-PAR : 110 : final net name is $netName\n" if($DEBUG == 300);
+                                                                           }
+                               if(defined $net){
+                                                $COMP_ALREADY{$instName}{$pinName} = $netName;
+                                              }
+                                              else {
+                                                $COMP_ALREADY{$instName}{$pinName} = SHIVA_PIN_UNCONNECTED;
+                                              }
+#---------------------------------------------------------#
+
+                               print "DBG-PAR : 111 : $pinName on $cell connected to $netName $cellName\n" if($DEBUG == 300);
+                                  $cnt++;
+                                                                          }
+                                                 }
+                                 }#full bus to bus connection
+#------------------------------- END bus pin on the leaf cell connects to implicit bus net ---------------------------#
+                                                           }#if the instance pin is a bus pin
+                                }# if net connects to instance pin without curly braces
+                                      } # for
+                               if($CURRENT_MODULE_FLAT_START_POINT ne "") {
+                                 &complete_creating_leaf_instance_in_CURRENT_MODULE_FLAT_START_POINT($cell,$inst);
+                               }
+                                                  }#if inst is a leaf inst
+                                  }#foreach
+                                         }# if the cell refered exists
+}#sub dbgElaborateHierInsts
+
+
+sub set_module_as_bbox {
+my $instanceType = 'block';
+my $noOfArguments = @_;
+if($_[0] eq "-h" )  {
+        print "Usage :  set_module_as_bbox -inst < instanceName >\n";
+        print "                           [--extract]\n";
+        print "                           [-type <block|stdcell|pad> ]\n";
+        print "                           [-debug]\n";
+
+  }
+  else {
+  for(my $i = 0; $i < $noOfArguments; $i++){
+  if($_[$i] eq "-inst"){ $hierInstanceName = $_[$i+1];}
+  if($_[$i] eq "-type"){ $instanceType = 1;}
+  if($_[$i] eq "--extract"){ $extractPortDir = 1;}
+                                           } # for
+print "INFO-PAR : 001 : $hierInstanceName \n";
+&dbMarkHierInstAsBlackBox($hierInstanceName);
+
+       }#if correct arguments
+}#sub set_module_as_bbox
+
+
+sub dbMarkHierInstAsBlackBox {
+my $hierModuleInst = $_[0];
+   if (exists $MODULE_ALREADY{$hierModuleInst} ) {
+   print "INFO-PAR : 001 : setting $hierModuleInst as black box\n";
+   my @parentModule = $MODULE_ALREADY{$hierModuleInst}->dbVNOMGetParent;
+   print "INFO-PAR : 002 : inferring port directions of $hierModuleInst from connections within $parentModule[0] ....\n";
+   #------------ get connections of the parent module ------#
+   @conns = $MODULE_ALREADY{$parentModule[0]}->dbVNOMGetConn;
+   foreach $connLine ( @conns ) {
+   $connLine =~ s/\(/\)\,/;
+   $connLine =~ s/\s*\)\s*\;//;
+   my ($cell,$inst) = ( split(/\s+/, $connLine ))[0,1];
+   if (( $MODULE_ALREADY{$parentModule[0]}->dbVNOMHasHierInst($inst) ) 
+      || ( $MODULE_ALREADY{$parentModule[0]}->dbVNOMHasLeafInst($inst) )) {
+       if ( $cell eq $hierModuleInst ) {
+                               my @nets = split(/\s*\)\s*\,\s*/, $connLine);
+                               my  $noOfPins = @nets;
+               for(my $i = 1 ; $i < $noOfPins ; $i++){
+               $nets[$i] =~ s/\s*\(\s*/\|/;
+               $nets[$i] =~ s/\s*\)\s*//;
+               my ($pin,$net)=(split(/\s*\|\s*/, $nets[$i]))[0,1];
+               $pin =~ s/\.//;
+                                      $MODULE_ALREADY{$cell}->dbVNOMAddInput($pin);
+                                      $MODULE_ALREADY{$cell}->dbVNOMSetInputType($pin,0);
+               $netName = $net;
+               if ( $net =~ /\{/ ) { 
+                    print "DBG-PAR : 003 : \t$pin \=\> $net\n" if($DEBUG == 300); 
+                    $net =~ s/\{//; $net =~ s/\}//;
+                    $net =~ s/\s+//g;
+                    print "DBG-PAR : 004 : After subs $net\n" if($DEBUG == 300);
+                    my @allnets = split(/\s*\,\s*/, $net);
+                    my $len = @allnets;
+                    print "DBG-PAR : 005 : $len nets connect to this bus leaf pin $pin\n" if($DEBUG == 300);
+# if one connection
+                    if ( $len == 1) {
+                                    }
+                     else { print "DBG-PAR : 006 : leaf instance $instName  has a bus connection for pin $pin\n" if($DEBUG == 300); }
+# if more than one connection
+# get the width of the macro pin
+# if matches with the number of nets
+# make the connection in the database
+                                     }
+                #{} to match the pattern closing for debugging purposes
+#--------------------------------leaf pin connects to bus-----------------------------------------------#
+#--------------------------------leaf pin connects normal single net ------------------------------------#
+                    elsif ( $net eq "" || $net eq "+" ) { next ; } 
+                          else {
+                               $net =~ s/\s+//;
+                               print "INFO-PAR : 007 : check if $net is has any driver to it \n";
+                               my $driverInst = &dbPlaceTraceGetNetDriver($net);
+                               print "INFO-PAR : 008 : $net : Driver : $driverInst\n"
+                               }
+#--------------------------------leaf pin connects normal single net ------------------------------------#
+                                                     }# for all pins of the black box
+
+                                       }#if cell is the bbox module
+                                   }#if exists in hierInst or leafInst
+                                }#foreach conn
+
+                                                 }
+   else {
+        print "ERR-PAR : 009 : hierarchical module $hierModuleInst does not exist\n";
+        }
+
+
+
+}#sub dbMarkHierInstAsBlackBox
+1;

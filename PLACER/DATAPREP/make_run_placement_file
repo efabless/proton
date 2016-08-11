@@ -1,0 +1,754 @@
+sub place_graph {
+if($_[0] eq '-h'){print "Usage : place_graph\n";}
+else{  
+        &delete_all_tmp_placer_files;
+        &write_graph_modified ("--pinOffset");
+        &write_design_info_file ;
+        &run_placer;
+        &read_graph;
+        &delete_tmp_placer_files;
+}#else
+}# sub place_graph
+
+sub place_graph_detail {
+
+$INPUT_NET_FILE = "$TOP_MODULE.txt";
+$NODE_FILE = "nodefile";
+$LIB_FILE = "libfile";
+$DES_INFO_FILE = "desinfofile";
+$INPUT_NET_FILE_PIN_OFFSET = "${TOP_MODULE}_pin_offset.txt";
+$LIB_FILE_PIN_OFFSET = "libfile_pin_offset";
+if( $_[0] eq '-h') { 
+  print "Usage : place_graph_detail [ <graph file> <node file> <library file> <design info file> <graph file pin offset> <library file pin offset>] \n";
+  print "                  note : by default <graph file> will be $INPUT_NET_FILE\n";
+  print "                  note : by default <node file> will be $NODE_FILE\n";
+  print "                  note : by default <design info file> will be $DES_INFO_FILE\n";
+  print "                  note : by default <graph file pin offset> will be $INPUT_NET_FILE_PIN_OFFSET\n";
+  print "                  note : by default <library file pin offset> will be $LIB_FILE_PIN_OFFSET\n";
+  return ;
+}
+my $noOfArguments = @_;
+if($noOfArguments >= 1){
+   $INPUT_NET_FILE = $_[0]; 
+}
+if($noOfArguments >= 2){
+   $NODE_FILE = $_[1]; 
+}
+if($noOfArguments >= 3){
+   $LIB_FILE = $_[2]; 
+}
+if($noOfArguments >= 4){
+   $DES_INFO_FILE = $_[3]; 
+}
+if($noOfArguments >= 5){
+   $INPUT_NET_FILE_PIN_OFFSET = $_[4]; 
+}
+if($noOfArguments >= 6){
+   $LIB_FILE_PIN_OFFSET = $_[5]; 
+}
+if($noOfArguments > 6){
+  print "Usage : place_graph_detail [ <graph file> <node file> <library file> <design info file> <graph file pinoffset> <library file pin offset>] \n";
+  print "Info : ignoring argument after $_[4]\n";
+}
+        &delete_all_tmp_placer_files;
+	&write_graph_modified ("--pinOffset");
+        &write_design_info_file ;
+	&run_placer;
+        &read_graph ;
+	#&run_placer_detail ($INPUT_NET_FILE, $NODE_FILE, $LIB_FILE, $DES_INFO_FILE);
+	&write_graph_modified ;
+	&run_placer_detail ($INPUT_NET_FILE, $NODE_FILE, $LIB_FILE, $DES_INFO_FILE);
+	&read_graph_detail;
+        &delete_tmp_placer_files ;
+}#sub place_graph_detail
+
+sub place_graph_detail_plan_3 {
+
+$INPUT_NET_FILE = "$TOP_MODULE.txt";
+$NODE_FILE = "nodefile";
+$LIB_FILE = "libfile";
+$DES_INFO_FILE = "desinfofile";
+if( $_[0] eq '-h') { 
+  print "Usage : place_graph_detail_plan_3 [ <graph file> <node file> <library file> <design info file>] \n";
+  print "                  note : by default <graph file> will be $INPUT_NET_FILE\n";
+  print "                  note : by default <node file> will be $NODE_FILE\n";
+  print "                  note : by default <design info file> will be $DES_INFO_FILE\n";
+  return ;
+}
+my $noOfArguments = @_;
+if($noOfArguments >= 1){
+   $INPUT_NET_FILE = $_[0]; 
+}
+if($noOfArguments >= 2){
+   $NODE_FILE = $_[1]; 
+}
+if($noOfArguments >= 3){
+   $LIB_FILE = $_[2]; 
+}
+if($noOfArguments >= 4){
+   $DES_INFO_FILE = $_[3]; 
+}
+if($noOfArguments > 4){
+  print "Usage : place_graph_detail_plan_3 [ <graph file> <node file> <library file> <design info file>] \n";
+  print "Info : ignoring argument after $_[4]\n";
+}
+        &delete_all_tmp_placer_files;
+	&write_graph_modified ("--pinOffset");
+        &write_design_info_file ;
+	&run_placer;
+        &read_graph ;
+        &write_graph_modified;
+	&run_placer_detail ($INPUT_NET_FILE, $NODE_FILE, $LIB_FILE, $DES_INFO_FILE);
+	&read_graph_detail;
+	&write_graph_plan_3 ;
+	&run_plan_3 ($INPUT_NET_FILE, $NODE_FILE, $LIB_FILE, $DES_INFO_FILE);
+	&read_graph_detail_plan_3;
+        &delete_tmp_placer_files ;
+}#sub place_graph_detail_plan_3
+
+
+sub place_graph_plan_4_pseudo {
+  
+  if ( $_[0] eq '-h') { print "Usage : place_graph_plan_4_pseudo \n";
+  } else {
+    print "\n" ;
+    &delete_all_tmp_placer_files;
+    my @size = $PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenGetSize;
+    if(($size[2] == $size[0])||($size[3] == $size[1])){
+      print "WARN-UTS-PL_GRPH_PLAN_4_PSUDO : 001 : No need to place the design $TOP_MODULE, size is zero\n";
+      return;
+    }
+    &write_hier_place_graph ("-module",$TOP_MODULE,"--incr");
+    rename("mp_xy.in" , "xy.out");
+    $INPUT_NET_FILE = $TOP_MODULE.".txt" ;
+    $NODE_FILE = "nodefile" ;
+    $LIB_FILE = "libfile" ;
+    my $env_proton_home = $GLOBAL->dbfGlobalGetProtonHome;
+    my $placeLogFileName = "plan_4_place.log";
+    
+    if( $NOLOG != 1 ) {
+      closeTee(*STDOUT);
+      open (TEST, ">>$logFileName");
+      my $ofh = select TEST;
+      $| = 1;
+      select $ofh;
+      openTee(*STDOUT, *STDOUT, *TEST);
+    }
+    if (-e $INPUT_NET_FILE) {
+      print "INFO-UTS-PL_GRPH_PLAN_4_PSUDO : 001 : Placing the design $TOP_MODULE \n";
+      #system( "$env_eqator_home/3RDBIN/plan_4 $INPUT_NET_FILE $NODE_FILE $LIB_FILE $DES_INFO_FILE \| tee  $placeDetailLogFileName >> $logFileName");
+#     system( "$env_eqator_home/3RDBIN/plan_4 $INPUT_NET_FILE $NODE_FILE $LIB_FILE");
+      system( "$env_proton_home/3RDBIN/plan_4 $INPUT_NET_FILE $NODE_FILE $LIB_FILE");
+      #system( "$env_eqator_home/plan_1 $INPUT_NET_FILE $NODE_FILE \| tee  $placeLogFileName >> $logFileName");
+      print "INFO-UTS-PL_GRPH_PLAN_4_PSUDO : 002 : Placing the design $TOP_MODULE \n";
+      &write_tcl_for_plan;
+    }
+    
+    rename("detailed_xy.out" , "mp_xy.out");
+    &read_hier_place_graph();
+    &delete_tmp_placer_files;
+    }
+}#sub place_graph_plan_4_pseudo
+
+sub place_graph_mpl_pseudo 
+{
+  my $noOfArguments = @_;
+  my $incrMode = 0;
+  my $path = "";
+  
+  if ( $_[0] eq '-h') { 
+    print "Usage : place_graph_mpl_pseudo \n";
+    print "                               --incr\n";
+  } else {
+    for (my $i = 0; $i < $noOfArguments; $i++) {
+      if ($_[$i] eq "--incr") {
+       $incrMode = 1;
+      }
+      if ($_[$i] eq "-path") {
+          $path = $_[$i+1];
+      }
+    }#for
+    $MPL_BINARY_IS_RUNNING = 1;
+    &delete_all_tmp_placer_files;
+    my @size = $PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenGetSize;
+    if(($size[2] == $size[0])||($size[3] == $size[1])){
+      print "WARN-UTS-PL_GRPH_MPL_PSUDO : 001 : No need to place the design $TOP_MODULE, size is zero\n";
+      return;
+    }
+    if ( $incrMode == 1 ) {
+      &write_hier_place_graph ("-module",$TOP_MODULE,"--incr");
+    } else {
+      &write_hier_place_graph ("-module",$TOP_MODULE);
+    }
+    $INPUT_NET_FILE = $TOP_MODULE.".txt" ;
+    $NODE_FILE = "nodefile" ;
+    $LIB_FILE = "libfile" ;
+    my $env_proton_home = $GLOBAL->dbfGlobalGetProtonHome;
+    my $placeLogFileName = "mpl_place.log";
+    if( $NOLOG != 1 ) {
+      closeTee(*STDOUT);
+      open (TEST, ">>$logFileName");
+      my $ofh = select TEST;
+      $| = 1;
+      select $ofh;
+      openTee(*STDOUT, *STDOUT, *TEST);
+    }
+    if ( -e $INPUT_NET_FILE) {
+      print "INFO-UTS-PL_GRPH_MPL_PSUDO : 001 : Begin placing the design $TOP_MODULE \n";
+      if($path eq ""){
+         system( "$env_proton_home/3RDBIN/mpl $INPUT_NET_FILE $NODE_FILE") ;
+      }else{
+         system( "$path/mpl $INPUT_NET_FILE $NODE_FILE");
+      }
+      print "INFO-UTS-PL_GRPH_MPL_PSUDO : 002 : End placing the design $TOP_MODULE \n";
+    }
+    &read_hier_place_graph();
+    &delete_tmp_placer_files;
+    $MPL_BINARY_IS_RUNNING = 0;
+    &fix_mpl_output;
+  }#if correct arguments
+}#sub place_graph_mpl_pseudo
+
+
+sub place_graph_plan_4
+{
+  if ( $_[0] eq '-h') { print "Usage : place_graph_plan_4 \n";
+  } else {
+    print "\n" ;
+    &delete_all_tmp_placer_files;
+    &write_graph_modified_plan_4 ;
+    unlink("new_xy.out");
+    unlink("xy.out");
+    unlink("detailed_xy.out");
+    &write_xy_out_plan_4 ;
+    rename("new_xy.out" , "xy.out");
+    $INPUT_NET_FILE = $TOP_MODULE.".txt" ;
+    $NODE_FILE = "nodefile" ;
+    $LIB_FILE = "libfile" ;
+    my $env_proton_home = $GLOBAL->dbfGlobalGetProtonHome;
+    my $placeLogFileName = "plan_4_place.log";
+    
+    if( $NOLOG != 1 ) {
+      closeTee(*STDOUT);
+      open (TEST, ">>$logFileName");
+      my $ofh = select TEST;
+      $| = 1;
+      select $ofh;
+      openTee(*STDOUT, *STDOUT, *TEST);
+    }
+    if (-e $INPUT_NET_FILE) {
+      print "INFO-UTS-PL_GRPH_PLAN_4 : 001 : Placing the design $TOP_MODULE \n";
+      #system( "$env_eqator_home/3RDBIN/plan_4 $INPUT_NET_FILE $NODE_FILE $LIB_FILE ");
+      system( "$env_proton_home/3RDBIN/plan_4 $INPUT_NET_FILE $NODE_FILE $LIB_FILE ");
+      #system( "$env_eqator_home/plan_1 $INPUT_NET_FILE $NODE_FILE \| tee  $placeLogFileName >> $logFileName");
+      print "INFO-UTS-PL_GRPH_PLAN_4 : 002 : Placed the design $TOP_MODULE \n";
+      &write_tcl_for_plan;
+    }
+
+    unlink("xy.out");
+    rename("detailed_xy.out" , "xy.out");
+    &read_graph_plan_4;
+    &delete_tmp_placer_files;
+    }
+}#sub place_graph_plan_4
+
+sub place_graph_mpl
+{
+  if ( $_[0] eq '-h') { print "Usage : place_graph_mpl \n";
+  } else {
+    print "\n" ;
+    &delete_all_tmp_placer_files;
+    &write_graph_modified_mpl("--pinOffset") ;
+    unlink("new_xy.out");
+    unlink("xy.out");
+    unlink("detailed_xy.out");
+    unlink("mp_xy.in");
+    &write_xy_out_mpl ;
+    rename("new_xy.out" , "mp_xy.in");
+    $INPUT_NET_FILE = $TOP_MODULE.".txt" ;
+    $NODE_FILE = "nodefile" ;
+    $LIB_FILE = "libfile" ;
+    my $env_proton_home = $GLOBAL->dbfGlobalGetProtonHome;
+    my $placeLogFileName = "mpl_place.log";
+    
+    if( $NOLOG != 1 ) {
+      closeTee(*STDOUT);
+      open (TEST, ">>$logFileName");
+      my $ofh = select TEST;
+      $| = 1;
+      select $ofh;
+      openTee(*STDOUT, *STDOUT, *TEST);
+    }
+    if (-e $INPUT_NET_FILE) {
+      print "INFO-UTS-PL_GRPH_MPL : 001 : Placing the design $TOP_MODULE \n";
+      #system( "$env_eqator_home/3RDBIN/plan_4 $INPUT_NET_FILE $NODE_FILE $LIB_FILE $DES_INFO_FILE \| tee  $placeDetailLogFileName >> $logFileName");
+      #system( "$env_eqator_home/3RDBIN/mpl $INPUT_NET_FILE $NODE_FILE \|tee $placeLogFileName >> $logFileName");
+      #system( "$env_eqator_home/3RDBIN/mpl $INPUT_NET_FILE $NODE_FILE");
+      system( "$env_proton_home/3RDBIN/mpl $INPUT_NET_FILE $NODE_FILE >> $logFileName");
+      #system( "$env_eqator_home/plan_1 $INPUT_NET_FILE $NODE_FILE \| tee  $placeLogFileName >> $logFileName");
+      print "INFO-UTS-PL_GRPH_MPL : 002 : Placing the design $TOP_MODULE \n";
+    }
+
+    unlink("xy.out");
+    rename("mp_xy.out" , "xy.out");
+    &read_graph_mpl;
+    &delete_tmp_placer_files;
+    }
+}#sub place_graph_mpl
+
+sub place_graph_plan_1_pseudo 
+{
+  if ( $_[0] eq '-h') { print "Usage : place_graph_plan_1_pseudo \n";
+  } else {
+    $MPL_BINARY_IS_RUNNING = 1;
+    &delete_all_tmp_placer_files;
+    my @size = $PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenGetSize;
+    if(($size[2] == $size[0])||($size[3] == $size[1])){
+      print "WARN-UTS-PL_GRPH_PLAN_1_PSUDO : 001 : No need to place the design $TOP_MODULE, size is zero\n";
+      return;
+    }
+    &write_hier_place_graph ("-module",$TOP_MODULE,"--pin");
+    $INPUT_NET_FILE = $TOP_MODULE.".txt" ;
+    $NODE_FILE = "nodefile" ;
+    $LIB_FILE = "libfile" ;
+    my $env_proton_home = $GLOBAL->dbfGlobalGetProtonHome;
+    my $placeLogFileName = "plan_4_place.log";
+    
+    if( $NOLOG != 1 ) {
+      closeTee(*STDOUT);
+      open (TEST, ">>$logFileName");
+      my $ofh = select TEST;
+      $| = 1;
+      select $ofh;
+      openTee(*STDOUT, *STDOUT, *TEST);
+    }
+    if (-e $INPUT_NET_FILE) {
+      print "INFO-UTS-PL_GRPH_PLAN_1_PSUDO : 001 : Placing the design $TOP_MODULE \n";
+      #system( "$env_eqator_home/3RDBIN/plan_1 $INPUT_NET_FILE $NODE_FILE $LIB_FILE $DES_INFO_FILE \| tee  $placeDetailLogFileName >> $logFileName");
+      #system( "$env_eqator_home/3RDBIN/plan_1 $INPUT_NET_FILE $NODE_FILE $LIB_FILE");
+      system( "$env_proton_home/3RDBIN/plan_1 $INPUT_NET_FILE $NODE_FILE");
+      #system( "$env_eqator_home/plan_1 $INPUT_NET_FILE $NODE_FILE \| tee  $placeLogFileName >> $logFileName");
+      print "INFO-UTS-PL_GRPH_PLAN_1_PSUDO : 002 : Placing the design $TOP_MODULE \n";
+      &write_tcl_for_plan;
+    }
+    
+    rename("xy.out" , "mp_xy.out");
+    &read_hier_place_graph();
+    &delete_tmp_placer_files;
+    $MPL_BINARY_IS_RUNNING = 0;
+    }
+}#sub place_graph_plan_1_pseudo
+
+sub place_graph_basic_mode {
+        &delete_all_tmp_placer_files;
+	&write_graph_modified ("--pinOffset");
+        &write_design_info_file ;
+	&run_placer;
+	&read_graph_mpl;
+        &delete_tmp_placer_files;
+}# sub place_graph_basic_mode
+
+sub place_graph_basic_mode_with_pin_offset {
+        #&delete_all_tmp_placer_files;
+	&write_graph_modified ("--pinOffset");
+        &write_design_info_file ;
+	#&run_placer;
+	&read_graph_mpl;
+        &delete_tmp_placer_files;
+}# sub place_graph_basic_mode_with_pin_offset
+
+sub place_graph_macro_expanded {
+        &delete_all_tmp_placer_files;
+	&write_graph_modified_expand_fixed_hard_macro ;
+	&write_graph_modified_expand_fixed_hard_macro_normalized ;
+        &write_design_info_file ;
+	&run_placer;
+	&read_graph;
+        &delete_tmp_placer_files;
+}# sub place_graph_macro_expanded
+
+sub place_graph_plan_6 {
+
+$INPUT_NET_FILE = "$TOP_MODULE.txt";
+$NODE_FILE = "nodefile";
+$LIB_FILE = "libfile";
+if( $_[0] eq '-h') { 
+  print "Usage : place_graph_plan_6 [ <graph file> <node file> <library file> ] \n";
+  print "                  note : by default <graph file> will be $INPUT_NET_FILE\n";
+  print "                  note : by default <node file> will be $NODE_FILE\n";
+  return ;
+}
+my $noOfArguments = @_;
+if($noOfArguments >= 1){
+   $INPUT_NET_FILE = $_[0]; 
+}
+if($noOfArguments >= 2){
+   $NODE_FILE = $_[1]; 
+}
+if($noOfArguments >= 3){
+   $LIB_FILE = $_[2]; 
+}
+if($noOfArguments > 3){
+  print "Usage : place_graph_plan_6 [ <graph file> <node file> <library file> ] \n";
+  print "Info : ignoring argument after $_[4]\n";
+}
+        &delete_all_tmp_placer_files;
+        &write_graph_modified ("--pinOffset");
+	&run_placer;
+        &read_graph ;
+	&run_plan_6 ($INPUT_NET_FILE, $NODE_FILE, $LIB_FILE);
+	&read_graph_detail;
+        &delete_tmp_placer_files ;
+}#sub place_graph_plan_6
+
+sub run_placer {
+$INPUT_NET_FILE = "$TOP_MODULE.txt";
+$NODE_FILE = "nodefile";
+my $env_proton_home = $GLOBAL->dbfGlobalGetProtonHome;
+my $placeLogFileName = "place.log";
+if( $NOLOG != 1 ) {
+closeTee(*STDOUT);
+open (TEST, ">>$logFileName");
+my $ofh = select TEST;
+$| = 1;
+select $ofh;
+openTee(*STDOUT, *STDOUT, *TEST);
+}
+print "INFO-UTS-RUN_PLCR : 001 : Placing the design $TOP_MODULE \n";
+if ( -e $INPUT_NET_FILE) {
+#system( "$env_eqator_home/3RDBIN/plan_1 $INPUT_NET_FILE $NODE_FILE\| tee $placeLogFileName >> $logFileName");
+system( "$env_proton_home/3RDBIN/plan_1 $INPUT_NET_FILE $NODE_FILE\| tee $placeLogFileName >> $logFileName");
+#system( "$env_eqator_home/plan_1 $INPUT_NET_FILE $NODE_FILE controlfile\| tee  $placeLogFileName >> $logFileName");
+      &write_tcl_for_plan;
+      }
+}#sub run_placer
+
+sub run_placer_detail {
+$INPUT_NET_FILE = "$TOP_MODULE.txt";
+$NODE_FILE = "nodefile";
+$LIB_FILE = "libfile";
+$DES_INFO_FILE = "desinfofile";
+
+  if( $_[0] eq '-h') { 
+    print "Usage : run_placer_detail [ <graph file> <node file> <library file> <design info file>] \n";
+    print "                  note : by default <graph file> will be $INPUT_NET_FILE\n";
+    print "                  note : by default <node file> will be $NODE_FILE\n";
+    print "                  note : by default <design info file> will be $DES_INFO_FILE\n";
+    return ;
+  }
+  my $noOfArguments = @_;
+  if($noOfArguments >= 1){
+     $INPUT_NET_FILE = $_[0]; 
+  }
+  if($noOfArguments >= 2){
+     $NODE_FILE = $_[1]; 
+  }
+  if($noOfArguments >= 3){
+     $LIB_FILE = $_[2]; 
+  }
+  if($noOfArguments >= 4){
+     $DES_INFO_FILE = $_[3]; 
+  }
+  if($noOfArguments > 4){
+    print "Usage : run_placer_detail [ <graph file> <node file> <library file> <design info file>] \n";
+    print "Info : ignoring argument after $_[4]\n";
+  }
+
+my $env_proton_home = $GLOBAL->dbfGlobalGetProtonHome;
+my $placeDetailLogFileName = "place_detail.log";
+if( $NOLOG != 1 ) {
+closeTee(*STDOUT);
+open (TEST, ">>$logFileName");
+my $ofh = select TEST;
+$| = 1;
+select $ofh;
+openTee(*STDOUT, *STDOUT, *TEST);
+}
+if ( -e $INPUT_NET_FILE) {
+print "INFO-UTS-RUN_PLCR_DTL : 001 : Detail Placing the design $TOP_MODULE \n";
+#system( "$env_eqator_home/3RDBIN/plan_2 $INPUT_NET_FILE $NODE_FILE \| tee  $placeDetailLogFileName >> $logFileName");
+#system( "$env_eqator_home/3RDBIN/plan_2 $INPUT_NET_FILE $NODE_FILE $LIB_FILE $DES_INFO_FILE \| tee  $placeDetailLogFileName >> $logFileName");
+system( "$env_proton_home/3RDBIN/plan_2 $INPUT_NET_FILE $NODE_FILE $LIB_FILE $DES_INFO_FILE \| tee  $placeDetailLogFileName >> $logFileName");
+      &write_tcl_for_plan;
+}
+}#sub run_placer_detail
+
+sub run_plan_3 {
+$INPUT_NET_FILE = "${TOP_MODULE}_pin_offset.txt";
+$NODE_FILE = "nodefile";
+$LIB_FILE = "libfile_pin_offset";
+$DES_INFO_FILE = "desinfofile";
+
+  if( $_[0] eq '-h') { 
+    print "Usage : run_plan_3 [ <graph file> <node file> <library file> <design info file>] \n";
+    print "                  note : by default <graph file> will be $INPUT_NET_FILE\n";
+    print "                  note : by default <node file> will be $NODE_FILE\n";
+    print "                  note : by default <design info file> will be $DES_INFO_FILE\n";
+    return ;
+  }
+  my $noOfArguments = @_;
+  if($noOfArguments >= 1){
+     $INPUT_NET_FILE = $_[0]; 
+  }
+  if($noOfArguments >= 2){
+     $NODE_FILE = $_[1]; 
+  }
+  if($noOfArguments >= 3){
+     $LIB_FILE = $_[2]; 
+  }
+  if($noOfArguments >= 4){
+     $DES_INFO_FILE = $_[3]; 
+  }
+  if($noOfArguments > 4){
+    print "Usage : run_plan_3 [ <graph file> <node file> <library file> <design info file>] \n";
+    print "Info : ignoring argument after $_[4]\n";
+  }
+
+my $env_proton_home = $GLOBAL->dbfGlobalGetProtonHome;
+my $placeDetailLogFileName = "plan_3.log";
+if( $NOLOG != 1 ) {
+closeTee(*STDOUT);
+open (TEST, ">>$logFileName");
+my $ofh = select TEST;
+$| = 1;
+select $ofh;
+openTee(*STDOUT, *STDOUT, *TEST);
+}
+print "INFO-UTS-RUN_PLAN_3 : 001 : Detail Placing the design $TOP_MODULE \n";
+if ( -e $INPUT_NET_FILE) {
+#system( "$env_eqator_home/3RDBIN/plan_3 $INPUT_NET_FILE $NODE_FILE \| tee  $placeDetailLogFileName >> $logFileName");
+#system( "$env_eqator_home/3RDBIN/plan_3 $INPUT_NET_FILE $NODE_FILE $LIB_FILE $DES_INFO_FILE \| tee  $placeDetailLogFileName >> $logFileName");
+system( "$env_proton_home/3RDBIN/plan_3 $INPUT_NET_FILE $NODE_FILE $LIB_FILE $DES_INFO_FILE \| tee  $placeDetailLogFileName >> $logFileName");
+      &write_tcl_for_plan;
+}
+}#sub run_plan_3
+
+sub run_plan_5 {
+$INPUT_NET_FILE = "$TOP_MODULE.txt";
+$NODE_FILE = "nodefile";
+my $env_proton_home = $GLOBAL->dbfGlobalGetProtonHome;
+my $placeLogFileName = "place_plan5.log";
+if( $NOLOG != 1 ) {
+closeTee(*STDOUT);
+open (TEST, ">>$logFileName");
+my $ofh = select TEST;
+$| = 1;
+select $ofh;
+openTee(*STDOUT, *STDOUT, *TEST);
+}
+print "INFO-UTS : 001 : Placing the design $TOP_MODULE \n";
+if ( -e $INPUT_NET_FILE) {
+#system( "$env_eqator_home/3RDBIN/plan_5 $INPUT_NET_FILE $NODE_FILE\| tee $placeLogFileName >> $logFileName");
+system( "$env_proton_home/3RDBIN/plan_5 $INPUT_NET_FILE $NODE_FILE\| tee $placeLogFileName >> $logFileName");
+      &write_tcl_for_plan;
+      }
+}#sub run_plan_5
+
+sub run_plan_6 {
+$INPUT_NET_FILE = "$TOP_MODULE.txt";
+$NODE_FILE = "nodefile";
+$LIB_FILE = "libfile";
+
+  if( $_[0] eq '-h') { 
+    print "Usage : run_plan_6 [ <graph file> <node file> <library file> <design info file>] \n";
+    print "                  note : by default <graph file> will be $INPUT_NET_FILE\n";
+    print "                  note : by default <node file> will be $NODE_FILE\n";
+    return ;
+  }
+  my $noOfArguments = @_;
+  if($noOfArguments >= 1){
+     $INPUT_NET_FILE = $_[0]; 
+  }
+  if($noOfArguments >= 2){
+     $NODE_FILE = $_[1]; 
+  }
+  if($noOfArguments >= 3){
+     $LIB_FILE = $_[2]; 
+  }
+  if($noOfArguments > 3){
+    print "Usage : run_plan_6 [ <graph file> <node file> <library file> ] \n";
+    print "Info : ignoring argument after $_[4]\n";
+  }
+
+my $env_proton_home = $GLOBAL->dbfGlobalGetProtonHome;
+my $placeDetailLogFileName = "plan_6.log";
+if( $NOLOG != 1 ) {
+closeTee(*STDOUT);
+open (TEST, ">>$logFileName");
+my $ofh = select TEST;
+$| = 1;
+select $ofh;
+openTee(*STDOUT, *STDOUT, *TEST);
+}
+if ( -e $INPUT_NET_FILE) {
+print "INFO-UTS-RUN_PLAN_6 : 001 : Detail Placing the design $TOP_MODULE \n";
+#system( "$env_eqator_home/3RDBIN/plan_6 $INPUT_NET_FILE $NODE_FILE $LIB_FILE \| tee  $placeDetailLogFileName >> $logFileName");
+system( "$env_proton_home/3RDBIN/plan_6 $INPUT_NET_FILE $NODE_FILE $LIB_FILE \| tee  $placeDetailLogFileName >> $logFileName");
+      &write_tcl_for_plan;
+}
+}#sub run_plan_6
+
+sub place_graph_plan_6_only {
+
+$INPUT_NET_FILE = "$TOP_MODULE.txt";
+$NODE_FILE = "nodefile";
+$LIB_FILE = "libfile";
+if( $_[0] eq '-h') { 
+  print "Usage : place_graph_plan_6_only [ <graph file> <node file> <library file> ] \n";
+  print "                  note : by default <graph file> will be $INPUT_NET_FILE\n";
+  print "                  note : by default <node file> will be $NODE_FILE\n";
+  return ;
+}
+my $noOfArguments = @_;
+if($noOfArguments >= 1){
+   $INPUT_NET_FILE = $_[0]; 
+}
+if($noOfArguments >= 2){
+   $NODE_FILE = $_[1]; 
+}
+if($noOfArguments >= 3){
+   $LIB_FILE = $_[2]; 
+}
+if($noOfArguments > 3){
+  print "Usage : place_graph_plan_6_only [ <graph file> <node file> <library file> ] \n";
+  print "Info : ignoring argument after $_[4]\n";
+}
+        &delete_all_tmp_placer_files;
+        &write_graph_modified ("--pinOffset");
+        &write_xy_out ("-output", "xy.out", "--overwrite");
+	&run_plan_6 ($INPUT_NET_FILE, $NODE_FILE, $LIB_FILE);
+	&read_graph_detail;
+        &delete_tmp_placer_files ;
+}#sub place_graph_plan_6_only
+#--------------------------------------------------------------------------------------------------#
+sub place_graph_plan_6_pseudo {
+$INPUT_NET_FILE = "$TOP_MODULE.txt";
+$NODE_FILE = "nodefile";
+$LIB_FILE = "libfile";
+if( $_[0] eq '-h') { 
+  print "Usage : place_graph_plan_6_pseudo [ <graph file> <node file> <library file> ] \n";
+  print "                  note : by default <graph file> will be $INPUT_NET_FILE\n";
+  print "                  note : by default <node file> will be $NODE_FILE\n";
+  return ;
+}
+my $noOfArguments = @_;
+if($noOfArguments >= 1){
+   $INPUT_NET_FILE = $_[0]; 
+}
+if($noOfArguments >= 2){
+   $NODE_FILE = $_[1]; 
+}
+if($noOfArguments >= 3){
+   $LIB_FILE = $_[2]; 
+}
+if($noOfArguments > 3){
+  print "Usage : place_graph_plan_6_pseudo [ <graph file> <node file> <library file> ] \n";
+  print "Info : ignoring argument after $_[4]\n";
+}
+        &delete_all_tmp_placer_files;
+        &write_hier_place_graph ("-module",$TOP_MODULE,"--incr" ,"--pin");
+        rename("mp_xy.in" , "xy.out");
+	&run_plan_6 ($INPUT_NET_FILE, $NODE_FILE, $LIB_FILE);
+        rename("detailed_xy.out" , "mp_xy.out");
+        &read_hier_place_graph();
+        &delete_tmp_placer_files ;
+}#sub place_graph_plan_6_pseudo
+#------------------------------------------------------------------------------------------#
+sub run_placer_for_sp2dia {
+my $INPUT_NET_FILE = "$TOP_MODULE.graph";
+my $NODE_FILE = "nodefile";
+my $env_proton_home = $GLOBAL->dbfGlobalGetProtonHome;
+my $placeLogFileName = "place.log";
+print "INFO-UTS-RUN_PLCR : 001 : Placing the design $TOP_MODULE \n";
+if ( -e $INPUT_NET_FILE) {
+  system( "$env_proton_home/3RDBIN/plan_1 $INPUT_NET_FILE $NODE_FILE\| tee $placeLogFileName");
+}
+
+}#sun run_placer_for_sp2dia
+#------------------------------------------------------------------------------------------#
+sub run_yosys_binary {
+my $noOfArguments = @_;
+if ( $_[0] eq '-h') { print "Usage : run_yosys_binary\n";
+}else {
+  my $fab;
+  my $tech;
+  my $lib;
+  my $top_module;
+  my $rtl_file;
+  for(my $i = 0; $i < $noOfArguments; $i++){
+    if($_[$i] eq "-fab"){$fab = $_[$i+1];}
+    if($_[$i] eq "-tech"){$tech = $_[$i+1];}
+    if($_[$i] eq "-rtl"){$rtl_file = $_[$i+1];}
+    if($_[$i] eq "-top_module"){$top_module = $_[$i+1];}
+  }#for
+  my $Projectid ="unitTestCases/RTL2GDS";
+  my $Projectdir = "/ef/home/mas";
+  my $synethesisdir ="workarea/synthesis";
+  system ("rm -rf synthesis");
+  open(WRITE_MAKE,">Makefile");
+  print WRITE_MAKE  "PROJECTID=$Projectid\n";
+  print WRITE_MAKE  "PROJECTDIR=$Projectdir\n";
+  print WRITE_MAKE  "SYNTHESISDIR=$synethesisdir\n";
+  print WRITE_MAKE  "RTLFILE:=$rtl_file\n";
+  print WRITE_MAKE  "FAB=$fab\n";
+  print WRITE_MAKE  "TECHNOLOGY=$tech\n";
+  print WRITE_MAKE  "TECHLIBPATH=data/\${FAB}/\${TECHNOLOGY}/liberty\n";
+  print WRITE_MAKE  "LIBERTYFILE=D_CELLS_LP5MOS_typ_1_80V_25C_abc.lib\n";
+  print WRITE_MAKE  "TOPMODULE=$top_module\n";
+  print WRITE_MAKE  "YOSYSREADVERILOGCOMMAND := read_verilog PROJECTDIR/PROJECTID/\n";
+  print WRITE_MAKE  "COMMA := ,\n";
+  print WRITE_MAKE  "RTLFILEYOSYSREADVERILOGCOMMAND :=\$(subst {, ,\${RTLFILE})\n";
+  print WRITE_MAKE  "RTLFILEYOSYSREADVERILOGCOMMAND :=\$(subst }, ,\${RTLFILEYOSYSREADVERILOGCOMMAND})\n";
+  print WRITE_MAKE  "RTLFILEYOSYSREADVERILOGCOMMAND :=\$(subst \${COMMA},_nwlnchrsedrplcd_\${YOSYSREADVERILOGCOMMAND},\${RTLFILEYOSYSREADVERILOGCOMMAND})\n";
+  print WRITE_MAKE  "RTLFILEYOSYSREADVERILOGCOMMAND :=\$(strip \${RTLFILEYOSYSREADVERILOGCOMMAND})\n";
+  print WRITE_MAKE  "RTLFILEYOSYSREADVERILOGCOMMAND :=_eghtspcs_\${YOSYSREADVERILOGCOMMAND}\${RTLFILEYOSYSREADVERILOGCOMMAND}\n";
+  print WRITE_MAKE  "\n";
+  print WRITE_MAKE  "rtl2gds: gdsout\n";
+  print WRITE_MAKE  "\n";
+  print WRITE_MAKE  "synthesize:\n";
+  print WRITE_MAKE  "\tmkdir synthesis\n";
+  print WRITE_MAKE  "\techo \${RTLFILEYOSYSREADVERILOGCOMMAND} > synth.ys\n";
+  print WRITE_MAKE  "\tsed -i 's\@_eghtspcs_@        \@g' synth.ys\n";
+  print WRITE_MAKE  "\tsed -i 's\@_nwlnchrsedrplcd_@\\n        \@g' synth.ys\n";
+  print WRITE_MAKE  "\tcat ../script/synth.ys >> synth.ys\n";
+  print WRITE_MAKE  "\tsed -i 's\@PROJECTDIR\@\${PROJECTDIR}\@g' synth.ys\n";
+  print WRITE_MAKE  "\tsed -i 's\@PROJECTID\@\${PROJECTID}\@g' synth.ys\n";
+  print WRITE_MAKE  "\tsed -i 's\@SYNTHESISDIR\@\${SYNTHESISDIR}\@g' synth.ys\n";
+  print WRITE_MAKE  "\tsed -i 's\@TECHLIBPATH\@\${TECHLIBPATH}\@g' synth.ys\n";
+  print WRITE_MAKE  "\tsed -i 's\@LIBERTYFILE\@\${LIBERTYFILE}\@g' synth.ys\n";
+  print WRITE_MAKE  "\tsed -i 's\@TOPMODULE\@\${TOPMODULE}\@g' synth.ys\n";
+  print WRITE_MAKE  "\t/ef/apps/bin/yosys synth.ys\n";
+  print WRITE_MAKE  "\texit\n";
+  close (WRITE_MAKE);
+}#else
+  system("make  synthesize");
+}#sub run_yosys_binary
+#------------------------------------------------------------------------------------------#
+sub run_iverilog_binary {
+my $noOfArguments = @_;
+if ( $_[0] eq '-h') { print "Usage : run_iverilog_binary\n";
+}else {
+  my $output;
+  my $tb_verilog_file;
+  my @verilog_file_list = ();
+  for(my $i = 0; $i < $noOfArguments; $i++){
+    if($_[$i] eq "-output"){$output = $_[$i+1];}
+    if($_[$i] eq "-tb"){$tb_verilog_file = $_[$i+1];}
+    if($_[$i] eq "-v"){my $verilog_file = $_[$i+1]; 
+	               $verilog_file =~ s/\{\s*//; 
+	               $verilog_file =~ s/\s*\}//; 
+	               @verilog_file_list = split(/\,/,$verilog_file);
+                      }
+  }#for
+  system ("rm -rf synthesis");
+  open(WRITE_MAKE,">Makefile");
+  print WRITE_MAKE  "sim:\n";
+  print WRITE_MAKE "\tiverilog -o $output.vvp $tb_verilog_file @verilog_file_list\n";
+  print WRITE_MAKE "\tvvp -llog.txt $output.vvp\n";
+  print WRITE_MAKE  "\texit\n";
+  close(WRITE_MAKE);
+}#else
+  system("make  sim");
+}#sub run_iverilog_binary
+#------------------------------------------------------------------------------------------#
+1;

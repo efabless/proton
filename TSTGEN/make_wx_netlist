@@ -1,0 +1,2135 @@
+#!/bin/perl -w 
+
+sub generate_netlist {
+$noOfArguments = @_;
+my $NUM_COMPO = 0;
+my $NUM_FLOPS = 0;
+my $NUM_INPUTS = 0;
+my $NUM_OUTPUTS = 0;
+my $NUM_NETS = 0;
+my $NUM_BLOCKS = 0;
+my $NUM_HIER = 0;
+my $NUM_LEVEL_HIER = 0;
+my $TOP_MODULE_NAME = "";
+my $CLOCK_DOMAIN = 1;
+my $OUTFILE = "";
+my $ALGO = 1;
+my $TCL = 1;
+my $PCL = 1;
+
+
+###### setting the defaults #######
+
+$TOP_MODULE_NAME = "top";
+$NUM_COMPO = 20000;
+#$NUM_FLOPS = floor(0.1*$NUM_COMPO);
+#$NUM_INPUTS = floor(0.1*$NUM_COMPO);
+#$NUM_OUTPUTS = floor(0.1*$NUM_COMPO);
+$OUTFILE = "netListGen";
+$ALGO = 1;
+$CLUSTER_SIZE = int(rand(5) + 1);
+$TCL = 1;
+$PCL = 1;
+
+
+if ( $_[0] eq "-h" ) {
+                     print "Usage : generate_netlist -spec < spec file name>\n";
+                     }
+else {
+###################################
+if ( $noOfArguments > 1 ) {
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-spec"){$SpecFileName = $_[$i+1];}
+                                         } # for
+($TOP_MODULE_NAME,$NUM_INPUTS,$NUM_OUTPUTS,$NUM_FLOPS,$CLUSTER_SIZE,$TCL,$PCL,$ALGO,$OUTFILE) = &read_netlist_spec($SpecFileName);
+                          }
+
+#-----------------------------------------------------------------#
+# check if the file already exist, and you have permission to write in the directory
+#-----------------------------------------------------------------#
+#if ( -e $OUTFILE ) {print "WARN-TST-GENRTE_NETLIST : 001 : file $OUTFILE already exist ... please use some other file name\n";
+#                    print "INFO-TST-GENRTE_NETLIST : 002 : please modify the spec file and use the generate_netlist command again!\n";
+#                    return;
+#                   }
+print "INFO-TST-GENRTE_NETLIST : 003 : running netlist gen for $TOP_MODULE_NAME,$NUM_INPUTS,$NUM_OUTPUTS,$NUM_FLOPS\n";
+$TOP_MODULE = $TOP_MODULE_NAME;
+$GLOBAL->dbfGlobalSetTOP($TOP_MODULE);
+
+##############################
+# Starting the Algo          #
+##############################
+
+print "INFO-TST-GENRTE_NETLIST : 004 : I am starting ...\n";
+date;
+ &dbGenInit($NUM_INPUTS,$NUM_OUTPUTS,$NUM_FLOPS,$TOP_MODULE_NAME);
+ date;
+ &dbGenInstantiatePorts($TOP_MODULE_NAME,$NUM_INPUTS,$NUM_OUTPUTS,$NUM_FLOPS, $CLOCK_DOMAIN);
+ date;
+ &dbGenInstantiateFlops($TOP_MODULE_NAME,$NUM_FLOPS);
+ date;
+################################################################################
+################## chosing the algo for generation of sparse matrix ############
+################################################################################
+if ( $ALGO == 1 ) { &dbGenAlgoFillMatrix_Type1($NUM_INPUTS,$NUM_OUTPUTS,$NUM_FLOPS,$TOP_MODULE_NAME,$CLUSTER_SIZE); }
+elsif ( $ALGO == 2 ) { &dbGenAlgoFillMatrix_Type2($NUM_INPUTS,$NUM_OUTPUTS,$NUM_FLOPS,$TOP_MODULE_NAME,$CLUSTER_SIZE,$PCL,$TCL); }
+elsif ( $ALGO == 200 ) { &dbGenAlgoFillMatrix_ilmSimple($NUM_INPUTS,$NUM_OUTPUTS,$NUM_FLOPS,$TOP_MODULE_NAME,$CLUSTER_SIZE,$PCL,$TCL); }
+
+# &dbGenAlgoIFillMatrix($NUM_INPUTS,$NUM_OUTPUTS,$NUM_FLOPS,$TOP_MODULE_NAME);
+# &dbGenVerySimple($NUM_INPUTS,$NUM_OUTPUTS,$NUM_FLOPS,$TOP_MODULE_NAME);
+################################################################################
+# print the internal matrix #
+################################################################################
+  $GEN{$TOP_MODULE_NAME}->dbgGenDesignGetTpath;
+################################################################################
+ date;
+ &dbGenConvertMap2NetDB_II($NUM_INPUTS,$NUM_OUTPUTS,$NUM_FLOPS,$TOP_MODULE_NAME);
+ date;
+open (WRITE, ">$OUTFILE");
+###################################################################
+&write_verilog("-output","$OUTFILE","--overwrite");
+###################################################################
+close(WRITE);
+print "INFO-TST-GENRTE_NETLIST : 005 : The new netlist $OUTFILE is written successfully!\n";
+                                  }
+}#sub generate_netlist
+
+sub dbGenInstantiatePorts {
+
+my $moduleName = $_[0];
+my $num_inputs = $_[1];
+my $num_outputs = $_[2];
+my $num_flops = $_[3];
+my $clocks = $_[4];
+
+
+print "INFO-TST : 001 : Instantiate Ports for module $moduleName ..\n";
+
+my $listOfPorts = PORTS_.$moduleName;
+$PORTS_ALREADY{$moduleName} = \%{$listOfPorts};
+########################### data input ports #########################
+for( my $xx = $num_flops; $xx < $num_inputs+$num_flops ; $xx++ ) {
+$BPpinName = "in".$xx;
+$PORTS_ALREADY{$moduleName}{$BPpinName} = PortDB::new();
+$PORTS_ALREADY{$moduleName}{$BPpinName}->dbPortSetDir("input");
+$PORTS_ALREADY{$moduleName}{$BPpinName}->dbPortSetSignal("SIGNAL");
+$PORTS_ALREADY{$moduleName}{$BPpinName}->dbPortSetConn($BPpinName);
+$NETS_ALREADY{$BPpinName}{PIN}=$BPpinName;
+$GEN{$moduleName}->dbGenDesignSetColumn($xx,$BPpinName);
+                                             }
+########################### data output ports #########################
+for( my $xx = $num_flops; $xx < $num_outputs+$num_flops ; $xx++ ) {
+$BPpinName = "out".$xx;
+$PORTS_ALREADY{$moduleName}{$BPpinName} = PortDB::new();
+$PORTS_ALREADY{$moduleName}{$BPpinName}->dbPortSetDir("output");
+$PORTS_ALREADY{$moduleName}{$BPpinName}->dbPortSetSignal("SIGNAL");
+$PORTS_ALREADY{$moduleName}{$BPpinName}->dbPortSetConn($BPpinName);
+$GEN{$moduleName}->dbGenDesignSetRow($xx,$BPpinName);
+$NETS_ALREADY{$BPpinName}{PIN}=$BPpinName;
+                                             }
+########################### clock ports #########################
+for ( my $xx = 0; $xx < $clocks; $xx++ ) {
+$ClkpinName = "clk_".$xx;                                               
+$PORTS_ALREADY{$moduleName}{$ClkpinName} = PortDB::new();
+$PORTS_ALREADY{$moduleName}{$ClkpinName}->dbPortSetDir("input");
+$PORTS_ALREADY{$moduleName}{$ClkpinName}->dbPortSetSignal("CLOCK");
+$PORTS_ALREADY{$moduleName}{$ClkpinName}->dbPortSetConn($ClkpinName);
+$NETS_ALREADY{$ClkpinName}{PIN}=$ClkpinName;
+
+                                                }
+########################### other ports #########################
+
+}#sub dbGenInstantiatePorts 
+
+
+sub dbGenInstantiateFlops {
+my $moduleName = $_[0];
+my $num_flops = $_[1];
+
+
+print "INFO-TST : 001 : Instantiate Flops for module $moduleName ..\n";
+my @listOfFlopCells = ();
+foreach $macroName ( keys %{PLDB} ) { 
+                             $func = $PLDB{$macroName}->dbMdbGetFunction;
+                             if ( $func eq "flop" ) { 
+                                                   print "DBG-TST : 002 : $macroName\n" if ($DEBUG > 20);
+                                                   push(@listOfFlopCells, $macroName); 
+                                                   }
+                             }
+my $len = @listOfFlopCells;
+for( my $xx = 0; $xx < $num_flops ; $xx++ ) {
+print "DBG-TST : 003 : xx = $xx, len = $len\n" if ($DEBUG > 20); 
+my $mod = ($xx) % ($len);
+my $cellref = $listOfFlopCells[$mod];
+$instName = "U".$xx;
+
+$CADB{$instName} = CompAttDB::new();
+$CADB{$instName}->dbCadbSetCellref($cellref);
+###########################################################################
+###### select a  clock domain to attach to this instance ####
+my @clockPortList = ();
+######  get all the clock ports #####
+foreach my $portName ( keys %{$PORTS_ALREADY{$moduleName}} ) {
+                     my $pinType =  $PORTS_ALREADY{$moduleName}{$portName}->dbPortGetSignal;
+                     if ( $pinType eq "CLOCK" ) { push(@clockPortList,$portName); }
+                                                            }
+my $numClockDomains = @clockPortList;
+my $val = int(rand($numClockDomains));
+my $clockName = $clockPortList[$val];
+$CADB{$instName}->dbCadbSetClkDomain($clockName);
+
+############################################################################
+$GEN{$moduleName}->dbGenDesignSetColumn($xx,$instName);
+$GEN{$moduleName}->dbGenDesignSetRow($xx,$instName);
+                                            }
+
+}#sub dbGenInstantiateFlops
+
+
+sub dbGenInit {
+my $num_inputs = $_[0];
+my $num_outputs = $_[1];
+my $num_flops = $_[2];
+my $moduleName = $_[3];
+
+$row = $num_outputs + $num_flops;
+$col = $num_flops + $num_inputs;
+$GEN{$moduleName} = GenDesignDB::new();
+$GEN{$moduleName}->dbGenDesignInit_new($row,$col);
+
+# $GEN{$moduleName}->dbGenDesignSetTpathVal(4,5,X);
+# $GEN{$moduleName}->dbGenDesignSetTpathVal(4,5,Z);
+# $GEN{$moduleName}->dbgGenDesignGetTpath;
+# my $val = $GEN{$moduleName}->dbGenDesignGetTpathVal_new(4,5);
+# print "HI $val\n";
+
+}#sub dbGenInit
+
+sub dbGenConvertMap2NetDB_II {
+my $num_inputs = $_[0];
+my $num_outputs = $_[1];
+my $num_flops = $_[2];
+my $moduleName = $_[3];
+my $row = $num_outputs + $num_flops;
+my $col = $num_inputs + $num_flops;
+my $netCount = 1;
+my @fanInConeBin = ();
+
+%ReceiverIPP = ();
+%ConeIPP = ();
+
+
+
+for( my $xx = 0; $xx < $row; $xx++) {
+     if ( $STOP_IMMEDIATELY == 1 ) { last; }
+    my $totalNumPaths = $GEN{$moduleName}->dbGenDesignGetTotalFanInPaths_new($xx);
+#    print "#################\n";
+#    print "$totalNumPaths\n";
+    if ( $totalNumPaths < 1 ) { # then total number of paths is zero 
+                              }
+    else {
+$p = [];
+&dbGenRandomMinimize($totalNumPaths);
+############################################################
+@ReceiverIPP = ();
+@ConeIPP = ();
+    my @fanInConeBin = ();
+    my $recverInst = $GEN{$moduleName}->dbGenDesignGetRow($xx);
+    for ( my $yy = 0; $yy < $col; $yy++ ) {
+    $fanout  = $GEN{$moduleName}->dbGenDesignGetTpathVal_new($xx,$yy);
+    if ( $fanout > 0 ) { $coneInst = $GEN{$moduleName}->dbGenDesignGetColumn($yy);
+                         for ( my $xx = 0; $xx < $fanout; $xx++) { push(@fanInConeBin, $coneInst); }
+#                       print "$recverInst : $coneInst\n";
+                       }#if
+                                          }# for
+############## create receiver instance pin pair ###############
+##################### receiver #####################
+if ( exists $PORTS_ALREADY{$moduleName}{$recverInst} ) {&dbGenCreateReceiverPpP($recverInst); }
+elsif( exists $CADB{$recverInst} ) {
+&dbGenCreateReceiverIPP($recverInst);
+                                 }
+#################### cone ##########################
+foreach $coneInst ( @fanInConeBin ) {
+if ( exists $PORTS_ALREADY{$moduleName}{$coneInst} ) {&dbGenCreateConePpP($coneInst); }
+elsif ( exists $CADB{$coneInst} ) {
+&dbGenCreateConeIPP($coneInst);
+                                 }
+                                    }
+############################################################
+########################## building the verilog db #############
+
+#foreach $receiver ( @ReceiverIPP ) { #print "$receiver\n"; }
+#foreach $cone ( @ConeIPP ) { print "$cone\n"; }
+
+my @tempConeIPP = ();
+
+my $len = @{$p};
+my $temp = ${$p}[0];
+#########################################################################
+# print "Checking the tags ... \n";
+for (my $xx = 0 ; $xx < $len ; $xx++ ) {
+my $temp = ${$p}[$xx];
+#foreach my $tag ( @{$temp} ) { print "$tag " }
+#print "\n";
+                                       }
+#########################################################################
+#print "First\n";
+for (my $xx = 0 ; $xx < $len ; $xx++ ) {
+my $temp = ${$p}[$xx];
+#print "Checking the tag ... \n";
+#foreach my $tag ( @{$temp} ) { print "$tag " }
+#print "\n";
+
+
+
+foreach my $tag ( @{$temp} ) {
+##### each tag is added to the ConeIPP ####
+## The steps are ##
+## choose as many coneIPP ##
+## break the coneIPP in instances and pins ##
+
+## break the tag get cellref and num of inputs used ##
+($cellfunc,$numOfInputs) = (split(/\:/, $tag))[0,1];
+print "INFO-TST : 001 : $tag $cellfunc\n";
+#### choose a cell of the desired cell function with the num of inputs ####
+$cellref = &dbGenGetCellbyFunc($cellfunc,$numOfInputs);
+print "INFO-TST : 002 : chosen cellref is $cellref\n";
+
+## instantiate a new instance ##
+$instName = $GEN{$moduleName}->dbGenDesignCreateInst;
+$CADB{$instName} = CompAttDB::new();
+
+## set cellref of the new instance ##
+$CADB{$instName}->dbCadbSetCellref($cellref);
+
+## get the input pins of the cell ##
+@pins = $PLDB{$cellref}->dbMdbGetPins;
+foreach $pinName ( @pins ) {
+
+# print "doing for $pinName\n";
+# if the pin is a input pin then i attach a net to it and
+# push a ConeIPP pin out and attach the net to that
+
+  my $flag = $PLDB{$cellref}->dbMdbGetPinType($pinName);
+  if ($flag == 0) {
+  my $dir = $PLDB{$cellref}->dbMdbGetPinDir($pinName);
+  if ( $dir == 0 ){
+       ##choose a cone input pin pair ##
+                  my $coneipptag = pop(@ConeIPP);
+       ## split the cone instance and pin name ##
+                  my($coneInstName,$conePinName) = (split(/\//,$coneipptag))[0,1];
+#                  print "$coneInstName $conePinName needs connection to $pinName of $instName\n";
+       ## if the input cone instance pin has a net name already use that net name or else ##
+       ## instantiate a new net ##
+
+if ( $coneInstName eq "PIN" ) {
+   $coneNetName = $conePinName;
+   &dbGenMakePortConn($instName,$pinName,$coneNetName);
+                          }
+   else {
+       if ( exists $COMP_ALREADY{$coneInstName}{$conePinName} ) { $coneNetName = $COMP_ALREADY{$coneInstName}{$conePinName}; }
+       else { $coneNetName = $GEN{$moduleName}->dbGenDesignCreateNet; 
+#       print "net name is  $coneNetName\n"; 
+            }
+       &dbGenMakeCombiConn($instName,$pinName,$coneInstName,$conePinName,$coneNetName);
+        }
+
+                 }# if pin direction is input
+            else {
+                 my $tempTag = $instName."/".$pinName;
+                 push(@tempConeIPP,$tempTag);
+                 }# if the pin direction is output
+                  }#if pin is of type signal
+                           }#foreach pin of the new instance added
+###########################################################################################
+###########################################################################################
+
+                             }# foreach
+                  @ConeIPP = @tempConeIPP;
+                                      }# for the whole cone cloud 
+
+#print "establishing the final connection of last cone Inst and receiver ..\n";
+#foreach my $tag ( @tempConeIPP ) { print "$tag " }
+#foreach $receiver ( @ReceiverIPP ) { print "$receiver\n"; }
+#print "\n";
+@ConeIPP = @tempConeIPP;
+## split the cone instance and pin name ##
+   $coneipptag =  pop(@ConeIPP);
+ my($coneInstName,$conePinName) = (split(/\//,$coneipptag))[0,1];
+   $receiveripptag =  pop(@ReceiverIPP);
+ my($receiverInstName,$receiverPinName) = (split(/\//,$receiveripptag))[0,1];
+# print "$coneInstName : $conePinName  connection $receiverInstName : $receiverPinName\n";
+   if ( $coneInstName eq "PIN" ) {
+   $netName = $conePinName;
+   &dbGenMakePortConn($receiverInstName,$receiverPinName,$netName);
+                          }
+   elsif ( $receiverInstName eq "PIN" ) {
+   $netName = $receiverPinName;
+   &dbGenMakePortConn($coneInstName,$conePinName,$netName);
+                          }
+   else {
+       if ( exists $COMP_ALREADY{$coneInstName}{$conePinName} ) { $coneNetName = $COMP_ALREADY{$coneInstName}{$conePinName}; }
+       else { $netName = $GEN{$moduleName}->dbGenDesignCreateNet; 
+#print "net name is  $netName\n"; 
+            }
+       &dbGenMakeCombiConn($receiverInstName,$receiverPinName,$coneInstName,$conePinName,$netName);
+        }
+
+# print "\n";
+
+        }# if total num of paths is not zero
+                                    }#for
+
+
+#### making the clock connections ####
+&dbGenAddClkConnections();
+
+}#sub dbGenConvertMap2NetDB_II
+
+
+sub dbGenCreateConePpP { # create the cone Port-pin-Pair
+my $pinName = $_[0];
+my $instName = "PIN";
+my $tag = $instName."/".$pinName;
+push (@ConeIPP,$tag);
+#print "CIBP $instName $pinName\n";
+}#sub dbGenCreateConePpP
+
+sub dbGenCreateReceiverPpP { # create the cone Port-pin-Pair
+my $pinName = $_[0];
+my $instName = "PIN";
+my $tag = $instName."/".$pinName;
+push (@ReceiverIPP,$tag);
+#print "COBP $instName $pinName\n";
+}#sub dbGenCreateReceiverPpP
+
+sub dbGenCreateReceiverIPP { # create the receiver instance pin pair
+my $instName = $_[0];
+my $cellref = $CADB{$instName}->dbCadbGetCellref;
+my @pins = $PLDB{$cellref}->dbMdbGetPins;
+   foreach $pinName ( @pins ) {
+            my $type = $PLDB{$cellref}->dbMdbGetPinType($pinName);
+            if ( $type == 4 ) { $rIpin  = $pinName; }
+                              }#foreach
+my $tag = $instName."/".$rIpin;
+push (@ReceiverIPP,$tag);
+#print "COBR $instName $cellref $rIpin\n";
+
+}# sub dbGenCreateReceiverIPP
+
+sub dbGenCreateConeIPP { # create the receiver instance pin pair
+my $instName = $_[0];
+my $cellref = $CADB{$instName}->dbCadbGetCellref;
+my @pins = $PLDB{$cellref}->dbMdbGetPins;
+   foreach $pinName ( @pins ) {
+            my $type = $PLDB{$cellref}->dbMdbGetPinType($pinName);
+            if ( $type == 9 ) { $cOpin  = $pinName; }
+                              }#foreach
+my $tag = $instName."/".$cOpin;
+push (@ConeIPP,$tag);
+#print "CIBR $instName $cellref $cOpin\n";
+
+}# sub dbGenCreateConeIPP
+
+sub dbGenReductionAlgoI {
+my $moduleName = $_[0];
+
+###############################################################
+# Algo : choose 2 inst-pin pairs and connect them using 2 nets and 1 isntance
+# use the output pin in the new instance-pin pair list.
+###############################################################
+$cellref = "NAND2X1";
+$instName = $GEN{$moduleName}->dbGenDesignCreateInst;
+$CADB{$instName} = CompAttDB::new();
+$CADB{$instName}->dbCadbSetCellref($cellref);
+
+
+@pins = $PLDB{$cellref}->dbMdbGetPins;
+foreach $pinName ( @pins ) { 
+# print "doing for $pinName\n";
+# if the pin is a input pin then i attach a net to it and
+# push a ConeIPP pin out and attach the net to that
+
+  my $flag = $PLDB{$cellref}->dbMdbGetPinType($pinName);
+  if ($flag == 0) {
+  my $dir = $PLDB{$cellref}->dbMdbGetPinDir($pinName);
+  if ( $dir == 0 ) {
+my $destInst = $instName;
+my $dPinName = $pinName;
+my $len = @ConeIPP;
+   if ( $len > 0 ) {
+my $tag = pop(@ConeIPP);
+#print "cone $tag\n";
+my ($srcInst, $sPinName) = (split(/\//, $tag))[0,1];
+
+############ find the source and destination endpoint types ######
+if ( exists $CADB{$srcInst} ) { $Ctype = 0; } else { $Ctype = 1; }
+if ( exists $CADB{$destInst} ) { $Rtype = 0; } else { $Rtype = 1; }
+my $case = $Ctype.$Rtype ;
+
+if ( $case eq "00" ) {
+   if ( exists $COMP_ALREADY{$srcInst}{$sPinName} ) {
+   $netName = $COMP_ALREADY{$srcInst}{$sPinName}; } else { 
+   $netName = $GEN{$moduleName}->dbGenDesignCreateNet; }
+   &dbGenMakeRegConn($destInst,$dPinName,$srcInst,$sPinName,$netName);
+                    }# if case reg2reg connection
+elsif ( $case eq "10" ) {
+   $netName = $sPinName;
+   &dbGenMakePortConn($destInst,$dPinName,$netName);
+                    }# if case input2reg connection
+
+
+                     }# if coneIPP has Instance-pin-pairs
+                   }# if direction is input
+   elsif ( $dir == 1 ) {
+   $destInst = $instName;
+   $dPinName = $pinName;
+
+   $tag = pop(@ReceiverIPP);
+   my ($sinkInst, $rPin) = (split(/\//, $tag))[0,1];
+   #print "receiver $sinkInst\/$rPin\n";
+############ find the source and destination endpoint types ######
+if ( exists $CADB{$sinkInst} ) { $Rtype = 0; } else { $Rtype = 1; }
+if ( exists $CADB{$destInst} ) { $Ctype = 0; } else { $Ctype = 1; }
+my $case = $Ctype.$Rtype ;
+
+
+if ( $case eq "00" ) {
+   $netName = $GEN{$moduleName}->dbGenDesignCreateNet;
+&dbGenMakeRegConn($destInst,$dPinName,$sinkInst,$rPin,$netName);
+                     }
+elsif ( $case eq "01" ) {
+   $netName = $rPin;
+   &dbGenMakePortConn($destInst,$dPinName,$netName);
+                    }# if case input2reg connection
+
+
+                       }# if direction is output
+                  }#if pin is of type signal
+                           }# foreach
+
+
+}#sub dbGenReductionAlgoI
+
+sub dbGenRandomMinimize {
+$t = [];
+##################################################
+####  list all functions ####
+my %func = ( 1 => "and",
+             2 => "nand",
+             3 => "or",
+             4 => "nor",
+             5 => "aoi",
+             6 => "oai",
+             7 => "mux",
+             8 => "inv"
+           );
+for(my $xx = 0 ; $xx < $_[0]; $xx) {
+my $count = $_[0] - $xx;
+my $y = 0;
+if ( $count < 3 ) { $y = int(rand($count)) + 1; }
+else { $y = int(rand(3)) + 1; }
+
+if ( $y == 1 ) { $x = 8 }
+else { $x = int(rand(2)) + 1; }
+$cell = $func{$x};
+
+my $tag = "$cell:$y" ;
+push(@{$t},$tag);
+$xx = $xx + $y;
+                                  }#for
+$len = @{$t};
+push(@{$p},$t);
+       if ( $len > 1 ) { &dbGenRandomMinimize($len); }
+}#sub dbGenRandomMinimize
+
+
+sub dbGenAddClkConnections {
+## currently the clock scheme is very simple ##
+## all modules have a clock port and all flops in that module are connected to the clock port ##
+foreach my $instance ( keys %{COMP_ALREADY} ) {
+           my $cellref = $CADB{$instance}->dbCadbGetCellref;
+           my $func = $PLDB{$cellref}->dbMdbGetFunction;
+           ## get the clock domain ##
+           my  $clockDomain = $CADB{$instance}->dbCadbGetClkDomain;
+           if ( $func eq "flop" ) {
+           ## find the clock pin ##
+           my @pins = $PLDB{$cellref}->dbMdbGetPins;
+           foreach my $pinName ( @pins ) {
+                   my $pinType = $PLDB{$cellref}->dbMdbGetPinType($pinName);
+		   if ($pinType == 3  ) {
+           #### build the clock connection ####
+           $COMP_ALREADY{$instance}{$pinName} = $clockDomain;
+           $NETS_ALREADY{$clockDomain}{$instance} = $pinName;
+                                             }
+                                         }#foreach pin of the register 
+                                 }# if the cell is a register
+                                              }
+}#sub dbGenAddClkConnections
+
+sub generate_module_netlist {
+my $moduleName = shift @_;
+   if ( exists $PSEUDO_MODULE_ALREADY{$moduleName} ) {
+                                                     }
+
+
+
+}#sub generate_module_netlist
+
+#This subroutine pick a random lef cell from list of lef cell.
+#It add this lef cell to the current row and increase the row
+#percent width used.
+#It doesn't handle hard macro efficiently,if the hard macro height
+#is more than row height, all the above rows which are covered
+#partially or completely,will place cells after this hard macro right edge.
+#For such rows space before this hard macro left edge will be unused.
+#This is for future enhancement.
+use Benchmark;
+sub create_flat_design_pick_random_lef_cell
+{
+  my $t0 = new Benchmark;
+  my @lef_cell_list = keys %PLDB;
+  my %lef_cell_already_used = ();
+  my $lef_cell_list_count = @lef_cell_list;
+  my %row_number_vs_x_locations = ();
+  my %row_number_vs_y_location = ();
+  my %INST_MOV_RIGHT_DIR = ();
+  my @rows = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetRows;
+  my @size = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetSize ;
+  my $utilization = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetUtilization ;
+  my $chip_width = $size[2] -$size[0];
+  my $chip_height = $size[3] -$size[1];
+  my $row_count = @rows ;
+  my $curr_row ;
+  my $curr_row_orient ;
+  my $curr_row_index = 0;
+  my $lef_cell_index = 0;
+  my $curr_instance_count = 0;
+  my $curr_instance_name = 0;
+  my $rowHeight = $GLOBAL->dbGlobalGetRowHeight;
+  my $dbu = $GLOBAL->dbfGlobalGetDBU;
+  my $row_height = $GLOBAL->dbGlobalGetRowHeight * $dbu;
+  my $chip_width_minus_one ;
+  my $curr_lef_cell ;
+  my @box = ();
+  my $lef_cell_width = 0;
+  my $lef_cell_height = 0;
+  my $x_region_index = -1;
+  my @array_of_x_locations_array = ();
+  my $instance_x_location = 0;
+  my $instance_y_location = 0;
+  my $temp_row_num = -1;
+  my $insert_above_row_status = -1;
+  my %hash_of_ignore_lef_cell_index = ();
+  my %hash_of_full_rows = ();
+  my $maximum_allowed_row_used_width = 0;
+  my $array_of_x_locations_array_ref ;
+  my $temp_index;
+  my $start_x_loc = 0;
+  my $end_x_loc = 0;
+  my $status = 0;
+  my @x_locations_array = ();
+  my $temp_cell_width_needed ;
+  my $temp_lef_cell_list_count = 0;
+  my $row_used_width = 0;
+  my $temp_cell_width_remaining  = 0;
+  my $temp_start_x_loc ;
+  my $temp_start_x_loc_minus_one ;
+  my $no_of_row;
+  my $no_of_cells = 0;
+  my $row_width_remaining ;
+  my $spacing_x ;
+  my $right_movement ;
+  my $temp_movement ;
+  my @temp_loc ;
+  my $temp_x_loc ;
+  my $temp_y_loc ;
+  my $inst_right_mvmnt ;
+  my $temp_row_used_width ;
+  my $any_lef_cell_used = 1;
+  my $row_start_index = 0;
+  my $min_lef_cell_width = $chip_width;
+  for($curr_row_index=0;$curr_row_index<$row_count;$curr_row_index++){
+    #print ("Processing row $curr_row_index\n");
+    $chip_width_minus_one = $chip_width -1;
+    $row_number_vs_x_locations{$curr_row_index} = [[0,$chip_width_minus_one,"empty","notfixed","noInstName0"]];
+    $curr_row = $rows[$curr_row_index];
+    $row_number_vs_y_location{$curr_row_index} = (split(/\s+/, $curr_row))[3];
+  }
+  #$curr_row_index = 0;
+  #$curr_row = $rows[$curr_row_index];
+  #$curr_row_orient = (split(/\s+/, $curr_row))[4];
+  $temp_lef_cell_list_count = $lef_cell_list_count;
+  $temp_cell_width_remaining  = 0;
+  #print ("Processing row $curr_row_index\n");
+  $curr_lef_cell =  $lef_cell_list[$temp_index];
+  @box = $PLDB{$curr_lef_cell}->dbMdbGetSize;
+  $lef_cell_width  =  $box[0]*$dbu;
+  $min_lef_cell_width = $lef_cell_width;
+  for($temp_index=1;$temp_index<$lef_cell_list_count;$temp_index++){
+    $curr_lef_cell =  $lef_cell_list[$temp_index];
+    @box = $PLDB{$curr_lef_cell}->dbMdbGetSize;
+    $lef_cell_width  =  $box[0]*$dbu;
+    if($lef_cell_width < $min_lef_cell_width){
+      $min_lef_cell_width = $lef_cell_width;
+    }
+  }
+  while ($any_lef_cell_used == 1){
+    #print ("Processing row first while $curr_row_index\n");
+    $any_lef_cell_used = 0;
+    for($temp_lef_cell_list_count=$lef_cell_list_count;$temp_lef_cell_list_count>0;$temp_lef_cell_list_count--){
+      $lef_cell_index = int(rand($temp_lef_cell_list_count));
+      $curr_lef_cell =  $lef_cell_list[$lef_cell_index];
+      $lef_cell_list[$lef_cell_index] = $lef_cell_list[$temp_lef_cell_list_count-1];
+      $lef_cell_list[$temp_lef_cell_list_count-1] = $curr_lef_cell;
+      #$temp_lef_cell_list_count--;
+      #if($temp_lef_cell_list_count == 0){
+      #  print "All the lef cell tried starting from one\n";
+      #  $temp_lef_cell_list_count = $lef_cell_list_count;
+      #}
+      #print "temp_lef_cell_list_count is $temp_lef_cell_list_count\n";
+      @box = $PLDB{$curr_lef_cell}->dbMdbGetSize;
+      $lef_cell_width  =  $box[0]*$dbu;
+      $lef_cell_height  =  $box[1]*$dbu;
+      #print "current selected lef cell width is $lef_cell_width\n";
+      #print "current selected lef cell height is $lef_cell_height\n";
+      $x_region_index = -1;
+      for($curr_row_index=$row_start_index;$curr_row_index<$row_count;$curr_row_index++){
+        if(exists $hash_of_full_rows{$curr_row_index}){
+          if($curr_row_index == $row_start_index){
+            $row_start_index++;
+          }
+          next;
+        }else{
+          $row_used_width = &return_used_width_of_row($row_number_vs_x_locations{$curr_row_index});
+          if($row_used_width > ($chip_width*($utilization/100) - $min_lef_cell_width)){
+            if($curr_row_index == $row_start_index){
+              $row_start_index++;
+            }else{
+              $hash_of_full_rows{$curr_row_index} = 1;
+            }
+            next;
+          }
+        }
+        #print "row_used_width is $row_used_width\n";
+        $curr_row = $rows[$curr_row_index];
+        $curr_row_orient = (split(/\s+/, $curr_row))[4];
+        #print ("Processing row $curr_row_index");
+        #print (" at y location $row_number_vs_y_location{$curr_row_index}\n"); 
+        $x_region_index = &return_index_of_space_on_row_for_cell_no_insert($row_number_vs_x_locations{$curr_row_index},$utilization,$chip_width,$row_height,$lef_cell_width,$lef_cell_height);
+        if($x_region_index != -1){
+          last;
+        }
+        #$temp_row_used_width = &return_used_width_of_row($row_number_vs_x_locations{$curr_row_index});
+        #print "row number $curr_row_index used width is $temp_row_used_width chip_width is $chip_width\n";
+        #$curr_row_index++;
+        #if($curr_row_index >= $row_count){
+        #  last;
+        #}
+      }
+      if($curr_row_index == $row_count){
+        next;
+      }
+      #print "curr_row_index is $curr_row_index\n";
+      #print "x_region_index is $x_region_index\n";
+      @array_of_x_locations_array = @{$row_number_vs_x_locations{$curr_row_index}};
+      $instance_x_location = $array_of_x_locations_array[$x_region_index][0]; 
+      $end_x_loc = $instance_x_location + $lef_cell_width -1;
+      $instance_y_location = $row_number_vs_y_location{$curr_row_index}; 
+      #print "instance_x_location is $instance_x_location\n";
+      if($lef_cell_height > $row_height){
+        $insert_above_row_status = -1;
+        #print "lef_cell_height is greater than row_height\n";
+        for(my $no_of_row = 1;$no_of_row < ceil($lef_cell_height/$row_height);$no_of_row++){
+          $temp_row_num = $curr_row_index + $no_of_row;
+          if($temp_row_num > ($row_count -1)){
+            $insert_above_row_status = 1;
+            #print "lef cell height goes beyond chip height\n";
+            last;
+          }
+          #print "checking full region in row $temp_row_num\n";
+          $insert_above_row_status = &get_x_region_occupied_in_row($row_number_vs_x_locations{$temp_row_num},$instance_x_location,$end_x_loc);
+          if($insert_above_row_status != -1){
+            #this will never happen, it implies same space in above rows are full
+            last;
+          }else{
+            $temp_row_used_width = &return_used_width_of_row($row_number_vs_x_locations{$temp_row_num});
+            if(($temp_row_used_width+$lef_cell_width) > $chip_width*($utilization/100)){
+              $insert_above_row_status = 1;
+              last;
+            }
+          }
+        }
+        if($insert_above_row_status != -1){
+          next;
+        }
+      }else{
+        #print "lef_cell_height is equal to row_height\n";
+      }
+      &return_index_of_space_on_row_for_cell($row_number_vs_x_locations{$curr_row_index},$utilization,$chip_width,$row_height,$lef_cell_width,$lef_cell_height);
+      #print ("Adding component to row $curr_row_index at location $instance_x_location $instance_y_location\n");
+      $curr_instance_name = "_slvrn_inst_".$curr_instance_count;
+      $curr_instance_count++;
+      $CADB{$curr_instance_name} = CompAttDB::new();
+      $CADB{$curr_instance_name}->dbCadbSetCellref($curr_lef_cell);
+      $COMP_ALREADY{$curr_instance_name} = \%{$curr_instance_name};
+      $CADB{$curr_instance_name}->dbCadbSetStatus("PLACED");
+      $CADB{$curr_instance_name}->dbCadbSetLoc($instance_x_location,$instance_y_location); 
+      $CADB{$curr_instance_name}->dbCadbSetOrient($curr_row_orient);
+      $lef_cell_already_used{$curr_lef_cell} = 1;
+      $row_number_vs_x_locations{$curr_row_index}->[$x_region_index]->[4] = $curr_instance_name;
+      $any_lef_cell_used = 1;
+      #print "lef cell added on row $curr_row_index and x_index $x_region_index\n";
+      if($lef_cell_height > $row_height){
+        #print "lef_cell_height is greater than row_height\n";
+        $insert_above_row_status = -1;
+        for($no_of_row = 1;$no_of_row < ceil($lef_cell_height/$row_height);$no_of_row++){
+          $temp_row_num = $curr_row_index + $no_of_row;
+          $insert_above_row_status = &insert_full_region_in_row($row_number_vs_x_locations{$temp_row_num},$instance_x_location,$lef_cell_width,$utilization,$chip_width);
+          #print "inserting full region in row $temp_row_num at x region $insert_above_row_status\n";
+          if($insert_above_row_status == -1){
+            #this will never happen, it implies same space in above rows are full
+            last;
+          }else{
+            $row_number_vs_x_locations{$temp_row_num}->[$insert_above_row_status]->[4] = $curr_instance_name;
+          }
+          my $array_of_x_locations_array_ref = $row_number_vs_x_locations{$temp_row_num};
+          my @temp_array_of_x_locations_array = @{$array_of_x_locations_array_ref};
+          my @x_locations_array = @{$temp_array_of_x_locations_array[$insert_above_row_status]};
+          my $curr_instance_name = $x_locations_array[4];
+          #print "instance name:$curr_instance_name\n";
+        }
+      }else{
+        #print "lef_cell_height is equal to row_height\n";
+      }
+    }
+  }
+  print "lef cell added on all the rows\n";
+  my $t1 = new Benchmark;
+  my $td = timediff($t1, $t0);
+  print "lef cell addition took:",timestr($td),"\n";
+  #print "Out of first while loop\n";
+  #&set_inst_box;
+  #return;
+  #for($curr_row_index=0;$curr_row_index<$row_count;$curr_row_index++){
+  #  $row_used_width = &return_used_width_of_row($row_number_vs_x_locations{$curr_row_index});
+  #  $temp_cell_width_remaining  = $chip_width*($utilization/100) -$row_used_width;
+  #  print "third $curr_row_index row_used_width is $row_used_width and width remaining is $temp_cell_width_remaining\n";
+  #}
+  @lef_cell_list = (sort pldb_cell_sort_using_cell_width keys %PLDB);
+  #$curr_lef_cell =  $lef_cell_list[0];
+  #@box = $PLDB{$curr_lef_cell}->dbMdbGetSize;
+  #$lef_cell_width  =  $box[0]*$dbu;
+  #$lef_cell_height  =  $box[1]*$dbu;
+  #print "minimum lef cell width is $lef_cell_width\n";
+  #$curr_lef_cell =  $lef_cell_list[-1];
+  #@box = $PLDB{$curr_lef_cell}->dbMdbGetSize;
+  #$lef_cell_width  =  $box[0]*$dbu;
+  #$lef_cell_height  =  $box[1]*$dbu;
+  #print "maximum lef cell width is $lef_cell_width\n";
+  for($curr_row_index=0;$curr_row_index<$row_count;$curr_row_index++){
+    #print ("Reprocessing row $curr_row_index\n");
+    $instance_y_location = $row_number_vs_y_location{$curr_row_index}; 
+    $curr_row = $rows[$curr_row_index];
+    $curr_row_orient = (split(/\s+/, $curr_row))[4];
+    %hash_of_ignore_lef_cell_index = ();
+    $row_used_width = &return_used_width_of_row($row_number_vs_x_locations{$curr_row_index});
+    #print "row_used_width is $row_used_width\n";
+    $maximum_allowed_row_used_width = $chip_width*($utilization/100);
+    #print "maximum_allowed_row_used_width is $maximum_allowed_row_used_width\n";
+    #print "chip_width is $chip_width\n";
+    #print "utilization is $utilization\n";
+    if($row_used_width <= ($chip_width*($utilization/100) - $min_lef_cell_width)){
+      $array_of_x_locations_array_ref = $row_number_vs_x_locations{$curr_row_index};
+      @array_of_x_locations_array = @{$array_of_x_locations_array_ref};
+      for($temp_index = 0 ; $temp_index <= $#array_of_x_locations_array;$temp_index++){
+        if($row_used_width >= $chip_width*($utilization/100)){
+          last;
+        }
+        @x_locations_array = @{$array_of_x_locations_array[$temp_index]};
+        $start_x_loc = $x_locations_array[0];
+        $end_x_loc = $x_locations_array[1];
+        $status = $x_locations_array[2];
+        if($status eq "empty"){
+          #print "Reprocessing x region $start_x_loc $end_x_loc\n";
+          $temp_cell_width_needed = $end_x_loc - $start_x_loc + 1 ;
+          if($temp_cell_width_needed >($chip_width*($utilization/100) -$row_used_width)){
+            $temp_cell_width_needed  = $chip_width*($utilization/100) -$row_used_width;
+          }
+          #print "Cell needed for this  x region width is $temp_cell_width_needed \n";
+          %hash_of_ignore_lef_cell_index = ();
+          while(1){
+            $lef_cell_index = &find_cell_nearest_more_equal_width(\@lef_cell_list,$temp_cell_width_needed,\%hash_of_ignore_lef_cell_index,\%lef_cell_already_used);
+            if($lef_cell_index == -1){
+              last;
+            }
+            $curr_lef_cell =  $lef_cell_list[$lef_cell_index];
+            @box = $PLDB{$curr_lef_cell}->dbMdbGetSize;
+            $lef_cell_width  =  $box[0]*$dbu;
+            $lef_cell_height  =  $box[1]*$dbu;
+            #print "Cell found for this  x region $lef_cell_index width is $lef_cell_width height is $lef_cell_height\n";
+            if($lef_cell_height > $row_height){
+              #print "Cell found height is greater than row height\n";
+              for($no_of_row = 1;$no_of_row < ceil($lef_cell_height/$row_height);$no_of_row++){
+                $temp_row_num = $curr_row_index + $no_of_row;
+                if($temp_row_num > ($row_count -1)){
+                  $lef_cell_index = -1;
+                  $hash_of_ignore_lef_cell_index{$curr_lef_cell} = 1;
+                  last;
+                }
+                $insert_above_row_status = &get_x_region_occupied_in_row($row_number_vs_x_locations{$temp_row_num},$start_x_loc,$end_x_loc);
+                if($insert_above_row_status == -1){
+                  $hash_of_ignore_lef_cell_index{$curr_lef_cell} = 1;
+                  $lef_cell_index = -1;
+                  last;
+                }else{
+                  $temp_row_used_width = &return_used_width_of_row($row_number_vs_x_locations{$temp_row_num});
+                  if(($temp_row_used_width+$lef_cell_width) > $chip_width*($utilization/100)){
+                    $hash_of_ignore_lef_cell_index{$curr_lef_cell} = 1;
+                    $lef_cell_index = -1;
+                    last;
+                  }
+                }
+              }
+            }
+            if($lef_cell_index == -1){
+              next;
+            }else{
+              last;
+            }
+          }
+          if($lef_cell_index == -1){
+            next;
+          }
+          #print "Adding Cell found in chip\n";
+          $instance_x_location = $start_x_loc;
+          $curr_instance_name = "_slvrn_inst_".$curr_instance_count;
+          $curr_instance_count++;
+          $row_used_width += $lef_cell_width;
+          $CADB{$curr_instance_name} = CompAttDB::new();
+          $CADB{$curr_instance_name}->dbCadbSetCellref($curr_lef_cell);
+          $COMP_ALREADY{$curr_instance_name} = \%{$curr_instance_name};
+          $CADB{$curr_instance_name}->dbCadbSetStatus("PLACED");
+          $CADB{$curr_instance_name}->dbCadbSetLoc($instance_x_location,$instance_y_location); 
+          $CADB{$curr_instance_name}->dbCadbSetOrient($curr_row_orient);
+          $lef_cell_already_used{$curr_lef_cell} = 1;
+
+          $temp_start_x_loc = $start_x_loc + $lef_cell_width;
+          $temp_start_x_loc_minus_one = $temp_start_x_loc -1;
+          $end_x_loc = $x_locations_array[1];
+          #print "start_x_loc is $start_x_loc\n";
+          #print "temp_start_x_loc is $temp_start_x_loc\n";
+          #print "end_x_loc is $end_x_loc\n";
+          #print "lef_cell_width is $lef_cell_width\n";
+          push(@$array_of_x_locations_array_ref,[$temp_start_x_loc,$end_x_loc,"empty","notfixed",""]);
+          @array_of_x_locations_array = @{$array_of_x_locations_array_ref};
+          if($cell_height_to_be_placed > $row_height){
+            $array_of_x_locations_array_ref->[$temp_index] =[$start_x_loc,$temp_start_x_loc_minus_one,"full","fixed",""];
+          }else{
+            $array_of_x_locations_array_ref->[$temp_index] =[$start_x_loc,$temp_start_x_loc_minus_one,"full","notfixed",""];
+          }
+          $row_number_vs_x_locations{$curr_row_index}->[$temp_index]->[4] = $curr_instance_name;
+          if($lef_cell_height > $row_height){
+            for(my $no_of_row = 1;$no_of_row < ceil($lef_cell_height/$row_height);$no_of_row++){
+              $temp_row_num = $curr_row_index + $no_of_row;
+              $insert_above_row_status = &insert_full_region_in_row($row_number_vs_x_locations{$temp_row_num},$instance_x_location,$lef_cell_width,$utilization,$chip_width);
+              if($insert_above_row_status == -1){
+                #this will never happen, it implies same space in above rows are full
+                last;
+              }else{
+                $row_number_vs_x_locations{$temp_row_num}->[$x_region_index]->[4] = $curr_instance_name;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  #print "All the row are full now\n";
+  #for($curr_row_index=0;$curr_row_index<$row_count;$curr_row_index++){
+  #  my $row_used_width = &return_used_width_of_row($row_number_vs_x_locations{$curr_row_index});
+  #  my $temp_cell_width_remaining  = $chip_width*($utilization/100) -$row_used_width;
+  #  print "fourth $curr_row_index row_used_width is $row_used_width and width remaining is $temp_cell_width_remaining\n";
+  #}
+  #for($curr_row_index=0;$curr_row_index<$row_count;$curr_row_index++){
+  #  print "Row no $curr_row_index\n";
+  #  my $array_of_x_locations_array_ref = $row_number_vs_x_locations{$curr_row_index};
+  #  my @array_of_x_locations_array = @{$array_of_x_locations_array_ref};
+  #  for(my $temp_index = 0 ; $temp_index <= $#array_of_x_locations_array;$temp_index++){
+  #    my @x_locations_array = @{$array_of_x_locations_array[$temp_index]};
+  #    my $start_x_loc = $x_locations_array[0];
+  #    my $end_x_loc = $x_locations_array[1];
+  #    my $status = $x_locations_array[2];
+  #    if($status eq "full"){
+  #      my $is_fixed = $x_locations_array[3];
+  #      my $curr_instance_name = $x_locations_array[4];
+  #      print "instance name:$curr_instance_name\n";
+  #    }
+  #  }
+  #}
+  print "Going to expand lef cell on all the rows\n";
+  for($curr_row_index=0;$curr_row_index<$row_count;$curr_row_index++){
+    #print ("Reprocessing row $curr_row_index\n");
+    $array_of_x_locations_array_ref = $row_number_vs_x_locations{$curr_row_index};
+    @array_of_x_locations_array = @{$array_of_x_locations_array_ref};
+    $no_of_cells = 0;
+    $row_used_width = 0;
+    for($temp_index = 0 ; $temp_index <= $#array_of_x_locations_array;$temp_index++){
+      @x_locations_array = @{$array_of_x_locations_array[$temp_index]};
+      $start_x_loc = $x_locations_array[0];
+      $end_x_loc = $x_locations_array[1];
+      $status = $x_locations_array[2];
+      if($status eq "full"){
+        $row_used_width += $end_x_loc -$start_x_loc +1;
+        $no_of_cells++;
+      }
+    }
+    $row_width_remaining  = $chip_width -$row_used_width;
+    $spacing_x = $row_width_remaining/($no_of_cells + 1);
+    $right_movement = $spacing_x;
+    for($temp_index = 0 ; $temp_index <= $#array_of_x_locations_array;$temp_index++){
+      @x_locations_array = @{$array_of_x_locations_array[$temp_index]};
+      $status = $x_locations_array[2];
+      if($status eq "full"){
+        $curr_instance_name = $x_locations_array[4];
+        if(!exists $INST_MOV_RIGHT_DIR{$curr_instance_name}){
+          $INST_MOV_RIGHT_DIR{$curr_instance_name} = $right_movement;
+        }else{
+          $temp_movement = $INST_MOV_RIGHT_DIR{$curr_instance_name};
+          if($right_movement < $temp_movement){
+            $INST_MOV_RIGHT_DIR{$curr_instance_name} = $right_movement;
+          }
+        }
+      }
+      $right_movement += $spacing_x;
+    }
+  }
+  foreach my $temp_instance_name(keys %INST_MOV_RIGHT_DIR){
+    @temp_loc = $CADB{$temp_instance_name}->dbCadbGetLoc(); 
+    $temp_x_loc = $temp_loc[0];
+    $temp_y_loc = $temp_loc[1];
+    $inst_right_mvmnt = $INST_MOV_RIGHT_DIR{$temp_instance_name};
+    $temp_x_loc += $inst_right_mvmnt;
+    $CADB{$temp_instance_name}->dbCadbSetLoc($temp_x_loc,$temp_y_loc); 
+  }
+  my $t2 = new Benchmark;
+  $td = timediff($t2, $t1);
+  print "lef cell expansion took:",timestr($td),"\n";
+  &set_inst_box;
+}#sub create_flat_design_pick_random_lef_cell
+
+sub create_flat_design_pick_random_lef_cell_second_best
+{
+  my @lef_cell_list = keys %PLDB;
+  my %lef_cell_already_used = ();
+  my $lef_cell_list_count = @lef_cell_list;
+  my %row_number_vs_x_locations = ();
+  my %row_number_vs_y_location = ();
+  my %INST_MOV_RIGHT_DIR = ();
+  my @rows = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetRows;
+  my @size = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetSize ;
+  my $utilization = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetUtilization ;
+  my $chip_width = $size[2] -$size[0];
+  my $chip_height = $size[3] -$size[1];
+  my $row_count = @rows ;
+  my $curr_row ;
+  my $curr_row_orient ;
+  my $curr_row_index = 0;
+  my $lef_cell_index = 0;
+  my $curr_instance_count = 0;
+  my $curr_instance_name = 0;
+  my $rowHeight = $GLOBAL->dbGlobalGetRowHeight;
+  my $dbu = $GLOBAL->dbfGlobalGetDBU;
+  my $row_height = $GLOBAL->dbGlobalGetRowHeight * $dbu;
+  my $chip_width_minus_one ;
+  my $curr_lef_cell ;
+  my @box = ();
+  my $lef_cell_width = 0;
+  my $lef_cell_height = 0;
+  my $x_region_index = -1;
+  my @array_of_x_locations_array = ();
+  my $instance_x_location = 0;
+  my $instance_y_location = 0;
+  my $temp_row_num = -1;
+  my $insert_above_row_status = -1;
+  my %hash_of_ignore_lef_cell_index = ();
+  my $maximum_allowed_row_used_width = 0;
+  my $array_of_x_locations_array_ref ;
+  my $temp_index;
+  my $start_x_loc = 0;
+  my $end_x_loc = 0;
+  my $status = 0;
+  my @x_locations_array = ();
+  my $temp_cell_width_needed ;
+  my $temp_lef_cell_list_count = 0;
+  my $row_used_width = 0;
+  my $temp_cell_width_remaining  = 0;
+  my $temp_start_x_loc ;
+  my $temp_start_x_loc_minus_one ;
+  my $no_of_row;
+  my $no_of_cells = 0;
+  my $row_width_remaining ;
+  my $spacing_x ;
+  my $right_movement ;
+  my $temp_movement ;
+  my @temp_loc ;
+  my $temp_x_loc ;
+  my $temp_y_loc ;
+  my $inst_right_mvmnt ;
+  my $temp_row_used_width ;
+  for($curr_row_index=0;$curr_row_index<$row_count;$curr_row_index++){
+    #print ("Processing row $curr_row_index\n");
+    $chip_width_minus_one = $chip_width -1;
+    $row_number_vs_x_locations{$curr_row_index} = [[0,$chip_width_minus_one,"empty","notfixed","noInstName0"]];
+    $curr_row = $rows[$curr_row_index];
+    $row_number_vs_y_location{$curr_row_index} = (split(/\s+/, $curr_row))[3];
+  }
+  #$curr_row_index = 0;
+  #$curr_row = $rows[$curr_row_index];
+  #$curr_row_orient = (split(/\s+/, $curr_row))[4];
+  $temp_lef_cell_list_count = $lef_cell_list_count;
+  $temp_cell_width_remaining  = 0;
+  #print ("Processing row $curr_row_index\n");
+  while ($temp_lef_cell_list_count != 0){
+    #print ("Processing row first while $curr_row_index\n");
+    $lef_cell_index = int(rand($temp_lef_cell_list_count));
+    $curr_lef_cell =  $lef_cell_list[$lef_cell_index];
+    $lef_cell_list[$lef_cell_index] = $lef_cell_list[$temp_lef_cell_list_count-1];
+    $lef_cell_list[$temp_lef_cell_list_count-1] = $curr_lef_cell;
+    $temp_lef_cell_list_count--;
+    #if($temp_lef_cell_list_count == 0){
+    #  print "All the lef cell tried starting from one\n";
+    #  $temp_lef_cell_list_count = $lef_cell_list_count;
+    #}
+    print "temp_lef_cell_list_count is $temp_lef_cell_list_count\n";
+    @box = $PLDB{$curr_lef_cell}->dbMdbGetSize;
+    $lef_cell_width  =  $box[0]*$dbu;
+    $lef_cell_height  =  $box[1]*$dbu;
+    print "current selected lef cell width is $lef_cell_width\n";
+    print "current selected lef cell height is $lef_cell_height\n";
+    $x_region_index = -1;
+    for($curr_row_index=0;$curr_row_index<$row_count;$curr_row_index++){
+      $row_used_width = &return_used_width_of_row($row_number_vs_x_locations{$curr_row_index});
+      print "row_used_width is $row_used_width\n";
+      $curr_row = $rows[$curr_row_index];
+      $curr_row_orient = (split(/\s+/, $curr_row))[4];
+      print ("Processing row $curr_row_index");
+      print (" at y location $row_number_vs_y_location{$curr_row_index}\n"); 
+      $x_region_index = &return_index_of_space_on_row_for_cell_no_insert($row_number_vs_x_locations{$curr_row_index},$utilization,$chip_width,$row_height,$lef_cell_width,$lef_cell_height);
+      if($x_region_index != -1){
+        last;
+      }
+      #$temp_row_used_width = &return_used_width_of_row($row_number_vs_x_locations{$curr_row_index});
+      #print "row number $curr_row_index used width is $temp_row_used_width chip_width is $chip_width\n";
+      #$curr_row_index++;
+      #if($curr_row_index >= $row_count){
+      #  last;
+      #}
+    }
+    if($curr_row_index == $row_count){
+      next;
+    }
+    print "curr_row_index is $curr_row_index\n";
+    print "x_region_index is $x_region_index\n";
+    @array_of_x_locations_array = @{$row_number_vs_x_locations{$curr_row_index}};
+    $instance_x_location = $array_of_x_locations_array[$x_region_index][0]; 
+    $end_x_loc = $instance_x_location + $lef_cell_width -1;
+    $instance_y_location = $row_number_vs_y_location{$curr_row_index}; 
+    print "instance_x_location is $instance_x_location\n";
+    if($lef_cell_height > $row_height){
+      $insert_above_row_status = -1;
+      print "lef_cell_height is greater than row_height\n";
+      for(my $no_of_row = 1;$no_of_row < ceil($lef_cell_height/$row_height);$no_of_row++){
+        $temp_row_num = $curr_row_index + $no_of_row;
+        if($temp_row_num > ($row_count -1)){
+          $insert_above_row_status = 1;
+          print "lef cell height goes beyond chip height\n";
+          last;
+        }
+        print "checking full region in row $temp_row_num\n";
+        $insert_above_row_status = &get_x_region_occupied_in_row($row_number_vs_x_locations{$temp_row_num},$instance_x_location,$end_x_loc);
+        if($insert_above_row_status != -1){
+          #this will never happen, it implies same space in above rows are full
+          last;
+        }else{
+          $temp_row_used_width = &return_used_width_of_row($row_number_vs_x_locations{$temp_row_num});
+          if(($temp_row_used_width+$lef_cell_width) > $chip_width*($utilization/100)){
+            $insert_above_row_status = 1;
+            last;
+          }
+        }
+      }
+      if($insert_above_row_status != -1){
+        next;
+      }
+    }else{
+      print "lef_cell_height is equal to row_height\n";
+    }
+    &return_index_of_space_on_row_for_cell($row_number_vs_x_locations{$curr_row_index},$utilization,$chip_width,$row_height,$lef_cell_width,$lef_cell_height);
+    print ("Adding component to row $curr_row_index at location $instance_x_location $instance_y_location\n");
+    $curr_instance_name = "_slvrn_inst_".$curr_instance_count;
+    $curr_instance_count++;
+    $CADB{$curr_instance_name} = CompAttDB::new();
+    $CADB{$curr_instance_name}->dbCadbSetCellref($curr_lef_cell);
+    $COMP_ALREADY{$curr_instance_name} = \%{$curr_instance_name};
+    $CADB{$curr_instance_name}->dbCadbSetStatus("PLACED");
+    $CADB{$curr_instance_name}->dbCadbSetLoc($instance_x_location,$instance_y_location); 
+    $CADB{$curr_instance_name}->dbCadbSetOrient($curr_row_orient);
+    $lef_cell_already_used{$curr_lef_cell} = 1;
+    $row_number_vs_x_locations{$curr_row_index}->[$x_region_index]->[4] = $curr_instance_name;
+    if($lef_cell_height > $row_height){
+      print "lef_cell_height is greater than row_height\n";
+      $insert_above_row_status = -1;
+      for($no_of_row = 1;$no_of_row < ceil($lef_cell_height/$row_height);$no_of_row++){
+        $temp_row_num = $curr_row_index + $no_of_row;
+        $insert_above_row_status = &insert_full_region_in_row($row_number_vs_x_locations{$temp_row_num},$instance_x_location,$lef_cell_width,$utilization,$chip_width);
+        print "inserting full region in row $temp_row_num at x region $insert_above_row_status\n";
+        if($insert_above_row_status == -1){
+          #this will never happen, it implies same space in above rows are full
+          last;
+        }else{
+          $row_number_vs_x_locations{$temp_row_num}->[$insert_above_row_status]->[4] = $curr_instance_name;
+        }
+        my $array_of_x_locations_array_ref = $row_number_vs_x_locations{$temp_row_num};
+        my @temp_array_of_x_locations_array = @{$array_of_x_locations_array_ref};
+        my @x_locations_array = @{$temp_array_of_x_locations_array[$insert_above_row_status]};
+        my $curr_instance_name = $x_locations_array[4];
+        print "instance name:$curr_instance_name\n";
+      }
+    }else{
+      print "lef_cell_height is equal to row_height\n";
+    }
+  }
+  print "Out of first while loop\n";
+  &set_inst_box;
+  return;
+  #for($curr_row_index=0;$curr_row_index<$row_count;$curr_row_index++){
+  #  $row_used_width = &return_used_width_of_row($row_number_vs_x_locations{$curr_row_index});
+  #  $temp_cell_width_remaining  = $chip_width*($utilization/100) -$row_used_width;
+  #  print "third $curr_row_index row_used_width is $row_used_width and width remaining is $temp_cell_width_remaining\n";
+  #}
+  @lef_cell_list = (sort pldb_cell_sort_using_cell_width keys %PLDB);
+  #$curr_lef_cell =  $lef_cell_list[0];
+  #@box = $PLDB{$curr_lef_cell}->dbMdbGetSize;
+  #$lef_cell_width  =  $box[0]*$dbu;
+  #$lef_cell_height  =  $box[1]*$dbu;
+  #print "minimum lef cell width is $lef_cell_width\n";
+  #$curr_lef_cell =  $lef_cell_list[-1];
+  #@box = $PLDB{$curr_lef_cell}->dbMdbGetSize;
+  #$lef_cell_width  =  $box[0]*$dbu;
+  #$lef_cell_height  =  $box[1]*$dbu;
+  #print "maximum lef cell width is $lef_cell_width\n";
+  for($curr_row_index=0;$curr_row_index<$row_count;$curr_row_index++){
+    print ("Reprocessing row $curr_row_index\n");
+    $instance_y_location = $row_number_vs_y_location{$curr_row_index}; 
+    $curr_row = $rows[$curr_row_index];
+    $curr_row_orient = (split(/\s+/, $curr_row))[4];
+    %hash_of_ignore_lef_cell_index = ();
+    $row_used_width = &return_used_width_of_row($row_number_vs_x_locations{$curr_row_index});
+    print "row_used_width is $row_used_width\n";
+    $maximum_allowed_row_used_width = $chip_width*($utilization/100);
+    print "maximum_allowed_row_used_width is $maximum_allowed_row_used_width\n";
+    print "chip_width is $chip_width\n";
+    print "utilization is $utilization\n";
+    if($row_used_width < $chip_width*($utilization/100)){
+      $array_of_x_locations_array_ref = $row_number_vs_x_locations{$curr_row_index};
+      @array_of_x_locations_array = @{$array_of_x_locations_array_ref};
+      for($temp_index = 0 ; $temp_index <= $#array_of_x_locations_array;$temp_index++){
+        if($row_used_width >= $chip_width*($utilization/100)){
+          last;
+        }
+        @x_locations_array = @{$array_of_x_locations_array[$temp_index]};
+        $start_x_loc = $x_locations_array[0];
+        $end_x_loc = $x_locations_array[1];
+        $status = $x_locations_array[2];
+        if($status eq "empty"){
+          print "Reprocessing x region $start_x_loc $end_x_loc\n";
+          $temp_cell_width_needed = $end_x_loc - $start_x_loc + 1 ;
+          if($temp_cell_width_needed >($chip_width*($utilization/100) -$row_used_width)){
+            $temp_cell_width_needed  = $chip_width*($utilization/100) -$row_used_width;
+          }
+          print "Cell needed for this  x region width is $temp_cell_width_needed \n";
+          %hash_of_ignore_lef_cell_index = ();
+          while(1){
+            $lef_cell_index = &find_cell_nearest_more_equal_width(\@lef_cell_list,$temp_cell_width_needed,\%hash_of_ignore_lef_cell_index,\%lef_cell_already_used);
+            if($lef_cell_index == -1){
+              last;
+            }
+            $curr_lef_cell =  $lef_cell_list[$lef_cell_index];
+            @box = $PLDB{$curr_lef_cell}->dbMdbGetSize;
+            $lef_cell_width  =  $box[0]*$dbu;
+            $lef_cell_height  =  $box[1]*$dbu;
+            print "Cell found for this  x region $lef_cell_index width is $lef_cell_width height is $lef_cell_height\n";
+            if($lef_cell_height > $row_height){
+              print "Cell found height is greater than row height\n";
+              for($no_of_row = 1;$no_of_row < ceil($lef_cell_height/$row_height);$no_of_row++){
+                $temp_row_num = $curr_row_index + $no_of_row;
+                if($temp_row_num > ($row_count -1)){
+                  $lef_cell_index = -1;
+                  $hash_of_ignore_lef_cell_index{$curr_lef_cell} = 1;
+                  last;
+                }
+                $insert_above_row_status = &get_x_region_occupied_in_row($row_number_vs_x_locations{$temp_row_num},$start_x_loc,$end_x_loc);
+                if($insert_above_row_status == -1){
+                  $hash_of_ignore_lef_cell_index{$curr_lef_cell} = 1;
+                  $lef_cell_index = -1;
+                  last;
+                }else{
+                  $temp_row_used_width = &return_used_width_of_row($row_number_vs_x_locations{$temp_row_num});
+                  if(($temp_row_used_width+$lef_cell_width) > $chip_width*($utilization/100)){
+                    $hash_of_ignore_lef_cell_index{$curr_lef_cell} = 1;
+                    $lef_cell_index = -1;
+                    last;
+                  }
+                }
+              }
+            }
+            if($lef_cell_index == -1){
+              next;
+            }else{
+              last;
+            }
+          }
+          if($lef_cell_index == -1){
+            next;
+          }
+          print "Adding Cell found in chip\n";
+          $instance_x_location = $start_x_loc;
+          $curr_instance_name = "_slvrn_inst_".$curr_instance_count;
+          $curr_instance_count++;
+          $row_used_width += $lef_cell_width;
+          $CADB{$curr_instance_name} = CompAttDB::new();
+          $CADB{$curr_instance_name}->dbCadbSetCellref($curr_lef_cell);
+          $COMP_ALREADY{$curr_instance_name} = \%{$curr_instance_name};
+          $CADB{$curr_instance_name}->dbCadbSetStatus("PLACED");
+          $CADB{$curr_instance_name}->dbCadbSetLoc($instance_x_location,$instance_y_location); 
+          $CADB{$curr_instance_name}->dbCadbSetOrient($curr_row_orient);
+          $lef_cell_already_used{$curr_lef_cell} = 1;
+
+          $temp_start_x_loc = $start_x_loc + $lef_cell_width;
+          $temp_start_x_loc_minus_one = $temp_start_x_loc -1;
+          $end_x_loc = $x_locations_array[1];
+          #print "start_x_loc is $start_x_loc\n";
+          #print "temp_start_x_loc is $temp_start_x_loc\n";
+          #print "end_x_loc is $end_x_loc\n";
+          #print "lef_cell_width is $lef_cell_width\n";
+          push(@$array_of_x_locations_array_ref,[$temp_start_x_loc,$end_x_loc,"empty","notfixed",""]);
+          @array_of_x_locations_array = @{$array_of_x_locations_array_ref};
+          if($cell_height_to_be_placed > $row_height){
+            $array_of_x_locations_array_ref->[$temp_index] =[$start_x_loc,$temp_start_x_loc_minus_one,"full","fixed",""];
+          }else{
+            $array_of_x_locations_array_ref->[$temp_index] =[$start_x_loc,$temp_start_x_loc_minus_one,"full","notfixed",""];
+          }
+          $row_number_vs_x_locations{$curr_row_index}->[$temp_index]->[4] = $curr_instance_name;
+          if($lef_cell_height > $row_height){
+            for(my $no_of_row = 1;$no_of_row < ceil($lef_cell_height/$row_height);$no_of_row++){
+              $temp_row_num = $curr_row_index + $no_of_row;
+              $insert_above_row_status = &insert_full_region_in_row($row_number_vs_x_locations{$temp_row_num},$instance_x_location,$lef_cell_width,$utilization,$chip_width);
+              if($insert_above_row_status == -1){
+                #this will never happen, it implies same space in above rows are full
+                last;
+              }else{
+                $row_number_vs_x_locations{$temp_row_num}->[$x_region_index]->[4] = $curr_instance_name;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  print "All the row are full now\n";
+  for($curr_row_index=0;$curr_row_index<$row_count;$curr_row_index++){
+    my $row_used_width = &return_used_width_of_row($row_number_vs_x_locations{$curr_row_index});
+    my $temp_cell_width_remaining  = $chip_width*($utilization/100) -$row_used_width;
+    print "fourth $curr_row_index row_used_width is $row_used_width and width remaining is $temp_cell_width_remaining\n";
+  }
+  for($curr_row_index=0;$curr_row_index<$row_count;$curr_row_index++){
+    print "Row no $curr_row_index\n";
+    my $array_of_x_locations_array_ref = $row_number_vs_x_locations{$curr_row_index};
+    my @array_of_x_locations_array = @{$array_of_x_locations_array_ref};
+    for(my $temp_index = 0 ; $temp_index <= $#array_of_x_locations_array;$temp_index++){
+      my @x_locations_array = @{$array_of_x_locations_array[$temp_index]};
+      my $start_x_loc = $x_locations_array[0];
+      my $end_x_loc = $x_locations_array[1];
+      my $status = $x_locations_array[2];
+      if($status eq "full"){
+        my $is_fixed = $x_locations_array[3];
+        my $curr_instance_name = $x_locations_array[4];
+        print "instance name:$curr_instance_name\n";
+      }
+    }
+  }
+  for($curr_row_index=0;$curr_row_index<$row_count;$curr_row_index++){
+    #print ("Reprocessing row $curr_row_index\n");
+    $array_of_x_locations_array_ref = $row_number_vs_x_locations{$curr_row_index};
+    @array_of_x_locations_array = @{$array_of_x_locations_array_ref};
+    $no_of_cells = 0;
+    $row_used_width = 0;
+    for($temp_index = 0 ; $temp_index <= $#array_of_x_locations_array;$temp_index++){
+      @x_locations_array = @{$array_of_x_locations_array[$temp_index]};
+      $start_x_loc = $x_locations_array[0];
+      $end_x_loc = $x_locations_array[1];
+      $status = $x_locations_array[2];
+      if($status eq "full"){
+        $row_used_width += $end_x_loc -$start_x_loc +1;
+        $no_of_cells++;
+      }
+    }
+    $row_width_remaining  = $chip_width -$row_used_width;
+    $spacing_x = $row_width_remaining/($no_of_cells + 1);
+    $right_movement = $spacing_x;
+    for($temp_index = 0 ; $temp_index <= $#array_of_x_locations_array;$temp_index++){
+      @x_locations_array = @{$array_of_x_locations_array[$temp_index]};
+      $status = $x_locations_array[2];
+      if($status eq "full"){
+        $curr_instance_name = $x_locations_array[4];
+        if(!exists $INST_MOV_RIGHT_DIR{$curr_instance_name}){
+          $INST_MOV_RIGHT_DIR{$curr_instance_name} = $right_movement;
+        }else{
+          $temp_movement = $INST_MOV_RIGHT_DIR{$curr_instance_name};
+          if($right_movement < $temp_movement){
+            $INST_MOV_RIGHT_DIR{$curr_instance_name} = $right_movement;
+          }
+        }
+      }
+      $right_movement += $spacing_x;
+    }
+  }
+  foreach my $temp_instance_name(keys %INST_MOV_RIGHT_DIR){
+    @temp_loc = $CADB{$temp_instance_name}->dbCadbGetLoc(); 
+    $temp_x_loc = $temp_loc[0];
+    $temp_y_loc = $temp_loc[1];
+    $inst_right_mvmnt = $INST_MOV_RIGHT_DIR{$temp_instance_name};
+    $temp_x_loc += $inst_right_mvmnt;
+    $CADB{$temp_instance_name}->dbCadbSetLoc($temp_x_loc,$temp_y_loc); 
+  }
+  &set_inst_box;
+}#sub create_flat_design_pick_random_lef_cell_second_best
+
+#This subroutine pick a random lef cell from list of lef cell.
+#It add this lef cell to the current row and increase the row
+#percent width used.
+#It doesn't handle hard macro efficiently,if the hard macro height
+#is more than row height, all the above rows which are covered
+#partially or completely,will place cells after this hard macro right edge.
+#For such rows space before this hard macro left edge will be unused.
+#This is for future enhancement.
+sub create_flat_design_pick_random_lef_cell_old
+{
+  my @lef_cell_list = keys %PLDB;
+  my %lef_cell_already_used = ();
+  my $lef_cell_list_count = @lef_cell_list;
+  my %row_number_vs_x_locations = ();
+  my %row_number_vs_y_location = ();
+  my %INST_MOV_RIGHT_DIR = ();
+  my @rows = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetRows;
+  my @size = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetSize ;
+  my $utilization = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetUtilization ;
+  my $chip_width = $size[2] -$size[0];
+  my $chip_height = $size[3] -$size[1];
+  my $row_count = @rows ;
+  my $curr_row ;
+  my $curr_row_orient ;
+  my $curr_row_index = 0;
+  my $lef_cell_index = 0;
+  my $curr_instance_count = 0;
+  my $curr_instance_name = 0;
+  my $rowHeight = $GLOBAL->dbGlobalGetRowHeight;
+  my $dbu = $GLOBAL->dbfGlobalGetDBU;
+  my $row_height = $GLOBAL->dbGlobalGetRowHeight * $dbu;
+  my $chip_width_minus_one ;
+  my $curr_lef_cell ;
+  my @box = ();
+  my $lef_cell_width = 0;
+  my $lef_cell_height = 0;
+  my $x_region_index = -1;
+  my @array_of_x_locations_array = ();
+  my $instance_x_location = 0;
+  my $instance_y_location = 0;
+  my $temp_row_num = -1;
+  my $insert_above_row_status = -1;
+  my %hash_of_ignore_lef_cell_index = ();
+  my $maximum_allowed_row_used_width = 0;
+  my $array_of_x_locations_array_ref ;
+  my $temp_index;
+  my $start_x_loc = 0;
+  my $end_x_loc = 0;
+  my $status = 0;
+  my @x_locations_array = ();
+  my $temp_cell_width_needed ;
+  my $temp_lef_cell_list_count = 0;
+  my $row_used_width = 0;
+  my $temp_cell_width_remaining  = 0;
+  my $temp_start_x_loc ;
+  my $temp_start_x_loc_minus_one ;
+  my $no_of_row;
+  my $no_of_cells = 0;
+  my $row_width_remaining ;
+  my $spacing_x ;
+  my $right_movement ;
+  my $temp_movement ;
+  my @temp_loc ;
+  my $temp_x_loc ;
+  my $temp_y_loc ;
+  my $inst_right_mvmnt ;
+  my $temp_row_used_width ;
+  for($curr_row_index=0;$curr_row_index<$row_count;$curr_row_index++){
+    #print ("Processing row $curr_row_index\n");
+    $chip_width_minus_one = $chip_width -1;
+    $row_number_vs_x_locations{$curr_row_index} = [[0,$chip_width_minus_one,"empty","notfixed","noInstName0"]];
+    $curr_row = $rows[$curr_row_index];
+    $row_number_vs_y_location{$curr_row_index} = (split(/\s+/, $curr_row))[3];
+  }
+  $curr_row_index = 0;
+  $curr_row = $rows[$curr_row_index];
+  $curr_row_orient = (split(/\s+/, $curr_row))[4];
+  $temp_lef_cell_list_count = $lef_cell_list_count;
+  $temp_cell_width_remaining  = 0;
+  print ("Processing row $curr_row_index\n");
+  while (1){
+    #print ("Processing row first while $curr_row_index\n");
+    $lef_cell_index = int(rand($temp_lef_cell_list_count));
+    $curr_lef_cell =  $lef_cell_list[$lef_cell_index];
+    $lef_cell_list[$lef_cell_index] = $lef_cell_list[$temp_lef_cell_list_count-1];
+    $lef_cell_list[$temp_lef_cell_list_count-1] = $curr_lef_cell;
+    $temp_lef_cell_list_count--;
+    if($temp_lef_cell_list_count == 0){
+      print "All the lef cell tried starting from one\n";
+      $temp_lef_cell_list_count = $lef_cell_list_count;
+    }
+    @box = $PLDB{$curr_lef_cell}->dbMdbGetSize;
+    $lef_cell_width  =  $box[0]*$dbu;
+    $lef_cell_height  =  $box[1]*$dbu;
+    print "current selected lef cell width is $lef_cell_width\n";
+    $x_region_index = -1;
+    while(1){
+      $x_region_index = &return_index_of_space_on_row_for_cell_no_insert($row_number_vs_x_locations{$curr_row_index},$utilization,$chip_width,$row_height,$lef_cell_width,$lef_cell_height);
+      if($x_region_index != -1){
+        last;
+      }
+      $temp_row_used_width = &return_used_width_of_row($row_number_vs_x_locations{$curr_row_index});
+      print "row number $curr_row_index used width is $temp_row_used_width chip_width is $chip_width\n";
+      $curr_row_index++;
+      $curr_row = $rows[$curr_row_index];
+      $curr_row_orient = (split(/\s+/, $curr_row))[4];
+      print ("Processing row $curr_row_index");
+      print (" at y location $row_number_vs_y_location{$curr_row_index}\n"); 
+      if($curr_row_index >= $row_count){
+        last;
+      }
+    }
+    if($curr_row_index >= $row_count){
+      last;
+    }
+    print "x_region_index is $x_region_index\n";
+    @array_of_x_locations_array = @{$row_number_vs_x_locations{$curr_row_index}};
+    $instance_x_location = $array_of_x_locations_array[$x_region_index][0]; 
+    $end_x_loc = $instance_x_location + $lef_cell_width -1;
+    $instance_y_location = $row_number_vs_y_location{$curr_row_index}; 
+    print "instance_x_location is $instance_x_location\n";
+    if($lef_cell_height > $row_height){
+      $insert_above_row_status = -1;
+      print "lef_cell_height is greater than row_height\n";
+      for(my $no_of_row = 1;$no_of_row < ceil($lef_cell_height/$row_height);$no_of_row++){
+        $temp_row_num = $curr_row_index + $no_of_row;
+        if($temp_row_num > ($row_count -1)){
+          $insert_above_row_status = 1;
+          print "lef cell height goes beyond chip height\n";
+          last;
+        }
+        print "checking full region in row $temp_row_num\n";
+        $insert_above_row_status = &get_x_region_occupied_in_row($row_number_vs_x_locations{$temp_row_num},$instance_x_location,$end_x_loc);
+        if($insert_above_row_status != -1){
+          #this will never happen, it implies same space in above rows are full
+          last;
+        }else{
+          $temp_row_used_width = &return_used_width_of_row($row_number_vs_x_locations{$temp_row_num});
+          if(($temp_row_used_width+$lef_cell_width) > $chip_width*($utilization/100)){
+            $insert_above_row_status = 1;
+            last;
+          }
+        }
+      }
+      if($insert_above_row_status != -1){
+        next;
+      }
+    }
+    &return_index_of_space_on_row_for_cell($row_number_vs_x_locations{$curr_row_index},$utilization,$chip_width,$row_height,$lef_cell_width,$lef_cell_height);
+    #print ("Adding component to row $curr_row_index at location $instance_x_location $instance_y_location\n");
+    $curr_instance_name = "_slvrn_inst_".$curr_instance_count;
+    $curr_instance_count++;
+    $CADB{$curr_instance_name} = CompAttDB::new();
+    $CADB{$curr_instance_name}->dbCadbSetCellref($curr_lef_cell);
+    $COMP_ALREADY{$curr_instance_name} = \%{$curr_instance_name};
+    $CADB{$curr_instance_name}->dbCadbSetStatus("PLACED");
+    $CADB{$curr_instance_name}->dbCadbSetLoc($instance_x_location,$instance_y_location); 
+    $CADB{$curr_instance_name}->dbCadbSetOrient($curr_row_orient);
+    $lef_cell_already_used{$curr_lef_cell} = 1;
+    $row_number_vs_x_locations{$curr_row_index}->[$x_region_index]->[4] = $curr_instance_name;
+    if($lef_cell_height > $row_height){
+      print "lef_cell_height is greater than row_height\n";
+      $insert_above_row_status = -1;
+      for($no_of_row = 1;$no_of_row < ceil($lef_cell_height/$row_height);$no_of_row++){
+        $temp_row_num = $curr_row_index + $no_of_row;
+        $insert_above_row_status = &insert_full_region_in_row($row_number_vs_x_locations{$temp_row_num},$instance_x_location,$lef_cell_width,$utilization,$chip_width);
+        print "inserting full region in row $temp_row_num at x region $insert_above_row_status\n";
+        if($insert_above_row_status == -1){
+          #this will never happen, it implies same space in above rows are full
+          last;
+        }else{
+          $row_number_vs_x_locations{$temp_row_num}->[$insert_above_row_status]->[4] = $curr_instance_name;
+        }
+        my $array_of_x_locations_array_ref = $row_number_vs_x_locations{$temp_row_num};
+        my @temp_array_of_x_locations_array = @{$array_of_x_locations_array_ref};
+        my @x_locations_array = @{$temp_array_of_x_locations_array[$insert_above_row_status]};
+        my $curr_instance_name = $x_locations_array[4];
+        print "instance name:$curr_instance_name\n";
+      }
+    }
+  }
+  #for($curr_row_index=0;$curr_row_index<$row_count;$curr_row_index++){
+  #  $row_used_width = &return_used_width_of_row($row_number_vs_x_locations{$curr_row_index});
+  #  $temp_cell_width_remaining  = $chip_width*($utilization/100) -$row_used_width;
+  #  print "third $curr_row_index row_used_width is $row_used_width and width remaining is $temp_cell_width_remaining\n";
+  #}
+  @lef_cell_list = (sort pldb_cell_sort_using_cell_width keys %PLDB);
+  #$curr_lef_cell =  $lef_cell_list[0];
+  #@box = $PLDB{$curr_lef_cell}->dbMdbGetSize;
+  #$lef_cell_width  =  $box[0]*$dbu;
+  #$lef_cell_height  =  $box[1]*$dbu;
+  #print "minimum lef cell width is $lef_cell_width\n";
+  #$curr_lef_cell =  $lef_cell_list[-1];
+  #@box = $PLDB{$curr_lef_cell}->dbMdbGetSize;
+  #$lef_cell_width  =  $box[0]*$dbu;
+  #$lef_cell_height  =  $box[1]*$dbu;
+  #print "maximum lef cell width is $lef_cell_width\n";
+  for($curr_row_index=0;$curr_row_index<$row_count;$curr_row_index++){
+    #print ("Reprocessing row $curr_row_index\n");
+    $instance_y_location = $row_number_vs_y_location{$curr_row_index}; 
+    $curr_row = $rows[$curr_row_index];
+    $curr_row_orient = (split(/\s+/, $curr_row))[4];
+    %hash_of_ignore_lef_cell_index = ();
+    $row_used_width = &return_used_width_of_row($row_number_vs_x_locations{$curr_row_index});
+    #print "row_used_width is $row_used_width\n";
+    #$maximum_allowed_row_used_width = $chip_width*($utilization/100);
+    #print "maximum_allowed_row_used_width is $maximum_allowed_row_used_width\n";
+    #print "chip_width is $chip_width\n";
+    #print "utilization is $utilization\n";
+    if($row_used_width < $chip_width*($utilization/100)){
+      $array_of_x_locations_array_ref = $row_number_vs_x_locations{$curr_row_index};
+      @array_of_x_locations_array = @{$array_of_x_locations_array_ref};
+      for($temp_index = 0 ; $temp_index <= $#array_of_x_locations_array;$temp_index++){
+        if($row_used_width >= $chip_width*($utilization/100)){
+          last;
+        }
+        @x_locations_array = @{$array_of_x_locations_array[$temp_index]};
+        $start_x_loc = $x_locations_array[0];
+        $end_x_loc = $x_locations_array[1];
+        $status = $x_locations_array[2];
+        if($status eq "empty"){
+          #print "Reprocessing x region $start_x_loc $end_x_loc\n";
+          $temp_cell_width_needed = $end_x_loc - $start_x_loc + 1 ;
+          if($temp_cell_width_needed >($chip_width*($utilization/100) -$row_used_width)){
+            $temp_cell_width_needed  = $chip_width*($utilization/100) -$row_used_width;
+          }
+          #print "Cell needed for this  x region width is $temp_cell_width_needed \n";
+          %hash_of_ignore_lef_cell_index = ();
+          while(1){
+            $lef_cell_index = &find_cell_nearest_more_equal_width(\@lef_cell_list,$temp_cell_width_needed,\%hash_of_ignore_lef_cell_index,\%lef_cell_already_used);
+            if($lef_cell_index == -1){
+              last;
+            }
+            $curr_lef_cell =  $lef_cell_list[$lef_cell_index];
+            @box = $PLDB{$curr_lef_cell}->dbMdbGetSize;
+            $lef_cell_width  =  $box[0]*$dbu;
+            $lef_cell_height  =  $box[1]*$dbu;
+            #print "Cell found for this  x region $lef_cell_index width is $lef_cell_width height is $lef_cell_height\n";
+            if($lef_cell_height > $row_height){
+              #print "Cell found height is greater than row height\n";
+              for($no_of_row = 1;$no_of_row < ceil($lef_cell_height/$row_height);$no_of_row++){
+                $temp_row_num = $curr_row_index + $no_of_row;
+                if($temp_row_num > ($row_count -1)){
+                  $lef_cell_index = -1;
+                  last;
+                }
+                $insert_above_row_status = &get_x_region_occupied_in_row($row_number_vs_x_locations{$temp_row_num},$start_x_loc,$end_x_loc);
+                if($insert_above_row_status == -1){
+                  $hash_of_ignore_lef_cell_index{$curr_lef_cell} = 1;
+                  $lef_cell_index = -1;
+                  last;
+                }else{
+                  $temp_row_used_width = &return_used_width_of_row($row_number_vs_x_locations{$temp_row_num});
+                  if(($temp_row_used_width+$lef_cell_width) > $chip_width*($utilization/100)){
+                    $lef_cell_index = -1;
+                    last;
+                  }
+                }
+              }
+            }
+            if($lef_cell_index == -1){
+              next;
+            }else{
+              last;
+            }
+          }
+          if($lef_cell_index == -1){
+            next;
+          }
+          #print "Adding Cell found in chip\n";
+          $instance_x_location = $start_x_loc;
+          $curr_instance_name = "_slvrn_inst_".$curr_instance_count;
+          $curr_instance_count++;
+          $row_used_width += $lef_cell_width;
+          $CADB{$curr_instance_name} = CompAttDB::new();
+          $CADB{$curr_instance_name}->dbCadbSetCellref($curr_lef_cell);
+          $COMP_ALREADY{$curr_instance_name} = \%{$curr_instance_name};
+          $CADB{$curr_instance_name}->dbCadbSetStatus("PLACED");
+          $CADB{$curr_instance_name}->dbCadbSetLoc($instance_x_location,$instance_y_location); 
+          $CADB{$curr_instance_name}->dbCadbSetOrient($curr_row_orient);
+          $lef_cell_already_used{$curr_lef_cell} = 1;
+
+          $temp_start_x_loc = $start_x_loc + $lef_cell_width;
+          $temp_start_x_loc_minus_one = $temp_start_x_loc -1;
+          $end_x_loc = $x_locations_array[1];
+          #print "start_x_loc is $start_x_loc\n";
+          #print "temp_start_x_loc is $temp_start_x_loc\n";
+          #print "end_x_loc is $end_x_loc\n";
+          #print "lef_cell_width is $lef_cell_width\n";
+          push(@$array_of_x_locations_array_ref,[$temp_start_x_loc,$end_x_loc,"empty","notfixed",""]);
+          @array_of_x_locations_array = @{$array_of_x_locations_array_ref};
+          if($cell_height_to_be_placed > $row_height){
+            $array_of_x_locations_array_ref->[$temp_index] =[$start_x_loc,$temp_start_x_loc_minus_one,"full","fixed",""];
+          }else{
+            $array_of_x_locations_array_ref->[$temp_index] =[$start_x_loc,$temp_start_x_loc_minus_one,"full","notfixed",""];
+          }
+          $row_number_vs_x_locations{$curr_row_index}->[$temp_index]->[4] = $curr_instance_name;
+          if($lef_cell_height > $row_height){
+            for(my $no_of_row = 1;$no_of_row < ceil($lef_cell_height/$row_height);$no_of_row++){
+              $temp_row_num = $curr_row_index + $no_of_row;
+              $insert_above_row_status = &insert_full_region_in_row($row_number_vs_x_locations{$temp_row_num},$instance_x_location,$lef_cell_width,$utilization,$chip_width);
+              if($insert_above_row_status == -1){
+                #this will never happen, it implies same space in above rows are full
+                last;
+              }else{
+                $row_number_vs_x_locations{$temp_row_num}->[$x_region_index]->[4] = $curr_instance_name;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  for($curr_row_index=0;$curr_row_index<$row_count;$curr_row_index++){
+    my $row_used_width = &return_used_width_of_row($row_number_vs_x_locations{$curr_row_index});
+    my $temp_cell_width_remaining  = $chip_width*($utilization/100) -$row_used_width;
+    print "fourth $curr_row_index row_used_width is $row_used_width and width remaining is $temp_cell_width_remaining\n";
+  }
+  for($curr_row_index=0;$curr_row_index<$row_count;$curr_row_index++){
+    print "Row no $curr_row_index\n";
+    my $array_of_x_locations_array_ref = $row_number_vs_x_locations{$curr_row_index};
+    my @array_of_x_locations_array = @{$array_of_x_locations_array_ref};
+    for(my $temp_index = 0 ; $temp_index <= $#array_of_x_locations_array;$temp_index++){
+      my @x_locations_array = @{$array_of_x_locations_array[$temp_index]};
+      my $start_x_loc = $x_locations_array[0];
+      my $end_x_loc = $x_locations_array[1];
+      my $status = $x_locations_array[2];
+      if($status eq "full"){
+        my $is_fixed = $x_locations_array[3];
+        my $curr_instance_name = $x_locations_array[4];
+        print "instance name:$curr_instance_name\n";
+      }
+    }
+  }
+  for($curr_row_index=0;$curr_row_index<$row_count;$curr_row_index++){
+    #print ("Reprocessing row $curr_row_index\n");
+    $array_of_x_locations_array_ref = $row_number_vs_x_locations{$curr_row_index};
+    @array_of_x_locations_array = @{$array_of_x_locations_array_ref};
+    $no_of_cells = 0;
+    $row_used_width = 0;
+    for($temp_index = 0 ; $temp_index <= $#array_of_x_locations_array;$temp_index++){
+      @x_locations_array = @{$array_of_x_locations_array[$temp_index]};
+      $start_x_loc = $x_locations_array[0];
+      $end_x_loc = $x_locations_array[1];
+      $status = $x_locations_array[2];
+      if($status eq "full"){
+        $row_used_width += $end_x_loc -$start_x_loc +1;
+        $no_of_cells++;
+      }
+    }
+    $row_width_remaining  = $chip_width -$row_used_width;
+    $spacing_x = $row_width_remaining/($no_of_cells + 1);
+    $right_movement = $spacing_x;
+    for($temp_index = 0 ; $temp_index <= $#array_of_x_locations_array;$temp_index++){
+      @x_locations_array = @{$array_of_x_locations_array[$temp_index]};
+      $status = $x_locations_array[2];
+      if($status eq "full"){
+        $curr_instance_name = $x_locations_array[4];
+        if(!exists $INST_MOV_RIGHT_DIR{$curr_instance_name}){
+          $INST_MOV_RIGHT_DIR{$curr_instance_name} = $right_movement;
+        }else{
+          $temp_movement = $INST_MOV_RIGHT_DIR{$curr_instance_name};
+          if($right_movement < $temp_movement){
+            $INST_MOV_RIGHT_DIR{$curr_instance_name} = $right_movement;
+          }
+        }
+      }
+      $right_movement += $spacing_x;
+    }
+  }
+  foreach my $temp_instance_name(keys %INST_MOV_RIGHT_DIR){
+    @temp_loc = $CADB{$temp_instance_name}->dbCadbGetLoc(); 
+    $temp_x_loc = $temp_loc[0];
+    $temp_y_loc = $temp_loc[1];
+    $inst_right_mvmnt = $INST_MOV_RIGHT_DIR{$temp_instance_name};
+    $temp_x_loc += $inst_right_mvmnt;
+    $CADB{$temp_instance_name}->dbCadbSetLoc($temp_x_loc,$temp_y_loc); 
+  }
+  &set_inst_box;
+}#sub create_flat_design_pick_random_lef_cell_old
+
+sub pldb_cell_sort_using_cell_width
+{
+  my $ret_val = 0;
+  my @box = $PLDB{$a}->dbMdbGetSize;
+  my $a_width  =  $box[0];
+  my $a_height  =  $box[1];
+  @box = $PLDB{$b}->dbMdbGetSize;
+  my $b_width  =  $box[0];
+  my $b_height  =  $box[1];
+  if($a_width != $b_width){
+    $ret_val = $a_width <=> $b_width;
+  }else{
+    $ret_val = $a_height <=> $b_height;
+  }
+  return $ret_val;
+}#sub initial_digit_sort 
+
+sub find_cell_nearest_more_equal_width
+{
+  my @lef_cell_list = @{$_[0]};
+  my $temp_cell_width_needed = $_[1];
+  my %hash_of_ignore_lef_cell_index = %{$_[2]};
+  my %lef_cell_already_used = %{$_[3]};
+  my $tmp_lef_cell_index = &binary_search_cell_nearest_greater_equal_width(\@lef_cell_list,$temp_cell_width_needed,0,$#lef_cell_list);
+  #print "binary search returned $tmp_lef_cell_index\n";
+  my $return_index = -1;
+  my $dbu = $GLOBAL->dbfGlobalGetDBU;
+  for(my $temp_index = 0; $temp_index <= $tmp_lef_cell_index ;$temp_index++){
+    my $temp_lef_cell = $lef_cell_list[$temp_index];
+    my @box = $PLDB{$temp_lef_cell}->dbMdbGetSize;
+    my $lef_cell_temp_index_width  =  $box[0] * $dbu;
+    my $lef_cell_temp_index_height  =  $box[1] * $dbu;
+    #print "curr lef cell width in list is $lef_cell_temp_index_width  $temp_cell_width_needed\n";
+    if($lef_cell_temp_index_width > $temp_cell_width_needed){
+      return $return_index;
+    }
+    if($lef_cell_temp_index_width == $temp_cell_width_needed){
+      return $temp_index;
+    }
+    if(!exists $lef_cell_already_used{$temp_lef_cell}){
+      #print "curr lef cell not used returning \n";
+      return $temp_index;
+    }
+    if(exists $hash_of_ignore_lef_cell_index{$temp_lef_cell}){
+      #print "curr lef cell cannot be used\n";
+      next;
+    }
+    $return_index = $temp_index;
+  }
+  #print "returning at the end of function\n";
+  return $return_index;
+}#sub find_cell_nearest_more_equal_width
+
+sub binary_search_cell_nearest_greater_equal_width
+{
+  my @lef_cell_list = @{$_[0]};
+  my $temp_cell_width_needed = $_[1];
+  my $min_index = $_[2];
+  my $max_index = $_[3];
+  if ($min_index == $max_index){
+    return $min_index;
+  }
+  my $dbu = $GLOBAL->dbfGlobalGetDBU;
+  my $lef_cell_min_index = $lef_cell_list[$min_index];
+  my $lef_cell_max_index = $lef_cell_list[$max_index];
+  my @box = $PLDB{$lef_cell_min_index}->dbMdbGetSize;
+  my $lef_cell_min_index_width  =  $box[0] * $dbu;
+  my $lef_cell_min_index_height  =  $box[1] * $dbu;
+  @box = $PLDB{$lef_cell_max_index}->dbMdbGetSize;
+  my $lef_cell_max_index_width  =  $box[0] * $dbu;
+  my $lef_cell_max_index_height  =  $box[1] * $dbu;
+  if($temp_cell_width_needed == $lef_cell_max_index_width){
+    return $max_index;
+  }
+  my $middle_index = int(($min_index + $max_index)/2);
+  my $lef_cell_middle_index = $lef_cell_list[$middle_index];
+  @box = $PLDB{$lef_cell_middle_index}->dbMdbGetSize;
+  my $lef_cell_middle_index_width  =  $box[0] * $dbu;
+  my $lef_cell_middle_index_height  =  $box[1] * $dbu;
+  if($temp_cell_width_needed < $lef_cell_middle_index_width){
+    return &binary_search_cell_nearest_greater_equal_width(\@lef_cell_list,$temp_cell_width_needed,$min_index,$middle_index);
+  }elsif($temp_cell_width_needed >= $lef_cell_middle_index_width){
+    return &binary_search_cell_nearest_greater_equal_width(\@lef_cell_list,$temp_cell_width_needed,$middle_index+1,$max_index);
+  }
+}#sub binary_search_cell_nearest_greater_equal_width
+sub binary_search_cell_nearest_less_equal_width
+{
+  my @lef_cell_list = @{$_[0]};
+  my $temp_cell_width_needed = $_[1];
+  my $min_index = $_[2];
+  my $max_index = $_[3];
+  if ($min_index == $max_index){
+    return $min_index;
+  }
+  my $dbu = $GLOBAL->dbfGlobalGetDBU;
+  my $lef_cell_min_index = $lef_cell_list[$min_index];
+  my $lef_cell_max_index = $lef_cell_list[$max_index];
+  my @box = $PLDB{$lef_cell_min_index}->dbMdbGetSize;
+  my $lef_cell_min_index_width  =  $box[0] * $dbu;
+  my $lef_cell_min_index_height  =  $box[1] * $dbu;
+  @box = $PLDB{$lef_cell_max_index}->dbMdbGetSize;
+  my $lef_cell_max_index_width  =  $box[0] * $dbu;
+  my $lef_cell_max_index_height  =  $box[1] * $dbu;
+  if($temp_cell_width_needed == $lef_cell_min_index_width){
+    return $min_index;
+  }
+  my $middle_index = int(($min_index + $max_index)/2);
+  my $lef_cell_middle_index = $lef_cell_list[$middle_index];
+  @box = $PLDB{$lef_cell_middle_index}->dbMdbGetSize;
+  my $lef_cell_middle_index_width  =  $box[0] * $dbu;
+  my $lef_cell_middle_index_height  =  $box[1] * $dbu;
+  if($temp_cell_width_needed <= $lef_cell_middle_index_width){
+    return &binary_search_cell_nearest_less_equal_width(\@lef_cell_list,$temp_cell_width_needed,$min_index,$middle_index);
+  }elsif($temp_cell_width_needed > $lef_cell_middle_index_width){
+    return &binary_search_cell_nearest_less_equal_width(\@lef_cell_list,$temp_cell_width_needed,$middle_index+1,$max_index);
+  }
+}#sub binary_search_cell_nearest_less_equal_width
+
+sub return_index_of_space_on_row_for_cell
+{
+  my $ref_array_of_x_locations_array = $_[0];
+  my @array_of_x_locations_array = @{$ref_array_of_x_locations_array};
+  my $chip_utilization = $_[1];
+  my $chip_width = $_[2];
+  my $row_height = $_[3];
+  my $cell_width_to_be_placed = $_[4];
+  my $cell_height_to_be_placed = $_[5];
+  my $row_width_used = 0 ;
+  my $x_region_index = -1; 
+  my $temp_index ;
+  for($temp_index = 0;$temp_index <= $#array_of_x_locations_array;$temp_index++){
+    my @x_locations_array = @{$array_of_x_locations_array[$temp_index]};
+    my $start_x_loc = $x_locations_array[0];
+    my $end_x_loc = $x_locations_array[1];
+    my $status = $x_locations_array[2];
+    my $x_region_width = $end_x_loc - $start_x_loc + 1 ;
+    if($status eq "full"){
+      $row_width_used += $x_region_width;
+    }elsif($status eq "empty"){
+      if(($x_region_index == -1)&&($x_region_width >= $cell_width_to_be_placed)){
+        $x_region_index = $temp_index;
+      }
+    }
+    if($row_width_used >= $chip_width * ($chip_utilization/100)){
+      return -1;
+    }
+  }
+  if(($row_width_used + $cell_width_to_be_placed) > $chip_width * ($chip_utilization/100)){
+    return -1;
+  }
+  #print "x_region_index is $x_region_index\n";
+  if($x_region_index != -1){
+    my @x_locations_array = @{$array_of_x_locations_array[$x_region_index]};
+    my $start_x_loc = $x_locations_array[0];
+    my $temp_start_x_loc = $start_x_loc + $cell_width_to_be_placed;
+    my $temp_start_x_loc_minus_one = $temp_start_x_loc -1;
+    my $end_x_loc = $x_locations_array[1];
+    #print "start_x_loc is $start_x_loc\n";
+    #print "temp_start_x_loc is $temp_start_x_loc\n";
+    #print "end_x_loc is $end_x_loc\n";
+    #print "cell_width_to_be_placed is $cell_width_to_be_placed\n";
+    push(@$ref_array_of_x_locations_array,[$temp_start_x_loc,$end_x_loc,"empty","notfixed","noInstName1"]);
+    if($cell_height_to_be_placed > $row_height){
+      $ref_array_of_x_locations_array->[$x_region_index] =[$start_x_loc,$temp_start_x_loc_minus_one,"full","fixed","noInstName1"];
+    }else{
+      $ref_array_of_x_locations_array->[$x_region_index] =[$start_x_loc,$temp_start_x_loc_minus_one,"full","notfixed","noInstName1"];
+    }
+  }
+  return $x_region_index;
+}#sub return_index_of_space_on_row_for_cell
+
+sub return_index_of_space_on_row_for_cell_no_insert
+{
+  my $ref_array_of_x_locations_array = $_[0];
+  my @array_of_x_locations_array = @{$ref_array_of_x_locations_array};
+  my $chip_utilization = $_[1];
+  my $chip_width = $_[2];
+  my $row_height = $_[3];
+  my $cell_width_to_be_placed = $_[4];
+  my $cell_height_to_be_placed = $_[5];
+  my $row_width_used = 0 ;
+  my $x_region_index = -1; 
+  my $temp_index ;
+  for($temp_index = 0;$temp_index <= $#array_of_x_locations_array;$temp_index++){
+    my @x_locations_array = @{$array_of_x_locations_array[$temp_index]};
+    my $start_x_loc = $x_locations_array[0];
+    my $end_x_loc = $x_locations_array[1];
+    my $status = $x_locations_array[2];
+    my $x_region_width = $end_x_loc - $start_x_loc + 1 ;
+    if($status eq "full"){
+      $row_width_used += $x_region_width;
+      #print "$temp_index is full\n";
+    }elsif($status eq "empty"){
+      #print "$temp_index is empty\n";
+      if(($x_region_index == -1)&&($x_region_width >= $cell_width_to_be_placed)){
+        $x_region_index = $temp_index;
+      }
+    }
+    if($row_width_used >= $chip_width * ($chip_utilization/100)){
+      return -1;
+    }
+  }
+  if(($row_width_used + $cell_width_to_be_placed) > $chip_width * ($chip_utilization/100)){
+    return -1;
+  }
+  #print "x_region_index is $x_region_index\n";
+  #if($x_region_index != -1){
+  #  my @x_locations_array = @{$array_of_x_locations_array[$x_region_index]};
+  #  my $start_x_loc = $x_locations_array[0];
+  #  my $temp_start_x_loc = $start_x_loc + $cell_width_to_be_placed;
+  #  my $temp_start_x_loc_minus_one = $temp_start_x_loc -1;
+  #  my $end_x_loc = $x_locations_array[1];
+  #  #print "start_x_loc is $start_x_loc\n";
+  #  #print "temp_start_x_loc is $temp_start_x_loc\n";
+  #  #print "end_x_loc is $end_x_loc\n";
+  #  #print "cell_width_to_be_placed is $cell_width_to_be_placed\n";
+  #  push(@$ref_array_of_x_locations_array,[$temp_start_x_loc,$end_x_loc,"empty","notfixed","noInstName1"]);
+  #  if($cell_height_to_be_placed > $row_height){
+  #    $ref_array_of_x_locations_array->[$x_region_index] =[$start_x_loc,$temp_start_x_loc_minus_one,"full","fixed","noInstName1"];
+  #  }else{
+  #    $ref_array_of_x_locations_array->[$x_region_index] =[$start_x_loc,$temp_start_x_loc_minus_one,"full","notfixed","noInstName1"];
+  #  }
+  #}
+  return $x_region_index;
+}#sub return_index_of_space_on_row_for_cell_no_insert
+
+sub insert_full_region_in_row
+{
+  my $ref_array_of_x_locations_array = $_[0];
+  my @array_of_x_locations_array = @{$ref_array_of_x_locations_array};
+  my $from_x_location = $_[1];
+  my $cell_width_to_be_placed = $_[2];
+  my $chip_utilization = $_[3];
+  my $chip_width = $_[4];
+  my $row_width_used = 0 ;
+  my $x_region_index = -1; 
+  my $temp_index ;
+  for($temp_index = 0 ; $temp_index <= $#array_of_x_locations_array;$temp_index++){
+    my @x_locations_array = @{$array_of_x_locations_array[$temp_index]};
+    my $start_x_loc = $x_locations_array[0];
+    my $end_x_loc = $x_locations_array[1];
+    my $status = $x_locations_array[2];
+    if($status eq "full"){
+      $row_width_used += $x_region_width;
+    }elsif($status eq "empty"){
+      if(($from_x_location >= $start_x_loc)&&($from_x_location <= $end_x_loc)&&(($end_x_loc - $from_x_location + 1)>= $cell_width_to_be_placed)){
+        $x_region_index = $temp_index;
+      }
+    }
+    if($row_width_used >= $chip_width * ($chip_utilization/100)){
+      return -1;
+    }
+  }
+  if($x_region_index != -1){
+    my @x_locations_array = @{$array_of_x_locations_array[$x_region_index]};
+    my $start_x_loc = $x_locations_array[0];
+    my $temp_start_x_loc = $from_x_location;
+    my $temp_start_x_loc_minus_one = $temp_start_x_loc -1;
+    my $temp_end_x_loc = $from_x_location + $cell_width_to_be_placed;
+    my $temp_end_x_loc_minus_one = $temp_end_x_loc -1;
+    my $end_x_loc = $x_locations_array[1];
+    #print "start_x_loc is $start_x_loc\n";
+    #print "from_x_location is $from_x_location\n";
+    #print "end_x_loc is $end_x_loc\n";
+    if($from_x_location > $start_x_loc){
+      $ref_array_of_x_locations_array->[$x_region_index] =[$start_x_loc,$temp_start_x_loc_minus_one,"empty","notfixed",""];
+      push(@$ref_array_of_x_locations_array,[$temp_start_x_loc,$temp_end_x_loc_minus_one,"full","fixed",""]);
+      $x_region_index = @{$ref_array_of_x_locations_array} -1 ;
+    }else{
+      $ref_array_of_x_locations_array->[$x_region_index] =[$temp_start_x_loc,$temp_end_x_loc_minus_one,"full","fixed",""];
+    }
+    if($end_x_loc >= $temp_end_x_loc){
+      push(@$ref_array_of_x_locations_array,[$temp_end_x_loc,$end_x_loc,"empty","notfixed",""]);
+    }
+  }
+  return $x_region_index;
+}#sub insert_full_region_in_row
+
+sub return_used_width_of_row
+{
+  my $ref_array_of_x_locations_array = $_[0];
+  my @array_of_x_locations_array = @{$ref_array_of_x_locations_array};
+  my $row_width_used = 0 ;
+  for(my $temp_index = 0 ; $temp_index <= $#array_of_x_locations_array;$temp_index++){
+    my @x_locations_array = @{$array_of_x_locations_array[$temp_index]};
+    my $start_x_loc = $x_locations_array[0];
+    my $end_x_loc = $x_locations_array[1];
+    my $status = $x_locations_array[2];
+    my $x_region_width = $end_x_loc - $start_x_loc +1 ;
+    if($status eq "full"){
+      $row_width_used += $x_region_width;
+    }
+  }
+  return $row_width_used;
+}#sub return_used_width_of_row
+
+sub is_x_location_occupied_in_row
+{
+  my $ref_array_of_x_locations_array = $_[0];
+  my @array_of_x_locations_array = @{$ref_array_of_x_locations_array};
+  my $x_location = $_[1];
+  for(my $temp_index = 0 ; $temp_index <= $#array_of_x_locations_array;$temp_index++){
+    my @x_locations_array = @{$array_of_x_locations_array[$temp_index]};
+    my $start_x_loc = $x_locations_array[0];
+    my $end_x_loc = $x_locations_array[1];
+    my $status = $x_locations_array[2];
+    if($status eq "full"){
+      $row_width_used += $x_region_width;
+      if(($x_location >= $start_x_loc)&&($x_location <= $end_x_loc)){
+        return 1;
+      }
+    }
+  }
+  return 0;
+}#sub is_x_location_occupied_in_row
+
+sub get_x_region_occupied_in_row
+{
+  my $ref_array_of_x_locations_array = $_[0];
+  my @array_of_x_locations_array = @{$ref_array_of_x_locations_array};
+  my $x_start_location = $_[1];
+  my $x_end_location = $_[2];
+  for(my $temp_index = 0 ; $temp_index <= $#array_of_x_locations_array;$temp_index++){
+    my @x_locations_array = @{$array_of_x_locations_array[$temp_index]};
+    my $start_x_loc = $x_locations_array[0];
+    my $end_x_loc = $x_locations_array[1];
+    my $status = $x_locations_array[2];
+    if($status eq "full"){
+      $row_width_used += $x_region_width;
+      if(($x_start_location >= $start_x_loc)&&($x_start_location <= $end_x_loc)){
+        return $temp_index;
+      }
+      if(($x_end_location >= $start_x_loc)&&($x_end_location <= $end_x_loc)){
+        return $temp_index;
+      }
+      if(($start_x_loc >= $x_start_loc)&&($start_x_loc <= $x_end_loc)){
+        return $temp_index;
+      }
+      if(($end_x_loc >= $x_start_loc)&&($end_x_loc <= $x_end_loc)){
+        return $temp_index;
+      }
+    }
+  }
+  return -1;
+}#sub get_x_region_occupied_in_row
+
+1;

@@ -1,0 +1,281 @@
+
+sub activate_gdsViewTab {
+     $GLOBAL->dbGlobalSetActiveLibraryTab("gds_view");
+     $GLOBAL->dbGlobalSetActiveCanvas("gds_view");
+     $gdsCanvas->CanvasFocus;
+}#sub activate_gdsViewTab
+
+sub gdsfilelist_popup {
+    $gdsfile =$_;
+my @types = (["Config Files", '.gds'],
+             ["All Files", "*"]);
+$gdsfile = $top->getOpenFile(-filetypes =>\@types,
+                              -defaultextension => '.gds'); 
+
+}#sub gdsfilelist_popup
+
+sub read_gds {
+my $compact = 0;
+my $boundary_found = 0;
+my $text_found = 0;
+my $count = 0;
+my $layerName;
+%GDS_LAYERS = ();
+%GDS_LAYER_COORDS = ();
+%GDS_PIN_LAYER_COORDS = ();
+
+my $fileNameIn = $_[0];
+
+print "reading gds file $fileNameIn\n";
+
+my $gds2File = new GDS2(-fileName=>"$fileNameIn");
+while($gds2File -> readGds2Record) {
+     my $string = $gds2File-> returnRecordAsString(-compact=>$compact);
+     if($string =~ m/^\s*BOUNDARY/){
+        $boundary_found = 1; 
+        $text_found = 0;     
+     }
+     if($string =~ m/^\s*ENDEL/){
+        $boundary_found = 0;
+        $text_found = 0; 
+        next;
+     }
+     if($string =~ m/^\s*TEXT/){
+        $text_found = 1;
+        $boundary_found = 0;
+     }
+     if ($boundary_found == 1){
+        if($gds2File -> returnRecordTypeString eq 'LAYER'){
+           $layerName = $gds2File->returnLayer;
+           $GDS_LAYERS{$layerName} = 1;
+        }
+        if($gds2File -> isXy){
+           my @xy = $gds2File -> returnXyAsArray;
+           $GDS_LAYER_COORDS{$count} = [$layerName,@xy];
+           $count++;
+        }
+     }#if boundary found 
+     if ($text_found == 1){ 
+        my $pinName ; 
+        if($gds2File -> returnRecordTypeString eq 'LAYER'){
+           $pinlayerName = $gds2File->returnLayer;
+        }
+        if($gds2File -> isXy){
+           @pinxy = $gds2File -> returnXyAsArray;
+        }
+        if($string =~ m/^\s*STRING/){
+           ($pinName)=(split(/\s*\'/,$string))[1];
+           if(exists $GDS_PIN_LAYER_COORDS{$pinName}){
+              my $dup_pin = (split(/\:/,$pinName))[0];
+              $GDS_PIN_LAYER_COORDS{$dup_pin} = [$pinlayerName, @pinxy];                
+           }else{
+              $GDS_PIN_LAYER_COORDS{$pinName} = [$pinlayerName, @pinxy];
+           }                
+        }
+    }#if text found 
+}#while
+print "end reading gds file $fileNameIn\n";
+}#sub read_gds
+
+
+sub gds_display {
+my $display_mode = $_[0];
+
+my $canvas = $gdsCanvas;
+my $box = [0,0,540,540];
+my $canvasWidth = 500;
+my $canvasHeight = 500;
+my $displayFactor = 1;
+###################### calculate display factor #############################
+my @x_coords = ();
+my @y_coords = ();
+foreach $key (keys %GDS_LAYER_COORDS){
+my $val = $GDS_LAYER_COORDS{$key};
+my @arrCoords = @$val;
+my $len = @arrCoords;
+   for (my $i = 1; $i < $len; $i = ($i+ 2)){
+        push(@x_coords, $arrCoords[$i]);
+        push(@y_coords, $arrCoords[$i+ 1]);
+                                            }#for each point
+                                     }#foreach layer
+@x_coords = sort{$a<=>$b}@x_coords;
+@y_coords = sort{$a<=>$b}@y_coords; 
+my $minx = $x_coords[0];
+my $miny = $y_coords[0];
+my $maxx = $x_coords[-1];
+my $maxy = $y_coords[-1];
+$GLOBAL->dbGlobalSetGdsXYref($minx,$miny);
+#print "minx $minx, maxx $maxx\n";
+#print "miny $miny, maxy $maxy\n";
+
+my $shiftX =  20;
+my $shiftY =  20;
+
+my $XdisplayFactor = ($canvasWidth )/($maxx - $minx); 
+my $YdisplayFactor = ($canvasHeight)/($maxy - $miny); 
+
+if ($XdisplayFactor > $YdisplayFactor) {
+	    $displayFactor = $YdisplayFactor;}
+else {
+	    $displayFactor = $XdisplayFactor;
+   	}
+$GLOBAL->dbGlobalSetGdsDisplayFactor($displayFactor);
+
+$canvas->createRectangle(0,0,540,540, -outline=> "black",);
+
+###########################################################################################
+foreach my $polygon (keys %GDS_LAYER_COORDS){
+     my @polCoords = ();
+     my $color;
+     my $value = $GDS_LAYER_COORDS{$polygon};
+     my @arr_coords = @$value;
+     my $len = @arr_coords;
+     my $layerName = $arr_coords[0];
+     for (my $i = 1; $i < $len; $i = ($i+ 2)){ 
+          my $xcoord = $shiftX + (($arr_coords[$i] - $minx )*$displayFactor);
+          my $ycoord = $shiftY + (($arr_coords[$i+ 1] - $miny)*$displayFactor);
+
+     push (@polCoords, $xcoord,$ycoord);
+                           }
+if ($layerName > 50){ $color = "white";}
+else { $color = $HashCol{$layerName};}
+
+if($display_mode eq "display2"){
+   $canvas->createLine(@polCoords, -fill,$color, -tags=>"layer_".$layerName);}
+if($display_mode eq "display1"){
+$canvas->createPolygon(@polCoords, -outline=> $color, -fill=>$color, -stipple=>'gray12',-tags=>"layer_".$layerName);}
+
+}#foreach polygon
+
+foreach my $pinName (keys %GDS_PIN_LAYER_COORDS){
+my @pinCoords = ();
+my $pin_point = $GDS_PIN_LAYER_COORDS{$pinName};
+my @arr_pin_coords = @$pin_point;
+my $layerName = $arr_pin_coords[0];
+my $pin_xCoord = $arr_pin_coords[1];
+my $pin_yCoord = $arr_pin_coords[2];
+
+$pin_xCoord = $shiftX + (($pin_xCoord - $minx )*$displayFactor);
+$pin_yCoord = $shiftY + (($pin_yCoord - $miny )*$displayFactor);
+$canvas->createText($pin_xCoord,$pin_yCoord, -text=>$pinName, -fill=>'white', tags=>"GDSPINTEXT");
+}#foreach pin
+
+$canvas->viewArea(@$box, -border => 0);
+my @box_org = $canvas->getView();
+&design_ZoomIn_ZoomOut($canvas,\@box_org);
+if($GLOBAL->dbfGlobalGetGdsDis == 0){
+   &create_gds_layer_buttons;
+}
+$GLOBAL->dbfGlobalSetGdsDis(1);
+}#sub gds_display
+
+#######################################################################################
+sub create_gds_layer_buttons{
+my @layers = sort{$a<=>$b} keys %GDS_LAYERS;
+my @var = (); 
+$libFrame10_1->Label(-text=>"Layers")->pack(-side=>"left");
+for(my $j = 0; $j<=$#layers; $j++){
+    if($#layers < 0){last;}
+    my $layerName= $layers[$j];
+    my $n = $j;
+    $libFrame10_1->Checkbutton(-text => $layerName,-variable => \$var[$j],-onvalue => 1, -offvalue => 0,
+                               -command => sub{if($var[$n]==1){&display_gds_pin($layerName,$displayVar);
+                                               }else{$gdsCanvas->delete("layer_".$layerName);}
+                               })->pack(-side => 'left', -anchor =>'w', -fill=>'x' );
+}#for 
+$libFrame10_1->Button(-text=>'Select All',-padx=>0,-pady=>0,-command =>sub {
+                                                                            my $n = @var;
+                                                                            my $layer_str = join ",",@layers;
+                                                                            for(my $i = 0 ; $i < $n; $i++){
+                                                                                $var[$i] =1 ;
+                                                                            
+                                                                            }
+                                                                            &display_gds_pin($layer_str,$displayVar);
+                                                                            })->pack(-side => 'right');
+$libFrame10_1->Button(-text=>'Delete All',-padx=>0,-pady=>0,-command =>sub {$gdsCanvas->delete(GDSPINTEXT);       
+                                                                            my $n = @var;
+                                                                            for(my $i = 0 ; $i < $n; $i++){
+                                                                                $var[$i] =0 ;
+                                                                                my $lName = $layers[$i];
+                                                                                $gdsCanvas->delete("layer_".$lName);}
+                                                                         })->pack(-side => 'right');
+}#sub create_gds_layer_buttons
+
+sub display_gds_pin{
+my $layer_str = $_[0];
+my $display_mode = $_[1];
+my %layer_temp_hash = ();
+my $shiftX =  20;
+my $shiftY =  20;
+my ($minX,$minY) = $GLOBAL->dbGlobalGetGdsXYref;
+my $displayFactor = $GLOBAL->dbGlobalGetGdsDisplayFactor;
+my @layer = split(/\,/,$layer_str);
+foreach (@layer){
+  $layer_temp_hash{$_} = 1;
+}
+foreach my $polygon (keys %GDS_LAYER_COORDS){
+     my @polCoords = ();
+     my $color;
+     my $value = $GDS_LAYER_COORDS{$polygon};
+     my @arr_coords = @$value;
+     my $len = @arr_coords;
+     my $layerName = $arr_coords[0];
+     if(exists $layer_temp_hash{$layerName}){
+        for (my $i = 1; $i < $len; $i = ($i+ 2)){ 
+             my $xcoord = $shiftX + (($arr_coords[$i] - $minx )*$displayFactor);
+             my $ycoord = $shiftY + (($arr_coords[$i+ 1] - $miny)*$displayFactor);
+             push (@polCoords, $xcoord,$ycoord);
+        }
+        if ($layerName > 50){ $color = "white";}
+        else { $color = $HashCol{$layerName};}
+        
+        if($display_mode eq "display2"){
+           $gdsCanvas->createLine(@polCoords, -fill,$color, -tags=>"layer_".$layerName);
+        }
+        if($display_mode eq "display1"){
+          $gdsCanvas->createPolygon(@polCoords, -outline=> $color, -fill=>$color, -stipple=>'gray12',-tags=>"layer_".$layerName);
+        }
+     }
+}
+foreach my $pinName (keys %GDS_PIN_LAYER_COORDS){
+  my @pinCoords = ();
+  my $pin_point = $GDS_PIN_LAYER_COORDS{$pinName};
+  my @arr_pin_coords = @$pin_point;
+  my $layerName = $arr_pin_coords[0];
+  my $pin_xCoord = $arr_pin_coords[1];
+  my $pin_yCoord = $arr_pin_coords[2];
+  
+  $pin_xCoord = $shiftX + (($pin_xCoord - $minx )*$displayFactor);
+  $pin_yCoord = $shiftY + (($pin_yCoord - $miny )*$displayFactor);
+  $gdsCanvas->createText($pin_xCoord,$pin_yCoord, -text=>$pinName, -fill=>'white', tags=>"GDSPINTEXT");
+}#foreach pin
+
+}#sub display_gds_pin
+
+#######################################################################################
+#sub create_gds{
+#$GDS_LAYER_COORDS{"1"} = [1,20,20,380,20,380,70,50,70,50,90,,70,90,70,110,20,110,20,20];
+#$GDS_LAYER_COORDS{"2"} = [2,250,80,380,80,380,100,300,100,300,130,250,130,250,80];
+#$GDS_LAYER_COORDS{"3"} = [3,20,150,320,150,320,120,340,120,340,140,360,140,360,180,20,180,20,150];
+#$GDS_LAYER_COORDS{"4"} = [4,20,120,70,120,70,140,20,140,20,120];
+#
+#}#sub create_gds
+
+#######################################################################################
+sub dbfGuiShowGdsCanvasCoords {
+my $canvas = $_[0];
+my @xy = $canvas->eventLocation();
+my $x = $xy[0];
+my $y = $xy[1];
+my $mufx = $GLOBAL->dbGlobalGetGdsDisplayFactor;
+my ($xRef,$yRef) = $GLOBAL->dbGlobalGetGdsXYref;
+$CURSORX = sprintf("%.2f", (($x-20)/$mufx + $xRef));
+$CURSORY = sprintf("%.2f", (($y-20)/$mufx + $yRef));
+#print "$x,$y\n";
+}#sub dbfGuiShowGdsCanvasCoords
+
+#######################################################################################
+
+
+1;
+

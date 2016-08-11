@@ -1,0 +1,332 @@
+
+use Graph::Directed;
+use List::Util qw[min max];
+
+my ($help, $debug, $verbose) = (0,1,1);
+my $spG  = Graph::Directed->new;
+#my $spGV = GraphViz->new();
+my %spMatrix;
+my @flopOrder;
+my %gcellFlops;
+my $MAX_FLOPS_IN_GCELL = 1;
+
+my ($numGcellX, $numGcellY);
+my ($llx, $lly, $urx, $ury);
+my ($dieSizeX, $dieSizeY);
+my ($gcellSizeX, $gcellSizeY);
+
+########################################################################
+sub make_seed_place {
+  ($numGcellX, $numGcellY) = ($#GCellArray+1, $#{$GCellArray[0]} + 1);
+  ($llx, $lly, $urx, $ury) = @{$DIE_ALREADY{dieArea}};
+  ($dieSizeX, $dieSizeY) = ($urx -  $llx, $ury - $lly);
+  ($llx, $lly, $urx, $ury) = $GCellArray[0][0]->dbgGcellGetBBox();
+  ($gcellSizeX, $gcellSizeY) = ($urx -  $llx, $ury - $lly);
+  my $t0 = new Benchmark;
+
+  my (@args) = @_;
+  $help = 0;
+  &make_seed_place_readArgs(@args);
+  if ($help) {
+    &make_seed_place_usage();
+  } else {
+    &make_seed_place_init;
+    &make_seed_place_smatrix_graph;
+    &make_seed_place_flops;
+    #&make_seed_place_display_graph;
+  } #if...else
+  &make_seed_place_finish();
+
+  my $t1 = new Benchmark;
+  my $td = timediff($t1, $t0);
+  print "seed place took:",timestr($td),"\n";
+} #sub make_seed_place
+
+########################################################################
+sub make_seed_place_readArgs {
+  my (@args) =  @_;
+  if ($#args < 0) {
+    $help=1;
+  } else {
+    $args = join(' ',@args);
+    if (!defined($args)) {
+      $args = "";
+    }
+    my $parseResult = Getopt::Long::GetOptionsFromString($args , 
+							 "h"          => \$help,
+							 "help"       => \$help,
+							 "debug"      => \$debug,
+							 "verbose"    => \$verbose,
+							);
+  }
+} #sub make_seed_place_readArgs
+
+########################################################################
+sub make_seed_place_init() {
+
+  for (my $i=0; $i<$numGcellX; $i++) {
+    for (my $j=0; $j<$numGcellY; $j++) {
+      $GCellArray[$i][$j]->dbgGcellResetNflop;
+    } #for
+  } #for
+
+} #sub make_seed_place_init
+
+########################################################################
+sub make_seed_place_finish() {
+
+} #sub make_seed_place_finish
+
+########################################################################
+sub make_seed_place_smatrix_graph {
+  my $inst;
+  my @flops = $PLACE{$TOP_MODULE}->dbPlaceGetFlopList;
+  my @in_port = $PLACE{$TOP_MODULE}->dbPlaceGetInPortList;
+  my @out_port = $PLACE{$TOP_MODULE}->dbPlaceGetOutPortList;
+
+  foreach $inst (@flops, @in_port, @out_port) {
+    $spG->add_vertex($inst);
+  }
+
+  foreach $inst (@flops, @out_port) {
+    my (@fanin, @faninName);
+    print "DBG-ALGO_PL : 001 : $inst ::: " if ($debug);
+    @fanin = $PLACE{$TOP_MODULE}->dbPlaceGetFanInsByName($inst);
+    foreach my $fan (@fanin) {
+      my $faninName = $PLACE{$TOP_MODULE}->dbPlaceGetNameByNumberCol($fan);
+      push(@faninName, $faninName);
+      $spG->add_edge($faninName, $inst);
+    }
+    print "DBG-ALGO_PL : 002 : @fanin - @faninName\n" if ($debug);
+  }
+  print "INFO-ALGO_PL : 003 : Finishing make_seed_place_smatrix_graph...\n";
+} #make_seed_place_smatrix_graph
+
+########################################################################
+sub make_seed_place_flops {
+  my ($flop, $in, $out);
+  my @flops    = $PLACE{$TOP_MODULE}->dbPlaceGetFlopList;
+  my @in_port  = $PLACE{$TOP_MODULE}->dbPlaceGetInPortList;
+  my @out_port = $PLACE{$TOP_MODULE}->dbPlaceGetOutPortList;
+  my $apsp = $spG->APSP_Floyd_Warshall();
+
+
+  foreach $flop (@flops) {
+    my $flopNum     = $PLACE{$TOP_MODULE}->dbPlaceGetNameByNumberCol($flop);
+    foreach $in (@in_port) {
+      my $len = $apsp->path_length($in, $flop);
+      if (defined($len)) {$spMatrix{$flop}{port}{$in} = $len;}
+    } #foreach
+
+    my $flopNum     = $PLACE{$TOP_MODULE}->dbPlaceGetNameByNumberRow($flop);
+    foreach $out (@out_port) {
+      my $len = $apsp->path_length($flop, $out);
+      if (defined($len)) {$spMatrix{$flop}{port}{$out} = $len;}
+    } #foreach
+    $spMatrix{$flop}{minSP} = min(values %{$spMatrix{$flop}{port}});
+    $spMatrix{$flop}{maxSP} = max(values %{$spMatrix{$flop}{port}});
+  } #foreach
+
+  &make_seed_place_order;
+
+  foreach $flop (@flopOrder) {
+    &make_seed_place_findTargetLoc($flop);
+    $CADB{$flop}->dbCadbSetLoc($spMatrix{$flop}{TgtX1},$spMatrix{$flop}{TgtY1});
+  }
+
+  print "INFO-ALGO_PL : 001 : Finishing  make_seed_place_flops...\n";
+
+} #make_seed_place_flops
+
+########################################################################
+sub make_seed_place_order {
+  my $flop;
+  @flopOrder = keys %spMatrix;
+
+  print "DBG-ALGO_PL : 001 : flopOrder: " . "@flopOrder"."\n" if ($debug);
+  for (my $i=0; $i<= $#flopOrder; $i++) {
+    $flop = $flopOrder[$i];
+    for (my $j=$i; $j<= $#flopOrder; $j++) {
+      if ($spMatrix{$flopOrder[$j]}{minSP} < $spMatrix{$flopOrder[$i]}{minSP}) {
+	($flopOrder[$i],$flopOrder[$j]) = ($flopOrder[$j],$flopOrder[$i]);
+      } elsif ($spMatrix{$flopOrder[$j]}{minSP} == $spMatrix{$flopOrder[$i]}{minSP}) {
+	if ($spMatrix{$flopOrder[$j]}{maxSP} < $spMatrix{$flopOrder[$i]}{maxSP}) {
+	  ($flopOrder[$i],$flopOrder[$j]) = ($flopOrder[$j],$flopOrder[$i]);
+	} #if
+      } #if
+    } #for
+  } #for
+
+  for (my $i=0; $i<= $#flopOrder; $i++) {
+    print "INFO-ALGO_PL : 002 : $i  $flopOrder[$i] min:$spMatrix{$flopOrder[$i]}{minSP} max:$spMatrix{$flopOrder[$i]}{maxSP}\n";
+  } #for
+
+
+
+} #make_seed_place_order
+
+########################################################################
+sub make_seed_place_findTargetLoc {
+  my ($flop) = @_;
+  my ($edge, $loc);
+  my @edge = (E,W,S,N);
+
+  print "INFO-ALGO_PL : 001 : $flop..........\n";
+  foreach my $port (keys %{$spMatrix{$flop}{port}}) {
+    my ($locx, $locy) = $PLACE{$TOP_MODULE}->dbPlaceGetPortLoc($port);
+    if    ($locx == 0)                          { $edge = 'W'; $loc = $locy;}
+    elsif ($locx == $DIE_ALREADY{dieArea}->[2]) { $edge = 'E'; $loc = $locy;}
+    elsif ($locy == 0)                          { $edge = 'S'; $loc = $locx;}
+    elsif ($locy == $DIE_ALREADY{dieArea}->[3]) { $edge = 'N'; $loc = $locx;}
+
+    print "\tINFO-ALGO_PL : 002 : Found port $port at ($locx, $locy) with wt:$spMatrix{$flop}{port}{$port}\n";
+    if ((!defined($spMatrix{$flop}{$edge}{minL})) || ($spMatrix{$flop}{$edge}{minL} >$loc)){
+      $spMatrix{$flop}{$edge}{minPort} = $port;
+      $spMatrix{$flop}{$edge}{minL} = $loc;
+      $spMatrix{$flop}{$edge}{minW} = $spMatrix{$flop}{port}{$port};
+    }
+
+    if ((!defined($spMatrix{$flop}{$edge}{maxL})) || ($spMatrix{$flop}{$edge}{maxL} <$loc)){
+      $spMatrix{$flop}{$edge}{maxPort} = $port;
+      $spMatrix{$flop}{$edge}{maxL} = $loc;
+      $spMatrix{$flop}{$edge}{maxW} = $spMatrix{$flop}{port}{$port};
+    }
+
+  }
+
+  foreach my $edge (@edge) {
+    if ( (defined($spMatrix{$flop}{$edge}{minW})) && (defined($spMatrix{$flop}{$edge}{minW})) ) { 
+      #find edge CG
+      $spMatrix{$flop}{$edge}{cg}  = int ( ($spMatrix{$flop}{$edge}{minW} * $spMatrix{$flop}{$edge}{maxL}) 
+				       +($spMatrix{$flop}{$edge}{maxW} * $spMatrix{$flop}{$edge}{minL}))/
+					 ($spMatrix{$flop}{$edge}{minW} + $spMatrix{$flop}{$edge}{maxW});
+      $spMatrix{$flop}{$edge}{cgW} = min($spMatrix{$flop}{$edge}{minW},$spMatrix{$flop}{$edge}{maxW});
+
+      print "\t\tDBG-ALGO_PL : 003 : $edge:$spMatrix{$flop}{$edge}{cg}:$spMatrix{$flop}{$edge}{cgW} from $spMatrix{$flop}{$edge}{minPort},$spMatrix{$flop}{$edge}{minW},$spMatrix{$flop}{$edge}{minL} and $spMatrix{$flop}{$edge}{maxPort},$spMatrix{$flop}{$edge}{maxW},$spMatrix{$flop}{$edge}{maxL}\n" if ($debug);
+    }
+  }
+
+  #find taget location
+  my ($numX, $numY, $den) = (0,0);
+  foreach my $edge (@edge) {
+    if ( (defined($spMatrix{$flop}{$edge}{cg})) && (defined($spMatrix{$flop}{$edge}{cgW})) ) { 
+      $den += 1/$spMatrix{$flop}{$edge}{cgW};
+      if ($edge eq "W") {
+	$numX += 0;
+	$numY += $spMatrix{$flop}{$edge}{cg} * (1/$spMatrix{$flop}{$edge}{cgW});
+      } elsif ($edge eq "E") {
+	$numX += $DIE_ALREADY{dieArea}->[2]  * (1/$spMatrix{$flop}{$edge}{cgW});
+	$numY += $spMatrix{$flop}{$edge}{cg} * (1/$spMatrix{$flop}{$edge}{cgW});
+      } elsif ($edge eq "S") {
+	$numX += $spMatrix{$flop}{$edge}{cg} * (1/$spMatrix{$flop}{$edge}{cgW});
+	$numY += 0;
+      } elsif ($edge eq "N") {
+	$numX += $spMatrix{$flop}{$edge}{cg} * (1/$spMatrix{$flop}{$edge}{cgW});
+	$numY += $DIE_ALREADY{dieArea}->[3]  * (1/$spMatrix{$flop}{$edge}{cgW});
+      }
+    }
+  }
+  if ($den == 0) {
+    print"ERR-ALGO_PL : 004 : Could not find target location for flop $flop as there is are no connected ports\n";
+  }
+  else {
+    $spMatrix{$flop}{TgtX} = int ($numX / $den);
+    $spMatrix{$flop}{TgtY} = int ($numY / $den);
+    my $gx = int ($spMatrix{$flop}{TgtX} / $gcellSizeX);
+    my $gy = int ($spMatrix{$flop}{TgtY} / $gcellSizeY);
+    print "\t\t\tINFO-ALGO_PL : 005 : Target Location:$spMatrix{$flop}{TgtX},$spMatrix{$flop}{TgtY} in gcell:$gx,$gy\n";
+  
+
+    #make sure this location is in a gcell that can have more flop,
+    #else find nearest empty gcell that can
+    #1. find current gcell
+    my $gFlopCnt = $GCellArray[$gx][$gy]->dbgGcellGetNflop();
+    my ($newGx, $newGy);
+    if ($gFlopCnt >= $MAX_FLOPS_IN_GCELL) {
+      #2. find nearest empty cell
+      ($newGx, $newGy) = &make_seed_place_findNextGcell($flop,$gx,$gy);
+      $spMatrix{$flop}{TgtX1} = $gcellSizeX*($newGx + 0.5);
+      $spMatrix{$flop}{TgtY1} = $gcellSizeY*($newGy + 0.5);
+      print "\t\tINFO-ALGO_PL : 006 : Target location was in a completely filled Gcell\n";
+      print "\t\tINFO-ALGO_PL : 007 : Modified Target Location:$spMatrix{$flop}{TgtX1},$spMatrix{$flop}{TgtY1} in gcell:$newGx,$newGy\n";
+    } else {
+      ($newGx, $newGy) = ($gx, $gy);
+      $spMatrix{$flop}{TgtX1} = $gcellSizeX*($newGx + 0.5);
+      $spMatrix{$flop}{TgtY1} = $gcellSizeY*($newGy + 0.5);
+#      $spMatrix{$flop}{TgtX1} = $spMatrix{$flop}{TgtX};
+#      $spMatrix{$flop}{TgtY1} = $spMatrix{$flop}{TgtY};
+    } #else
+    $GCellArray[$newGx][$newGy]->dbgGcellIncrNflop();
+  } #else
+
+} #make_seed_place_findTargetLoc
+
+########################################################################
+sub make_seed_place_findNextGcell {
+  my ($flop, $gx, $gy) = @_;
+  my ($gcount, $dist) = (0, 0);
+  my ($dx, $dy);
+  my $found = 0;
+  my ($newGx, $newGy);
+
+  my $totalGcount = $numGcellX * $numGcellY;
+  while ((!$found) && ($gcount < $totalGcount -1 )) {
+    $dist++;
+    #there is still an empty gcell I can check
+    my (@dx, @dy);
+    for ($dx = -$dist; $dx <= $dist; $dx++) {
+      $dy = $dist - abs($dx);
+      push (@dx, $dx);
+      push (@dy, $dy);
+      $gcount++;
+      if ($dy != 0) {
+	push (@dx, $dx);
+	push (@dy, -$dy);
+	$gcount++;
+      } #if
+    } #for
+
+    for (my $i=0; $i<=$#dx; $i++) {
+      ($newGx, $newGy) = ($gx + $dx[$i], $gy + $dy[$i]);
+      if ( ($newGx <0)||($newGy <0) ||
+	   ($newGx >=$numGcellX-1) ||($newGy >=$numGcellY-1)) {next;}
+      my $gFlopCnt = $GCellArray[$newGx][$newGy]->dbgGcellGetNflop();
+  
+      if ($gFlopCnt < $MAX_FLOPS_IN_GCELL) {
+	$found = 1;
+	last;
+      } #if
+    } #for
+  } #while
+
+  if ((!$found) && ($gcount == $totalGcount -1 )) {
+    die "ERR-ALGO_PL : 001 : Could not find target location for flop $flop as there are no more empty gce;;\n";
+  } else {
+    return($newGx, $newGy);
+  }
+} #sub make_seed_place_findClosestFreeLoc
+
+########################################################################
+#sub make_seed_place_display_graph {
+#  my @vertices = $spG->vertices();
+#  foreach my $vtx (@vertices) {
+#    $spGV->add_node($vtx);
+#  }
+#
+#  my @edges = $spG->edges();
+#  foreach my $edge (@edges) {
+#    $spGV->add_edge($edge->[0] => $edge->[1]);
+#  }
+#
+#  $spGV->as_png("seed_place_graph.png")
+#}# sub make_seed_place_display_graph
+
+########################################################################
+sub make_seed_place_usage {
+    print"\nmake_seed_place Usage: make_seed_place [-verbose -debug -norun -help]\n";
+    return;
+}
+ 
+
+
+1;

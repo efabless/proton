@@ -1,0 +1,67 @@
+########################################################################################################
+################################## Display Smatrix for Hier-view #######################################
+########################################################################################################
+sub display_hier_smatrix{
+$analysis_canvas4->delete("all");
+my $canWidth = 500;
+my $canHeight = 500;
+
+if(defined $CONN_SMATRIX){
+}else{
+   &dbfTstgenConstructConnSMatrix($TOP_MODULE);
+}
+
+my $maxRow = $CONN_SMATRIX->dbPlaceGetMaxRow;
+my $maxCol = $CONN_SMATRIX->dbPlaceGetMaxCol;
+
+my $box_width = $canWidth/$maxCol;
+my $box_height = $canHeight/$maxRow;
+
+my $box_size = $box_width;
+   if($box_width > $box_height){
+      $box_size = $box_height;
+   }
+$analysis_canvas4->createRectangle(0,0,520,520,-outline=>"white");  
+$analysis_canvas4->createRectangle(10,10,510,510,-outline=>"gray", -width=>1);  
+   for(my $row=1; $row<=$maxRow; $row++){
+     for(my $col=1; $col<=$maxCol; $col++){
+         my $val =  $CONN_SMATRIX->dbPlaceGetTpathVal($row ,$col);
+         if($val != 0){
+            my $llx = 10 + $box_size*($col-1);
+            my $lly = 510 - $box_size*($row-1);
+            my $urx = 10 + $box_size*$col;
+            my $ury = 510 - $box_size*$row;
+            my $color = "black";
+               $color = $HashCol{$val} if(exists $HashCol{$val});
+          $analysis_canvas4->createRectangle($llx,$lly,$urx,$ury,-outline=>$color,-width=>2, -fill=>$color, -stipple=>"gray12", -tags=>$row.",".$col.",".$val);
+         }
+       }#for each col
+   }#for each row
+$analysis_canvas4->viewAll;
+my @box_org = $analysis_canvas4->getView();
+&design_ZoomIn_ZoomOut($analysis_canvas4,\@box_org);
+&create_query_bind_for_hier_smatrix;
+&activate_analysis_Tab;
+}#sub display_hier_smatrix
+
+########################################################################################################
+sub create_query_bind_for_hier_smatrix{
+    $analysis_canvas4->CanvasBind("<1>"=> [sub {
+                                        my @xy = $analysis_canvas4->eventLocation();
+                                        my $x = $xy[0];
+                                        my $y = $xy[1];
+                                        my @id      = $analysis_canvas4->find(qw/withtag current/);
+                                        my @tagList = $analysis_canvas4->gettags($id[0]);
+                                        my ($row, $col,$val) = (split(/\,/,$tagList[0]))[0,1,2];
+                                        my $inst = $CONN_SMATRIX->dbPlaceGetNameByNumberRow($row);
+                                        my $fanIn = $CONN_SMATRIX->dbPlaceGetNameByNumberCol($col);
+                                       #$analysis_canvas4->createText($x,$y, -text=>$fanIn."-($val)->".$inst, -fill=>"black",-tags=>"TEMP");
+                                       $analysis_canvas4->createText($x,$y, -text=>$fanIn."->".$inst."\n"."conn-$val", -fill=>"black",-tags=>"TEMP");
+                                      }]);
+   $analysis_canvas4->CanvasBind("<B1-ButtonRelease>"=> [sub {$analysis_canvas4->delete(TEMP);}]);
+
+}#sub create_query_bind_for_hier_smatrix
+########################################################################################################
+
+
+1;

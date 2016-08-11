@@ -1,0 +1,482 @@
+
+use XML::Writer;
+
+sub serGetLefMacroTotalNum{
+  my $totalNumOfMacros =   keys %PLDB;
+  return $totalNumOfMacros;
+}#sub serGetLefMacroTotalNum
+
+############################################
+sub serGetLefMacroAttr {
+my ($macroName, $attr) = @_;
+   if(exists $PLDB{$macroName}){
+      if($attr eq "function"){
+         my $func = $PLDB{$macroName}->dbMdbGetFunction;
+         return $func;
+      }elsif($attr eq "class"){
+         my $class = $PLDB{$macroName}->dbMdbGetClass;
+         return $class;
+      }elsif($attr eq "pins"){
+         my @pins = $PLDB{$macroName}->dbMdbGetPins;
+         return \@pins;
+      }elsif($attr eq "size"){
+         my @size = $PLDB{$macroName}->dbMdbGetSize;
+         return \@size;
+      }elsif($attr eq "origin"){
+         my @cellOrigin = $PLDB{$macroName}->dbMdbGetOrigin;  
+         return \@cellOrigin;
+      }elsif($attr eq "obs"){
+         my @OBS = $PLDB{$macroName}->dbMdbGetObs;
+         return \@OBS;  
+      }elsif($attr eq "poly_obs"){
+         my @OBS = $PLDB{$macroName}->dbMdbGetObsPolygon;
+         return \@OBS;  
+      }else{print "WARN:$attr is not a correct Attribute\n";}
+   }else{print "WARN: Macro $macroName does not exists\n";}
+}#sub serGetLefMacroAttr
+
+############################################
+sub serGetLefLayerList{
+  my @layers = keys %PTDB;
+  return \@layers;
+}#sub serGetLefLayerList
+
+############################################
+sub serGetLefLayerAttr {
+my ($layerName, $attr) = @_;
+  if(exists $PTDB{$layerName}){
+     if($attr eq "type"){
+        my $type = $PTDB{$layerName}->dbTechGetLayerType;
+        return $type;
+     }elsif($attr eq "dir"){
+        my $dir = $PTDB{$layerName}->dbTechGetLayerDir;
+        return $dir;
+     }elsif($attr eq "num"){
+        my $num = $PTDB{$layerName}->dbTechGetLayerNum;
+        return $num;
+     }elsif($attr eq "pitch"){
+        my $pitch = $PTDB{$layerName}->dbTechGetLayerPitch;
+        return $pitch;
+     }elsif($attr eq "offset"){
+        my $offset = $PTDB{$layerName}->dbTechGetLayerOffset;
+        return $offset;
+     }elsif($attr eq "color"){
+        my $color = $PTDB{$layerName}->dbTechGetLayerColor;
+        return $color;  
+     }else{print "WARN:$attr is not a correct Attribute\n";}
+  }else{print "WARN: layer $layerName does not exists\n";}
+}#sub serGetLefLayerAttr
+
+############################################
+sub serGetLefPinAttr {
+my ($macroName,$pinName, $attr) = @_;
+  if(exists $PLDB{$macroName}){
+     if($attr eq "type"){
+        my $pinType = $PLDB{$macroName}->dbMdbGetPinType($pinName); 
+        return $pinType;
+     }elsif($attr eq "rect"){ 
+        my @RECTS = $PLDB{$macroName}->dbMdbGetPinRect($pinName);
+        return \@RECTS;
+     }elsif($attr eq "polygon"){ 
+        my @RECTS = $PLDB{$macroName}->dbMdbGetPinPolygon($pinName);
+        return \@RECTS;
+     }else{print "WARN: either pin $pinName not found or attribute $attr is not correct\n";}
+  }else{print"WARN:Macro $macroName does not exists\n";} 
+
+}#sub serGetLefPinAttr
+
+############################################
+sub get_tldb_hash{
+return (%TLDB);
+}#sub get_tldb_hash
+
+###################################################################################################
+################################### Functions using in Client GUI #################################
+###################################################################################################
+sub serGetLefMacroList{
+my @macros = sort keys %PLDB;
+return(\@macros)
+}#sub serGetLefMacroList
+
+############################################
+#sub serGetLefMacros{
+# my @macros = sort keys %PLDB;
+# my $noOfMacro = @macros; 
+# my $str = "<macros count=\"$noOfMacro\">\n";
+# foreach my $macroName (@macros){
+#    my $func = $PLDB{$macroName}->dbMdbGetFunction;
+#    my $class = $PLDB{$macroName}->dbMdbGetClass;
+#    my $type = $PLDB{$macroName}->dbMdbGetType;
+#    my @size = $PLDB{$macroName}->dbMdbGetSize;
+#    my @cellOrigin = $PLDB{$macroName}->dbMdbGetOrigin;  
+#    my @pins = $PLDB{$macroName}->dbMdbGetPins;
+#    my @OBS = $PLDB{$macroName}->dbMdbGetObs;
+#    $str = $str." <macro name=\"$macroName\" function=\"$func\" class=\"$class\" type=\"$type\">\n";
+#    $str = $str."  <size>@size</size>\n";
+#    $str = $str."  <origin>@cellOrigin</origin>\n";
+#    $str = $str."  <pins>@pins</pins>\n";
+#    $str = $str."  <obs>@OBS</obs>\n";
+#    $str = $str." </macro>\n";
+# }
+# $str = $str."</macros>";
+# return $str;
+#}#sub serGetLefMacros
+
+############################################
+sub serGetLefMacroData{
+ my $macroName = $_[0];
+ if(exists $PLDB{$macroName}){
+    my $func = $PLDB{$macroName}->dbMdbGetFunction;
+    my $class = $PLDB{$macroName}->dbMdbGetClass;
+    #my $type = $PLDB{$macroName}->dbMdbGetType;
+    my @size = $PLDB{$macroName}->dbMdbGetSize;
+    my @cellOrigin = $PLDB{$macroName}->dbMdbGetOrigin;  
+    my @pins = $PLDB{$macroName}->dbMdbGetPins;
+    my @obs_rect = $PLDB{$macroName}->dbMdbGetObs;
+    my @obs_polygon = $PLDB{$macroName}->dbMdbGetObsPolygon;
+    my $obs_poly_line = join( "; ", @obs_polygon);
+
+    my $str = "<macro function=\"$func\" class=\"$class\">\n";
+    $str = $str." <size>@size</size>\n";
+    $str = $str." <origin>@cellOrigin</origin>\n";
+    $str = $str." <pins>@pins</pins>\n";
+    $str = $str." <obs>@obs_rect</obs>\n" if($#obs_rect >= 0);
+    $str = $str." <obs>$obs_poly_line</obs>\n" if($#obs_polygon >= 0);
+    $str = $str."</macro>\n";
+    return $str;
+ }else{print "WARN: Macro $macroName does not exists\n";}
+}#sub serGetLefMacroData
+
+############################################
+sub serGetLefPins{
+ my $macroName = $_[0];
+ if(exists $PLDB{$macroName}){
+    my @pins = $PLDB{$macroName}->dbMdbGetPins;
+    my $noOfPins = @pins;
+    my $str = "<pins count=\"$noOfPins\">\n";
+    foreach my $pinName(@pins){
+      my $pinType = $PLDB{$macroName}->dbMdbGetPinType($pinName); 
+      my @RECTS = $PLDB{$macroName}->dbMdbGetPinRect($pinName);
+      my @POLYGON = $PLDB{$macroName}->dbMdbGetPinPolygon($pinName);
+      my $pin_poly_line = join( "; ", @POLYGON);
+
+      $str = $str." <pin name=\"$pinName\" type=\"$pinType\">\n";
+      $str = $str."  <polygon>@RECTS</polygon>\n" if($#RECTS >= 0);
+      $str = $str."  <polygon>$pin_poly_line</polygon>\n" if($#POLYGON >= 0);
+      $str = $str." </pin>\n";
+    }
+    $str = $str."</pins>";
+    return $str;
+ }else{print "WARN: Macro $macroName does not exists\n";}
+}#sub serGetLefPins
+
+############################################
+sub serGetLefLayers{
+ my @layers = keys %PTDB;
+ my $noOfLayers = @layers; 
+ my $str = "<layers count=\"$noOfLayers\">\n";
+ foreach my $layerName (@layers){
+   my $type = $PTDB{$layerName}->dbTechGetLayerType;
+   my $dir = $PTDB{$layerName}->dbTechGetLayerDir;
+   my $num = $PTDB{$layerName}->dbTechGetLayerNum;
+   my $pitch = $PTDB{$layerName}->dbTechGetLayerPitch;
+   my $offset = $PTDB{$layerName}->dbTechGetLayerOffset;
+   my $width = $PTDB{$layerName}->dbTechGetLayerWidth;
+   #my $spacing = $PTDB{$layerName}->dbTechGetLayerSpacing;
+   my $color = $PTDB{$layerName}->dbTechGetLayerColor;
+   $str = $str." <layer name=\"$layerName\" type=\"$type\" dir=\"$dir\" width=\"$width\" num=\"$num\" pitch=\"$pitch\" offset=\"$offset\" color=\"$color\" > </layer>\n";
+ }
+ $str = $str."</layers>";
+ return $str;
+}#sub serGetLefLayers
+
+
+###################################################################################################
+################################### Functions using in Client Flex GUI ############################
+###################################################################################################
+
+my %COLOR_ALREADY = ();
+
+sub flxGetLayerHexColor {  #private
+  my $layerName = shift;
+  my $xcolor = $COLOR_ALREADY{$layerName};
+  if ( defined $xcolor && $xcolor ne "" ) {
+    return $xcolor;
+  }
+  return '0x333333';
+}# sub flxGetLayerHexColor
+
+############################################
+sub flxGetLefMacroList {  #public
+my @macros = sort keys %PLDB;
+
+my $out;
+my $xml = new XML::Writer(OUTPUT => \$out);
+$xml->startTag("root");
+$xml->startTag("macrolist");
+
+foreach my $macroName (@macros) {
+  $xml->dataElement(macro => $macroName);
+  $out .= "\n";
+}
+
+$xml->endTag();
+$xml->endTag();
+$xml->end();
+
+return $out;
+
+}#sub flxGetLefMacroList
+
+############################################
+sub flxGetLefMacroBulk {  #public
+ my $macroName = $_[0];
+ unless ( $macroName eq "bulk" ) {
+   return "<root/>";
+ }
+
+ if (keys %COLOR_ALREADY < 1) {
+   &flxSetupMaps();
+ }
+
+ my $out;
+ my $xml = new XML::Writer(OUTPUT => \$out);
+ $xml->startTag("root");
+ $xml->startTag("macros");
+ $out .= "\n";
+ my @macros = sort keys %PLDB;
+ foreach my $macroName (@macros){
+   $xml->startTag("cellref" => ('macro', $macroName));
+   $out .= "\n\n";
+   my $macro = &flxGetLefMacroData($macroName);
+   $macro =~ s:root><macro :macro :g;
+   $macro =~ s:/macro></root:/macro:g;
+   $out .= $macro;
+   $out .= "\n";
+   my $macropins = &flxGetLefPins($macroName);
+   $macropins =~ s:root><macropins :macropins :g;
+   $macropins =~ s:/macropins></root:/macropins:g;
+   $out .= $macropins;
+   $xml->endTag("cellref");
+   $out .= "\n\n";
+ }
+ $xml->endTag("macros");
+ $xml->endTag("root");
+ $xml->end();
+ return $out;
+}#sub flxGetLefMacroBulk
+
+############################################
+sub flxGetLefMacroData {  #public
+ my $macroName = $_[0];
+
+ if (keys %COLOR_ALREADY < 1) {
+   &flxSetupMaps();
+ }
+ my $out;
+ my $xml = new XML::Writer(OUTPUT => \$out);
+ $xml->startTag("root");
+ $xml->startTag("macro" => ('name', $macroName));
+ $out .= "\n";
+
+ if(exists $PLDB{$macroName}){
+    $xml->dataElement(function => $PLDB{$macroName}->dbMdbGetFunction);
+    $xml->dataElement(class => $PLDB{$macroName}->dbMdbGetClass);
+    #$xml->dataElement(type => $PLDB{$macroName}->dbMdbGetType);
+
+    my @size = $PLDB{$macroName}->dbMdbGetSize;
+    my $x = $size[0];  my $y = $size[1];
+    $xml->dataElement(size => "$x $y");
+
+    my @origin = $PLDB{$macroName}->dbMdbGetOrigin;
+    $x = $origin[0];  $y = $origin[1];
+    $xml->dataElement(origin => "$x $y");
+
+    $out .= "\n";
+
+    my @pins = $PLDB{$macroName}->dbMdbGetPins;
+    $xml->startTag("pins");
+    foreach my $pin ( @pins ) {
+       $xml->dataElement(pin => $pin);
+    }
+    $xml->endTag("pins");
+    $out .= "\n";
+
+    my @obs = $PLDB{$macroName}->dbMdbGetObs;
+    $xml->startTag("obs");
+    foreach my $rect ( @obs ) {
+       my $layerName = (split(/\s+/, $rect))[0];
+       my $xcolor = &flxGetLayerHexColor($layerName);
+       $rect =~ s/^.+\bRECT\s+/$xcolor /;
+       $rect =~ s/\s*;?\s*$//;
+       $xml->dataElement(rect => $rect);
+       $out .= "\n";
+    }
+    @obs = $PLDB{$macroName}->dbMdbGetObsPolygon;
+    foreach my $polygon ( @obs ) {
+       my $layerName = (split(/\s+/, $polygon))[0];
+       my $xcolor = &flxGetLayerHexColor($layerName);
+       $polygon =~ s/^.+\bPOLYGON\s+/$xcolor /;
+       $polygon =~ s/\s*;?\s*$//;
+       $xml->dataElement(polygon => $polygon);
+       $out .= "\n";
+    }
+    $xml->endTag("obs");
+    $out .= "\n";
+ }else{ $out .= "WARN: Macro $macroName does not exists\n";}
+
+ $xml->endTag();
+ $xml->endTag();
+ $xml->end();
+ return $out;
+}#sub flxGetLefMacroData
+
+############################################
+sub flxGetLefPins {  #public
+ my $macroName = $_[0];
+
+ if (keys %COLOR_ALREADY < 1) {
+   &flxSetupMaps();
+ }
+ my $out;
+ my $xml = new XML::Writer(OUTPUT => \$out);
+ $xml->startTag("root");
+ $xml->startTag("macropins" => ('macro', $macroName));
+ $out .= "\n";
+
+ if(exists $PLDB{$macroName}){
+    my @pins = $PLDB{$macroName}->dbMdbGetPins;
+
+    foreach my $pinName(@pins){
+      $xml->startTag("pin" => ('name', $pinName));
+      $xml->dataElement(type => $PLDB{$macroName}->dbMdbGetPinType($pinName));
+
+      $xml->startTag("shapes");
+      $out .= "\n";
+      my @shapes = $PLDB{$macroName}->dbMdbGetPinRect($pinName);
+      foreach my $rect (@shapes) {
+        my $layerName = (split(/\s+/, $rect))[0];
+        my $xcolor = &flxGetLayerHexColor($layerName);
+        $rect =~ s/^.+\bRECT\s+/$xcolor /;
+        $rect =~ s/\s*;?\s*$//;
+        $xml->dataElement(rect => $rect);
+        $out .= "\n";
+      }
+      @shapes = $PLDB{$macroName}->dbMdbGetPinPolygon($pinName);
+      foreach my $polygon ( @shapes ) {
+        my $layerName = (split(/\s+/, $polygon))[0];
+        my $xcolor = &flxGetLayerHexColor($layerName);
+        $polygon =~ s/^.+\bPOLYGON\s+/$xcolor /;
+        $polygon =~ s/\s*;?\s*$//;
+        $xml->dataElement(polygon => $polygon);
+        $out .= "\n";
+      }
+      $xml->endTag("shapes");
+      $xml->endTag("pin");
+      $out .= "\n";
+    }
+ }else{ $out .= "WARN: Macro $macroName does not exists\n";}
+ $xml->endTag();
+ $xml->endTag();
+ $xml->end();
+ return $out;
+}#sub flxGetLefPins
+
+############################################
+sub flxGetLefLayers {  #public
+ my @layers = keys %PTDB;
+
+ if (keys %COLOR_ALREADY < 1) {
+   &flxSetupMaps();
+ }
+ my $out;
+ my $xml = new XML::Writer(OUTPUT => \$out);
+ $xml->startTag("root");
+ $xml->startTag("layers");
+ $out .= "\n";
+
+ foreach my $layerName (@layers){
+   $xml->startTag("layer" => ('num', $PTDB{$layerName}->dbTechGetLayerNum));
+   $xml->dataElement(name => $layerName);
+   $xml->dataElement(type => $PTDB{$layerName}->dbTechGetLayerType);
+   $xml->dataElement(dir => $PTDB{$layerName}->dbTechGetLayerDir);
+   $xml->dataElement(pitch => $PTDB{$layerName}->dbTechGetLayerPitch);
+   $xml->dataElement(offset => $PTDB{$layerName}->dbTechGetLayerOffset);
+   $xml->dataElement(width => $PTDB{$layerName}->dbTechGetLayerWidth);
+   #$xml->dataElement(spacing => $PTDB{$layerName}->dbTechGetLayerSpacing);
+   my $xcolor = &flxGetLayerHexColor($layerName);
+   $xml->dataElement(xcolor => $xcolor);
+   $xml->endTag();
+   $out .= "\n";
+ }
+ $xml->endTag();
+ $xml->endTag();
+ $xml->end();
+ return $out;
+}#sub flxGetLefLayers
+
+############################################
+sub flxSetupMaps {  #private
+my %COLOR_HEX_MAP = (
+	"Alice Blue" => '0xF0F8FF',
+	"aquamarine" => '0x7FFFD4',
+	"blue" => '0x0000FF',
+	"BlueViolet" => '0x8A2BE2',
+	"CadetBlue" => '0x5F9EA0',
+	"chartreuse" => '0x7FFF00',
+	"chocolate" => '0xD2691E',
+	"CornflowerBlue"=> '0x6E95ED',
+	"cyan"=> '0x00FFFF',
+	"DarkGoldenrod" => '0xB8860B',
+	"dark khaki" => '0xBDB76B',
+	"dark magenta" => '0x8B008B',
+	"dark olive green" => '0x556B2F',
+	"dark orange" => '0xFF8C00',
+	"dark salmon" => '0xE9967A',
+	"DeepPink" => '0xFF1493',
+	"DodgerBlue" => '0x1E90FF',
+	"ForestGreen" => '0x228B22',
+	"gold" => '0xFFD700',
+	"GreenYellow" => '0xADFF2F',
+	"HotPink" => '0xFF69B4',
+	"IndianRed" => '0xCD5C5C',
+	"LawnGreen" => '0x7CFC00',
+	"light blue" => '0xADD8E6',
+	"light steel blue" => '0xB0C4DE',
+	"magenta" => '0xFF00FF',
+	"maroon" => '0x800000',
+	"MediumBlue" => '0x0000CD',
+	"medium purple" => '0x9370D8',
+	"medium spring green" => '0x00FA9A',
+	"OliveDrab" => '0x6B8E23',
+	"orange" => '0xFFA500',
+	"PaleVioletRed" => '0xD87093',
+	"peru" => '0xCD853F',
+	"pink" => '0xFFC0CB',
+	"PowderBlue" => '0xB0E0E6',
+	"purple" => '0x800080',
+	"red" => '0xFF0000',
+	"RosyBrown" => '0xBC8F8F',
+	"RoyalBlue" => '0x4169E1',
+	"SaddleBrown" => '0x8B4513',
+	"SeaGreen" => '0x2E8B57',
+	"tan" => '0xD2B48C',
+	"thistle" => '0xD8BFD8',
+	"turquoise" => '0x40E0D0',
+	"violet" => '0xEE82E',
+	"wheat" => '0xF5DEB3',
+	"WhiteSmoke" => '0xF5F5F5',
+	"yellow" => '0xFFFF00',
+	"YellowGreen" => '0x9ACD32',
+);
+
+%COLOR_ALREADY = ();
+my @layers = keys %PTDB;
+foreach my $layerName (@layers) {
+  $COLOR_ALREADY{$layerName} =
+     $COLOR_HEX_MAP{$PTDB{$layerName}->dbTechGetLayerColor};
+}
+}#sub flxSetupMaps
+
+
+1;

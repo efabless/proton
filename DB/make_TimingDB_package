@@ -1,0 +1,103 @@
+
+package TimingDB;
+
+####  explanation of database ####
+##    T is the type of the cell
+##    DD is delay data hash which has arc as its keys and delay and output transition as its values
+##    C = 0/1, 0 means use the current data and 1 means the cell needs to be recharacherised.
+##    SEQ = 0/1  0 means its not a flop , 1 means its a flop
+##    CLK = ""  is the clock pin name
+##    FUNC = function of the cell
+##    valid functions are inv, dly, reg, nand, and, or, nor, aoi, oai, mux, block, complex, unknown
+##    B : BIAS is the hash where the cell biasing is described
+##    IT : hash where the arrival on each pin is defined
+
+sub new {
+my $instDelay = {
+                    B => TimingPinBiasDB::createEmpty(),
+                    IT => TimingPinInTimeDB::createEmpty(),
+                    DD => TimingPinDB::createEmpty(), 
+                    C => 1,
+                    SEQ => 0,
+                    T => "UND",
+                    CLK => "UND",
+                    FUNC => "UND",
+                    };
+bless $instDelay, 'TimingDB';
+return $instDelay;
+}#sub new
+
+sub dbTimingInstSetArrAtPin {
+my ($self,$Pin,$inArr,$tran) = @_;
+${$self->{IT}}{$Pin}->{A} = $inArr;
+${$self->{IT}}{$Pin}->{T} = $tran;
+}# sub dbTimingInstSetArrAtPin
+
+sub dbTimingInstGetArrAtPin {
+my ($self,$Pin) = @_;
+$inArr = ${$self->{IT}}{$Pin}->{A};
+$tran = ${$self->{IT}}{$Pin}->{T};
+return($inArr,$tran);
+}# sub dbTimingInstGetArrAtPin
+
+sub dbTimingInstSetBiasAtPin {
+my ($self,$Pin,$Voltage) = @_;
+${$self->{B}}{$Pin}->{V} = $Voltage;
+}# sub dbTimingInstSetBiasAtPin
+
+sub dbTimingInstGetBiasAtPin {
+my ($self,$Pin) = @_;
+$Voltage = ${$self->{B}}{$Pin}->{V};
+return($Voltage);
+}# sub dbTimingInstGetBiasAtPin
+
+sub dbTimingInstSetArcDly {
+my ($self,$inPin,$outPin,$delay,$tran) = @_;
+my $arc = $inPin."to".$outPin;
+push( @{${$self->{DD}}{$arc}->{D}},$delay);
+push( @{${$self->{DD}}{$arc}->{D}},$tran);
+}#sub dbTimingInstSetArcDly
+
+sub dbTimingInstGetArcDly {
+my ($self,$inPin,$outPin) = @_;
+my $arc = $inPin."to".$outPin;
+my @data = [];
+@data = @{${$self->{DD}}{$arc}->{D}};
+return(@data);
+}#sub dbTimingInstGetArcDly
+
+sub dbgTimingInstGetArcDly {
+my ($self,$inPin,$outPin) = @_;
+my $arc = $inPin."to".$outPin;
+my @data = [];
+@data = @{${$self->{DD}}{$arc}->{D}};
+ print join (",", @data);
+ print "\n";
+
+}#sub dbgTimingInstGetArcDly
+
+sub dbaSetFunc {
+my ($self,$func) = @_;
+   $self->{FUNC} = $func;
+}#sub dbaSetFunc
+
+sub dbaGetFunc {
+my ($self) = @_;
+my $func = ${$self->{FUNC}};
+return($func);
+}#sub dbaGetFunc
+
+sub dbTimingGetStatus {
+my ($self) = @_;
+    my $status = $self->{C};
+return($status);
+}# sub dbTimingGetStatus
+
+sub dbTimingSetStatus {
+my ($self,$status) = @_;
+    $self->{C} = $status;
+}# sub dbTimingSetStatus
+
+
+
+1;

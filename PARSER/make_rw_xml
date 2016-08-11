@@ -1,0 +1,246 @@
+# The commands in this file are for outputing xml formatted data for use with flash-gui of proton.
+
+sub write_xml {
+
+#------- added by Rajeev ---------#
+use XML::Simple ;
+$xml = new XML::Simple (NoAttr=>1, RootName=>'data');
+$xml->XMLout(\%PLDB, OutputFile=>'mylef.xml');
+
+
+
+
+
+
+
+
+}#sub write_xml
+
+#-------------------------------------------------------------------------------------------------------------------------------------------------------------#
+
+sub write_xml_lef_old{
+use XML::Simple ;
+$xml = new XML::Simple (NoAttr=>1, RootName=>'data');
+
+my $noOfArguments = @_;
+if($noOfArguments < 0 || $_[0] eq '-h'){print "Usage : write_xml_lef -output <filename>\n";
+                                       }#if
+else {
+      for(my $i =0 ; $i <$noOfArguments; $i++){
+          if( $_[$i] eq "-output"){$OUTPUT_FILE = $_[$i+1];}
+                                              }#for
+foreach my $macro (keys %PLDB){
+my $macro_class = $PLDB{$macro}->dbMdbGetClass;
+my @cellOrigin = $PLDB{$macro}->dbMdbGetOrigin;
+my $cell_origin = $cellOrigin[0]." ".$cellOrigin[1];
+my @cellsize = $PLDB{$macro}->dbMdbGetSize;
+my $cell_size = $cellsize[0]." ".$cellsize[1];
+push (@arr,{'macro' => $macro,'macro_class' => $macro_class ,'macro_origin' => $cell_origin,'macro_size' => $cell_size});
+my @pins = $PLDB{$macro}->dbMdbGetPins;
+   foreach my $pinName (@pins){
+       my $dir = $PLDB{$macro}->dbMdbGetPinDir($pinName);
+          if ( $dir == 0 ) { $pinDir = 'INPUT'; } 
+          elsif ( $dir == 1 ) { $pinDir = 'OUTPUT'; }
+          elsif ( $dir == 2 ) { $pinDir = 'INOUT'; }
+       my $type = $PLDB{$macro}->dbMdbGetPinType($pinName);
+          if ( $type == 0 ) { $pinType = 'SIGNAL'; }
+          elsif ( $type == 1 ) { $pinType = 'POWER';}
+          elsif ( $type == 2 ) { $pinType = 'GROUND';}
+          elsif ( $type == 3 ) { $pinType = 'CLOCK';}
+          push(@arr,{'pin' => $pinName,'pin_dir' => $pinDir,'pin_type' => $pinType});
+       my @rects = $PLDB{$macro}->dbMdbGetPinRect($pinName);
+          foreach $l ( @rects ) {
+                  $l =~ s/ RECT//;
+                  $l =~ s/;//;
+                  my @L  = split(/\s+/,$l);
+                  $rect = $L[1]." ".$L[2]." ".$L[3]." ".$L[4];
+           push (@arr,{'pin_rect' => $rect});
+          }#foreach rect
+           push(@arr,{'END_PIN' => $pinName});
+    }#foreach pinName
+           push (@arr,{'END_MACRO' => $macro});
+}#foreach macro
+
+$xml->XMLout(\@arr, OutputFile=> $OUTPUT_FILE);
+
+}#else
+}#sub write_xml_lef
+
+#--------------------------------------------------------------------------------------------------------------------------------------------------------------#
+sub read_xml {
+use XML::Simple;
+use Data::Dumper;
+$xml = new XML::Simple;
+my $noOfArguments = @_;
+if($noOfArguments < 0 || $_[0] eq '-h'){print "Usage : read_xml -xml <input_file>\n";
+                                        print "      :  --lefxml\n";
+                                        print "      : --flpxml\n";
+                                        print "      : --netxml\n";
+                                       }
+else{
+my $LEF_FILE= 0;
+my $FLP_FILE = 0;
+my $NETLIST_FILE = 0;
+     for(my $i =0; $i < $noOfArguments; $i++){
+         if($_[$i] eq "-xml" ){$INPUT_FILE = $_[$i+1];}
+         elsif($_[$i] eq "--lefxml" ){$LEF_FILE = 1;}
+         elsif($_[$i] eq "--flpxml" ){$FLP_FILE = 1;}
+         elsif($_[$i] eq "--netxml" ){$NETLIST_FILE = 1;}
+                                             }#for
+if(-e $INPUT_FILE ){
+  if($LEF_FILE == 1 ){
+     $lef_data = $xml->XMLin($INPUT_FILE,KeyAttr => "macro_name");
+     print Dumper($lef_data);
+#foreach $e (@{$lef_data->{macro}}){
+#print  $e->{macro_size},"\n";
+#print  $e->{macro_name},"\n";
+#print  $e->{macro_class},"\n";
+#print  $e->{macro_origin},"\n";
+#  foreach $ee (@{$e->{pin_name}}){
+#    print $ee->{pin_name},"\n";
+#    print $ee->{pin_dir},"\n";
+#    print $ee->{pin_type},"\n";
+#    print $ee->{pin_rect},"\n";
+#  }#foreach
+#}#foreach
+   }#if file 
+  elsif ($FLP_FILE == 1 || $NETLIST_FILE == 1){
+         $def_data = $xml->XMLin($INPUT_FILE);
+         print Dumper($def_data);
+  }#elsif
+}#if exists file
+}#else
+}#sub read_xml
+
+#--------------------------------------------------------------------------------------------------------------------------------------------------------------#
+sub write_xml_def {
+use XML::Simple ;
+use XML::Writer;
+use IO::File;
+
+
+my $noOfArguments = @_;
+if($noOfArguments < 0 || $_[0] eq '-h'){print "Usage : write_xml_def -output <filename>\n";
+                                              "      : --flplan\n";
+                                              "      : --netlist\n";
+                                       }#if
+else {
+my $FLP =0;
+my $NET_LIST = 0;
+my $DEFAULT= 1;
+
+      for(my $i =0 ; $i <$noOfArguments; $i++){
+          if( $_[$i] eq "-output"){$OUTPUT_FILE = $_[$i+1];}
+          if($_[$i] eq "--flplan"){$FLP = 1;$DEFAULT= 0;}
+          if($_[$i] eq "--netlist"){$NET_LIST = 1;$DEFAULT = 0;}
+                                              }#for
+if($FLP == 1){
+$xml = new XML::Simple (NoAttr=>1, RootName=>'inst_data');
+foreach my $instance (keys %CADB){
+my @arr_def = ();
+my @loc = $CADB{$instance}->dbCadbGetLoc;
+my $Location = $loc[0]." ".$loc[1];
+my $orient = $CADB{$instance}->dbCadbGetOrient;
+push(@arr_def,{'loc' => $Location,'orient' => $orient});
+$NEW_DATA_HASH{$instance} =[@arr_def];
+}
+$xml->XMLout(\%NEW_DATA_HASH, OutputFile=> $OUTPUT_FILE);
+}#if flplan
+#--------------------------------------------------------------------------------------------------------------------------------------#
+if($NET_LIST == 1){
+my $output = new IO::File(">$OUTPUT_FILE");
+
+my $writer = new XML::Writer(OUTPUT => $output,DATA_MODE => 1);
+$writer->startTag("net");
+foreach my $nets (keys %NETS_ALREADY){
+    $writer->startTag($nets);
+   foreach my $inst ( keys %{$NETS_ALREADY{$nets}} ) {
+     my $pinName = $NETS_ALREADY{$nets}{$inst};
+        $writer->startTag("inst_pin");
+        $writer->characters("$inst $pinName");
+        $writer->endTag("inst_pin");
+   }#foreach
+   $writer->endTag($nets);
+}#foreach
+$writer->endTag("net");
+$output->close();
+}#if netlist
+}#else
+}#sub write_xml_def
+
+#--------------------------------------------------------------------------------------------------------------------------------------------------#
+sub write_xml_lef {
+use XML::Writer;
+use IO::File;
+
+my $output = new IO::File(">LEF.xml");
+my $writer = new XML::Writer(OUTPUT => $output,DATA_MODE => 1);
+
+my $noOfArguments = @_;
+if($noOfArguments < 0 || $_[0] eq '-h'){print "Usage : write_xml_lef -output <filename>\n";
+                                       }#if
+else {
+      for(my $i =0 ; $i <$noOfArguments; $i++){
+          if( $_[$i] eq "-output"){$OUTPUT_FILE = $_[$i+1];}
+                                              }#for
+$writer->startTag("macro_data");
+
+foreach my $macro (keys %PLDB){
+                   
+my $macro_class = $PLDB{$macro}->dbMdbGetClass;
+my @cellOrigin = $PLDB{$macro}->dbMdbGetOrigin;
+my $cell_origin = $cellOrigin[0]." ".$cellOrigin[1];
+my @cellsize = $PLDB{$macro}->dbMdbGetSize;
+my $cell_size = $cellsize[0]." ".$cellsize[1];
+$writer->startTag("macro",
+                  "macro_name" => $macro);
+$writer->startTag("macro_class");
+$writer->characters($macro_class);
+$writer->endTag("macro_class");
+
+$writer->startTag("macro_origin");
+$writer->characters($cell_origin);
+$writer->endTag("macro_origin");
+
+$writer->startTag("macro_size");
+$writer->characters($cell_size);
+$writer->endTag("macro_size");
+
+my @pins = $PLDB{$macro}->dbMdbGetPins;
+   foreach my $pinName (@pins){
+       my $dir = $PLDB{$macro}->dbMdbGetPinDir($pinName);
+          if ( $dir == 0 ) { $pinDir = 'INPUT'; } 
+          elsif ( $dir == 1 ) { $pinDir = 'OUTPUT'; }
+          elsif ( $dir == 2 ) { $pinDir = 'INOUT'; }
+       my $type = $PLDB{$macro}->dbMdbGetPinType($pinName);
+          if ( $type == 0 ) { $pinType = 'SIGNAL'; }
+          elsif ( $type == 1 ) { $pinType = 'POWER';}
+          elsif ( $type == 2 ) { $pinType = 'GROUND';}
+          elsif ( $type == 3 ) { $pinType = 'CLOCK';}
+	  $writer->startTag("pin_name",
+	                    "pin_name" => $pinName);
+	  $writer->startTag("pin_dir");
+	  $writer->characters($pinDir);
+	  $writer->endTag("pin_dir");
+	  $writer->startTag("pin_type");
+	  $writer->characters($pinType);
+	  $writer->endTag("pin_type");
+      my @rects = $PLDB{$macro}->dbMdbGetPinRect($pinName);
+          foreach $l ( @rects ) {
+                  $l =~ s/ RECT//;
+                  $l =~ s/;//;
+                  my @L = split(/\s+/,$l);
+                  $rect = $L[1]." ".$L[2]." ".$L[3]." ".$L[4];
+	  	  $writer->startTag("pin_rect");
+	  	  $writer->characters($rect);
+	  	  $writer->endTag("pin_rect");
+         }#foreach rect
+   $writer->endTag("pin_name");
+  }#foreach pin_name
+$writer->endTag("macro");
+}#foreach macro
+$writer->endTag("macro_data");
+}#else
+$output->close();
+}#sub write_xml_lef
+1;

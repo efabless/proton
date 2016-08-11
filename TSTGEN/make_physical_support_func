@@ -1,0 +1,1012 @@
+
+sub dbfTstgenUpdateFlplanFromPseudo {
+
+my $module = $_[0];
+my $flplan = $_[1];
+
+my $flplanID = 0;
+if ( defined $flplan && $flplan ne "" ) {
+  $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenSetFloorplan($flplan);
+}
+else {
+  $flplan = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetFloorplan;
+  if ( $flplan eq "" ) {
+    $flplan = "$module/_self_";
+  }
+}
+
+if ( exists $FLOORPLAN_LOOKUP{$flplan} ) {
+  $flplanID = $FLOORPLAN_LOOKUP{$flplan};
+}
+else {
+  $flplanID = $GLOBAL->dbfGlobalGetNextFlplanID;
+  $FLOORPLAN_LOOKUP{$flplan} = $flplanID;
+}
+
+unless ( exists $FLOORPLAN_ALREADY{$flplanID} ) {
+  $FLOORPLAN_ALREADY{$flplanID} = Floorplan::new();
+  $FLOORPLAN_ALREADY{$flplanID}->dbFlplanSetID($flplanID);
+  $FLOORPLAN_ALREADY{$flplanID}->dbFlplanSetCellref($module);
+  my $dbu = $GLOBAL->dbfGlobalGetDBU;
+  if ( $dbu > 1 ) {
+    $FLOORPLAN_ALREADY{$flplanID}->dbFlplanSetDBUnit($dbu);
+  }
+}
+
+$PSEUDO_MODULE_ALREADY{$module}->dbaTstgenSetPhysicalDirty(0);
+print "INFO-TST : 001 : Saving floorplan $flplan from module $module\n";
+&dbfTstgenUpdateFlplanByID($module, $flplanID);
+
+unless ( $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetIsModuleTop ) {
+  return;
+}
+
+%childFlplans = ();
+foreach my $inst ( keys %{$PSEUDO_VINST_ALREADY{$module}} ) {
+  if ( $inst eq "PIN" ) {
+    next;
+  }
+  my $cellref = $PSEUDO_VINST_ALREADY{$module}{$inst}->dbPimDBGetInstCellref;
+  if ( exists $PLDB{$cellref} ) {
+    next;
+  }
+  unless ( $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetPhysicalDirty ) {
+    next;
+  }
+  my @flplans = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenListFloorplan;
+  foreach my $fp ( @flplans ) {
+    $childFlplans{$fp} = $cellref;
+  }
+}#foreach inst
+
+foreach my $fp ( keys %childFlplans ) {
+  #<!-- update child floorplan -->
+  my ($childFlplanID, $childFlplan);
+  ($childFlplan = $fp) =~ s:/_self_$::;
+  $childFlplan .= "/$inst";
+  ($childFlplanID, $childFlplan) = &dbfTstgenGetInstFlplanID($childFlplan);
+  if ( $childFlplanID == 0 ) {
+    undef $childFlplan;
+  }
+  my $cellref = $childFlplans{$fp};
+  &dbfTstgenUpdateFlplanFromPseudo($cellref, $childFlplan);  #<!-- recursive -->
+}
+
+}# sub dbfTstgenUpdateFlplanFromPseudo
+
+
+sub dbfTstgenUpdateFlplanByID {
+
+my $module = $_[0];
+my $flplanID = $_[1];
+$MODULE_ALREADY{$module}->dbVNOMSetFloorplanID($flplanID);
+
+my $dbu = $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetDBUnit;
+my @size = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetSize;
+for (my $i = 0; $i < 4; $i++) {
+  $size[$i] *= $dbu;
+}
+$FLOORPLAN_ALREADY{$flplanID}->dbFlplanSetSize(@size);
+
+#<!-- update pins -->
+$FLOORPLAN_ALREADY{$flplanID}->dbFlplanWipePins;
+my @pins = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetPins;
+foreach my $pin ( @pins ) {
+  $FLOORPLAN_ALREADY{$flplanID}->dbFlplanAddPin($pin);
+  my $status = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetPinStatus($pin);
+  $FLOORPLAN_ALREADY{$flplanID}->dbFlplanSetPinStatus($pin, $status);
+  my @shapes = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetPinRect($pin);
+  foreach my $shape ( @shapes ) {
+    my $scaled = &dbfTstgenScalePinRect($shape, $dbu);
+    $FLOORPLAN_ALREADY{$flplanID}->dbFlplanAddPinRect($pin, $scaled);
+  }#foreach shape
+}#foreach pin
+
+#<!-- update pin guides -->
+$FLOORPLAN_ALREADY{$flplanID}->dbFlplanWipePinGuides;
+my @guides = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetPinGuideList;
+foreach my $guide ( @guides ) {
+  $FLOORPLAN_ALREADY{$flplanID}->dbFlplanAddPinGuide($guide);
+  my $type = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetPinGuideType($guide);
+  $FLOORPLAN_ALREADY{$flplanID}->dbFlplanSetPinGuideType($guide, $type);
+  my $layer = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetPinGuideLayer($guide);
+  $FLOORPLAN_ALREADY{$flplanID}->dbFlplanSetPinGuideLayer($guide, $layer);
+  my @bbox = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetPinGuideBbox($guide);
+  for (my $i = 0; $i < 4; $i++) {
+    $bbox[$i] *= $dbu;
+  }
+  $FLOORPLAN_ALREADY{$flplanID}->dbFlplanSetPinGuideBbox($guide, @bbox);
+  if ( $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenPinGuideIsKeepOut($guide) ) {
+    next;
+  }
+  my @pins = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenPinGuideGetPinList($guide);
+  foreach my $pin ( @pins) {
+    $FLOORPLAN_ALREADY{$flplanID}->dbFlplanPinGuideAddPin($guide, $pin);
+  }
+}# foreach guide
+
+unless ( $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetIsModuleTop ) {
+  return;
+}
+
+#<!-- update placement of each child inst -->
+$FLOORPLAN_ALREADY{$flplanID}->dbFlplanWipeHierInsts;
+$FLOORPLAN_ALREADY{$flplanID}->dbFlplanWipeLeafInsts;
+foreach my $inst ( keys %{$PSEUDO_VINST_ALREADY{$module}} ) {
+  if ( $inst eq "PIN" ) {
+    next;
+  }
+  my $cellref = $PSEUDO_VINST_ALREADY{$module}{$inst}->dbPimDBGetInstCellref;
+  my $orient = $PSEUDO_VINST_ALREADY{$module}{$inst}->dbPimDBGetInstOrient;
+  if ( exists $PLDB{$cellref} ) {
+    if ( $PSEUDO_VINST_ALREADY{$module}{$inst}->dbPimDBGetInstStatus eq "UNPLACED" ) {
+      next;
+    }
+    my ($locx, $locy) = $PSEUDO_VINST_ALREADY{$module}{$inst}->dbPimDBGetInstRelLoc;
+    $locx *= $dbu;  $locy *= $dbu;
+    $FLOORPLAN_ALREADY{$flplanID}->dbFlplanAddLeafInst($inst, $locx, $locy, $orient);
+    my ($width, $height) = $PLDB{$cellref}->dbMdbGetSize;
+    $width *= $dbu; $height *= $dbu;
+    $FLOORPLAN_ALREADY{$flplanID}->dbFlplanUpdateLeafInstBbox($inst, $width, $height);
+  }
+  else {
+    if ( $PSEUDO_VINST_ALREADY{$module}{$inst}->dbPimDBGetInstStatus eq "UNPLACED" ) {
+#     &dbfTstgenCreateChildFlplan($module, $inst);
+      next;
+    }
+    my @bbox = $PSEUDO_VINST_ALREADY{$module}{$inst}->dbPimDBGetInstRelBbox;
+    for (my $i = 0; $i < 4; $i++) {
+      $bbox[$i] *= $dbu;
+    }
+    $FLOORPLAN_ALREADY{$flplanID}->dbFlplanAddHierInst($inst, @bbox, $orient);
+
+  }# if hier inst
+}#foreach inst
+
+########################################### Net Routing ##########################################
+ my %temp_layer_hash = ();
+ my ($hLayer, $vLayer) = ("NONE", "NONE");
+ foreach my $layer(keys %PTDB){
+   my $layerType = $PTDB{$layer}->dbTechGetLayerType; 
+   my $layerNum = $PTDB{$layer}->dbTechGetLayerNum; 
+   if($layerType eq "ROUTING"){
+      $temp_layer_hash{$layer} = $layerNum;
+   }#if layer is routing
+ }#foreach layer
+
+ my @sorted_layers = sort {$temp_layer_hash{$a}<=>$temp_layer_hash{$b}} (keys %temp_layer_hash);
+ if(exists $PTDB{$sorted_layers[0]}){
+    my $layer_dir = $PTDB{$sorted_layers[0]}->dbTechGetLayerDir;
+    if($layer_dir eq "HORIZONTAL"){
+       $hLayer = $sorted_layers[0];
+       $vLayer = $sorted_layers[1];
+    }else{
+       $hLayer = $sorted_layers[1];
+       $vLayer = $sorted_layers[0];
+    }
+ }
+
+ my $flplan = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetFloorplan;
+ $PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanWipeNets;
+ foreach my $net (keys %{$PSEUDO_VNET_ALREADY{$module}}) {
+    my $netId = $PSEUDO_VNET_ALREADY{$module}->{$net}->dbaTstgenGetPseudoNetId;
+    my @routes = $PSEUDO_VNET_ALREADY{$module}->{$net}->dbaTstgenGetPseudoExtNetCoords;
+
+    $PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanAddNets($net);
+    $PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanSetNetId($net,$netId);
+    $PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanSetNetType($net,0);
+
+    foreach my $line (@routes){
+       my @routeBox = @$line;
+       if(@routeBox == 5){
+          my $layer = shift @routeBox;
+          $_ *= $dbu for @routeBox;   
+          if((sprintf($routeBox[0]) == sprintf($routeBox[2])) && (sprintf($routeBox[1]) == sprintf($routeBox[3]))){
+             my $routeLine = "$layer ( $routeBox[0] $routeBox[1] ) VIA"; #adding temp via
+             $PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanAddNetRoutingData($net,$routeLine);
+          }elsif(sprintf($routeBox[0]) == sprintf($routeBox[2])){
+             my $routeLine = "$layer ( $routeBox[0] $routeBox[1] ) ( * $routeBox[3] )";
+             $PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanAddNetRoutingData($net,$routeLine);
+          }elsif(sprintf($routeBox[1]) == sprintf($routeBox[3])){
+             my $routeLine = "$layer ( $routeBox[0] $routeBox[1] ) ( $routeBox[2] * )";
+             $PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanAddNetRoutingData($net,$routeLine);
+          }else{
+             print "WARN:routing data @routeBox is not correct ...\n";
+          }
+       }elsif(@routeBox == 6){
+          my $first_layer = shift @routeBox;
+          my $second_layer = shift @routeBox;
+          $_ *= $dbu for @routeBox;   
+          my $via_name = &return_via_between_two_given_layers ($first_layer,$second_layer);
+	  my $routeLine = "$first_layer ( $routeBox[0] $routeBox[1] ) $via_name";
+          $PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanAddNetRoutingData($net,$routeLine);
+       }else{
+          $_ *= $dbu for @routeBox;   
+          for(my $i=0; $i<@routeBox; $i=$i+4){
+              if($routeBox[$i] == $routeBox[$i+2]){
+                 my $routeLine = "$hLayer ( $routeBox[$i] $routeBox[$i+1] ) ( * $routeBox[$i+3] )";
+                 $PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanAddNetRoutingData($net,$routeLine);
+              }elsif($routeBox[$i+1] == $routeBox[$i+3]){
+                 my $routeLine = "$vLayer ( $routeBox[$i] $routeBox[$i+1] ) ( $routeBox[$i+2] * )";
+                 $PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanAddNetRoutingData($net,$routeLine);
+              }else{
+                 print "WARN:routing data  $routeBox[$i] $routeBox[$i+1] $routeBox[$i+2] $routeBox[$i+3] is not correct ...\n";
+              }
+          }#for each stripe
+       }#if created from earlyProto
+    }#foreach route line
+ }#for each net
+
+ ###  copying flooorplan data ###
+ $FLOORPLAN_ALREADY{$flplanID}->dbFlplanCopyRouting($PSEUDO_FLOORPLAN_ALREADY{$flplan});
+
+##################################################################################################
+
+}# sub dbfTstgenUpdateFlplanByID
+
+
+sub dbfTstgenGetInstFlplanID {
+
+my $flplan = $_[0];
+
+my $flplanID = 0;
+$flplan =~ s(^/*(.*)/*$)(\1);      # remove leading and trailing slashes
+if ( exists $FLOORPLAN_LOOKUP{$flplan} ) {
+  $flplanID = $FLOORPLAN_LOOKUP{$flplan};
+}
+else {
+  my ($parent, $cellref, $child, $inst);
+  ($parent = $flplan) =~ s(/.*$)();       # $parent is the word before 1st slash
+  ($inst = $flplan ) =~ s(^$parent/*)();  # $inst gets whatever after 1st slash
+
+  while ( $inst ne "" && $inst ne "_self_" ) {
+    ($child = $inst) =~ s(/.*$)();   # $child is the word before 1st slash
+    $inst =~ s(^$child/*)();         # $inst gets whatever after 1st slash
+    if ( $inst eq "" ) {
+      $inst = "_self_"
+    }
+    if ( $MODULE_ALREADY{$parent}->dbVNOMHasHierInst($child) ) {
+      $cellref = $MODULE_ALREADY{$parent}->dbVNOMGetHierInstCell($child);
+    }
+    else {
+      last;
+    }
+    $flplan = "$cellref/$inst";
+    if ( exists $FLOORPLAN_LOOKUP{$flplan} ) {
+      $flplanID = $FLOORPLAN_LOOKUP{$flplan};
+      last;
+    }
+    $parent = $cellref;
+  }# while $inst
+}
+return ($flplanID, $flplan);
+}# sub dbfTstgenGetInstFlplanID
+
+
+sub dbfTstgenLoadVNOMFlplan {
+
+my $module = $_[0];
+my $flplan = $_[1];
+
+#<!-- copy into pseudo all vnom floorplans for the same module -->
+foreach my $fp ( keys %{FLOORPLAN_LOOKUP} ) {
+  my $id = $FLOORPLAN_LOOKUP{$fp};
+  if ( $FLOORPLAN_ALREADY{$id}->dbFlplanGetCellref ne $module ) {
+    next;
+  }
+  $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenSetFloorplan($fp);
+  my $boundaryOnly = !($PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetIsModuleTop);
+  $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenLoadFloorplan( $FLOORPLAN_ALREADY{$id},
+                                                           $boundaryOnly );
+}
+
+if ( defined $flplan && $flplan ne "" ) {
+  $flplan =~ s(^/*(.*)/*$)(\1);  # remove leading and trailing slashes
+}
+else {
+  $flplan = "$module/_self_";
+}
+
+my ($flplanID, $initFlplan) = (0, "");
+($flplanID, $initFlplan) = dbfTstgenGetInstFlplanID($flplan);
+if ( $flplanID > 0 ) {
+  $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenSetFloorplan($flplan);
+  if ( $initFlplan ne $flplan ) {
+    my $boundaryOnly = !($PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetIsModuleTop);
+    $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenLoadFloorplan(
+                                    $FLOORPLAN_ALREADY{$flplanID}, $boundaryOnly );
+    print "INFO-TST : 001 : Estimating floorplan $flplan based on $initFlplan for module $module\n";
+  }
+  else {
+    print "INFO-TST  : 002 : Loading floorplan $flplan for module $module\n";
+  }
+}
+else {
+  if ( exists $MODULE_ALREADY{$module} ) {
+    $flplanID = $MODULE_ALREADY{$module}->dbVNOMGetFloorplanID;
+  }
+  if ( $flplanID > 0 ) {
+    $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenSetFloorplan($flplan);
+    my $boundaryOnly = !($PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetIsModuleTop);
+    $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenLoadFloorplan(
+                                    $FLOORPLAN_ALREADY{$flplanID}, $boundaryOnly );
+    print "INFO-TST : 003 : Estimating floorplan $flplan for module $module\n";
+  }
+}
+
+unless ( $flplanID > 0 && exists $FLOORPLAN_ALREADY{$flplanID} ) {
+  $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenSetFloorplan($flplan);
+  return ($flplanID);
+}
+
+my $cellref = $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetCellref;
+if ($cellref ne $module) {
+  return ($flplanID);
+}
+
+unless ( $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetIsModuleTop ) {
+  return ($flplanID);
+}
+
+#<!-- update placement of each child inst -->
+my $dbu = $PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanGetDBUnit;
+foreach my $inst ( keys %{$PSEUDO_VINST_ALREADY{$module}} ) {
+  if ( $inst eq "PIN" ) {
+    next;
+  }
+  my $status;
+  my $cellref = $PSEUDO_VINST_ALREADY{$module}{$inst}->dbPimDBGetInstCellref;
+  if ( exists $PLDB{$cellref} ) {
+    $status = "PLACED";
+    my ($locx, $locy, $orient) = $PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanGetLeafInstLoc($inst);
+    if(!$orient){$orient = "N";}
+    $PSEUDO_VINST_ALREADY{$module}{$inst}->dbPimDBSetInstOrient($orient);
+    my @bbox = $PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanGetLeafInstBbox($inst);
+    for (my $i = 0; $i < 4; $i++) {
+      $bbox[$i] /= $dbu;
+    }
+    $PSEUDO_VINST_ALREADY{$module}{$inst}->dbPimDBSetInstRelBbox(@bbox);
+  }
+  else {
+    my @bbox = $PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanGetHierInstBbox($inst);
+    $status = "UNPLACED";
+    if ( @bbox == 4 ) {
+      for (my $i = 0; $i < 4; $i++) {
+        $bbox[$i] /= $dbu;
+      }
+      $status = "PLACED";
+      $PSEUDO_VINST_ALREADY{$module}{$inst}->dbPimDBSetInstRelBbox(@bbox);
+    }
+  }
+  $PSEUDO_VINST_ALREADY{$module}{$inst}->dbPimDBSetInstStatus($status);
+}#foreach inst
+
+################### Added by aditya to update Net routing data #####################
+foreach my $net (keys %{$PSEUDO_VNET_ALREADY{$module}}) {
+  my @data = $PSEUDO_FLOORPLAN_ALREADY{$flplan}->dbFlplanGetNetRoutingData($net);
+  my @netCoords = ();
+  foreach $segment ( @data ) {
+     my $layer = (split(/\s+/,$segment))[0];
+     my @routeBox = xformNetSegToRouteBox($segment);
+     $_ /= $dbu for @routeBox;
+     my $layerWidth = 0;
+     if(exists $PTDB{$layer}){
+        if($dbu == 1){
+          my $dbu = $GLOBAL->dbfGlobalGetDBU;
+          $layerWidth = $PTDB{$layer}->dbTechGetLayerWidth*$dbu;
+        }else {
+          $layerWidth = $PTDB{$layer}->dbTechGetLayerWidth;
+        }
+     }
+     if(($routeBox[0] != $routeBox[2]) || ($routeBox[1] != $routeBox[3])){
+        $routeBox[0] = $routeBox[0] + $layerWidth/2;
+        $routeBox[1] = $routeBox[1] + $layerWidth/2;
+        $routeBox[2] = $routeBox[2] - $layerWidth/2;
+        $routeBox[3] = $routeBox[3] - $layerWidth/2;
+     }#if route is not a point
+     push(@netCoords, [$layer, @routeBox]);
+  }#foreach segment of routing
+  $PSEUDO_VNET_ALREADY{$module}->{$net}->dbaTstgenSetPseudoExtNetCoords(@netCoords);
+  $PSEUDO_VNET_ALREADY{$module}->{$net}->dbaTstgenSetPseudoNetCoords("");
+}
+$GLOBAL->dbGlobalSetHRouterStatus(1); #to display routes in hier-view
+####################################################################################
+
+return ($flplanID);
+}#sub dbfTstgenLoadVNOMFlplan
+
+
+sub dbfTstgenCalcModuleSizeFromParentFlplan {
+
+my $module = $_[0];
+
+my @parents = ();
+if ( exists $MODULE_ALREADY{$module} ) {
+  @parents = $MODULE_ALREADY{$module}->dbVNOMGetParent;
+}
+if ( @parents != 1 ) {
+  return 0;
+}
+
+my $flplanID = 0;
+foreach my $id ( keys %{FLOORPLAN_ALREADY} ) {
+  if ( $FLOORPLAN_ALREADY{$id}->dbFlplanGetCellref eq $parents[0] ) {
+    $flplanID = $id;
+    last;
+  }
+}
+
+if ( $flplanID == 0 ) {
+  return 0;
+}
+
+print "INFO-TST : 001 : Calculating size of module $module from floorplan of parent $parents[0]\n";
+
+my $inst;
+my @instList = $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetHierInstList;
+foreach $i ( @instList ) {
+  if ( $PSEUDO_VINST_ALREADY{$parents[0]}{$i}->dbPimDBGetInstCellref eq $module ) {
+    $inst = $i;
+    last;
+  }
+}
+
+if ( !defined $inst ) {
+  return 0;
+}
+
+my $dbu = $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetDBUnit;
+my @size = $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetHierInstBbox($inst);
+$size[2] = ($size[2] - $size[0]) / $dbu;
+$size[3] = ($size[3] - $size[1]) / $dbu;
+$size[0] = $size[1] = 0;
+my $flplan = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetFloorplan;
+unless ( defined $flplan && $flplan ne "" ) {
+  $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenSetFloorplan("$module/_self_");
+}
+$PSEUDO_MODULE_ALREADY{$module}->dbaTstgenSetSize(@size);
+
+return $flplanID;
+}#sub dbfTstgenCalcModuleSizeFromParentFlplan
+
+
+sub dbfTstgenEstModuleSizeFromVNOMArea {
+
+my $module = $_[0];
+my $util = $_[1];
+my $aspect = $_[2];
+
+#----------------- Const --------------------#
+my $defaultUtil = 70;
+my $defaultAspect = 1;
+#--------------------------------------------#
+
+# TODO before using default try getting from parent flplan, global var, etc
+unless ( defined $util && $util > 0 ) {
+  $util = $defaultUtil;
+  print "DBG-TST : 001 : Utilization of module $module is set to $util\%\n" if ($DEBUG == 330);
+}
+unless ( defined $aspect && $aspect > 0 ) {
+  $aspect = $defaultAspect;
+  print "DBG-TST : 002 : Aspect ratio of module $module is set to $aspect\n" if ($DEBUG == 330);
+}
+
+my $area = $MODULE_ALREADY{$module}->dbVNOMGetArea;
+if ( $area <= 0 ) {
+  return;
+}
+
+$area = $area * 100 / $util;
+my $height = sqrt($area * $aspect);
+my $width = $area / $height;
+my @size = (0, 0, $width, $height);
+print "DBG-TST : 003 : Size of module $module is estimated $width x $height\n" if ($DEBUG == 330);
+my $flplan = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetFloorplan;
+unless ( defined $flplan && $flplan ne "" ) {
+  $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenSetFloorplan("$module/_self_");
+}
+$PSEUDO_MODULE_ALREADY{$module}->dbaTstgenSetSize(@size);
+
+unless ( $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetIsModuleTop ) {
+  return;
+}
+
+foreach my $inst ( keys %{$PSEUDO_VINST_ALREADY{$module}} ) {
+  if ( $inst eq "PIN" ) {
+    next;
+  }
+  my $cellref = $PSEUDO_VINST_ALREADY{$module}{$inst}->dbPimDBGetInstCellref;
+  unless ( exists $PSEUDO_MODULE_ALREADY{$cellref} ) {
+    next;
+  }
+  @size = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetSize;
+  if ( @size == 4 ) {
+    next;
+  }
+  &dbfTstgenEstModuleSizeFromVNOMArea($cellref, $util, $aspect);  #<!-- recursive -->
+}#foreach inst
+
+}#sub dbfTstgenEstModuleSizeFromVNOMArea
+
+
+sub dbfTstgenDownHierFlplan {
+
+my $parentName = $_[0];
+my $instName = $_[1];
+my $flplanName = $_[2];
+
+my $module = $PSEUDO_VINST_ALREADY{$parentName}{$instName}->dbPimDBGetInstCellref;
+
+my $flplanID = 0;
+my $flplan;
+if ( defined $flplanName && $flplanName ne "" ) {
+  ($flplanID, $flplan) = dbfTstgenGetInstFlplanID($flplanName);
+}
+unless ( $flplanID > 0 ) {
+  my $savedFlplan = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetFloorplan;
+  if ( defined $savedFlplan && $savedFlplan ne "" ) {
+    ($flplanID, $flplan) = dbfTstgenGetInstFlplanID($savedFlplan);
+  }
+}
+
+if ( defined $flplanName && $flplanName ne "" ) {
+  $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenSetFloorplan($flplanName);
+  if ( $flplanID > 0 && $flplan ne $flplanName ) {
+    my $initFlplanID = $flplanID;
+    $flplanID = $GLOBAL->dbfGlobalGetNextFlplanID;
+    $FLOORPLAN_LOOKUP{$flplanName} = $flplanID;
+    $FLOORPLAN_ALREADY{$flplanID} = Floorplan::new();
+    $FLOORPLAN_ALREADY{$flplanID}->dbFlplanSetID($flplanID);
+    $FLOORPLAN_ALREADY{$flplanID}->dbFlplanSetCellref($module);
+    $FLOORPLAN_ALREADY{$flplanID}->dbFlplanCopy( $FLOORPLAN_ALREADY{$initFlplanID} );
+    $flplan = $flplanName;
+  }
+}
+else {
+  if ( $flplanID == 0 ) {
+    $flplan = "$parentName/$instName";
+  }
+  ($flplanID, $flplan) = dbfTstgenGetInstFlplanID($flplan);
+  $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenSetFloorplan($flplan);
+}
+
+if ( $flplanID > 0 ) {
+  &dbfTstgenLoadVNOMFlplan($module, $flplan);
+}
+else {
+  my @size = $PSEUDO_VINST_ALREADY{$parentName}{$instName}->dbPimDBGetInstRelBbox;
+  $size[2] -= $size[0];  $size[3] -= $size[1];
+  $size[0] = $size[1] = 0;
+  $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenSetFloorplan("$module/_self_");
+  $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenSetSize(@size);
+}
+
+}# sub dbfTstgenDownHierFlplan
+
+
+sub dbfTstgenCalcInstSizeFromChildFlplan {
+
+my $module = $_[0];
+my $childCell = $_[1];
+
+foreach my $inst ( keys %{$PSEUDO_VINST_ALREADY{$module}} ) {
+  my $cellref = $PSEUDO_VINST_ALREADY{$module}->{$inst}->dbPimDBGetInstCellref;
+  if ( defined $childCell && $cellref ne $childCell ) {
+    next;
+  }
+  unless ( exists $PSEUDO_MODULE_ALREADY{$cellref} ) {
+    next;
+  }
+  my ($flplanID, $flplan) = &dbfTstgenGetInstFlplanID("$module/$inst");
+  if ( $flplanID == 0 || $flplanID != $MODULE_ALREADY{$cellref}->dbVNOMGetFloorplanID ) {
+    next;
+  }
+  print "INFO-TST : 001 : Calculating size of instance $inst from floorplan of module $cellref\n";
+  my $dbu = $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetDBUnit;
+  my @size = $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetSize;
+  $size[2] = ($size[2] - $size[0]) / $dbu;
+  $size[3] = ($size[3] - $size[1]) / $dbu;
+  $size[0] = $size[1] = 0;
+  my @bbox = $PSEUDO_VINST_ALREADY{$module}{$inst}->dbPimDBGetInstRelBbox;
+  my $orient = $PSEUDO_VINST_ALREADY{$module}{$inst}->dbPimDBGetInstOrient;
+  @bbox = &utilLocToBbox($bbox[0], $bbox[1], $orient, $size[2], $size[3]);
+  $PSEUDO_VINST_ALREADY{$module}{$inst}->dbPimDBSetInstRelBbox(@bbox);
+
+  #<!-- setting child module size most likely has no effect on floorplan,
+  #     it is a gauge for the flow and consistency of our mechanism -->
+  $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenSetFloorplan($flplan);
+  $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenSetSize(@size);
+  foreach my $pin ( $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetPinList ) {
+    $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenAddPin($pin);
+    my @shapes = $FLOORPLAN_ALREADY{$flplanID}->dbFlplanGetPinRect($pin);
+    my $shape = join " ",@shapes;
+    $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenAddPinRect($pin,$shape);
+  }
+
+}#foreach inst
+
+}#sub dbfTstgenCalcInstSizeFromChildFlplan
+
+
+sub dbfTstgenAddPinShape {
+
+my $module = $_[0];
+my $pinName = $_[1];
+my $layer = $_[2];
+
+my @bbox = ();
+if ( @_ > 3 ) {
+  @bbox = ($_[3], $_[4], $_[5], $_[6]);
+}
+
+unless ( $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenHasPin($pinName) ) {
+  $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenAddPin($pinName);
+}
+
+my $shape = join(" ", $layer, @bbox);
+$PSEUDO_MODULE_ALREADY{$module}->dbaTstgenAddPinRect($pinName, $shape);
+
+}#sub dbfTstgenAddPinShape
+
+
+sub dbfTstgenPseudoModuleLogicalToPhysicalPins {
+
+my $module = $_[0];
+
+my @pinList = ();
+my @inPins = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetInput;
+foreach my $pinName ( @inPins ) {
+  my $type = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetInputType($pinName);
+  if ( $type == 0 ) {
+    push(@pinList, $pinName);
+  }
+  else {  #<!-- ( $type == 1 ) -->
+    $pinName .= $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetInputBits($pinName);
+    my @splitBusPins = utilSplitBusBits($pinName);
+    push(@pinList, @splitBusPins);
+  }
+}# foreach $pinName
+
+my @outPins = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetOutput;
+foreach my $pinName ( @outPins ) {
+  my $type = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetOutputType($pinName);
+  if ( $type == 0 ) {
+    push(@pinList, $pinName);
+  }
+  else {  #<!-- ( $type == 1 ) -->
+    $pinName .= $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetOutputBits($pinName);
+    my @splitBusPins = utilSplitBusBits($pinName);
+    push(@pinList, @splitBusPins);
+  }
+}# foreach $pinName
+
+my @bidiPins = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetBidi;
+foreach my $pinName ( @bidiPins ) {
+  my $type = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetBidiType($pinName);
+  if ( $type == 0 ) {
+    push(@pinList, $pinName);
+  }
+  else {  #<!-- ( $type == 1 ) -->
+    $pinName .= $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetBidiBits($pinName);
+    my @splitBusPins = utilSplitBusBits($pinName);
+    push(@pinList, @splitBusPins);
+  }
+}# foreach $pinName
+
+return @pinList;
+
+}#sub dbfTstgenPseudoModuleLogicalToPhysicalPins
+
+
+sub dbfTstgenBlastModuleBusPins {
+
+my $module = $_[0];
+my $pin = $_[1];
+
+my @pinList = ();
+if ( $pin =~ m/\[.+\]/ ) {
+  @pinList = utilSplitBusBits($pin);
+}
+elsif ( exists $PLDB{$module} ) {
+  my @pins = $PLDB{$module}->dbMdbGetBusPins;
+  foreach my $pinName ( @pins ) {
+    if ( $pin ne $PLDB{$module}->dbMdbGetPinBusBaseName($pinName) ) {
+      next;
+    }
+    push(@pinList, $pinName);
+  }
+  $pin = utilJoinBusBits(@pinList);
+  @pinList = utilSplitBusBits($pin);
+}
+else {
+  my $bits = "";
+  if ( $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenHasInput($pin) &&
+       $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetInputType($pin) == 1 ) {
+    $bits = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetInputBits($pin);
+  }
+  elsif ( $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenHasOutput($pin) &&
+          $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetOutputType($pin) == 1 ) {
+    $bits = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetOutputBits($pin);
+  }
+  elsif ( $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenHasBidi($pin) &&
+          $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetBidiType($pin) == 1 ) {
+    $bits = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetBidiBits($pin);
+  }
+  
+  if ( $bits =~ m/\[.+\]/ ) {
+    $pin .= $bits;
+    @pinList = utilSplitBusBits($pin);
+  }
+}
+
+return @pinList;
+
+}#sub dbfTstgenBlastModuleBusPins
+
+
+sub dbfTstgenScalePinRect {
+
+my $shape = $_[0];
+my $scale = $_[1];
+
+my @vals = split(/\s/, $shape);
+my $last = @vals - 1;
+if ( $last >= 3 ) {
+  for ( my $i = 0; $i < 4; $i++ ) {
+    my $j = $last - $i;
+    if ( $vals[$j] =~ m/^-?\d+\.?\d*$/ ) {  # valid decimal number
+      $vals[$j] *= $scale;
+    }
+  }
+  $shape = join(" ", @vals);
+}
+return ($shape);
+}#sub dbfTstgenScalePinRect
+
+
+sub dbfTstgenGuidePinLocs {
+
+my $module = $_[0];
+
+#
+#<!-- guide physical pins based on netCoords from GUI -->
+#
+foreach my $net ( keys %{$PSEUDO_VNET_ALREADY{$module}} ) {
+  my $netType = $PSEUDO_VNET_ALREADY{$module}->{$net}->dbaTstgenGetPseudoNetType;
+  if ( $netType eq "wire" ) {
+      next;  # already split to single nets
+  }
+
+  my @coords = $PSEUDO_VNET_ALREADY{$module}->{$net}->dbaTstgenGetPseudoNetCoords;
+  if ( @coords < 4 ) {
+    next;
+  }
+  my $last = @coords - 1;
+  my ($x1, $y1, $x2, $y2) = ($coords[0], $coords[1], $coords[$last - 1], $coords[$last]);
+
+  my ($sourceVInst, $fanInPin) = $PSEUDO_VNET_ALREADY{$module}->{$net}->dbaTstgenGetPseudoNetSourceFanInList;
+  if ( $sourceVInst ne "" && $sourceVInst !~ m/^\d*'b[01]+$/ ) {
+    if ( $sourceVInst eq "PIN" && $fanInPin eq "" ) {
+      $fanInPin = $PSEUDO_VNET_ALREADY{$module}->{$net}->dbaTstgenGetPseudoNetTopConnPin;
+    }
+    my $cellref = $PSEUDO_VINST_ALREADY{$module}{$sourceVInst}->dbPimDBGetInstCellref;
+
+    if ( $fanInPin ne ""  && exists $PSEUDO_MODULE_ALREADY{$cellref} ) {
+      if ( $netType ne "bus" ) {
+        &dbfTstgenSetPinGuided($module, $sourceVInst, $cellref, $fanInPin, $x1, $y1);
+      }
+      else {  #<!-- ( $netType eq "bus" ) -->
+        my @splitBusPins = &dbfTstgenBlastModuleBusPins($cellref, $fanInPin);
+        foreach my $pin ( @splitBusPins ) {
+          &dbfTstgenSetPinGuided($module, $sourceVInst, $cellref, $pin, $x1, $y1);
+        }
+      }# if net type is bus
+    }# if hier module
+  }# if source valid
+
+  my @fanOutList = $PSEUDO_VNET_ALREADY{$module}->{$net}->dbaTstgenGetPseudoNetSinkFanOutList;
+  for (my $k = 0; $k < @fanOutList; $k += 2) {
+    my ($sinkVInst, $fanOutPin) = ($fanOutList[$k], $fanOutList[$k + 1]);
+    if ( $sinkVInst eq "" ) {
+      next;
+    }
+    if ( $sinkVInst eq "PIN" && $fanOutPin eq "" ) {
+      $fanOutPin = $PSEUDO_VNET_ALREADY{$module}->{$net}->dbaTstgenGetPseudoNetTopConnPin;
+    }
+    if ( $fanOutPin eq "" ) {
+      next;
+    }
+    my $cellref = $PSEUDO_VINST_ALREADY{$module}{$sinkVInst}->dbPimDBGetInstCellref;
+    unless ( exists $PSEUDO_MODULE_ALREADY{$cellref} ) {
+      next;
+    }
+    if ( $netType ne "bus" ) {
+      &dbfTstgenSetPinGuided($module, $sinkVInst, $cellref, $fanOutPin, $x2, $y2);
+    }
+    else {  #<!-- ( $netType eq "bus" ) -->
+      my @splitBusPins = &dbfTstgenBlastModuleBusPins($cellref, $fanOutPin);
+      foreach my $pin ( @splitBusPins ) {
+        &dbfTstgenSetPinGuided($module, $sinkVInst, $cellref, $pin, $x2, $y2);
+      }
+    }
+    last;  # TODO handle multiple sinks
+  }# for $k
+}#foreach $net
+
+}# sub dbfTstgenGuidePinLocs
+
+
+sub dbfTstgenUpdateChildrenSizes {
+
+my $module = $_[0];
+
+#
+#<!-- update pseudo module size, intended for pin assignment only -->
+#
+foreach my $inst ( keys %{$PSEUDO_VINST_ALREADY{$module}} ) {
+  my $cellref = $PSEUDO_VINST_ALREADY{$module}->{$inst}->dbPimDBGetInstCellref;
+  if ( exists $PLDB{$cellref} ) {
+    next;
+  }
+  unless ( $cellref ne $module && $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetPhysicalDirty ) {
+    next;
+  }
+  my @bbox = $PSEUDO_VINST_ALREADY{$module}{$inst}->dbPimDBGetInstRelBbox;
+  if ( @bbox != 4 ) {
+    next;
+  }
+  $bbox[2] -= $bbox[0];
+  $bbox[3] -= $bbox[1];
+  $bbox[0] = $bbox[1] = 0;
+  my $flplan = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetFloorplan;
+  unless ( defined $flplan && $flplan ne "" ) {
+    $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenSetFloorplan("$cellref/_self_");
+  }
+  $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenSetSize(@bbox);
+}#foreach inst
+
+}# sub dbfTstgenUpdateChildrenSizes
+
+
+sub dbfTstgenSetPinGuided {
+
+my ($module, $inst, $cellref, $pin, $x, $y) = @_;
+
+unless ( $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenHasPin($pin) ) {
+  $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenSetPhysicalDirty(1);
+  $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenAddPin($pin);
+}
+
+if ( $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetPinStatus($pin) > 1 ) {
+  return;
+}
+
+if ( $module ne $cellref ) {
+  my @bbox = $PSEUDO_VINST_ALREADY{$module}{$inst}->dbPimDBGetInstRelBbox;
+  $x -= $bbox[0];
+  $y -= $bbox[1];
+}
+&dbfTstgenAddPinShape($cellref, $pin, "NONE", $x, $y, $x, $y);
+$PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenSetPinStatus($pin, "GUIDED");
+
+}# sub dbfTstgenSetPinGuided
+
+
+sub dbfTstgenCreateChildFlplan {
+
+my $module = $_[0];
+my $inst = $_[1];
+
+my ($flplanID, $flplan) = &dbfTstgenGetInstFlplanID("$module/$inst");
+unless ( $flplanID == 0 ) {
+  return;
+}
+my $cellref = $PSEUDO_VINST_ALREADY{$module}{$inst}->dbPimDBGetInstCellref;
+$flplan = "$cellref/_self_";
+$flplanID = $GLOBAL->dbfGlobalGetNextFlplanID;
+$FLOORPLAN_LOOKUP{$flplan} = $flplanID;
+$FLOORPLAN_ALREADY{$flplanID} = Floorplan::new();
+$FLOORPLAN_ALREADY{$flplanID}->dbFlplanSetID($flplanID);
+$FLOORPLAN_ALREADY{$flplanID}->dbFlplanSetCellref($cellref);
+$PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenSetFloorplan($flplan);
+$MODULE_ALREADY{$cellref}->dbVNOMSetFloorplanID($flplanID);
+
+my @size = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetSize;
+$FLOORPLAN_ALREADY{$flplanID}->dbFlplanSetSize(@size);
+
+}# sub dbfTstgenCreateChildFlplan
+
+
+sub dbfTstgenCreatePinGuide {
+
+my $module = $_[0];
+my $guide = $_[1];
+my $type = $_[2];
+my $layer = $_[3];
+my $llx = $_[4];
+my $lly = $_[5];
+my $urx = $_[6];
+my $ury = $_[7];
+
+unless ( defined $guide ) {
+  $guide = 1 + $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetPinGuideList;
+  while ( $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenHasPinGuide($guide) ) {
+    $guide++;
+  }
+}
+
+print "DBG-TST : 001 : Creating pin guide type $type \[$llx $lly $urx $ury\]\n" if ($DEBUG == 328);
+
+$PSEUDO_MODULE_ALREADY{$module}->dbaTstgenSetPhysicalDirty(1);
+my $flplan = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetFloorplan;
+unless ( defined $flplan && $flplan ne "" ) {
+  $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenSetFloorplan("$module/_self_");
+}
+$PSEUDO_MODULE_ALREADY{$module}->dbaTstgenAddPinGuide($guide);
+$PSEUDO_MODULE_ALREADY{$module}->dbaTstgenSetPinGuideBbox($guide,
+                                                   $llx, $lly, $urx, $ury);
+if ( defined $type ) {
+  $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenSetPinGuideType($guide, $type);
+}
+if ( defined $layer && $layer ne "" ) {
+  $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenSetPinGuideLayer($guide, $layer);
+}
+return $guide;
+
+}# sub dbfTstgenCreatePinGuide
+
+
+#
+# collect all block instances
+#
+sub dbfTstgenGetMacroInstList {
+my $module = $_[0];
+
+my @macros = ();
+foreach my $inst ( keys %{$PSEUDO_VINST_ALREADY{$module}} ) {
+  if ( $inst eq "PIN" ) {
+    next;
+  }
+  my $cellref = $PSEUDO_VINST_ALREADY{$module}{$inst}->dbPimDBGetInstCellref;
+  unless ( exists $PLDB{$cellref} ) {
+    next;
+  }
+  my $type = $PLDB{$cellref}->dbMdbGetClass;
+  unless ( $type eq "BLOCK" ) {
+    next;
+  }
+  push(@macros, $inst);
+}
+return @macros;
+
+}# sub dbfTstgenGetMacroInstList
+#-----------------------------------------------------------------------------------------#
+sub check_net_vector_lsb_eq_msb {
+my $module = $_[0];
+my $pin = $_[1];
+my @pin_List = ();
+  if(exists $PSEUDO_MODULE_ALREADY{$module}){
+      my $bits_lsb_eq_msb = "";
+      if ( $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenHasInput($pin) &&
+          $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetInputType($pin) == 1 ){
+          $bits_lsb_eq_msb = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetInputBits($pin); 
+     } elsif ($PSEUDO_MODULE_ALREADY{$module}->dbaTstgenHasOutput($pin) &&
+         $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetOutputType($pin) == 1 ) {
+         $bits_lsb_eq_msb = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetOutputBits($pin);
+     } elsif ($PSEUDO_MODULE_ALREADY{$module}->dbaTstgenHasBidi($pin) &&
+         $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetBidiType($pin) == 1 ) {
+         $bits_lsb_eq_msb = $PSEUDO_MODULE_ALREADY{$module}->dbaTstgenGetBidiBits($pin);
+     }
+     if ($bits_lsb_eq_msb eq ""){
+         push (@pin_List,$pin);
+     } else{
+       my ($from, $to) = &utilGetBitsRange($bits_lsb_eq_msb);
+       if ($from == $to){
+           @pin_List = &dbfTstgenBlastModuleBusPins($module,$pin);
+       }#if from eq to
+     }#else
+  }#if exists
+  return (@pin_List);
+}#sub check_net_vector_lsb_eq_msb
+
+1;

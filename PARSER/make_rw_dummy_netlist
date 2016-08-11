@@ -1,0 +1,835 @@
+
+sub generate_dummy_netlist {
+
+$noOfArguments = @_;
+%COMMAND_OPTIONS_TABLE=();
+if($noOfArguments < 4) {
+print "usage : generate_dummy_netlist -output < Output file> \n";
+print "                               -designName < Name of the design : top level name >\n";
+print "                               -nrOfComponents < integer >\n";
+print "                               -nrOfInputs < integer >\n";
+print "                               -nrOfOutputs < integer >\n";
+print "                               -seq < { list of sequential cells } >\n";
+print "                               -block < { list of block cells } >\n";
+print "                               -combi < { list of combinational cells eg : nand/nor/or/and } >\n";
+print "                               \[ -complex < { list of complex cells eg : mux/aoi  } >\]\n";
+                       } else {
+print "INFO-PAR : 001 : Analysing user inputs ...\n";
+for(my $i = 0 ; $i < $noOfArguments ;  $i++){
+if($_[$i] eq "-output"){ $OUTPUT_VERILOG = $_[$i+1];}
+if($_[$i] eq "-designName"){ $DESIGN_NAME = $_[$i+1];}
+if($_[$i] eq "-nrOfComponents"){ $SEED_COMPONENTS = $_[$i+1];}
+if($_[$i] eq "-nrOfInputs"){ $SEED_INPUTS = $_[$i+1];}
+if($_[$i] eq "-nrOfOutputs"){ $SEED_OUTPUTS = $_[$i+1];}
+if($_[$i] eq "-seq"){ 
+                      $COMMAND_OPTIONS_TABLE{seq}=\@SEQLIST; 
+                      $i = $i + 2;
+                      until ( $_[$i] =~ "}" ){
+                      my $seqName = $_[$i];
+                      $i++;
+                      push(@SEQLIST,$seqName);
+                                              }#until
+                    }# if seq option is given by user
+if($_[$i] eq "-combi"){ $COMMAND_OPTIONS_TABLE{combi}=\@COMBILIST; 
+                      $i = $i + 2;
+                      until ( $_[$i] =~ "}" ){
+                      my $combiName = $_[$i];
+                      $i++;
+                      push(@COMBILIST,$combiName);
+                                              }#until
+                      }#f combi option is given by user
+if($_[$i] eq "-complex"){ $COMMAND_OPTIONS_TABLE{complex}=\@COMPLEXLIST; 
+                      $i = $i + 2;
+                      until ( $_[$i] =~ "}" ){
+                      my $complexName = $_[$i];
+                      $i++;
+                      push(@COMPLEXLIST,$complexName);
+                                              }#until
+                        }# if complex option is given by the user
+if($_[$i] eq "-block"){ $COMMAND_OPTIONS_TABLE{block}=\@BLOCKLIST;
+                      $i = $i + 2;
+                      until ( $_[$i] =~ "}" ){
+                      my $blockName = $_[$i];
+                      $i++;
+                      push(@BLOCKLIST,$blockName);
+                                              }#unless
+                      }# if block option is given by user
+
+                              }# for no of arguments
+if(exists $COMMAND_OPTIONS_TABLE{complex} ) {
+print "INFO-PAR : 002 : Complex cells to be used in the design are .. \n";
+foreach $complexName (@COMPLEXLIST){
+                      print "INFO-PAR : 003 : $complexName\n";
+                               }
+                                            }
+if( exists $COMMAND_OPTIONS_TABLE{block} ) {
+print "INFO-PAR : 004 : Block to be used in the design are .. \n";
+foreach $blockName (@BLOCKLIST){
+                      print "INFO-PAR : 005 : $blockName\n";
+                               }
+                                           }
+
+######################################################################################################
+
+open(WRITE, ">$OUTPUT_VERILOG");
+&make_module_level1($DESIGN_NAME, $SEED_COMPONENTS,$SEED_INPUTS,$SEED_OUTPUTS);
+close(WRITE);
+
+                              }# if correct arguments
+}#sub generate_dummy_netlist
+
+sub make_module_level1 {
+
+%NET_NEW_ADDED = ();
+%PORT_NEW_ADDED = ();
+%COMP_NEW_ADDED = ();
+
+my $referToPlef = \%MACROS_ALREADY;
+my $moduleName = $_[0];
+my $NUMBER_OF_COMPONENTS = $_[1];
+my $NUMBER_OF_INPUTS = $_[2];
+my $NUMBER_OF_OUTPUTS = $_[3];
+
+
+my $referToNetsAdded = %NET_NEW_ADDED;
+print "INFO-PAR : 001 : Creating top level pads for the design ...\n";
+&DN_create_module_ports($NUMBER_OF_INPUTS,$NUMBER_OF_OUTPUTS,$moduleName);
+print "INFO-PAR : 002 : Mapping inputs to outputs ...\n";
+&DN_map_inputs_outputs($NUMBER_OF_INPUTS,$NUMBER_OF_OUTPUTS,$moduleName);
+
+#&DN_insert_buffer_on_all_nets($moduleName,CLKINVX1);
+#&DN_insert_buffer_on_nets(1,CLKINVX1,$NUMBER_OF_COMPONENTS,$moduleName);
+#&DN_insert_buffer_on_nets(1,CLKINVX1,$NUMBER_OF_COMPONENTS,$moduleName);
+#&DN_insert_buffer_on_nets(1,CLKINVX1,$NUMBER_OF_COMPONENTS,$moduleName);
+#&DN_insert_buffer_on_nets(1,CLKINVX1,$NUMBER_OF_COMPONENTS,$moduleName);
+
+#&dummy_top_nets($NUMBER_OF_INPUTS,$NUMBER_OF_OUTPUTS,$NAND_FOOTPRINT);
+&makeComponentDb;
+#&dummy_top_components($NUMBER_OF_COMPONENTS);
+#&add_flops_all_nets(DFFHQX1, CLOCK);
+&outputdbVerilog($moduleName);
+
+}# sub make_module_level1
+
+sub dummy_top_components {
+
+my $components = keys %COMP_NEW_ADDED;
+ 
+#print "$components already in the design\n";
+
+my $NUMBER_OF_COMPONENTS = $_[0];
+my $noOfComponents = $components + 1;
+
+while($components< $NUMBER_OF_COMPONENTS) {
+
+foreach (keys %{NET_NEW_ADDED}){
+my $var = rand(1);
+if($var < 1.1 ) { #print "added a instance on net $_\n";
+$instanceNumber = "U".$noOfComponents;
+&dummy_combi_components_on_nets($INVERTER, $instanceNumber, $_);
+                $noOfComponents++;
+                }
+            else{ #print "not to add an instance\n";
+                }
+                                }
+
+$components = keys %COMP_NEW_ADDED;
+#print "$components\n";
+                   }
+}#sub dummy_top_components
+
+sub outputdbVerilog {
+
+my $moduleName = $_[0];
+
+print "INFO-PAR : 001 : Outputting the Verilog !\n";
+my $referToCompsAdded = \%COMP_NEW_ADDED;
+&makeComponentDb;
+ 
+foreach $instance ( keys %COMP_NEW_ADDED ){
+#print "$instance\n";
+        foreach $pinName ( keys %{$COMP_NEW_ADDED{$instance}} ){
+        #print "\t $pinName = $COMP_NEW_ADDED{$instance}{$pinName}\n";
+                                                               }
+                                          }
+
+print WRITE "module $moduleName\( ";
+my %blockPorts = ();
+my $referToPortsAdded = \%PORT_NEW_ADDED;
+
+foreach $net ( keys %{NET_NEW_ADDED}) {
+       $terms_connected = keys %{$NET_NEW_ADDED{$net}};
+       #print "$net has $terms_connected terminals connected\n";
+       foreach $instance ( keys %{$NET_NEW_ADDED{$net}}){
+       if ( exists $$referToCompsAdded{$instance}{cellref} ) { }
+       else { print "INFO-PAR : 002 : $net needs to become a port as $instance is attached\n";
+            if( $$referToPortsAdded{$moduleName}{$instance}{direction} eq "output") {
+              # print "$instance is output\n";
+               $blockPorts{$net} = "output";
+                                                                       }
+            elsif($$referToPortsAdded{$moduleName}{$instance}{direction} eq "input"){
+              # print "$instance is input\n";
+               $blockPorts{$net} = "input";
+                                                                       }
+            }# if not attached to a component that has cellref
+                                                        }# foreach component connected to the net
+                                      } # foreach net in the design
+my @DUMMY = ();
+
+foreach $net ( keys %blockPorts ) {
+        #print WRITE "$net ";
+        push(@DUMMY, $net);
+                                  }
+         my $len = @DUMMY;
+         for ( my $x = 0; $x < $len; $x++ ){
+             if( $x < $len - 1 ) { $conn = pop(@DUMMY);
+                              print WRITE "$conn \,";
+                            }else { $conn = pop(@DUMMY);
+                              print WRITE "$conn";
+                                  }
+                                           }# for # of pins connectivity
+
+
+print WRITE "\)\;\n";
+
+foreach $net ( keys %blockPorts ) {
+      if($blockPorts{$net} eq "input"){print WRITE "input $net\;\n"; }
+      if($blockPorts{$net} eq "output"){print WRITE "output $net\;\n"; }
+                                  }
+foreach $instance ( keys %{$referToCompsAdded}) {
+         my @DUMMY = ();
+         my $conn = "";
+
+         if( exists $$referToCompsAdded{$instance}{cellref} ) { 
+         print   WRITE "$$referToCompsAdded{$instance}{cellref} $instance \( ";
+         foreach $pinName ( keys %{$COMP_NEW_ADDED{$instance}}) {
+         if ( $pinName eq "cellref") { } else { #print "$pinName\n";
+         #print   WRITE " \.$pinName\($$referToCompsAdded{$instance}{$pinName}\)";
+         $conn = " \.$pinName\($$referToCompsAdded{$instance}{$pinName}\)";
+          push(@DUMMY, $conn);
+                                              }# if is a pin
+                                                                 }# foreach pin in instance
+         my $len = @DUMMY;
+         for ( my $x = 0; $x < $len; $x++ ){
+             if( $x < $len - 1 ) { $conn = pop(@DUMMY);
+                              print WRITE "$conn \,";
+                            }else { $conn = pop(@DUMMY);
+                              print WRITE "$conn";
+                                  }
+                                           }# for # of pins connectivity
+
+         print  WRITE  "\)\;\n";
+                                                 } else {
+         
+                                                        }# if not a library instance
+                                                } # foreach instance added
+
+print WRITE "endmodule\n";
+
+}#sub outputdbVerilog
+
+sub makeComponentDb {
+
+my $referToNetsAdded = \%NET_NEW_ADDED;
+my $referToCompsAdded = \%COMP_NEW_ADDED;
+
+foreach $nets ( keys %{$referToNetsAdded} ) {
+             foreach $instance ( keys %{$$referToNetsAdded{$nets}} ){
+             #print "$instance connected to $nets on $$referToNetsAdded{$nets}{$instance}\n";
+             $COMP_NEW_ADDED{$instance} = \%{$instance};
+             ${$instance}{$$referToNetsAdded{$nets}{$instance}} = $nets;
+                                             }
+                                                }
+my $test = keys %COMP_NEW_ADDED;
+#print "After top nets no of components is $test\n";
+}#sub makeComponentDb
+
+sub dbgChoosePortOUT {
+
+my $randomNumber = 0;
+my $noOfTempInputs = $_[0];
+my $chosenTempPort = "";
+
+$randomNumber = 1 + int rand($noOfTempInputs - 1);
+                            print "INFO-PAR : 001 : $randomNumber is a randomNumber\n";
+
+                            foreach $tempPort (keys %TEMPORARY_OUTPUTS){
+                            $randomNumber--;
+                            if($randomNumber == 0){ $chosenTempPort = $tempPort; }
+                                                                      }#foreach
+return($chosenTempPort);
+}# sub dbgChoosePortOUT
+
+sub dbgChoosePortIN {
+
+my $randomNumber = 0;
+my $noOfTempInputs = $_[0];
+my $chosenTempPort = "";
+
+$randomNumber = 1 + int rand($noOfTempInputs - 1);
+                            print "INFO-PAR : 001 : $randomNumber is a randomNumber\n";
+
+                            foreach $tempPort (keys %TEMPORARY_INPUTS){
+                            $randomNumber--;
+                            if($randomNumber == 0){ $chosenTempPort = $tempPort; }
+                                                                      }#foreach
+
+return($chosenTempPort);
+}# sub dbgChoosePortIN
+
+
+sub dbgChoosePort {
+
+my $randomNumber = 0;
+my $noOfTempInputs = $_[0];
+my $componentAddedInThisStep = $_[1];
+my $chosenTempPort = "";
+
+$randomNumber = 1 + int rand($noOfTempInputs - 0.5);
+                            print "INFO-PAR : 001 : $noOfTempInputs is the number of inputs\n";
+                            print "INFO-PAR : 002 : $randomNumber is a randomNumber\n";
+
+                            foreach $tempPort (keys %TEMPORARY_INPUTS){
+                            $randomNumber--;
+                            if($randomNumber == 0){ $chosenTempPort = $tempPort; }
+                                                                      }#foreach
+                            print "INFO-PAR : 003 : $chosenTempPort is the chosen component\n";
+                            if($chosenTempPort =~ /^U[0-9]+/){ $number = $chosenTempPort; $number =~ s/U// ; 
+                            if($number == $componentAddedInThisStep){
+                                     dbgChoosePort($noOfTempInputs,$componentAddedInThisStep);
+                                                                     }
+                                                             }
+
+return($chosenTempPort);
+}# sub dbgChoosePort
+
+
+
+sub dummy_combi_components_on_nets {
+
+my $referToComponentsAdded = \%COMP_NEW_ADDED;
+my $referToMacros = \%MACROS_ALREADY;
+my $referToNetsAdded = \%NET_NEW_ADDED;
+my $referToPortsAdded = \%PORT_NEW_ADDED;
+
+my ($cellref, $instance, $nets) = @_;
+
+#print "working on net $nets\n";
+#print "$instance which is a $cellref is added to net $nets\n";
+
+%{$instance} = ();
+$COMP_NEW_ADDED{$instance} = \%{$instance};
+
+$$referToComponentsAdded{$instance}{cellref} = $cellref;
+
+$newAddedNet1 = $nets."1";
+$newAddedNet2 = $nets."2";
+
+                 ${$referToNetsAdded}{$newAddedNet1} = \%{$newAddedNet1};
+                 ${$referToNetsAdded}{$newAddedNet2} = \%{$newAddedNet2};
+
+if( exists $$referToNetsAdded{$nets} ) {
+
+if(exists  $$referToMacros{$cellref} ) { # if reference cell exists in library
+foreach ( keys %{$MACROS_ALREADY{$cellref}}) {
+             if($_ eq "area"){}else{
+             if($MACROS_ALREADY{$cellref}{$_}{"use"} eq "power" || \
+                $MACROS_ALREADY{$cellref}{$_}{"use"} eq "POWER"){
+       } elsif($MACROS_ALREADY{$cellref}{$_}{"use"} eq "ground" || \
+               $MACROS_ALREADY{$cellref}{$_}{"use"} eq "GROUND") {
+                   } else {
+       if($MACROS_ALREADY{$cellref}{$_}{direction} eq "input"){ 
+                 ${$referToNetsAdded}{$newAddedNet1}{$instance} = $_;
+                                                              }#if pin is an input pin
+       if($MACROS_ALREADY{$cellref}{$_}{direction} eq "output"){ 
+                 ${$referToNetsAdded}{$newAddedNet2}{$instance} = $_;
+                                                              }#if pin is a output pin
+                                  } # if not PGPin
+                                 }# if not area
+                                 }# foreach pins of the macro
+
+                                                        } #if exist in the library
+
+#########################################################################################################
+####          making adjustments in the net section                                                  ####
+#########################################################################################################
+
+foreach $instance ( keys %{$$referToNetsAdded{$nets}} ) {
+        #######  if instance attached is a port  #############
+            if(exists $$referToPortsAdded{$instance} ) {
+            #print "attached instance is a port $instance\n";
+            if ( $$referToPortsAdded{$instance}{direction} eq "input"){
+            $$referToNetsAdded{$newAddedNet1}{$instance} = $$referToPortsAdded{$instance}{pinName};
+                                                                            }# if driver to the net
+            if ( $$referToPortsAdded{$instance}{direction} eq "output"){
+            $$referToNetsAdded{$newAddedNet2}{$instance} = $$referToPortsAdded{$instance}{pinName};
+                                                                            }# if driven by the net
+                                                       } # if a port instance
+        #######  if instance attached is a cell  #############
+        else { 
+        #print "attached instance is a cell $instance $COMP_NEW_ADDED{$instance}{cellref}\n";
+
+        if ( $MACROS_ALREADY{$COMP_NEW_ADDED{$instance}{cellref}}{$$referToNetsAdded{$nets}{$instance}}{direction} eq "input"){
+                   $$referToNetsAdded{$newAddedNet2}{$instance} = $$referToNetsAdded{$nets}{$instance};
+                                                            } # sinks on the new net
+        if ( $MACROS_ALREADY{$COMP_NEW_ADDED{$instance}{cellref}}{$$referToNetsAdded{$nets}{$instance}}{direction} eq "output") {
+                   $$referToNetsAdded{$newAddedNet1}{$instance} = $$referToNetsAdded{$nets}{$instance};
+                                                            }# source on the new net    
+                 }#if a macro is attached on the net
+                                                        } # foreach target in net section 
+delete $$referToNetsAdded{$nets};
+                                     
+
+                                      } # if the net on which component is to be added  exists in the design
+}#sub dummy_combi_components_on_nets
+
+
+################################################################################
+#                     Algorithm to add flops in the design                     #
+# Add flops to all the nets , just connect the data and the output pin on the  #
+# net. keep on adding the flops till you reach the number of flops in the      #
+# design.                                                                      #
+################################################################################
+
+
+sub add_flops_all_nets {
+    
+my $FLOPNAME = $_[0];
+my $CLOCK_NET_NAME = $_[1];
+
+%{$CLOCK_NET_NAME} = ();
+
+
+
+my $referToComponentsAdded = \%COMP_NEW_ADDED;
+my $referToMacros = \%MACROS_ALREADY;
+my $referToNetsAdded = \%NET_NEW_ADDED;
+my $referToPortsAdded = \%PORT_NEW_ADDED;
+my $referToPinFuncInMacros = \%MACROS_PIN_FUNC_ALREADY;
+
+my $noOfCompTemp = keys %COMP_NEW_ADDED;
+print "WARN-PAR : 001 : $noOfCompTemp componets already in\n";
+
+my $noOfNetTemp = keys %NET_NEW_ADDED;
+print "WARN-PAR : 002 : $noOfNetTemp nets already in\n";
+my $newNet1 = "";
+my $newNet2 = "";
+my $instance = "";
+
+foreach my $net ( keys %NET_NEW_ADDED ) {
+           $newAddedNet1 = $net."1f";
+           $newAddedNet2 = $net."2f";
+           $NET_NEW_ADDED{$newAddedNet1} = \%{$newAddedNet1};
+           $NET_NEW_ADDED{$newAddedNet2} = \%{$newAddedNet2};
+           $noOfCompTemp = $noOfCompTemp + 1;
+           $instance = "U".$noOfCompTemp;
+           %{$instance} = ();
+           $COMP_NEW_ADDED{$instance} = \%{$instance};
+           ${$instance}{cellref} = $FLOPNAME;
+           
+
+           #if ( exists $NET_NEW_ADDED{$newAddedNet1} ){ print "HAI\n"; }
+           #if ( exists $NET_NEW_ADDED{$newAddedNet2} ){ print "HAI\n"; }
+            if ( exists $MACROS_ALREADY{$FLOPNAME} ){ #print "Add the $FLOPNAME\n";
+                        foreach $pinName ( keys %{$MACROS_ALREADY{$FLOPNAME}} ){
+               if( exists $MACROS_PIN_FUNC_ALREADY{$FLOPNAME}{$pinName} ) {
+               if( $MACROS_PIN_FUNC_ALREADY{$FLOPNAME}{$pinName} eq "data" ) {
+                            #           print "connect $pinName to $newNet1\n";
+                            ${$newAddedNet1}{$instance} = $pinName;
+                                                                             }
+               if( $MACROS_PIN_FUNC_ALREADY{$FLOPNAME}{$pinName} eq "output" ) {
+                            #           print "connect $pinName to $newNet2\n";
+                            ${$newAddedNet2}{$instance} = $pinName;
+                                                                             }
+               if( $MACROS_PIN_FUNC_ALREADY{$FLOPNAME}{$pinName} eq "clock" ) {
+                            #           print "connect $pinName to $CLOCK_NET_NAME\n";
+                            ${$CLOCK_NET_NAME}{$instance} = $pinName;
+                                                                             }
+                                                                           }#if the pin exists in pinFuncDB
+                                                                               }#foreach pin of the macro
+                                                    }# if exists in the macroLibrary 
+#####################################################################################
+# Adjust the net database to that the pins on original net is redistributed         #
+# and then delete the original net                                                  #
+#####################################################################################
+foreach $instance ( keys %{$$referToNetsAdded{$net}} ) {
+        #######  if instance attached is a port  #############
+            if(exists $$referToPortsAdded{$instance} ) {
+            #print "attached instance is a port $instance\n";
+            if ( $$referToPortsAdded{$instance}{direction} eq "input"){
+            $$referToNetsAdded{$newAddedNet1}{$instance} = $$referToPortsAdded{$instance}{pinName};
+                                                                            }# if driver to the net
+            if ( $$referToPortsAdded{$instance}{direction} eq "output"){
+            $$referToNetsAdded{$newAddedNet2}{$instance} = $$referToPortsAdded{$instance}{pinName};
+                                                                            }# if driven by the net
+                                                       } # if a port instance
+        #######  if instance attached is a cell  #############
+        else {
+        #print "attached instance is a cell $instance $COMP_NEW_ADDED{$instance}{cellref}\n";
+
+        if ( $MACROS_ALREADY{$COMP_NEW_ADDED{$instance}{cellref}}{$$referToNetsAdded{$net}{$instance}}{direction} eq "input"){
+                   $$referToNetsAdded{$newAddedNet2}{$instance} = $$referToNetsAdded{$net}{$instance};
+                                                            } # sinks on the new net
+        if ( $MACROS_ALREADY{$COMP_NEW_ADDED{$instance}{cellref}}{$$referToNetsAdded{$net}{$instance}}{direction} eq "output") {
+                   $$referToNetsAdded{$newAddedNet1}{$instance} = $$referToNetsAdded{$net}{$instance};
+                                                            }# source on the new net
+                 }#if a macro is attached on the net
+                                                        } # foreach target in net section
+delete $$referToNetsAdded{$net};
+######################################################################################
+
+
+                
+                                        }# foreach net in the design before adding flops
+
+               $NET_NEW_ADDED{$CLOCK_NET_NAME} = \%{$CLOCK_NET_NAME};
+
+$noOfNetTemp = keys %NET_NEW_ADDED;
+print "INFO-PAR : 003 : $noOfNetTemp nets already in\n";
+
+
+}# sub add_flops_all_nets
+
+
+sub DN_create_module_ports {
+my $noOfInputs = $_[0];
+my $noOfOutputs = $_[1];
+my $MODULE_NAME = $_[2];
+
+my $module_port_hash = "PORTNEWADDED".$MODULE_NAME;
+%{$module_port_hash}=();
+
+$PORT_NEW_ADDED{$MODULE_NAME}=\%{$module_port_hash};
+
+for(my $x = 1 ; $x < $noOfInputs + 1; $x++){
+####### creating input ports ##########
+    my $portName = "PORT".$MODULE_NAME."PAD_IN".$x;
+    my $pinName = "in".$x;
+    my $padName = "PAD_IN".$x;
+    ${$module_port_hash}{$padName}=\%{$portName};
+    ${$portName}{direction} = "input";
+    ${$portName}{pinName} = "$pinName";
+    ${$portName}{cellref} = "PAD_IN";
+    
+                                          }#for inputs
+for(my $y = 1 ; $y < $noOfOutputs + 1; $y++){
+####### creating output ports ##########
+    my $portName = "PORT".$MODULE_NAME."PAD_OUT".$y;
+    my $pinName = "out".$y;
+    my $padName = "PAD_OUT".$y;
+    ${$module_port_hash}{$padName}=\%{$portName};
+    ${$portName}{direction} = "output";
+    ${$portName}{pinName} = "$pinName";
+    ${$portName}{cellref} = "PAD_OUT";
+                                             }#for outputs
+
+foreach $pin ( keys %{$PORT_NEW_ADDED{$MODULE_NAME}}){
+         print "INFO-PAR : 001 : $pin\n";
+                                                     }
+}#sub DN_create_module_ports
+
+sub DN_map_inputs_outputs {
+
+my $INPUTS = $_[0];
+my $OUTPUTS = $_[1];
+my $MODULE_NAME = $_[2];
+
+
+if ( $INPUTS > $OUTPUTS ) {
+print "INFO-PAR : 001 : Since # of inputs is greater than # of outputs ...\n";
+&DN_create_nets_between_inputs_greater_outputs($INPUTS,$OUTPUTS,$MODULE_NAME);
+                          }# if number of inputs is more than number of outputs
+elsif ( $INPUTS < $OUTPUTS ) {
+print "INFO-PAR : 002 : Since # of inputs is less than # of outputs ...\n";
+                             }# if number of inputs is less than number of outputs
+else {
+print "INFO-PAR  :003 : Since # of inputs is equal to # of outputs ...\n";
+&DN_create_nets_between_inputs_outputs_equal($INPUTS,$OUTPUTS);
+
+     }# if number of inputs is equal to the output
+
+
+}# sub DN_map_inputs_outputs
+
+
+sub DN_create_nets_between_inputs_outputs_equal {
+
+my $INPUTS = $_[0];
+my $OUTPUTS = $_[1];
+
+foreach( my $x =1 ; $x < $INPUTS + 1; $x++){
+       my $netName = "net".$x;
+       my $padNameIn = "PAD_IN".$x;
+       my $pinNameIn = "in".$x;
+       my $padNameOut = "PAD_OUT".$x;
+       my $pinNameOut = "out".$x;
+
+       $NET_NEW_ADDED{$netName}=\%{$netName};
+       ${$netName}{$padNameIn} =  $pinNameIn;
+       ${$netName}{$padNameOut} =  $pinNameOut;
+                                          }
+
+
+}#sub DN_create_nets_between_inputs_outputs_equal
+
+
+
+sub DN_insert_buffer_on_all_nets {
+
+my $net = "";
+my $bufferName = $_[1];
+my $moduleName = $_[0];
+my $countOfComponents = 0;
+
+#create 2 new nets and delete this net by updating the database
+
+    foreach $net ( keys %NET_NEW_ADDED) {
+    my $newNet1 = $net."1i";
+    my $newNet2 = $net."1o";
+    $NET_NEW_ADDED{$newNet1} =\%{$newNet1};
+    $NET_NEW_ADDED{$newNet2} =\%{$newNet2};
+
+    $countOfComponents++;
+    my $componentName = "U".$countOfComponents;
+    $COMP_NEW_ADDED{$componentName}= \%{$componentName};
+    ${$componentName}{cellref} = $bufferName;
+
+
+               print "INFO-PAR : 001 : $net\n";
+       foreach $instance ( keys %{$NET_NEW_ADDED{$net}} ){
+       if( exists $PORT_NEW_ADDED{$moduleName}{$instance} ) { 
+
+             if ( $PORT_NEW_ADDED{$moduleName}{$instance}{direction} eq "output" ){
+                 ${$newNet2}{$instance} = $NET_NEW_ADDED{$net}{$instance};
+                  
+                                                                                  }
+         elsif ( $PORT_NEW_ADDED{$moduleName}{$instance}{direction} eq "input" ) {
+                 ${$newNet1}{$instance} = $NET_NEW_ADDED{$net}{$instance};
+                                                                                  }
+                                                            } # if the attached instance is a PAD
+       elsif ( exists $COMP_NEW_ADDED{$instance} ) {
+                                                   } # if the attached instance is a MACRO
+                                                         }#foreach instance attached to the net
+        # Add the new instance on the new nets added
+             foreach my $pinName ( keys %{$MACROS_ALREADY{$bufferName}} )  {
+             print "INFO-PAR : 002 : RAJEEV $bufferName RAJEEV $pinName\n";
+          if ( $pinName eq "area") {}
+          elsif( $MACROS_ALREADY{$bufferName}{$pinName}{direction} eq "input" ){
+             ${$newNet1}{$componentName} = $pinName;
+                                                                               }
+          elsif( $MACROS_ALREADY{$bufferName}{$pinName}{direction} eq "output"){
+             ${$newNet2}{$componentName} = $pinName;
+                                                                               }
+                                                                          }# foreach
+
+delete $NET_NEW_ADDED{$net};
+
+
+
+
+                                        }# foreach net in the netlist 
+
+
+
+}#sub DN_insert_buffer_on_all_nets
+
+sub DN_insert_buffer_on_nets {
+
+
+my $probability = $_[0];
+my $bufferName = $_[1];
+my $componentCount = $_[2];
+my $moduleName = $_[3];
+my $net = "";
+
+my $countOfComponents = keys %{COMP_NEW_ADDED};
+
+foreach $net ( keys %{NET_NEW_ADDED} ) {
+my $var = rand(1);
+if( $var < $probability ) {
+           print "INFO-PAR : 001 : $net is selected for adding component\n";
+    my $newNet1 = $net."1i";
+    my $newNet2 = $net."1o";
+    $NET_NEW_ADDED{$newNet1} =\%{$newNet1};
+    $NET_NEW_ADDED{$newNet2} =\%{$newNet2};
+
+    $countOfComponents++;
+    my $componentName = "U".$countOfComponents;
+    $COMP_NEW_ADDED{$componentName}= \%{$componentName};
+    ${$componentName}{cellref} = $bufferName;
+
+
+               print "INFO-PAR : 002 : $net\n";
+       foreach $instance ( keys %{$NET_NEW_ADDED{$net}} ){
+       if( exists $PORT_NEW_ADDED{$moduleName}{$instance} ) {
+
+             if ( $PORT_NEW_ADDED{$moduleName}{$instance}{direction} eq "output" ){
+                 ${$newNet2}{$instance} = $NET_NEW_ADDED{$net}{$instance};
+
+                                                                                  }
+         elsif ( $PORT_NEW_ADDED{$moduleName}{$instance}{direction} eq "input" ) {
+                 ${$newNet1}{$instance} = $NET_NEW_ADDED{$net}{$instance};
+                                                                                  }
+                                                            } # if the attached instance is a PAD
+       elsif ( exists $COMP_NEW_ADDED{$instance} ) {
+            my $pin_temp = $NET_NEW_ADDED{$net}{$instance};
+            my $cellref_temp = $COMP_NEW_ADDED{$instance}{cellref};
+
+            if ( $MACROS_ALREADY{$cellref_temp}{$pin_temp}{direction} eq "input" ) {
+                 ${$newNet2}{$instance} = $NET_NEW_ADDED{$net}{$instance};
+               
+                                                                                   }
+        elsif ( $MACROS_ALREADY{$cellref_temp}{$pin_temp}{direction} eq "output" ) {
+                 ${$newNet1}{$instance} = $NET_NEW_ADDED{$net}{$instance};
+                                                                                   }
+                                                   } # if the attached instance is a MACRO
+                                                         }#foreach instance attached to the net
+        # Add the new instance on the new nets added
+             foreach my $pinName ( keys %{$MACROS_ALREADY{$bufferName}} )  {
+             print "INFO-PAR : 003 : RAJEEV $bufferName RAJEEV $pinName\n";
+          if ( $pinName eq "area") {}
+          elsif( $MACROS_ALREADY{$bufferName}{$pinName}{direction} eq "input" ){
+             ${$newNet1}{$componentName} = $pinName;
+                                                                               }
+          elsif( $MACROS_ALREADY{$bufferName}{$pinName}{direction} eq "output"){
+             ${$newNet2}{$componentName} = $pinName;
+                                                                               }
+                                                                          }# foreach
+
+delete $NET_NEW_ADDED{$net};
+
+                          }# if the net is selected for instance addition
+                                       }# loop for all the nets
+
+
+
+}#sub DN_insert_buffer_on_nets
+
+sub DN_create_nets_between_inputs_greater_outputs {
+
+  ### if outputs are less than inputs ###
+#######  make a temporary database for all the inputs  #####
+##############################################################
+#                 Algorithm is as follows                    #
+##############################################################
+# step 1. choose a component  from the MACROS database       #
+# step 2. choose as many nets as are the inputs in the macro #
+# step 3. connect the nets to the input of the macro and     # 
+# inputs chosen                                              #
+# step 4. update the database with outputs of macro added    #
+# step 5. continue if no of inputs is greater than outputs   #
+##############################################################
+
+
+my $chosenComponent = "";
+my $chosenInstance = "";
+my $noOfComponents = 0;
+my $noOfInputs = $_[0];
+my $noOfOutputs = $_[1];
+my $MODULE_NAME = $_[2];
+
+print "INFO-PAR : 001 : This is the module i am working on $MODULE_NAME\n";
+my $referToPortsAdded = \%{$PORT_NEW_ADDED{$MODULE_NAME}};
+
+%TEMPORARY_INPUTS = ();
+
+foreach (keys %{$referToPortsAdded} ) {
+ if( $$referToPortsAdded{$_}{direction} eq "output") { 
+                         print "INFO-PAR : 002 : $_  to be added in output HASH\n"; 
+                      $TEMPORARY_OUTPUTS{$_} = $$referToPortsAdded{$_}{pinName};
+                                                     }
+ if( $$referToPortsAdded{$_}{direction} eq "input") { 
+                      $TEMPORARY_INPUTS{$_} = $$referToPortsAdded{$_}{pinName};
+                         print "INFO-PAR : 003 : $_ to be added in input HASH\n"; 
+                                                    }
+                                      }# foreach
+my $netcount = 1;
+my $noOfTempInputs = keys %TEMPORARY_INPUTS;
+
+while( $noOfTempInputs > $noOfOutputs ){
+
+# step 1.
+          $chosenComponent = "NAND2X1";
+          $chosenInstance = "U".$noOfComponents;
+
+          %{$chosenInstance} = ();
+          $COMP_NEW_ADDED{$chosenInstance} = \%{$chosenInstance};
+          ${$chosenInstance}{cellref} = $chosenComponent;
+
+          foreach $pinName (keys %{$MACROS_ALREADY{$chosenComponent}} ) {
+          if($pinName  eq "area" ){}else {
+          if( $MACROS_ALREADY{$chosenComponent}{$pinName}{direction} eq "output" ){
+                            $TEMPORARY_INPUTS{$chosenInstance} = "$pinName";
+                            print "INFO-PAR : 004 : $pinName is an output pin hence added to the temporary input list\n";
+                                }# if an output pin
+          elsif( $MACROS_ALREADY{$chosenComponent}{$pinName}{direction} eq "input") {
+                            print "INFO-PAR : 005 : $pinName is an input pin\n";
+                            $netName = "net".$netcount;
+                            %{$netName}=();
+                            $NET_NEW_ADDED{$netName} = \%{$netName};
+
+#step 3  choose a temp port and this pin
+                            print "INFO-PAR : 006 : calling dbgChoosePort ... \n";
+                            my $retChosenTempPort = dbgChoosePort($noOfTempInputs,$noOfComponents);
+                            while($retChosenTempPort eq $chosenInstance ){
+                                     $retChosenTempPort = dbgChoosePort($noOfTempInputs,$componentAddedInThisStep);
+                                                                     }# while it is the same component being added
+
+                            print "INFO-PAR : 007 : $retChosenTempPort is chosen port and $pinName to be added on the net $netName\n";
+
+                            ${$netName}{$retChosenTempPort} = $TEMPORARY_INPUTS{$retChosenTempPort};
+                            delete $TEMPORARY_INPUTS{$retChosenTempPort} ;
+                            ${$netName}{$chosenInstance} = $pinName ;
+                            $netcount++;
+               }# if an input pin
+                                }# if not area
+                                                               }#foreach
+          $noOfComponents++;
+$noOfTempInputs = keys %TEMPORARY_INPUTS;
+print "INFO-PAR : 008 : $noOfTempInputs ports are at present in the design\n";
+
+                                         }# while
+
+##########################################################################################
+####   if the number of inputs is equal to number of outputs                          ####
+##########################################################################################
+        if ( $noOfTempInputs == $noOfOutputs ){
+           $chosenComponent = "CLKINVX1";
+                for ( my $x=0 ; $x < $noOfTempInputs ; $x++ ){
+           $chosenInstance = "U".$noOfComponents;
+                 $netName = "net".$netcount;
+           $NET_NEW_ADDED{$netName} = \%{$netName};
+                $chosenTempPortIN = dbgChoosePortIN($noOfTempInputs);
+                $chosenTempPortOUT = dbgChoosePortOUT($noOfTempInputs);
+
+                print "INFO-PAR : 009 : chosen output = $chosenTempPortOUT , input = $chosenTempPortIN\n";
+
+                ${$netName}{$chosenTempPortIN} = $TEMPORARY_INPUTS{$chosenTempPortIN};
+                ${$netName}{$chosenTempPortOUT} = $TEMPORARY_OUTPUTS{$chosenTempPortOUT};
+
+                delete $TEMPORARY_INPUTS{$chosenTempPortIN};
+                delete $TEMPORARY_OUTPUTS{$chosenTempPortOUT};
+                $netcount++;
+                $noOfComponents++;
+                                       }# for all the inputs to be connected to output
+                                              }# if nr of in eq to nr of out
+
+$temp = keys %{$referToPortsAdded};
+print "INFO-PAR : 010 : $temp ports are added in the design\n";
+
+foreach $netName ( keys %NET_NEW_ADDED ) {
+                 print "INFO-PAR : 011 : $netName\n";
+                 foreach ( keys %{$NET_NEW_ADDED{$netName}}){
+                 print "\t $_ \= $NET_NEW_ADDED{$netName}{$_}\n";
+                                                            }#foreach
+                                         }#foreach
+
+$temp = keys %NET_NEW_ADDED;
+print "INFO-PAR : 012 : $temp new nets added\n";
+print "INFO-PAR : 013 : finished building dummy netlist !\n";
+
+
+}#sub DN_create_nets_between_inputs_greater_outputs
+
+
+1;

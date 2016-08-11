@@ -1,0 +1,158 @@
+#!/bin/perl -w
+sub dbPlaceSetDepth {
+
+my $smatrix = $PLACE{$TOP_MODULE};
+$smatrix->dbPlaceConstructFanInFanOutHash;
+
+print "DBG-ALGO_PREPL : 001 : Setting the port depth\n" if ($DEBUG > 20);
+&dbPrePlaceTracePortDepth($smatrix);
+print "DBG-ALGO_PREPL : 002 : Setting the flop depth\n" if ($DEBUG > 20);
+&dbPrePlaceSetFlopDepth($smatrix);
+
+$smatrix->dbPlaceDestroyFanInFanOutHash;
+
+}# sub dbPlaceSetDepth
+
+sub dbPrePlaceTracePortDepth {
+my $smatrix = shift;
+print "DBG-ALGO_PREPL : 001 : Setting the port depth\n" if ($DEBUG > 20);
+my @Inputs = $smatrix->dbPlaceGetInPortList;
+foreach my $portName (@Inputs ) {
+print "DBG-ALGO_PREPL : 002 : $portName\n" if ($DEBUG > 20);
+my $col = $smatrix->dbPlaceGetNumberByNameCol($portName);
+$smatrix->dbPlaceSetPortLevel($portName, 0);
+my @FANOUT = $smatrix->dbPlaceGetFanOuts($col);
+##### 
+   foreach my $ff ( @FANOUT ) {
+   my $name = $smatrix->dbPlaceGetNameByNumberRow($ff);
+   my $instIsFlop = $smatrix->dbPlaceGetIsInstFlop($name);
+   if ( $instIsFlop == 1 ) {
+   $smatrix->dbPlaceSetFlopLevelIn($name ,1);
+                           }# if inst is a flop
+                              }# foreach
+                                }# foreach
+my @Outputs = $smatrix->dbPlaceGetOutPortList;
+foreach my $portName (@Outputs ) {
+print "DBG-ALGO_PREPL : 003 : $portName\n" if ($DEBUG > 20);
+my $row = $smatrix->dbPlaceGetNumberByNameRow($portName);
+$smatrix->dbPlaceSetPortLevel($portName, 0);
+my @FANINS = $smatrix->dbPlaceGetFanIns($row);
+#####
+   foreach my $ff ( @FANINS ) {
+   my $name = $smatrix->dbPlaceGetNameByNumberCol($ff);
+   my $instIsFlop = $smatrix->dbPlaceGetIsInstFlop($name);
+   if ( $instIsFlop == 1 ) {
+   $smatrix->dbPlaceSetFlopLevelOut($name, 1);
+                           }# if inst is a flop
+                              }# foreach
+                                }# foreach
+
+}#sub dbPrePlaceTracePortDepth
+
+sub dbPrePlaceSetFlopDepth {
+my $smatrix = shift;
+print "DBG-ALGO_PREPL : 001 : Setting the flop depth\n" if ($DEBUG > 20);
+
+use Benchmark;
+$bmT0 = new Benchmark;
+$t0 = $bmT0;
+$bmCounter = 0;
+
+my @Flops = $smatrix->dbPlaceGetFlopList;
+
+my $flopCount = @Flops;
+print "INFO-ALGO_PREPL : 002 : Setting levels for $flopCount flops...\n";
+
+&dbPlaceTraceFlopDepthIn($smatrix, \@Flops);
+&dbPlaceTraceFlopDepthOut($smatrix, \@Flops);
+#foreach my $ffInst (@Flops) {
+#&dbPlaceTraceFF_input_depth_BFS($ffInst,0);
+#                            }# foreach flop instance
+
+my $t1 = new Benchmark;
+my $td = timediff($t1, $bmT0);
+print "$bmCounter levels for interior flops set in ", timestr($td), "\n";
+
+}# sub dbPrePlaceSetFlopDepth 
+
+
+sub dbPlaceTraceFlopDepthIn {
+my $smatrix = $_[0];
+my @Flops = @{$_[1]};;
+my @LEFTFF = ();
+my %FlopLevel = ();
+
+foreach my $flopName ( @Flops ) {
+  my $level = $smatrix->dbPlaceGetFlopLevelIn($flopName);
+  if ( $level == 1 ) {
+    $FlopLevel{$flopName} = 1;
+    push(@LEFTFF, $flopName);
+  }
+}
+
+while ( defined ( my $flopName = shift @LEFTFF ) ) {
+  my $level = $FlopLevel{$flopName};
+  my $currLevel = $level + 1;
+  my $col = $smatrix->dbPlaceGetNumberByNameCol($flopName);
+  my @ffarray =  $smatrix->dbPlaceGetFanOutFlops($col);
+  foreach my $row (@ffarray) {
+    my $name = $smatrix->dbPlaceGetNameByNumberRow($row);
+    if ( exists $FlopLevel{$name} ) {
+      next;
+    }
+    $FlopLevel{$name} = $currLevel;
+    $smatrix->dbPlaceSetFlopLevelIn($name, $currLevel);
+    push(@LEFTFF, $name);
+
+    if ( ++$bmCounter % 1000 == 0 ) {
+      my $t1 = new Benchmark;
+      my $td = timediff($t1, $t0);
+      $t0 = $t1;
+      print "$bmCounter flops in ", timestr($td), "\n";
+    }
+  }# foreach $row
+}# while queue not empty
+
+}#sub dbPlaceTraceFlopDepthIn
+
+
+sub dbPlaceTraceFlopDepthOut {
+my $smatrix = $_[0];
+my @Flops = @{$_[1]};;
+my @LEFTFF = ();
+my %FlopLevel = ();
+
+foreach my $flopName ( @Flops ) {
+  my $level = $smatrix->dbPlaceGetFlopLevelOut($flopName);
+  if ( $level == 1 ) {
+    $FlopLevel{$flopName} = 1;
+    push(@LEFTFF, $flopName);
+  }
+}
+
+while ( defined ( my $flopName = shift @LEFTFF ) ) {
+  my $level = $FlopLevel{$flopName};
+  my $currLevel = $level + 1;
+  my $row = $smatrix->dbPlaceGetNumberByNameRow($flopName);
+  my @ffarray = $smatrix->dbPlaceGetFanInFlops($row);
+  foreach my $col (@ffarray) {
+    my $name = $smatrix->dbPlaceGetNameByNumberCol($col);
+    if ( exists $FlopLevel{$name} ) {
+      next;
+    }
+    $FlopLevel{$name} = $currLevel;
+    $smatrix->dbPlaceSetFlopLevelOut($name, $currLevel);
+    push(@LEFTFF, $name);
+
+    if ( ++$bmCounter % 1000 == 0 ) {
+      my $t1 = new Benchmark;
+      my $td = timediff($t1, $t0);
+      $t0 = $t1;
+      print "$bmCounter flops in ", timestr($td), "\n";
+    }
+  }# foreach $col
+}# while queue not empty
+
+}#sub dbPlaceTraceFlopDepthOut
+
+1;

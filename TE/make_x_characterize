@@ -1,0 +1,259 @@
+
+sub dbCheckInstTiming {
+$SLDB = retrieve "SpiceDB";
+print "INFO-TE-CHK_INST_TMNG : 001 : Checking Instance timing ...\n";
+foreach my $instance ( keys %CADB ) {
+        if( exists $TADB{$instance} ) {
+            my $status = $TADB{$instance}->dbTimingGetStatus;
+               if( $status == 0 ) { } else {
+          dbRecharInst($instance);  
+                                           }
+                                       }# if Inst timing is found
+        else {
+          dbCharInst($instance);
+             }# if Inst timing data is not found
+                                    }# foreach
+
+}# sub dbCheckInstTiming
+
+
+sub dbCharInst {
+
+my $instance = $_[0];
+my $cellref = $CADB{$instance}->dbCadbGetCellref;
+        print "INFO-TE : 001 : New charachterising $instance $cellref\n";
+&dbSpiceCharCell($cellref,$instance);
+
+}# sub dbCharInst
+
+sub dbRecharInst {
+
+my $instance = $_[0];
+my $cellref = $CADB{$instance}->dbCadbGetCellref;
+        print "INFO-TE : 001 : recharachterising $instance $cellref\n";
+        my $spiceExists = $PLDB{$cellref}->dbMdbGetIsSpiceNetlist; 
+        if ( $spiceExists == 0 ) {
+             print "WARN-TE : 002 : the spice netlist for $cellref does not exist\n";
+                                 }#
+        else {
+             &dbSpiceCharCell($cellref, $instance);
+             }
+
+}# sub dbRecharInst
+
+sub dbSpiceCharInst {
+
+
+}# sub dbSpiceCharInst
+
+sub dbSpiceCharCell {
+my $cellref = $_[0];
+my $instance = $_[1];
+
+open (WRITE,">TA.spice");
+print WRITE "* Delay characterization for cell $cellref\n";
+my @netlist = ${$SLDB}{$cellref}->dbSpiceGetNetList;
+####   writing the full subckt in TA.spice file #####
+   foreach my $tag ( @netlist ) { print WRITE "$tag\n"; }
+
+print WRITE "\n\n";
+print WRITE "* Design Under Test *\n";
+foreach my $pointer ( @SPICE_MODELS_POINTERS ) {
+print WRITE "\.include $pointer\n";
+                                             }# all the spice model files read
+
+   my @subCktExtPins = split(/\s+/, $netlist[0]);
+      shift @subCktExtPins;
+      shift @subCktExtPins;
+      my @PINS = @subCktExtPins;
+   my $subCktExtPins = @subCktExtPins;
+   #   print "there are $subCktExtPins pins for $cellref\n";
+   print WRITE  "X1 ";
+   print WRITE  join " ", @subCktExtPins;
+print WRITE " $cellref \n";
+
+   foreach my $pinName ( @subCktExtPins ) {
+           my $dir = $PLDB{$cellref}->dbMdbGetPinDir($pinName);
+           my $type =  $PLDB{$cellref}->dbMdbGetPinType($pinName);   
+              if ( $dir == 0 ) {
+                      if  ( $type == 0 ) { print WRITE "V$pinName $pinName 0 pulse $SPICE_SUPPLY_VOLTAGE $SPICE_GND_VOLTAGE 1.3ns 100ps 100ps 15ns 100ns\n"}
+                      if  ( $type == 3 ) { print WRITE "V$pinName $pinName 0 pulse $SPICE_GND_VOLTAGE $SPICE_SUPPLY_VOLTAGE 1.7ns 100ps 100ps 15ns 100ns\n"}
+                               }# if pin direction is input
+              elsif ( $dir == 1 ) {
+                      if  ( $type == 0 ) { print WRITE "Cload$pinName $pinName 0 0.05pf\n"}
+                                  }# if direction is output
+              elsif ( $dir == 2 ) {
+                      if ( $type == 1 ) { print WRITE "Vsupply $pinName 0 DC $SPICE_SUPPLY_VOLTAGE\n"; }
+                      elsif ( $type == 2 ) { print WRITE "Vgnd $pinName 0 DC $SPICE_GND_VOLTAGE\n"; }
+                      else { print "INFO-TE : 001 : currently i dont know what to with bi-directional signal pins\n"; }
+                                  } # if the pin is bi-directional
+              else { print "WARN-TE : 002 : unknow direction of pin $pinName\n"; }
+           
+                                          }# foreach
+
+print WRITE "\.control\n";
+print WRITE "set nobreak\n";
+print WRITE "tran 0.1ps 8ns\n";
+           my $pin = shift @subCktExtPins;
+                      print WRITE "print v\($pin\) \> dataFile\n";
+   foreach my $pinName ( @subCktExtPins ) {
+                      print WRITE "print v\($pinName\) \>\> dataFile\n";
+                                          }# foreach
+print WRITE "\.endc\n";
+print WRITE "\.end\n";
+
+close(WRITE);
+
+my %SPICE_RESULT_DATA = ();
+&dbSpiceExtactCellData($instance,@PINS);
+
+}# sub dbSpiceCharCell
+
+
+
+
+sub dbSpiceExtactCellData {
+my @instPinsData = @_;
+my $instance = shift @instPinsData;
+my @pins  = @instPinsData;
+system("/usr/local/spice/bin/spice3 -n -b TA.spice");
+&dbgSpiceExtractDlyData($instance);
+&dbgSpicePopulateTimingData($instance,@pins);
+
+}# sub dbSpiceExtactCellData
+
+
+sub dbgSpiceExtractDlyData {
+my $instance = $_[0];
+my $nodeName = "";
+my $voltage = 0;
+my $time = 0;
+my $GND_MARGIN = (1.05*$SPICE_GND_VOLTAGE)*1000;
+my $VDD_MARGIN = (0.95*$SPICE_SUPPLY_VOLTAGE)*1000;
+my $delayMeasThresh = $SPICE_SUPPLY_VOLTAGE*$SPICE_VOH_DLY_MEAS_THRESH_RATIO/1.000e-3;
+my $measStartTime = $SPICE_CLOCK_INPUT_DELAY;
+   $measStartTime =~ s/ns/e-9/;
+
+print "INFO-TE : 001 : gnd margin = $GND_MARGIN  vdd margin = $VDD_MARGIN\n";
+
+open ( READ, "dataFile" );
+while(<READ>) {
+chomp();
+if( $_ =~ /^\-+/ ) { }
+elsif( $_ =~ /^\s+/ ) { }
+elsif( $_ =~ /Index/ ) {
+     $nodeName = (split(/\s+/,$_))[2];
+     $nodeName =~ s/v\(//;
+     $nodeName =~ s/\)//;
+     $node_hash = SPICE_RESULT_DATA._.$nodeName;
+     $SPICE_RESULT_DATA{$nodeName} = \%{$node_hash};
+
+#     print "$nodeName\n";
+                    }# if is the header get the node name
+### Algorithm ###
+# check if the VDD/2 lies between current voltage level and previous voltage level
+else {
+     ($time,$voltage)=(split(/\s+/,$_))[1,2];
+
+if( $voltage eq "nan" ) { print "INFO-TE : 002 : Since spice did not run clean... stopping Analysis\n"; 
+                          return(STOP); 
+                        }
+
+     $currentTimeReading = $time/1.000e-12;
+             if ( $time < $measStartTime ){ }
+             elsif ( $time == $measStartTime ){ 
+                    $previousVoltReading = $voltage/1.000e-3; $previousTimeReading = $currentTimeReading; 
+#                    print "Starting Calculation\n";
+                                            }
+             else {
+     $currentVoltReading = $voltage/1.000e-3;
+ if ( $currentVoltReading <= $delayMeasThresh && $delayMeasThresh <= $previousVoltReading ) { 
+#          print "falling $currentVoltReading $delayMeasThresh $previousVoltReading\n";
+$dlyAt = dbgSpiceGetThresholdTime($currentTimeReading,$currentVoltReading,$previousTimeReading,$previousVoltReading,$delayMeasThresh);
+print "INFO-TE : 003 : $nodeName falling at $dlyAt \n";
+$SPICE_RESULT_DATA{$nodeName}{dlyAt} = $dlyAt;
+                                                                                            }#if falling signal
+ elsif ( $delayMeasThresh <= $currentVoltReading && $delayMeasThresh >= $previousVoltReading ) {
+#          print "rising $currentVoltReading $delayMeasThresh $previousVoltReading\n";
+$dlyAt = dbgSpiceGetThresholdTime($previousTimeReading,$previousVoltReading,$currentTimeReading,$currentVoltReading,$delayMeasThresh);
+print "INFO-TE : 004 : $nodeName rising at $dlyAt \n";
+$SPICE_RESULT_DATA{$nodeName}{dlyAt} = $dlyAt;
+                                                                                               }
+ else { }
+                  
+                  $previousVoltReading = $currentVoltReading;
+                  $previousTimeReading = $currentTimeReading;
+                  }
+     
+     }
+
+}#while
+close(READ);
+
+}#sub dbgSpiceExtractDlyData
+
+sub dbgSpicePopulateTimingData {
+my @data = @_;
+my $instance = shift @data;
+my @pins = @data;
+my $cellref =  $CADB{$instance}->dbCadbGetCellref;
+my $cellType = $PLDB{$cellref}->dbMdbGetType;
+
+   if ( $cellType == 0 ) { 
+# since the cell is combinational we will have the timing arcs from all inputs to outputs.
+# check to see if there are more than 1 outputs tell it to the user. 
+my @inputPins = ();
+my @outputPins = ();
+        foreach my $pinName ( @pins ) {
+        my $direction = $PLDB{$cellref}->dbMdbGetPinDir($pinName);
+           if ( $direction == 0 ) { push (@inputPins,$pinName); }
+           elsif ( $direction == 1 ) { push (@outputPins,$pinName); }
+           else{ }
+                                      }# foreach
+         foreach my $outPin ( @outputPins ) {
+         foreach my $inPin ( @inputPins ) {
+         my $dly1 = $SPICE_RESULT_DATA{$inPin}{dlyAt}; 
+         my $dly2 = $SPICE_RESULT_DATA{$outPin}{dlyAt}; 
+         my $temp = $dly2 - $dly1;
+         my $delay = round($temp);
+         my $tran = 0;
+         if ( exists $TADB{$instance} ) {
+         $TADB{$instance}->dbTimingInstSetArcDly($inPin,$outPin,$delay,$tran);
+                                        }
+         else { 
+         $TADB{$instance} = TimingDB::new();        
+         $TADB{$instance}->dbTimingInstSetArcDly($inPin,$outPin,$delay,$tran);
+                                        }
+                                          }# foreach 
+                                            }# foreach 
+
+
+                           }# if cell is combinational
+   elsif ( $cellType == 1 ) {
+                 foreach my $pinName ( @pins ) {
+        my $direction = $PLDB{$cellref}->dbMdbGetPinDir($pinName);
+           if ( $direction == 0 ) { push (@inputPins,$pinName); }
+           elsif ( $direction == 1 ) { push (@outputPins,$pinName); }
+           else{ }
+                                      }# foreach
+         foreach my $outPin ( @outputPins )  {
+         foreach my $inPin ( @inputPins ) {
+         my $dly1 = $SPICE_RESULT_DATA{$inPin}{dlyAt};
+         my $dly2 = $SPICE_RESULT_DATA{$outPin}{dlyAt};
+         my $temp = $dly2 - $dly1;
+         my $delay = round($temp);
+         my $tran = 0;
+         if ( exists $TADB{$instance} ) {
+         $TADB{$instance}->dbTimingInstSetArcDly($inPin,$outPin,$delay,$tran);
+                                        }
+         else {
+         $TADB{$instance} = TimingDB::new();
+         $TADB{$instance}->dbTimingInstSetArcDly($inPin,$outPin,$delay,$tran);
+                                        }
+                                          }# foreach
+                                            }# foreach
+                            }# if cell is sequential
+
+}# sub dbgSpicePopulateTimingData
+
+1;

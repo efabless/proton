@@ -1,0 +1,498 @@
+use Switch;
+
+sub testFlexXML {
+my $noOfArguments = @_;
+#----------------- Defaults --------------------#
+
+if ($noOfArguments < 1 || $_[0] eq '-h') { print "Usage : test_flex_xml\n";
+  print "          <sub name, e.g., getLefPins>\n";
+  print "          <args, e.g., macro_name>\n";
+  return;
+}
+
+my $cmd = shift;
+my $arg_str = join(':', @_);
+
+print &rpcExec($cmd, $arg_str), "\n";
+
+}# sub testFlexXML
+
+############################################
+
+sub rpcExec {
+my $cmd = $_[0];
+my $out;
+
+switch ($cmd) {
+  case ['getLefMacroList',
+        'getLefLayers',
+        'getBlockXml',
+        'getNetXml'] {
+    # translate cmd to sub, e.g., getLefPins ==> flxGetLefPins
+    my $flxSub = 'flx' . "\u$cmd";
+    $out = &$flxSub();
+  }
+  case ['getLefMacroData',
+        'getLefPins',
+        'getLefMacroBulk',
+        'getDesignHier',
+        'loadBlockXls',
+        'loadNetXls',
+        'updateBlockXml',
+        'updateNetXml'] {
+    my $flxSub = 'flx' . "\u$cmd";
+    my @argv = split(/:/, $_[1]);
+    $out = &$flxSub($argv[0]);
+  }
+  case ['pingTool',
+        'reset',
+        'doHierPnR',
+        'placeDesign'] {
+    my $rpcSub = 'rpcCmd' . "\u$cmd";
+    $out = &$rpcSub();
+  }
+  case [ 'setFloorplan'] {
+    my $rpcSub = 'rpcCmd' . "\u$cmd";
+    my $param_pairs = $_[1];
+    $out = &$rpcSub($param_pairs);
+  }
+  case ['loadLef',
+        'loadDef',
+        'loadLib',
+        'loadFootprint',
+        'genNetlist',
+        'loadVerilog',
+        'elaborate',
+        'setPlaceMode',
+        'reportVerilogArea',
+        'setTopModule',
+        'placeGraph',
+        'writeDef',
+        'loadGds',
+        'writeControlFile',
+        'placeGraphDetail',
+        'placeGraphDetailPlan3',
+        'placeGraphPlan6',
+        'placeGraphPlan6Only',
+        'placeGraphMplPseudo']{
+    my $rpcSub = 'rpcCmd' . "\u$cmd";
+    my @argv = split(/:/, $_[1]);
+    $out = &$rpcSub($argv[0]);
+  }
+  case ['viewDesign',
+        'viewHier',
+        'viewLef',
+        'viewGds',
+        'genLVSData',
+        'saveVerilog',
+        'editModule'] {
+    my $rpcSub = 'rpcCmd' . "\u$cmd";
+    my @argv = split(/:/, $_[1]);
+    $out = &$rpcSub(@argv);
+  }
+  case ['loadRtl',
+        'loadRtlData',
+        'writeRtlData',
+        'rtlAreaEstimation',
+        'getModuleRtlArea']{
+    my $rpcSub = 'rpcCmd' . "\u$cmd";
+    my @argv = split(/:/, $_[1]);
+    $out = &$rpcSub(@argv);
+  }
+  else {
+    $out = "<root><cmd>$cmd</cmd>" .
+           "<errmsg>Unknown RPC command $cmd</errmsg></root>";
+  }
+} # switch ($cmd)
+
+return $out;
+#return '<![CDATA[' . "\n". $out . ']]>' . "\n";
+}# sub rpcExec
+
+############################################
+
+sub rpcQuit {
+  #$server->close;
+  #exit 1;
+  $SIG{INT};
+}#sub rpcQuit
+
+############################################
+sub rpcCmdLoadLef {
+  my $fileName = $_[0];
+  read_lef('-lef', $fileName, '-tech', 'also');
+  return "<root><infomsg>LEF file has been loaded</infomsg></root>";
+}#sub rpcCmdLoadLef
+
+############################################
+sub rpcCmdLoadDef {
+  my $fileName = $_[0];
+  read_defII('-def', $fileName, '--all');
+  return "<root><infomsg>DEF file has been loaded</infomsg></root>";
+}#sub rpcCmdLoadDef
+
+############################################
+sub rpcCmdViewDesign {
+  my $fileName = $_[0];
+  my @cmdArgs = ('-output', $fileName,
+                 '-width', $_[1], '-height', $_[2], '-bbox', $_[3]);
+
+  my $cmdOptions = $_[4];
+  if ($cmdOptions) {
+    foreach my $opt ( split(/\-\-/, $cmdOptions) ) {
+      push(@cmdArgs, '--' . $opt) if ($opt);
+    }
+  }
+  # else implied: "--spnet", "--die", "--inst", "--row", "--port"
+
+  my @context = create_flat_image @cmdArgs;
+  return "<root><cmd>viewDesign</cmd>" . (@context ?
+         "<infomsg>Image file $fileName.png is ready</infomsg>" .
+         "<context>@context</context>" :
+         "<errmsg>Failed in creating image $fileName.png</errmsg>") .
+         "</root>";
+}#sub rpcCmdViewDesign
+
+############################################
+sub rpcCmdViewHier {
+  my $fileName = $_[0];
+  my @cmdArgs = ('-output', $fileName,
+                 '-width', $_[1], '-height', $_[2], '-bbox', $_[3]);
+
+  my $cmdOptions = $_[4];
+  if ($cmdOptions) {
+    foreach my $opt ( split(/\-\-/, $cmdOptions) ) {
+      push(@cmdArgs, '--' . $opt) if ($opt);
+    }
+  }
+
+  my @context = create_hier_image @cmdArgs;
+  return "<root><cmd>viewHier</cmd>" . (@context ?
+         "<infomsg>Image file $fileName.png is ready</infomsg>" .
+         "<context>@context</context>" :
+         "<errmsg>Failed in creating image $fileName.png</errmsg>") .
+         "</root>";
+}#sub rpcCmdViewHier
+
+############################################
+sub rpcCmdViewLef {
+  my $macroName = $_[0];
+  my $fileName = $_[1];
+  my @cmdArgs = ('-cell', $macroName, '-output', $fileName,
+                 '-width', $_[2], '-height', $_[3], '-bbox', $_[4]);
+
+  my $cmdOptions = $_[5];
+  if ($cmdOptions) {
+    foreach my $opt ( split(/\-\-/, $cmdOptions) ) {
+      push(@cmdArgs, '--' . $opt) if ($opt);
+    }
+  }
+
+  my @context = create_lef_image @cmdArgs;
+  return "<root><cmd>viewLef</cmd>" . (@context ?
+         "<infomsg>Image file $fileName.png is ready</infomsg>" .
+         "<context>@context</context>" :
+         "<errmsg>Failed in creating image $fileName.png</errmsg>") .
+         "</root>";
+}#sub rpcCmdViewLef
+
+############################################
+sub rpcCmdViewGds {
+  my $gdsFile = $_[0];
+  my $fileName = $_[1];
+  my @cmdArgs = ('-gds', $gdsFile, '-out', $fileName, '-layer_color_file', $_[2],
+                 '-width', $_[3], '-height', $_[4], '-bbox', $_[5]);
+
+  my @context = create_gds_image @cmdArgs;
+  return "<root><cmd>viewGds</cmd>" . (@context ?
+         "<infomsg>Image file $fileName.png is ready</infomsg>" .
+         "<context>@context</context>" :
+         "<errmsg>Failed in creating image $fileName.png</errmsg>") .
+         "</root>";
+}#sub rpcCmdViewGds
+
+############################################
+sub rpcCmdPingTool {
+  return "<root><cmd>pingTool</cmd>" .
+         "<infomsg>Proton is alive</infomsg></root>";
+}#sub rpcCmdPingTool
+
+############################################
+sub rpcCmdDoHierPnR {
+  print " Do Hier Place-and-Route\n";
+  my $rc = doHierPnR();
+  return "<root><cmd>doHierPnR</cmd>" .
+         "<infomsg>Hier design has been place-and-routed</infomsg></root>";
+}#sub rpcCmdDoHierPnR
+
+############################################
+sub rpcCmdPlaceDesign {
+  place_design('--detail', '--global');
+  return "<root><cmd>placeDesign</cmd>" .
+         "<infomsg>Design has been placed</infomsg></root>";
+}#sub rpcCmdPlaceDesign
+
+
+###################################################################################################
+################################## Allow to remote login ##########################################
+###################################################################################################
+sub allow_remote_login{
+#use lib "/home/adityap/SOFTWARE/Frontier-RPC-0.07b4/lib";
+use Frontier::Daemon;
+my $noOfArg = @_;
+my $host;
+my $port = 1200;
+
+ if($_[0] eq "-h" || $_[0] eq "-help" || $_[0] eq "-HELP"){
+    print "Usage: allow_remote_login -host <host name (default:localhost)> \n";
+    print "                          -port <port no (default:1200)>\n";
+    return;
+ }else{
+    for(my $i=0; $i< $noOfArg; $i++){
+        if($_[$i] eq "-host"){$host = $_[$i+1];}
+        if($_[$i] eq "-port"){$port = $_[$i+1];}
+    }
+    
+ 
+    print "running proton daemon on $host at $port ... OK\n";
+    my $server = Frontier::Daemon->new(
+                           methods => {
+                                      serGetLefMacroList => \&serGetLefMacroList,
+                                      #serGetLefMacros =>\&serGetLefMacros,
+                                      serGetLefMacroData =>\&serGetLefMacroData,
+                                      serGetLefPins =>\&serGetLefPins,
+                                      serGetLefLayers =>\&serGetLefLayers,
+
+                                      rpcExec => \&rpcExec,
+                                      rpcQuit => \&rpcQuit,
+
+                                      serGetDefData =>\&serGetDefData,
+                                      serGetFilterdInstanceList =>\&serGetFilterdInstanceList,
+                                      serGetDisplayedInstanceList =>\&serGetDisplayedInstanceList,
+                                      serGetFanInFanOutList =>\&serGetFanInFanOutList,
+
+                                      serGetHierInstData =>\&serGetHierInstData,
+                                      serGetHierFanInFanOutList =>\&serGetHierFanInFanOutList,
+                                      },   
+                           LocalPort => $port, 
+                           LocalAddr => $host,
+                           Broadcast => 1,
+                           PeerAddr => "divakar",
+                          );
+ #$server->close;
+ }#if correct no of arg
+}#sub allow_remote_login 
+################################################################################
+sub rpcCmdLoadLib {
+  my $fileName = $_[0];
+  read_lib('-lib', $fileName);
+  return "<root><infomsg>LIB file has been loaded</infomsg></root>";
+}#sub rpcCmdLoadLib
+############################################
+sub rpcCmdLoadFootprint {
+  my $fileName = $_[0];
+  read_footprint('-f', $fileName);
+  return "<root><infomsg>FOOTPRINT file has been loaded</infomsg></root>";
+}#sub rpcCmdLoadFootprint
+############################################
+sub rpcCmdGenNetlist {
+  my $fileName = $_[0];
+  generate_netlist('-spec', $fileName);
+  return "<root><infomsg>NETLIST file has been generated</infomsg></root>";
+}#sub rpcCmdGenNetlist
+############################################
+sub rpcCmdGenLVSData {
+  my $module = $_[0];
+  my $portMapFile = $_[1];
+  my $netlistFile = $_[2];
+
+  my @cmdArgs = ('-module', $module);
+  push(@cmdArgs, '-port_map_file', $portMapFile) if ($portMapFile);
+  push(@cmdArgs, '-vlog_file', $netlistFile) if ($netlistFile);
+  push(@cmdArgs, '--overwrite', '-lvs_strategy', 'top_down');
+
+  generate_LVS_data_for_given_module @cmdArgs;
+  return "<root><infomsg>LVS data for module $module has been generated</infomsg></root>";
+}#sub rpcCmdGenLVSData
+############################################
+sub rpcCmdLoadVerilog {
+  my $fileName = $_[0];
+  my $option = '-v';
+  read_verilog($option, $fileName);
+  return "<root><infomsg>VERILOG file has been loaded</infomsg></root>";
+}#sub rpcCmdLoadVerilog
+############################################
+sub rpcCmdElaborate {
+  elaborate();
+  return "<root><infomsg>VERILOG file has been elaborated</infomsg></root>";
+}#sub rpcCmdElaborate
+############################################
+sub rpcCmdSetFloorplan {
+  my @params = split(/:/, $_[0]);
+  my @argv = ();
+  for ($i = 0; $i < @params; $i += 2) {
+    push(@argv, '-' . $params[$i], $params[$i + 1]);
+  }
+  set_floorplan_parameters(@argv);
+  set_floorplan();
+  return "<root><infomsg>FLOORPLAN has been set with options \"@argv\"</infomsg></root>";
+}#sub rpcCmdSetFloorplan
+############################################
+sub rpcCmdSetPlaceMode {
+  my $firstArg = $_[0];
+  set_place_mode($firstArg);
+  return "<root><infomsg>PLACEMODE has been set</infomsg></root>";
+}#sub rpcCmdSetPlaceMode
+############################################
+sub rpcCmdPlaceGraph {
+  place_graph();
+  return "<root><infomsg>PLACEMENT has been done</infomsg></root>";
+}#sub rpcCmdPlaceGraph
+############################################
+sub rpcCmdLoadRtl {
+  my @arg = @_;
+  my $option_1 = '-hdl';
+  my $option_2 = '-I';
+  my $fileName = shift(@arg);
+  my $new_fileName = '{'.$fileName.'}';
+  my $include_list_dir = join(',',@arg);
+  my $new_include_list_dir = '{'.$include_list_dir.'}';
+  my @cmdArgs = ($option_1,$new_fileName);
+  push(@cmdArgs,$option_2,$new_include_list_dir)if($include_list_dir);
+  read_hdl_II @cmdArgs;
+  return "<root></infomsg>Rtl file has been loaded</infomsg></root>";
+}#sub rpcCmdLoadRtl
+############################################
+sub rpcCmdLoadRtlData {
+  read_hdl_data();
+  return "<root><infomsg>RTLDATA file has been loaded</infomsg></root>";
+}#sub rpcCmdLoadRtlData
+############################################
+sub rpcCmdWriteRtlData {
+  write_rtl_data();
+  return "<root><infomsg>RTLDATA file read.txt has been written</infomsg></root>";
+}#sub rpcCmdWriteRtlData
+############################################
+sub rpcCmdRtlAreaEstimation {
+  my $fileName = $_[0];
+  my $option = '-f';
+  rtl_area_estimation($option ,$fileName);
+  return "<root><infomsg>Total area of the rtl design has been got</infomsg></root>";
+}#sub rpcCmdRtlAreaEstimation
+############################################
+sub rpcCmdGetModuleRtlArea {
+  my $module_name_for_area = $_[0];
+  my $hier_level = $_[1]; 
+  if(!$module_name_for_area){
+    $module_name_for_area = $GLOBAL->dbfGlobalGetTOP();
+  }
+  if(!$hier_level){
+     $hier_level = 'full';
+  }
+  my $option_1 = '-module_name';
+  my $option_2 = '-hier_level'; 
+  my @cmdArgs = ($option_1,$module_name_for_area);
+  push(@cmdArgs,$option_2,$hier_level)if($hier_level);
+  get_module_rtl_area @cmdArgs;
+  return "<root><infomsg>Total area of the rtl design has been got</infomsg></root>";
+}#sub rpcCmdGetModuleRtlArea
+############################################
+sub rpcCmdSaveVerilog {
+  my $fileName = $_[0];
+  my $module = $_[1];
+
+  my @cmdArgs = ('-output', $fileName);
+  push(@cmdArgs, '-start_module', $module) if ($module);
+  push(@cmdArgs, '--overwrite');
+
+  my $cmdOptions = $_[2];
+  if ($cmdOptions) {
+    foreach my $opt ( split(/\-\-/, $cmdOptions) ) {
+      push(@cmdArgs, '--' . $opt) if ($opt);
+    }
+  }
+
+  write_verilog @cmdArgs;
+  return "<root><infomsg>Verilog file has been saved</infomsg></root>";
+}#sub rpcCmdSaveVerilog
+############################################
+sub rpcCmdWriteDef {
+  my $fileName = $_[0]; 
+  my $option_1 = '-output';
+  my $option_2 = '--overwrite';
+  write_def($option_1,$fileName,$option_2);
+  return "<root><infomsg>DEF file has been written</infomsg></root>";
+}#sub rpcCmdWriteDef
+############################################
+sub rpcCmdLoadGds {
+  my $fileName = $_[0];
+  read_gds($fileName);
+  return "<root><infomsg>GDS file has been loaded</infomsg></root>";
+}#sub rpcCmdLoadGds
+############################################
+sub rpcCmdWriteControlFile {
+  my $mode_number = $_[0];
+  my $basic_mode = '-basic_mode';
+  write_controlFile($basic_mode,$mode_number);
+  return "<root><infomsg>BASIC MODE $mode_number has been set</infomsg></root>";
+}#sub rpcCmdWriteControlFile
+############################################
+sub rpcCmdPlaceGraphDetail {
+  place_graph_detail();
+  return "<root><infomsg>PLACEMENT has been done</infomsg></root>"; 
+}#sub rpcCmdplaceGraphDetail
+############################################
+sub rpcCmdPlaceGraphPlan6 {
+  place_graph_plan_6();
+  return "<root><infomsg>PLACEMENT has been done</infomsg></root>";
+}#sub rpcCmdPlaceGraphPlan6
+############################################
+sub rpcCmdPlaceGraphPlan6Only {
+  place_graph_plan_6_only();
+  return "<root><infomsg>PLACEMENT has been done</infomsg></root>";
+}#sub rpcCmdPlaceGraphPlan6Only
+############################################
+sub rpcCmdPlaceGraphDetailPlan3 {
+  place_graph_detail_plan_3();
+  return "<root><infomsg>PLACEMENT has been done</infomsg></root>";
+}#sub rpcCmdPlaceGraphDetailPlan3
+############################################
+sub rpcCmdReset {
+  reset_proton(("--all"));  # double parentheses!
+  return "<root><infomsg>Proton has been reset</infomsg></root>";
+}#sub rpcCmdReset
+############################################
+sub rpcCmdReportVerilogArea {
+  my $moduleName = $_[0];
+  my $option = '-module';
+  report_verilog_area($option,$moduleName);
+  return "<root><infomsg>Verilog Area has been reported</infomsg></root>";
+}#sub rpcCmdReportVerilogArea
+############################################
+sub rpcCmdSetTopModule {
+  my $top_module = $_[0];
+  set_top_module($top_module);
+  return"<root><infomsg>Top Module has been set</infomsg><root>";
+}#sub rpcCmdSetTopModule
+############################################
+sub rpcCmdEditModule {
+  my $moduleName = $_[0];
+  my $floorplan = $_[1];
+  my $top_module = $_[2];
+  my $option_1 = '-module';
+  my $option_2 = '-floorplan';
+  my $option_3 = '--top';
+  my @cmdArgs = ($option_1,$moduleName);
+  push(@cmdArgs,$option_2,$floorplan)if($floorplan);
+  push(@cmdArgs,$option_3,$top_module)if($top_module);
+  editModule(@cmdArgs);
+  return "<root><infomsg>Module has been edited</infomsg></root>";
+}#sub rpcCmdEditModule
+############################################
+sub rpcCmdPlaceGraphMplPseudo {
+  place_graph_mpl_pseudo();
+  return "<root><infomsg>PLACEMENT has been done</infomsg></root>";
+}#sub rpcCmdPlaceGraphMplPseudo
+############################################
+
+1;

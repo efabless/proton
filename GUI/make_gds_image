@@ -1,0 +1,771 @@
+sub create_gds_image {
+use Benchmark;
+my $t0 = new Benchmark;
+
+my $noOfArg = @_;
+my ($gdsFile, $outFile, $layerColorFile,) = ("", "", "");
+my ($image_width, $image_height) = (580,380);
+my @bbox = ();
+my @errBBox = (); 
+my %layer_color = ();
+
+if($noOfArg < 2 || $_[0] eq '-h' || $_[0] eq '-help' || $_[0] eq '-HELP') {
+   print "usage : create_gds_image  -gds < gds file >\n";
+   print "                          -layer_color_file <input layer color file>\n";
+   print "                          -out <image file>\n";
+   print "                          -bbox <{x1,y1,x2,y2}>\n";
+   print "                          -width <image width}>\n";
+   print "                          -height <image height}>\n";
+   print" default value <width:880>\n";
+   print" default value <height:380>\n";
+}else {
+   for(my $i=0 ; $i<=$noOfArg; $i++){
+       if($_[$i] eq "-gds"){$gdsFile = $_[$i+1];} 
+       if($_[$i] eq "-out"){$outFile = $_[$i+1];} 
+       if($_[$i] eq "-layer_color_file"){$layerColorFile = $_[$i+1];} 
+       if($_[$i] eq "-width"){$image_width = $_[$i+1];}
+       if($_[$i] eq "-height"){$image_height = $_[$i+1];}
+       if($_[$i] eq "-bbox"){
+          my $bbox_str = $_[$i+1];
+          $bbox_str =~ s/\{//;         
+          $bbox_str =~ s/\}//;        
+          @bbox = split(/\,/,$bbox_str);
+       }
+   }#for each Argument
+
+   if($outFile eq ""){ 
+      my ($gds_file_name) = (split(/\//,$gdsFile))[-1];
+      my ($file_name) = (split(/\./,$gds_file_name))[0];
+      $outFile = $file_name.".png";
+   }else{$outFile = $outFile;}
+
+   ###################################################################
+   ################### Reading Layer Color File#######################
+   ###################################################################
+   my $xml = new XML::Simple;
+   my $layerColorData = $xml->XMLin("$layerColorFile") if(-e $layerColorFile);
+   my %layerColorHash = %$layerColorData;
+   foreach my $key (keys %layerColorHash){
+     if(ref($layerColorHash{$key}) eq 'ARRAY'){
+        my @layerArr = @{$layerColorHash{$key}};
+        foreach my $line (@layerArr ){
+          my %layerInfoHash = %{$line};
+          if((exists $layerInfoHash{num}) && (exists $layerInfoHash{color})){
+             my $layerNum = $layerInfoHash{num};
+             my $color = $layerInfoHash{color};
+             $layer_color{$layerNum} = $color;
+          }
+        }#foreach layer
+     }
+   }#foreach key
+   
+   if((keys %layer_color) <= 0){
+      %layer_color = %HashCol;
+   }
+
+   ###################################################################
+   ###################### Reading GDS file ###########################
+   ###################################################################
+   my %CELL_POLYGONS = ();
+   my %PIN_TEXT_COORDS = ();
+   my %AREF_DATA = ();
+   my %SREF_DATA = ();
+   my %cell_hash = ();
+
+   my $string_found = 0;
+   my $boundary_found = 0;
+   my $path_found = 0;
+   my $node_found = 0;
+   my $box_found = 0;
+   my $text_found = 0;
+   my $aref_found = 0;
+   my $sref_found = 0;
+   my $compact = 0;
+
+  
+   my $gds2File = new GDS2(-fileName=>"$gdsFile");
+   my ($string_name, $layer_name, $boundary_data_type, $path_layer, $path_data_type, $path_type, $path_width, $path_bgnExtn, $path_endExtn, $path_unitWidth, $path_xyInt);
+   my ($sname, $text_layer, $textType, $presentation, $strans, $mag, $angle, $col, $row, $sname1, $sref_strans, $sref_mag, $sref_angle);
+   my @pin_coords = ();
+   my @total_poly = ();
+   my @aref_data = ();
+   my @sref_data = ();
+   my @X_COORDS = ();
+   my @Y_COORDS = ();
+   my @xy = ();
+
+   while ($gds2File->readGds2Record) {
+     if($gds2File->isUnits){
+       ($uu,$dbu) = $gds2File->returnUnitsAsArray;
+     }elsif($gds2File->isBgnstr){
+        $string_found = 1;
+        $string_name = "";
+        @pin_coords = ();
+        @total_poly = ();
+        @aref_data = ();
+        @sref_data = ();
+        @X_COORDS = ();
+        @Y_COORDS = ();
+     }elsif($gds2File->isEndstr){
+        @{$CELL_POLYGONS{$string_name}}= @total_poly if(@total_poly > 0);
+        @{$PIN_TEXT_COORDS{$string_name}}= @pin_coords if(@pin_coords > 0);
+        @{$AREF_DATA{$string_name}}= @aref_data if(@aref_data > 0);
+        @{$SREF_DATA{$string_name}}= @sref_data if(@sref_data > 0);
+        if(!exists $cell_size{$string_name}){
+          #my ($width, $height) = (0, 0);
+          @X_COORDS = sort{$a<=>$b}@X_COORDS;
+          @Y_COORDS = sort{$a<=>$b}@Y_COORDS;
+          #$width = $X_COORDS[-1] - $X_COORDS[0] if(@X_COORDS > 0);
+          #$height = $Y_COORDS[-1] - $Y_COORDS[0] if(@Y_COORDS > 0);
+          #$cell_size{$string_name} = [$layer_name, $width, $height];
+          $cell_size{$string_name} = [$layer_name, $X_COORDS[0], $Y_COORDS[0], $X_COORDS[-1], $Y_COORDS[-1]];
+        }
+        $string_found = 0;
+     }elsif($gds2File->isBoundary){
+        $boundary_found = 1;
+        $layer_name = "";
+        $boundary_data_type = "";
+     }elsif($gds2File->isPath){
+        $path_found = 1;
+        $path_layer = 0;
+        $path_data_type = "";
+        $path_type = 0;
+        $path_width = 0.0;
+	$path_bgnExtn = 0;
+        $path_endExtn = 0;
+        #$path_unitWidth = "";
+        #$path_xyInt = "";
+     }elsif($gds2File->isNode){
+        $node_found = 1;
+        print "WARN:NODE format is found. We are not supporting this\n";
+     }elsif($gds2File->isBox){
+        $box_found = 1;
+        print "WARN:BOX format is found. We are not supporting this\n";
+     }elsif($gds2File->isText){
+        $text_found = 1;
+        $text_layer = "";
+        $textType = "";
+        $presentation = 0000000000000000;
+        $strans = 0000000000000000;
+        $mag = 1;
+        @xy = ();
+     }elsif($gds2File->isAref){
+        $aref_found = 1;
+        $sname = "";
+        $strans = 0000000000000000;
+        $sname = "";
+        $angle = 0;
+        $col = 0;
+        $row = 0;
+     }elsif($gds2File->isSref){
+        $sref_found = 1;
+        $sname1 = "";
+        $sref_strans = 0000000000000000;
+        $sref_mag = 1;
+        $sref_angle = 0;
+     }elsif($gds2File->isEndel){
+        $boundary_found = 0;
+        $path_found = 0;
+        $node_found = 0;
+        $box_found = 0;
+        $text_found = 0;
+        $aref_found = 0;
+        $sref_found = 0;
+     }
+     if($string_found == 1){
+        if($gds2File->isStrname){
+           $string_name = $gds2File->returnStrname;
+           if(exists $cell_hash{$string_name}){
+              my $val = $cell_hash{$string_name};
+              $cell_hash{$string_name} = $val+1;
+           }else{
+              $cell_hash{$string_name} = 0;
+           }
+        }elsif($boundary_found == 1){
+           if($gds2File->isLayer){
+              $layer_name = $gds2File->returnLayer;
+           }elsif($gds2File->isDatatype){
+              $boundary_data_type = $gds2File->returnDatatype;
+           }elsif($gds2File->isXy){
+              my @poly_coords = $gds2File->returnXyAsArray;
+              $_ *= $uu for @poly_coords;
+
+              ############ calculating cellsize ##############
+              for(my $i=0; $i<=$#poly_coords; $i=$i+2){
+                   push(@X_COORDS, $poly_coords[$i]) ; #if($poly_coords[$i] >= 0);
+                   push(@Y_COORDS, $poly_coords[$i+1]) ; #if($poly_coords[$i+1] >= 0);
+              }
+              ################################################
+              push(@total_poly, [$layer_name, -1, @poly_coords]);
+           }else{next;}
+        }elsif($path_found == 1){
+           if($gds2File->isLayer){
+              $path_layer = $gds2File->returnLayer;
+           }elsif($gds2File->isDatatype){
+              $path_data_type = $gds2File->returnDatatype;
+           }elsif($gds2File->isPathtype){
+              $path_type = $gds2File->returnPathtype;
+           }elsif($gds2File->isWidth){
+              $path_width = $gds2File->returnWidth;
+              #$path_width = $path_width * $uu;
+           }elsif($gds2File->isBgnextn){
+              $path_bgnExtn = $gds2File->returnBgnextn;
+              #$path_bgnExtn = $path_bgnExtn * $uu;
+           }elsif($gds2File->isEndextn){
+              $path_endExtn = $gds2File->returnEndextn;
+              #$path_endExtn = $path_endExtn * $uu;
+           }elsif($gds2File->isXy){
+              my @path_coords = $gds2File->returnXyAsArray;
+              #$_ *= $uu for @path_coords;
+              push(@total_poly, [$path_layer, -1, xformPathSegToPolygon(\@path_coords,$path_data_type, $path_type, $path_width, $path_bgnExtn, $path_endExtn)]);
+           }else{next;}
+        }elsif($text_found == 1){
+           if($gds2File->isXy){
+              @xy = $gds2File->returnXyAsArray;
+              $_ *= $uu for @xy;
+           }elsif($gds2File->isLayer){
+              $text_layer = $gds2File->returnLayer;
+           }elsif($gds2File->isTexttype){
+              $textType = $gds2File->returnTexttype;
+           }elsif($gds2File->isPresentation){
+              my $string = $gds2File->returnRecordAsString(-compact=>$compact);
+              $string =~ s/^\s+//g;
+              $presentation = (split(/\s+/,$string))[1]; 
+           }elsif($gds2File->isStrans){
+              my $string = $gds2File->returnRecordAsString(-compact=>$compact);
+              $string =~ s/^\s+//g;
+              $strans = (split(/\s+/,$string))[1]; 
+           }elsif($gds2File->isMag){
+              my $string = $gds2File->returnRecordAsString(-compact=>$compact);
+              $string =~ s/^\s+//g;
+              $mag = (split(/\s+/,$string))[1]; 
+           }elsif($gds2File->isString){
+              my $pinName = $gds2File->returnString;
+              push(@pin_coords, [$pinName, $text_layer, $textType, $presentation, $strans, $mag, @xy]);
+           }else{next;}
+        }elsif($aref_found == 1){
+           if($gds2File->isSname){
+              $sname = $gds2File->returnSname;
+              if(exists $cell_hash{$sname}){
+                 my $val = $cell_hash{$sname};
+                 $cell_hash{$sname} = $val+1;
+              }else{
+                 $cell_hash{$sname} = 0;
+              }
+           }elsif($gds2File->isStrans){
+              my $string = $gds2File->returnRecordAsString(-compact=>$compact);
+              $string =~ s/^\s+//g;
+              $strans = (split(/\s+/,$string))[1]; 
+           }elsif($gds2File->isMag){
+              my $string = $gds2File->returnRecordAsString(-compact=>$compact);
+              $string =~ s/^\s+//g;
+              $mag = (split(/\s+/,$string))[1]; 
+           }elsif($gds2File->isAngle){
+              my $string = $gds2File->returnRecordAsString(-compact=>$compact);
+              $string =~ s/^\s+//g;
+              $angle = (split(/\s+/,$string))[1]; 
+           }elsif($gds2File->isColrow){
+              my $string = $gds2File->returnRecordAsString(-compact=>$compact);
+              $string =~ s/^\s+//g;
+              ($col,$row) = (split(/\s+/,$string))[1,2]; 
+           }elsif($gds2File->isXy){
+              my @poly_coords = $gds2File->returnXyAsArray;
+              $_ *= $uu for @poly_coords;
+              push(@aref_data, [$sname, $strans, $mag, $angle, $col, $row, @poly_coords]);
+           }else{next;}
+        }elsif($sref_found == 1){
+           if($gds2File->isSname){
+              $sname1 = $gds2File->returnSname;
+              if(exists $cell_hash{$sname1}){
+                 my $val = $cell_hash{$sname1};
+                 $cell_hash{$sname1} = $val+1;
+              }else{
+                 $cell_hash{$sname1} = 0;
+              }
+           }elsif($gds2File->isStrans){
+              my $string = $gds2File->returnRecordAsString(-compact=>$compact);
+              $string =~ s/^\s+//g;
+              $sref_strans = (split(/\s+/,$string))[1]; 
+           }elsif($gds2File->isMag){
+              my $string = $gds2File->returnRecordAsString(-compact=>$compact);
+              $string =~ s/^\s+//g;
+              $sref_mag = (split(/\s+/,$string))[1]; 
+           }elsif($gds2File->isAngle){
+              my $string = $gds2File->returnRecordAsString(-compact=>$compact);
+              $string =~ s/^\s+//g;
+              $sref_angle = (split(/\s+/,$string))[1]; 
+           }elsif($gds2File->isXy){
+              my @poly_coords = $gds2File->returnXyAsArray;
+              $_ *= $uu for @poly_coords;
+              push(@sref_data, [$sname1, $sref_strans, $sref_mag, $sref_angle, @poly_coords]);
+           }else{next;}
+        }else{next;}
+     }else{next;}
+   }#while
+   
+   ###################################################################
+   ####################### Finding TOP Module ########################
+   ###################################################################
+   my @keys = sort{$cell_hash{$a}<=>$cell_hash{$b}} (keys %cell_hash);
+   my $top_module = $keys[0];
+   print "INFO 01: top cell is $top_module\n";
+
+   undef %cell_hash; #removing from memory
+   ######################## Flatten AREF data ########################
+   my $via_group_cnt = 0;
+   
+   foreach my $cell (keys %AREF_DATA){ 
+     &get_aref_flat_data($cell);
+   }
+   sub get_aref_flat_data {
+     my $cell = $_[0];
+     my @aref_data = @{$AREF_DATA{$cell}};
+     foreach my $line(@aref_data){
+       my ($sname, $strans, $scale, $angle, $col, $row, @poly_coords) = @$line;
+       if(exists $AREF_DATA{$sname}){
+          &get_aref_flat_data($sname);
+       }
+       if(exists $CELL_POLYGONS{$sname}){
+          my @poly_data = @{$CELL_POLYGONS{$sname}};
+          ## @poly_coords has three points 
+          #1.Reference point 
+          #2.coordinate that is displaced from the reference point by the inter-column spacing times the number of columns, after all transformations have been applied.
+          #3.coordinate that is displaced from the reference point by the inter-row spacing times the number of row, after all transformations have been applied.
+          # so to calculate array row length & column height, we have to take vector distance or we should retransform 2nd & 3rd point.
+          
+          if(@poly_data < 1){next;}
+          my $locX = $poly_coords[0];
+          my $locY = $poly_coords[1];
+      
+          my $array_width = sqrt(($poly_coords[2] - $locX)*($poly_coords[2] - $locX) +  ($poly_coords[3] - $locY)*($poly_coords[3] - $locY));
+          my $array_height = sqrt(($poly_coords[4] - $locX)*($poly_coords[4] - $locX) +  ($poly_coords[5] - $locY)*($poly_coords[5] - $locY));
+          my $inter_col_spacing = $array_width/$col;
+          my $inter_row_spacing = $array_height/$row;
+
+          my @strans_bits = split(//,$strans);
+
+          if($strans_bits[13] == 1){ #absolute magnification
+             $scale = abs($scale);
+          }
+          if($strans_bits[14] == 1){ #absolute angle
+             $angle = abs($angle);
+          }
+          #### since polygon_rotate rotates clockwise. To rotate anticlockwise, we should take -ve angle #### 
+          $angle = $angle%360;
+          $angle = 360 - $angle; ##### to make anticlockwise angle to clockwise
+
+          for(my $i=0; $i< $row; $i++){
+             my $shiftY = $inter_row_spacing*$i;
+             for(my $j=0; $j< $col; $j++){
+                 my $shiftX = $inter_col_spacing*$j;
+                 foreach my $polygon (@poly_data){
+                   my @poly = @$polygon;
+                   my $layer = shift @poly; #1st element of @poly is layer
+                   my $group = shift @poly;
+                   my @new_poly = (); #making array in the form of Math:Polygon
+                   for(my $i=0; $i<=$#poly; $i=$i+2){ 
+                      push(@new_poly, [$poly[$i], $poly[$i+1]]);
+                   }
+                   @new_poly = polygon_move(dx => $shiftX, dy=> $shiftY, @new_poly);
+                   #### 1st step is scaling ####
+                   if($scale != 1){
+                      @new_poly = polygon_resize(scale => $scale,  @new_poly); 
+                   }
+                   #### 2nd step is mirroring if 0'bit is high ####
+                   if($strans_bits[0] == 1){ #mirroring along x-axis
+                      @new_poly = polygon_mirror(y => 0.0, @new_poly);
+                   }
+                   #### 3rd step is rotation counter clockwise #####
+                   if($angle != 0 && $angle != 360){
+                      @new_poly = polygon_rotate(degrees=>$angle, @new_poly);
+                   }
+                   #### insertion at given point ####
+                   @new_poly = polygon_move(dx => $locX, dy=> $locY, @new_poly);
+                   my @trans_poly = ();
+                   foreach my $p (@new_poly){
+                      my @point = @$p;
+                      push (@trans_poly, @point);
+                   }
+                   #push(@{$CELL_POLYGONS{$cell}}, [$layer,$via_group_cnt, @trans_poly]);
+                   push(@{$CELL_POLYGONS{$cell}}, [$layer, -1, @trans_poly]);
+                   ## adding this line to assign group different for each via poly
+                   #print "NOTE: I have changed line 58 to assign different group to each polygon\n" if($via_group_cnt == 0);
+                   #$via_group_cnt++;
+                 }
+             }#foreach col
+          }#foreach row
+          #$via_group_cnt++;#### commented this line and adding line number:458
+        }#if cell poly found
+     }#foreach line 
+   }#sub get_aref_flat_data
+
+   print "INFO 02: AREF flattening completed ...\n";
+   undef %AREF_DATA; #making hash empty
+
+   ##################### subroutine to convert PATH as POLYGON #######################
+   sub xformPathSegToPolygon{
+     my @pathPoints = @{$_[0]};
+     my $dataType = $_[1];;
+     my $pathType = $_[2];
+     my $pathWidth = $_[3];
+     my $bgnExt = $_[4];
+     my $endExt = $_[5];
+     my ($bgnExtVal, $endExtVal) = (0, 0);
+     ############# default value of PATHTYPE is 0. It means zero exension ############
+     if($pathType == 1){
+        print "WARN:PATHTYPE is $path_type. We are not supporting this\n";
+     }elsif($pathType == 2){
+        $bgnExtVal = $pathWidth/2;
+        $endExtVal = $pathWidth/2;
+     }elsif($pathType == 4){
+        $bgnExtVal = $bgnExt;
+        $endExtVal = $endExt;
+     }
+     my $seg_dir = '';
+     my @poly_coords = ();
+     my $maxEleInPolygon = @pathPoints * 2 - 1;
+     for(my $i=0; $i<@pathPoints; $i=$i+2){
+         if($i == ($#pathPoints-1)){
+            if($seg_dir eq 'LTR'){
+               $poly_coords[$i] = $pathPoints[$i] + $endExtVal;
+               $poly_coords[$i+1] = $pathPoints[$i+1] - $pathWidth/2;
+               $poly_coords[$maxEleInPolygon - ($i+1)] = $poly_coords[$i];
+               $poly_coords[$maxEleInPolygon - $i] = $pathPoints[$i+1] + $pathWidth/2;
+            }elsif($seg_dir eq 'RTL'){
+               $poly_coords[$i] = $pathPoints[$i] - $endExtVal;
+               $poly_coords[$i+1] = $pathPoints[$i+1] + $pathWidth/2;
+               $poly_coords[$maxEleInPolygon - ($i+1)] = $poly_coords[$i];
+               $poly_coords[$maxEleInPolygon - $i] = $pathPoints[$i+1] - $pathWidth/2;
+            }elsif($seg_dir eq 'BTT'){
+               $poly_coords[$i] = $pathPoints[$i] + $pathWidth/2;
+               $poly_coords[$i+1] = $pathPoints[$i+1] + $endExtVal;
+               $poly_coords[$maxEleInPolygon - ($i+1)] = $pathPoints[$i] - $pathWidth/2;
+               $poly_coords[$maxEleInPolygon - $i] = $poly_coords[$i+1];
+            }elsif($seg_dir eq 'TTB'){
+               $poly_coords[$i] = $pathPoints[$i] - $pathWidth/2;
+               $poly_coords[$i+1] = $pathPoints[$i+1] - $endExtVal;
+               $poly_coords[$maxEleInPolygon - ($i+1)] = $pathPoints[$i] + $pathWidth/2;
+               $poly_coords[$maxEleInPolygon - $i] = $poly_coords[$i+1];
+            }
+            push(@poly_coords, $poly_coords[0], $poly_coords[1]);
+            #print "new:@poly_coords\n";
+            return @poly_coords;
+         }else{
+            if($pathPoints[$i] == $pathPoints[$i+2]){ #vertical segment
+               if($pathPoints[$i+1] < $pathPoints[$i+3]){ #from bottom to top
+                  if($i == 0){
+                     $poly_coords[$i] = $pathPoints[$i] + $pathWidth/2;
+                     $poly_coords[$i+1] = $pathPoints[$i+1] - $bgnExtVal;
+                     $poly_coords[$maxEleInPolygon - ($i+1)] = $pathPoints[$i] - $pathWidth/2;
+                     $poly_coords[$maxEleInPolygon - $i] = $poly_coords[$i+1];
+                  }else{
+                     if($seg_dir eq 'RTL'){
+                        $poly_coords[$i] = $pathPoints[$i] + $pathWidth/2;
+                        $poly_coords[$i+1] = $pathPoints[$i+1] + $pathWidth/2;
+                        $poly_coords[$maxEleInPolygon - ($i+1)] = $pathPoints[$i] - $pathWidth/2;
+                        $poly_coords[$maxEleInPolygon - $i] =  $pathPoints[$i+1] - $pathWidth/2;
+                     }elsif($seg_dir eq 'LTR'){
+                        $poly_coords[$i] = $pathPoints[$i] + $pathWidth/2;
+                        $poly_coords[$i+1] = $pathPoints[$i+1] - $pathWidth/2;
+                        $poly_coords[$maxEleInPolygon - ($i+1)] = $pathPoints[$i] - $pathWidth/2;
+                        $poly_coords[$maxEleInPolygon - $i] = $pathPoints[$i+1] + $pathWidth/2;
+                     }
+                  }
+                  $seg_dir = 'BTT';
+               }else{ #from top to bottom
+                  if($i == 0){
+                     $poly_coords[$i] = $pathPoints[$i] - $pathWidth/2;
+                     $poly_coords[$i+1] = $pathPoints[$i+1] + $bgnExtVal;
+                     $poly_coords[$maxEleInPolygon - ($i+1)] = $pathPoints[$i] + $pathWidth/2;
+                     $poly_coords[$maxEleInPolygon - $i] = $poly_coords[$i+1];
+                  }else{
+                     if($seg_dir eq 'RTL'){
+                        $poly_coords[$i] = $pathPoints[$i] - $pathWidth/2;
+                        $poly_coords[$i+1] = $pathPoints[$i+1] + $pathWidth/2;
+                        $poly_coords[$maxEleInPolygon - ($i+1)] = $pathPoints[$i] + $pathWidth/2;
+                        $poly_coords[$maxEleInPolygon - $i] =  $pathPoints[$i+1] - $pathWidth/2;
+                     }elsif($seg_dir eq 'LTR'){
+                        $poly_coords[$i] = $pathPoints[$i] - $pathWidth/2;
+                        $poly_coords[$i+1] = $pathPoints[$i+1] - $pathWidth/2;
+                        $poly_coords[$maxEleInPolygon - ($i+1)] = $pathPoints[$i] + $pathWidth/2;
+                        $poly_coords[$maxEleInPolygon - $i] = $pathPoints[$i+1] + $pathWidth/2;
+                     }
+                  }
+                  $seg_dir = 'TTB';
+               }
+            }else{#horizontal segment
+               if($pathPoints[$i] < $pathPoints[$i+2]){ #from left to right
+                  if($i == 0){
+                     $poly_coords[$i] = $pathPoints[$i] - $bgnExtVal;
+                     $poly_coords[$i+1] = $pathPoints[$i+1] - $pathWidth/2;
+                     $poly_coords[$maxEleInPolygon - ($i+1)] = $poly_coords[$i];
+                     $poly_coords[$maxEleInPolygon - $i] = $pathPoints[$i+1] + $pathWidth/2;
+                  }else{
+                     if($seg_dir eq 'TTB'){
+                        $poly_coords[$i] = $pathPoints[$i] - $pathWidth/2;
+                        $poly_coords[$i+1] = $pathPoints[$i+1] - $pathWidth/2;
+                        $poly_coords[$maxEleInPolygon - ($i+1)] = $pathPoints[$i] + $pathWidth/2;
+                        $poly_coords[$maxEleInPolygon - $i] = $pathPoints[$i+1] + $pathWidth/2;
+                     }elsif($seg_dir eq 'BTT'){
+                        $poly_coords[$i] = $pathPoints[$i] + $pathWidth/2;
+                        $poly_coords[$i+1] = $pathPoints[$i+1] - $pathWidth/2;
+                        $poly_coords[$maxEleInPolygon - ($i+1)] = $pathPoints[$i] - $pathWidth/2;
+                        $poly_coords[$maxEleInPolygon - $i] = $pathPoints[$i+1] + $pathWidth/2;
+                     }
+                  }
+                  $seg_dir = 'LTR';
+               }else{ #from right to left
+                  if($i == 0){
+                     $poly_coords[$i] = $pathPoints[$i] + $bgnExtVal;
+                     $poly_coords[$i+1] = $pathPoints[$i+1] + $pathWidth/2;
+                     $poly_coords[$maxEleInPolygon - ($i+1)] = $poly_coords[$i];
+                     $poly_coords[$maxEleInPolygon - $i] = $pathPoints[$i+1] - $pathWidth/2;
+                  }else{
+                     if($seg_dir eq 'TTB'){
+                        $poly_coords[$i] = $pathPoints[$i] - $pathWidth/2;
+                        $poly_coords[$i+1] = $pathPoints[$i+1] + $pathWidth/2;
+                        $poly_coords[$maxEleInPolygon - ($i+1)] = $pathPoints[$i] + $pathWidth/2;
+                        $poly_coords[$maxEleInPolygon - $i] =  $pathPoints[$i+1] - $pathWidth/2;
+                     }elsif($seg_dir eq 'BTT'){
+                        $poly_coords[$i] = $pathPoints[$i] + $pathWidth/2;
+                        $poly_coords[$i+1] = $pathPoints[$i+1] + $pathWidth/2;
+                        $poly_coords[$maxEleInPolygon - ($i+1)] = $pathPoints[$i] - $pathWidth/2;
+                        $poly_coords[$maxEleInPolygon - $i] =  $pathPoints[$i+1] - $pathWidth/2;
+                     }
+                  }
+                  $seg_dir = 'RTL';
+               }
+            }
+         }
+     }
+   }#sub xformPathSegToPolygon
+
+   ######################## Flatten SREF data ########################
+   my %repeat_via_group = ();
+
+   &get_sref_flat_data;
+   sub get_sref_flat_data{
+     if(exists $SREF_DATA{$top_module}){
+        my @sref_data = @{$SREF_DATA{$top_module}};
+        foreach my $line(@sref_data){
+          my ($sname, $strans, $mag, $angle, $llx, $lly) = @$line;
+          &replace_sref_data($sname, [$strans], [$mag], [$angle], [$llx], [$lly]);
+        }
+     }
+   }#sub get_sref_flat_data
+
+   sub replace_sref_data{
+     my $sname = $_[0];
+     my $strans = $_[1];
+     my $mag = $_[2];
+     my $angle = $_[3];
+     my $shiftX = $_[4];
+     my $shiftY = $_[5];
+     if(exists $CELL_POLYGONS{$sname}){
+        my @poly_data = @{$CELL_POLYGONS{$sname}};
+        my %temp_grp = ();
+        my $count = 0;
+        my $assigned_grp = 0;
+        foreach my $polygon (@poly_data){
+          my @poly = @$polygon;
+          my $layer = shift @poly; #1st element of @poly is layer
+          my $group = shift @poly; #2nd element of @poly is group
+         
+          
+          if((!exists $temp_grp{$group}) && $group != -1){
+             $temp_grp{$group} = 1;
+             $count = 0;
+          }
+
+          if((exists $repeat_via_group{$group}) && $group != -1 && $count == 0){
+              $assigned_grp = $via_group_cnt;
+              $via_group_cnt++;
+              $count++;
+          }elsif((exists $repeat_via_group{$group}) && $group != -1 && $count > 0){
+          }elsif($group != -1){
+              $assigned_grp = $group;
+              $repeat_via_group{$group} = 1; 
+              $count++;
+          }else{
+              $assigned_grp = $group;
+          }
+
+          push(@{$CELL_POLYGONS{$top_module}}, [$layer, $assigned_grp, &transform_sref_inst($strans, $mag, $angle, $shiftX, $shiftY, \@poly)]);
+        }#foreach polygon
+
+        ################ transform TEXT coords ###############
+        if(exists $PIN_TEXT_COORDS{$sname}){
+           my @new_pin_line = ();
+           my @current_cell_pin = @{$PIN_TEXT_COORDS{$sname}};
+           foreach my $pin_line (@current_cell_pin){
+              my $text = @$pin_line[0];
+              my $x = @$pin_line[6];
+              my $y = @$pin_line[7];
+              my @trans_poly = &transform_sref_inst($strans, $mag, $angle, $shiftX, $shiftY, [$x,$y,$x,$y,$x,$y,$x,$y]);
+              push(@new_pin_line, [$text,@$pin_line[1],@$pin_line[2],@$pin_line[3],@$pin_line[4],@$pin_line[5],$trans_poly[0],$trans_poly[1]]);
+           } 
+           @{$PIN_TEXT_COORDS{$sname}} = @new_pin_line;
+        }
+        ######################################################
+
+     }#if string exists in CELL_POLYGONS hash
+     if(exists $SREF_DATA{$sname}){
+        my @sref_data = @{$SREF_DATA{$sname}};
+        foreach my $line(@sref_data){
+          my ($sname1,  $strans1, $mag1, $angle1, $llx, $lly) = @$line;
+          &replace_sref_data($sname1, [@$strans,$strans1],[@$mag,$mag1], [@$angle, $angle1], [@$shiftX, $llx], [@$shiftY,$lly]);
+        }
+     }
+   }#sub replace_sref_data
+
+   sub transform_sref_inst{
+     my @strans_arr = @{$_[0]};
+     my @scale_arr = @{$_[1]};
+     my @angle_arr = @{$_[2]};
+     my @shiftX_arr = @{$_[3]};
+     my @shiftY_arr = @{$_[4]};
+     my @poly = @{$_[5]};
+
+     my @trans_poly = ();
+     my @new_poly = (); #making array in the form of Math:Polygon
+     for(my $i=0; $i<=$#poly; $i=$i+2){ 
+        push(@new_poly, [$poly[$i], $poly[$i+1]]);
+     }
+     
+     for(my $i=$#strans_arr; $i>=0; $i--){
+         my $strans = $strans_arr[$i];
+         my @strans_bits = split(//,$strans);
+         my $scale = $scale_arr[$i];
+         my $angle = $angle_arr[$i];
+         my $shiftX = $shiftX_arr[$i];
+         my $shiftY = $shiftY_arr[$i];
+         #### 1st step is scaling ####
+         if($strans_bits[13] == 1){ #absolute magnification
+            $scale = abs($scale);
+         }
+         if($scale != 1){
+            @new_poly = polygon_resize(scale => $scale,  @new_poly); 
+         }
+         #### 2nd step is mirroring if 0'bit is high ####
+         if($strans_bits[0] == 1){ #mirroring along x-axis
+            @new_poly = polygon_mirror(y => 0.0, @new_poly);
+         }
+         #### 3rd step is rotation counter clockwise #####
+         if($strans_bits[14] == 1){ #absolute angle
+            $angle = abs($angle);
+         }
+         #### since polygon_rotate rotates clockwise. To rotate anticlockwise, we should take -ve angle #### 
+         $angle = $angle%360;
+         $angle = 360 - $angle; ##### to make anticlockwise angle to clockwise
+         if($angle != 0 && $angle != 360){
+            @new_poly = polygon_rotate(degrees=>$angle, @new_poly);
+         }
+         #### insertion at given point ####
+         @new_poly = polygon_move(dx => $shiftX, dy=> $shiftY, @new_poly);
+     }
+
+     foreach my $p (@new_poly){
+        my @point = @$p;
+        push (@trans_poly, @point);
+     }
+
+     return @trans_poly;
+   }#sub transform_sref_inst
+   
+   undef %SREF_DATA; #removing from memory
+   
+   my $t1 = new Benchmark;
+   my $td = timediff($t1, $t0);
+   print "INFO 03:flattening is completed in :",timestr($td),"\n";
+
+   
+   ########################## Generating image file ###############################
+   my ($displayXFact, $displayYFact, $displayFact) = (1,1,1);
+   my ($x_displacement, $y_displacement) = (0,0);
+   my $im = new GD::Image($image_width,$image_height,[0,0,0]);
+   my $po = new Graphics::ColorNames('X');
+   # Allocate some colors
+   &InitColors($im);
+   my ($layer_name,$bllx,$blly,$burx,$bury) = @{$cell_size{$top_module}};
+   my $width = ($burx - $bllx);
+   my $height = ($bury - $blly);
+   ################## if -bbox option is used ##############
+      #-------- we should scale the design with bbox ---------#
+      if((@bbox < 4) || ($bbox[0] == 0 && $bbox[1] == 0 && $bbox[2] == 0 && $bbox[3] == 0)){
+         @bbox = (0,0,$width,$height);
+         $displayXFact = ($image_width-80)/$width;
+         $displayYFact = ($image_height-80)/$height;
+      }else{
+         $width = abs($bbox[2] - $bbox[0]);
+         $height = abs($bbox[3] - $bbox[1]);
+         $x_displacement = $bbox[0];
+         $y_displacement = $bbox[1];
+         $displayXFact = $image_width/$width;
+         $displayYFact = $image_height/$height;
+      }
+      #-------------------------------------------------------#
+      if ($displayXFact < $displayYFact ) {
+          $displayFact  = $displayXFact;
+      } else {
+          $displayFact  =  $displayYFact 
+      }
+
+      ############### Calculating X margin & Y margin to display image in centre ##############
+      my $marginX = ($image_width - $width*$displayFact)/2;
+      my $marginY = ($image_height - $height*$displayFact)/2;
+      #########################################################################################
+      my @data = @{@CELL_POLYGONS{$top_module}};
+      foreach my $poly (@data){
+        my @polygon = @$poly;
+        my $layer_num = $polygon[0];
+        my $rect_color = 'white';
+        if(exists $layer_color{$layer_num}){
+           $rect_color = $layer_color{$layer_num};
+        }
+        my $im_rect_color = $im->colorAllocate($po->rgb($rect_color));
+        my $poly = new GD::Polygon;
+        for(my $xx=2; $xx<=$#polygon; $xx = $xx+2){
+          my $llx = $marginX + ($polygon[$xx]-$x_displacement)*$displayFact;
+          my $lly = ($image_height - $marginY) - ($polygon[$xx+1]-$y_displacement)*$displayFact;
+          $poly->addPt($llx, $lly);     
+        }
+        $im->polygon($poly, $im_rect_color);
+      }#for each polygon
+
+      my @pins_data = @{$PIN_TEXT_COORDS{$top_module}};
+      foreach my $pin_line (@pins_data){
+         my ($pin, $layer, $text_type, $presentation, $starns, $mag, $llx, $lly) = @$pin_line;
+         $llx = $marginX + ($llx - $x_displacement)*$displayFact;
+         $lly = ($image_height - $marginY) - ($lly - $y_displacement)*$displayFact;
+         my $im_text_color = $im->colorAllocate($po->rgb("yellow"));
+         #$im->string(gdSmallFont, $llx, $lly, $pin, $im_text_color); 
+         $im->string(GD::Font->Small, $llx, $lly, $pin, $im_text_color); 
+      }
+
+      ##################### context bbox #########################
+      $bbox[0] = $bbox[0] - $marginX/$displayFact;
+      $bbox[1] = $bbox[1] - $marginY/$displayFact;
+      $bbox[2] = $bbox[0] + $image_width/$displayFact;
+      $bbox[3] = $bbox[1] + $image_height/$displayFact;
+      ###########################################################
+      open(PICTURE, ">$outFile") or $! and print"WARN: permission denied to write $outFile\n" and return @errBBox;
+      # Make sure we are writing to a binary stream
+      binmode PICTURE;
+      # Convert the image to PNG and print it to the file PICTURE
+      print PICTURE $im->png;
+      close PICTURE;
+
+  
+ }#if correct no of Arg
+ $t1 = new Benchmark;
+ my $td = timediff($t1, $t0);
+ print "gds image creation took:",timestr($td),"\n";
+ return(@bbox);
+}#sub create_gds_image
+
+
+
+
+#####################################################################
+
+1;

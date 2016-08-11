@@ -1,0 +1,1670 @@
+
+#****f* /createPseudoHierModuleInst
+#  createPseudoHierModuleInst
+# FUNCTION
+#
+#
+#
+#
+# SYNOPSIS
+#  createPseudoHierModuleInst
+#
+#
+#
+#
+# INPUTS
+#
+#
+#
+#
+#	options :
+#               -module <moduleName> : name of the module to be created
+#
+#
+#
+#	switches :
+#
+#
+#
+#
+# OUTPUTS
+#
+#
+#
+#
+#****
+sub createPseudoHierModuleInst {
+my $noOfArguments = @_;
+#----------------- Defaults --------------------#
+my $instName; undef $instName;
+my $parent; undef $parent;
+my $cellref; undef $cellref;
+my @bbox = ();
+
+if( $noOfArguments < 1 || $_[0] eq '-h') { print "Usage : createPseudoHierModuleInst \n";
+                           print "                           -inst <a new instance name>\n";
+                           print "                           -cellref <hier module>\n";
+                           print "                           -parent <top module name>\n";
+                           print "                           -loc <{llx,lly}>\n";
+                         }
+else {
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-parent"){$parent = $_[$i+1];}
+if($_[$i] eq "-cellref"){$cellref = $_[$i+1];}
+if($_[$i] eq "-inst"){$instName = $_[$i+1];}
+if($_[$i] eq "-bbox"){ my $box = $_[$i+1]; $box =~ s/\{(.*)\}/\1/; @bbox = split(/\,/, $box); }
+                                         } # for
+
+#--------------- setting up the default behaviour -----------------#
+unless ( defined $parent ) { $parent = $TOP_MODULE; }
+
+#unless ( defined $instName ) {
+if($instName eq ""){
+my $instCount = keys( %{$PSEUDO_VINST_ALREADY{$TOP_MODULE}} );
+print "DBG-TST-CR_PSUDO_HR_MOD_INST : 001 : $instCount instances already in $TOP_MODULE\n" if ($DEBUG > 21 );
+$instName = "BD0_u".($instCount + 1);
+}
+else {
+  $instName =~ s:\\\[:\[:g;  # un-escape L bracket
+  $instName =~ s:\\\]:\]:g;  # un-escape R bracket
+}
+
+unless ( defined $cellref ) {
+  print "WARN-TST-CR_PSUDO_HR_MOD_INST : 002 : No module name \"-cellref\" specified, nothing to instantiate\n";
+  return "";
+}
+
+if ( exists $PSEUDO_MODULE_ALREADY{$cellref} ) {
+  # the module exists in PSEUDO_MODULE_ALREADY we just instantiate it
+}
+elsif ( exists $MODULE_ALREADY{$cellref} ) {
+  &dbfTstgenLoadVNOMPins($cellref);
+}
+else { print "WARN-TST-CR_PSUDO_HR_MOD_INST : 003 : Module $cellref does not exist ... please create it first\n"; }
+
+&dbfTstgenCreateHierModuleInst($parent, $instName, $cellref, @bbox);
+
+return($instName);
+     }#if correct arguments
+}# sub createPseudoHierModuleInst
+
+
+
+#****f* /createPseudoModule
+#  createPseudoModule
+# FUNCTION
+#
+#
+#
+#
+# SYNOPSIS
+#  createPseudoModule
+#
+#
+#
+#
+# INPUTS
+#
+#
+#
+#
+#	options :
+#               -module <moduleName> : name of the module to be created
+#
+#
+#
+#	switches :
+#
+#
+#
+#
+# OUTPUTS
+#
+#
+#
+#
+#****
+sub createPseudoModule {
+my $noOfArguments = @_;
+#----------------- Defaults --------------------#
+my $inCount = 10;
+my $outCount = 10;
+my $seqCount = 50;
+my $combCount = 50;
+my $RouteComplexity = 5;
+my $timingComplexity = 1;
+my $nCluster = 1;
+my @modsize = (0, 0, 0, 0);
+my $parent = $TOP_MODULE;
+my $moduleName; undef $moduleName;
+my $moduleType = 0;
+
+if( $noOfArguments < 1 || $_[0] eq '-h') { print "Usage : createPseudoModule \n";
+                           print "                           -module <module name>\n";
+                           print "                           -parent <parent module name>\n";
+                           print "                           -bbox <{llx,lly,urx,ury}>\n";
+                           print "                           --blackbox \n";
+                           print "                           --rtl \n";
+                         }
+else {
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-parent"){$parent = $_[$i+1];}
+if($_[$i] eq "-module"){$moduleName = $_[$i+1];}
+if($_[$i] eq "--blackbox"){$moduleType = 11;}
+if($_[$i] eq "--rtl"){$moduleType = 8;}
+if($_[$i] eq "-bbox"){ my $rect = $_[$i+1]; $rect =~ s/\{\s*//; $rect =~ s/\s*\}//; @modsize = split(/\,/,$rect);}
+                                         } # for
+my $thisModArea = sprintf("%.3f",(($modsize[0]-$modsize[2])*($modsize[1]-$modsize[3])));
+unless ( defined $moduleName ) {
+my $count = keys %PSEUDO_MODULE_ALREADY;
+print "DBG-TST-CR_PSUDO_MOD : 001 : $count modules already in $parent\n" if($DEBUG > 21);
+$moduleName = "BD0_mod".$count;
+while ( exists $PSEUDO_MODULE_ALREADY{$moduleName} || exists $MODULE_ALREADY{$moduleName} ) {
+  $count++;
+  $moduleName = "BD0_mod".$count;
+}
+                           }
+my @tsize = $PSEUDO_MODULE_ALREADY{$parent}->dbaTstgenGetSize;
+my $topModArea = sprintf("%.3f",(($tsize[0]-$tsize[2])*($tsize[1]-$tsize[3])));
+my $ratio = $thisModArea/$topModArea;
+print "DBG-TST-CR_PSUDO_MOD : 002 : ratio is $ratio\n";
+my $topModCount = $PSEUDO_MODULE_ALREADY{$parent}->dbaTstgenGetTotalComps;
+my $thisModCount = int($topModCount*$ratio);
+&dbfTstgenCreateModule($moduleName,$inCount,$outCount,$seqCount,$combCount,$RouteComplexity,$timingComplexity,$nCluster,$thisModCount,@modsize,$moduleType);
+
+#my $instCount = keys( %{$PSEUDO_VINST_ALREADY{$parent}} );
+#print "$instCount instances already in $parent\n" if ($DEBUG > 21 );
+#my $instName = "BD0_u".($instCount + 1);
+#&dbfTstgenCreateHierModuleInst($instName, $moduleName, @modsize);
+return($moduleName);
+     }#if correct arguments
+}# sub createPseudoModule
+
+
+#****f* /createPseudoNet
+#  createPseudoNet
+# FUNCTION
+#
+#
+#
+#
+# SYNOPSIS
+#  createPseudoNet
+#
+#
+#
+#
+# INPUTS
+#
+#
+#
+#
+#	options :
+#
+#
+#
+#
+#	switches :
+#
+#
+#
+#
+# OUTPUTS
+#
+#
+#
+#
+#****
+sub createPseudoNet {
+my $noOfArguments = @_;
+#----------------- Defaults --------------------#
+my $netPrefix = "";
+my $topModule = $TOP_MODULE;
+my $wireWidth = 0;
+my ($srcModule, $sinkModule) = ("", "");
+my ($srcVInst, $sinkVInst);
+my @fanOutList = ();
+my ($pinMode, $pinArg);
+my $fanInPin = "";
+my $netType = "wire";
+my $netClass = "digital";
+my $netCoordStr = "";
+my $netRoutingCoordStr = "";
+my $netrouting_given = 0;
+my $addMode = 0;
+
+if( $noOfArguments < 1 || $_[0] eq '-h') { print "Usage : createPseudoNet -prefix <netName prefix> \n";
+                           print "                        -parentModule <top module>\n";
+                           print "                        -type <one of bus|wire|clock|glue|bump>\n";
+                           print "                        -class <one of analog|digital|bump>\n";
+#                          print "                        -busWidth <[0:number of bus]>\n";
+                           print "                        -wireWidth <number of connections>\n";
+                           print "                        -source <driver inst>\n";
+                           print "                        -sink <sink inst>\n";
+                           print "                        -pin <pin for preceding driver or sink>\n";
+                           print "                        --add\n";
+                           print "                        -netCoords <net coord>\n";
+                           print "                        -netroutingCoords <net coord>\n";
+                           print "             (obsolete) -srcModule <driver module>\n";
+                           print "             (obsolete) -sinkModule <sink modules>\n";
+                           print "             (obsolete) -fanIn <number of fanin ports>\n";
+                           print "             (obsolete) -fanOut <number of fanout ports>\n";
+                           print "             (obsolete) -inst {<driver inst>, <sink inst>, ..}\n";
+                         }
+else {
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-prefix"){$netPrefix = $_[$i+1];}
+elsif($_[$i] eq "-parentModule"){$TOP_MODULE = $_[$i+1];}
+elsif($_[$i] eq "-sinkModule"){$sinkModule = $_[$i+1];}
+elsif($_[$i] eq "-srcModule"){$srcModule = $_[$i+1];}
+elsif($_[$i] eq "-fanIn"){$inTermCount = $_[$i+1];}
+elsif($_[$i] eq "-fanOut"){$outTermCount = $_[$i+1];}
+elsif($_[$i] eq "-netCoords"){$netCoordStr = $_[$i+1];}
+elsif($_[$i] eq "-netroutingCoords"){$netRoutingCoordStr = $_[$i+1];$netrouting_given = 1;}
+elsif($_[$i] eq "-type"){$netType = $_[$i+1];}
+elsif($_[$i] eq "-class"){$netClass = $_[$i+1];}
+elsif($_[$i] eq "-wireWidth"){$wireWidth = $_[$i+1];}
+elsif($_[$i] eq "-inst"){ my $inst = $_[$i+1]; $inst =~ s/\{(.*)\}/\1/;
+		       my @instArr = split(/\,/, $inst);
+		       $srcVInst = $instArr[0];
+		       for ( my $i = 1; $i < @instArr; $i++ ) {
+			 push(@fanOutList, $instArr[$i], ""); }
+                     } # if ( "-inst" )
+elsif($_[$i] eq "-source"){$srcVInst = $_[$i+1]; $pinMode = "source";}
+elsif($_[$i] eq "-sink"){$sinkVInst = $_[$i+1]; $pinMode = "sink";
+		      push(@fanOutList, $sinkVInst, "");}
+elsif($_[$i] eq "-tieHi"){$srcVInst = "'b1"; $sinkVInst = $_[$i+1]; $pinMode = "sink";
+		      push(@fanOutList, $sinkVInst, "");}
+elsif($_[$i] eq "-tieLo"){$srcVInst = "'b0"; $sinkVInst = $_[$i+1]; $pinMode = "sink";
+		      push(@fanOutList, $sinkVInst, "");}
+elsif($_[$i] eq "-pin"){$pinArg = $_[$i+1];
+			unless ( defined $pinMode ) { print "WARN-TST-CR_PSUDO_NET : 001 : pin $pinArg ignored\n"; }
+			elsif ( $pinArg !~ m/\{.*\}/ ) {  #<!-- has no braces -->
+			  if ( $pinMode eq "source" ) { $fanInPin = $pinArg; }
+			  elsif ( $fanOutList[-1] eq "" ) { $fanOutList[-1] = $pinArg; }
+			  else { push(@fanOutList, $sinkVInst, $pinArg); }
+			}
+			else { $pinArg =~ s/\{(.*)\}/\1/;  #<!-- get rid of braces -->
+			  my @pinList = split(/\,/, $pinArg);
+			  if ( $pinMode eq "source" ) {
+			    if ( @pinList == 1 ) { $fanInPin = $pinList[0]; }
+			    else { print "WARN : pin $pinArg ignored\n"; }
+			  }
+			  else { foreach my $pinName ( @pinList ) {
+			    if ( $fanOutList[-1] eq "" ) { $fanOutList[-1] = $pinName; }
+			    else { push(@fanOutList, $sinkVInst, $pinName); } }# foreach
+			  }
+			}
+		    } # if ( "-pin" )
+elsif( $_[$i] eq "--add" ){ $addMode = 1; }
+elsif( $_[$i] =~ m/^-\w/){ print "WARN-TST-CR_PSUDO_NET : 002 : invalid option $_[$i]\n"; }
+                                         } # for
+#print "DBG : second call : -prefix $netPrefix -parentModule $TOP_MODULE -sink $sinkVInst -source $srcVInst -fanIn $inTermCount -fanOut $outTermCount -type $netType -wireWidth $wireWidth\n";
+
+#----------------- Const --------------------#
+my $defaultWireWidth = 5;
+my $defaultBusWidth = 8;
+#--------------------------------------------#
+
+my $count = keys(%{$PSEUDO_VNET_ALREADY{$TOP_MODULE}} ) ;
+my $netName;
+if ( $netPrefix ne "" ) {
+  $netName = $netPrefix;
+}
+elsif ( $addMode == 1 ) {
+  print "ERR-TST-CR_PSUDO_NET : 003 : net name is required in add mode, pseudo net not created\n";
+  return "";
+}
+else {
+  print "DBG-TST-CR_PSUDO_NET : 004 : $count nets already in $TOP_MODULE\n" if ($DEBUG > 21 );
+  $netName = "BD0_net".$count;
+}
+
+if ($srcModule ne "" && $sinkModule ne "") {
+#  my $srcVInst = dbfTstgenGetPseudoModuleOneVInst($srcModule);
+#  my $sinkVInst = dbfTstgenGetPseudoModuleOneVInst($sinkModule);
+#  @instArr = ($srcVInst, $sinkVInst);
+$srcVInst = $srcModule;
+@fanOutList = ($sinkModule, "");
+}
+
+my $busWidth = 0;
+if ( $netType eq "bus" ) {
+  if ( $wireWidth =~ m/\[.*\]/ ) {
+    my ($from, $to) = &utilGetBitsRange($wireWidth);
+    $busWidth = 1 + abs ($to - $from);
+  }
+  else {
+    $busWidth = $wireWidth;
+  }
+}
+else {  #<!-- ($netType ne "bus") -->
+  if ( $wireWidth =~ m/\[.*\]/ ) {
+    my ($from, $to) = &utilGetBitsRange($wireWidth);
+    $wireWidth = 1 + abs ($to - $from);
+    print "WARN-TST-CR_PSUDO_NET : 005 : bit range $from:$to can only be specified for bus, width=$wireWidth is assumed\n";
+  }
+}
+
+#
+# <!-- check validity of source & sink instances -->
+#
+my $srcOK = 1;
+if ( !defined($srcVInst) ) {
+  if ( $addMode == 0 ) {
+    $srcOK = 0;
+  }
+}
+elsif ( ($srcVInst ne "PIN") && ($srcVInst !~ m/'b[01]/) ) {
+  $srcVInst =~ s:\\\[:\[:g;  # un-escape L bracket
+  $srcVInst =~ s:\\\]:\]:g;  # un-escape R bracket
+  unless ( exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}->{$srcVInst} ) {
+    $srcOK = 0;
+  }
+}
+if ( ! $srcOK ) {
+  print "ERR-TST-CR_PSUDO_NET : 006 : source instance $srcVInst undefined, pseudo net not created\n";
+  return "";
+}
+
+if ( $fanInPin =~ m/\[.*\]/ ) {
+  my $bits = $fanInPin;
+  $bits =~ s/^.*\[/\[/;
+  my ($from, $to) = &utilGetBitsRange($bits);
+  my $pinWidth = 1 + abs ($to - $from);
+  if ( $pinWidth != $busWidth ) {
+    if ( $busWidth == 0 ) {
+      $busWidth = $pinWidth;
+    }
+    else {
+      print "ERR-TST-CR_PSUDO_NET : 007 : net width $busWidth and source pin $from:$to not consistent, pseudo net not created\n";
+      return "";
+    }
+  }
+}
+elsif ( $srcVInst =~ m/'b[01]/ && $busWidth == 0 ) {
+  my $pinWidth = $srcVInst;
+  $pinWidth =~ s/^.*(\d+)'b.+$/\1/;
+  if ( length($pinWidth) > 0 ) {
+    $busWidth = $pinWidth;
+  }
+}
+#-----------------------------------------------commented by Mansi------------------------------------------------------#
+#if ( @fanOutList < 2 ) {
+#  print "ERR-TST-CR_PSUDO_NET : 008 : sink instance $sinkVInst undefined, pseudo net not created\n";
+#  return "";
+#}
+#---------------------------------------------------------------------------------------------------------------------------#
+# expand wildcard
+my @tmpFanOutList = @fanOutList;
+@fanOutList = ();
+for ( my $k = 0; $k < @tmpFanOutList; $k += 2 ) {
+  my $sinkVInst = $tmpFanOutList[$k];
+  my $fanOutPin = $tmpFanOutList[$k + 1];
+  if ( $sinkVInst !~ m/\*|\[.+\]|\^|\$/ ) {
+    push(@fanOutList, $sinkVInst, $fanOutPin);
+  }
+  else {
+    foreach my $inst ( keys %{$PSEUDO_VINST_ALREADY{$TOP_MODULE}} ) {
+      if ( $inst !~ m/$sinkVInst/ ) {
+        next;
+      }
+      push(@fanOutList, $inst, $fanOutPin);
+    }# foreach $inst
+  }
+}# for $k
+
+  for ( my $k = 0; $k < @fanOutList; $k += 2 ) {
+    $sinkVInst = $fanOutList[$k];
+    my $fanOutPin = $fanOutList[$k + 1];
+    if ( $sinkVInst ne "PIN" && !exists $PSEUDO_VINST_ALREADY{$TOP_MODULE}->{$sinkVInst} ) {
+      print "ERR-TST-CR_PSUDO_NET : 009 : sink instance $sinkVInst undefined, pseudo net not created\n";
+      return "";
+    }
+    elsif ( $fanOutPin =~ m/\[.*\]/ ) {
+      $fanOutPin =~ s/^.*\[/\[/;
+      my ($from, $to) = &utilGetBitsRange($fanOutPin);
+      my $pinWidth = 1 + abs ($to - $from);
+      if ( $pinWidth != $busWidth ) {
+        if ( $busWidth == 0 ) {
+          $busWidth = $pinWidth;
+        }
+        else {
+          print "ERR-TST-CR_PSUDO_NET : 010 : net width $busWidth and sink pin $from:$to not consistent, pseudo net not created\n";
+          return "";
+        }
+      }
+    }# if pin has bus bits
+  }#for each sink
+
+if ($netType eq "wire" || $netType eq "single") {
+if ( $wireWidth < 1 ) {
+  $wireWidth = ( defined $pinArg ) ? 1 : $defaultWireWidth;
+}
+if ( $wireWidth == 1 ) {
+  $netName = &dbfTstgenCreateNet($netPrefix, 1, $srcVInst, $fanInPin, $netCoordStr, \@fanOutList, $addMode);
+  if($netrouting_given == 1){
+    &create_pseudo_floorplan_already_for_routing_net($TOP_MODULE, $netPrefix,$netRoutingCoordStr);
+  }
+}
+else {
+  &dbfTstgenCreateWire($netName, $wireWidth, $srcVInst, $fanInPin, $netCoordStr, \@fanOutList, $addMode);
+#-----------------------  Added by Aditya -------------------------------------#
+my $count1 = $count+1;
+&Set_Net_attributes(-net, $netName, -parent, $TOP_MODULE, -netName, "wire".$count1, -width, 1);
+#-------------------------------------------------------------------------------#
+  if($netrouting_given == 1){
+    &create_pseudo_floorplan_already_for_routing_net($TOP_MODULE, $netPrefix,$netRoutingCoordStr);
+  }
+}
+                         }# if net is wire
+elsif ($netType eq "bus") {  
+  if ( $wireWidth !~ m/\[.*\]/ && $wireWidth < 1 ) {
+    $wireWidth = ( $busWidth > 0 ) ? $busWidth : $defaultBusWidth;
+  }
+  $netName = &dbfTstgenCreateNet($netPrefix, $wireWidth, $srcVInst, $fanInPin,$netCoordStr, \@fanOutList, $addMode);
+  #print "DBG: $netPrefix, $wireWidth, $srcVInst, $fanInPin, @fanOutList\n";
+  #&dbfTstgenCreateNet($netPrefix, $wireWidth, $srcVInst, $fanInPin, @fanOutList);
+                       }#if net is a bus
+
+elsif ($netType eq "bump"){
+  $netName = &dbfTstgenCreateBumpNet($netPrefix, $wireWidth, $srcVInst, $fanInPin,$netCoordStr, \@fanOutList)
+}#if net is a bump
+
+if ( $TOP_MODULE ne $topModule ) {
+  $TOP_MODULE = $topModule;  # restore
+}
+return($netName);
+     }#if correct arguments
+}# sub createPseudoNet
+
+#############################################################################################
+sub updatePseudoNet {
+
+#****f* / updatePseudoNet
+# NAME
+#   updatePseudoNet
+# FUNCTION
+#   connecting an instance with existing net 
+# Assumptions
+#   works for all nets
+# SYNOPSIS
+#   updatePseudoNet -net <netName> 
+#                   -sink <sink module>
+#                   -pin <sink pin>
+#                   -netCoords <net's coordinates>
+# INPUTS
+#   options:
+#   -net <netName>, -sink <sink module>, -pin <sink pin>, -netCoords <net's coordinates>
+# OUTPUTS
+#    added instance in sink instance list
+# ****
+
+my $noOfArg = @_;
+my ($netName,$sinkInst,$sinkPin) = ("", "", "");
+my @sinkPins = ();
+if($noOfArg < 2 || $_[0] eq "-h" || $_[0] eq "-help" || $_[0] eq "-HELP"){
+                 print "Usage: updatePseudoNet -net <netName>\n";
+                 print "                       -sink <sink module>\n";
+                 print "                       -pin <sink pin>\n";
+                 print "                       -netCoords <net's coordinates>\n";
+}else {
+ for(my $i = 0; $i < $noOfArg; $i++){
+     if($_[$i] eq "-net"){$netName = $_[$i+1];}
+     if($_[$i] eq "-sink"){$sinkInst = $_[$i+1];}
+     if($_[$i] eq "-pin"){$sinkPin = $_[$i+1];
+                          @sinkPins = split(/\,/,$sinkPin);}
+     if($_[$i] eq "-netCoords"){$netCoord_str = $_[$i+1];}
+ } 
+ if(exists $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$netName}){
+    if($sinkPin eq ""){
+       my @sink = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$netName}->dbaTstgenGetPseudoNetSinkFanOutList;
+          $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$netName}->dbaTstgenSetPseudoNetSinkFanOutList($sinkInst,$sink[-1]);
+    }else{
+       foreach my $pin(@sinkPins){ 
+          $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$netName}->dbaTstgenSetPseudoNetSinkFanOutList($sinkInst,$pin);
+       }
+    }
+    my @addCoords = split(/\,/,$netCoord_str);
+    my @prevcoords = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$netName}->dbaTstgenGetPseudoExtNetCoords;
+    push(@prevcoords,[@addCoords]);
+    $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$netName}->dbaTstgenSetPseudoExtNetCoords(@prevcoords); 
+    print "INFO-TST-UPD_PSUDO_NET : 001 : extending net $netName to $sinkInst at pin @sinkPins\n";
+
+ }
+}#if correct no of arguments
+}#sub updatePseudoNet
+
+sub get_netcoords {
+  my $moduleName = $TOP_MODULE;
+  foreach my $net ( keys %{$PSEUDO_VNET_ALREADY{$moduleName}} ) {
+    my ($sourceVInst, $fanInPins) = $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenGetPseudoNetSourceFanInList;
+    my @fanOutList = $PSEUDO_VNET_ALREADY{$moduleName}->{$net}->dbaTstgenGetPseudoNetSinkFanOutList;
+print "INFO-TST : 001 : net $net\n";
+print "$sourceVInst, $fanInPins\n";
+print "@fanOutList\n";
+}
+#foreach $net (keys %{$PSEUDO_VNET_ALREADY{$TOP_MODULE}}){
+#     my $type = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net}->dbaTstgenGetPseudoNetType;
+#     my $parent = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net}->dbaTstgenGetPseudoNetParentModule;
+#     my @src = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net}->dbaTstgenGetPseudoNetSourceFanInList;
+#     my @sink = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net}->dbaTstgenGetPseudoNetSinkFanOutList;
+#     my @coords = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net}->dbaTstgenGetPseudoNetCoords; 
+#     my @extcoords = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net}->dbaTstgenGetPseudoExtNetCoords; 
+#
+#
+#$print "NET:$net type: $type\n";
+#print "srcInst: @src, sinkInst: @sink\n";
+#print "coords @coords\n";
+#my $i = 1;
+#foreach (@extcoords){
+#print "extcoords$i @$_\n";
+#$i++;
+#                     }
+#}
+#my $inst = $TOP_MODULE; 
+#print "top $TOP_MODULE\n";
+#   if (exists $PSEUDO_MODULE_ALREADY{$inst}){
+#         my @pinArray = $PSEUDO_MODULE_ALREADY{$inst}->dbaTstgenGetInput;
+#print "total input pins @pinArray\n";
+#         foreach my $pin(@pinArray){
+#           my $type = $PSEUDO_MODULE_ALREADY{$inst}->dbaTstgenGetInputType($pin);
+#           if($type == 1){
+#              my $bits = $PSEUDO_MODULE_ALREADY{$inst}->dbaTstgenGetInputBits($pin);
+#              push(@pins, $pin.$bits);
+#           }
+#         }
+#      }
+#print "input bus @pins\n";
+#   if (exists $PSEUDO_MODULE_ALREADY{$inst}){
+#         my @totpinArray = $PSEUDO_MODULE_ALREADY{$inst}->dbaTstgenGetPins;
+#print "total ADITYA: \"@totpinArray\"\n";
+#         my @pinArray = $PSEUDO_MODULE_ALREADY{$inst}->dbaTstgenGetOutput;
+#print "total output pins @pinArray\n";
+#         foreach my $pin(@pinArray){
+#           my $type = $PSEUDO_MODULE_ALREADY{$inst}->dbaTstgenGetOutputType($pin);
+#           if($type == 1){
+#              my $bits = $PSEUDO_MODULE_ALREADY{$inst}->dbaTstgenGetOutputBits($pin);
+#              push(@pins1, $pin.$bits);
+#           }
+#         }
+#      }
+#print "output bus @pins1\n";
+#
+##my @ports = keys %{$PORTS_ALREADY{$inst}};
+##print "ports @ports\n";
+}#sub get_netcoords
+#############################################################################################
+
+#****f* /createPseudoTopModule
+#  createPseudoTopModule
+# FUNCTION
+#
+#
+#
+#
+# SYNOPSIS
+#  createPseudoTopModule
+#
+#
+#
+#
+# INPUTS
+#
+#
+#
+#
+#	options :
+#
+#
+#
+#
+#	switches :
+#
+#
+#
+#
+# OUTPUTS
+#
+#
+#
+#
+#****
+sub createPseudoTopModule {
+my $noOfArguments = @_;
+if( $noOfArguments < 1 ) { print "Usage : createPseudoTopModule \n";
+                           print "                           -top <top module name>\n";
+                           print "                           -H <Die Height>\n";
+                           print "                           -W <Die Width>\n";
+                         }
+else {
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-top"){$TOP_MODULE = $_[$i+1];}
+if($_[$i] eq "-H"){$dieHeight = $_[$i+1];}
+if($_[$i] eq "-W"){$dieWidth = $_[$i+1];}
+                                         } # for
+
+$DIE_ALREADY{dieArea}[0] = 0;
+$DIE_ALREADY{dieArea}[1] = 0;
+$DIE_ALREADY{dieArea}[2] = $dieWidth;
+$DIE_ALREADY{dieArea}[3] = $dieHeight;
+my $dieArea  = $dieHeight*$dieWidth;
+my $effDieArea = 0.70*$dieArea;
+my $nandArea = 250;
+
+my $numOfComps = $effDieArea / $nandArea;
+my $numOfSeq = 0.05*$numOfComps;
+my $numOfCombi = 0.90*$numOfComps;
+my $numOfInputs = 0.02*$numOfComps;
+my $numOfOutputs = 0.02*$numOfComps;
+my $RC = 2;
+my $TC = 2;
+my $numOfClusters = 1;
+
+            $MICRONFACTOR = 1;
+            my $dieHMultFact  = 500/$dieHeight;
+            my $dieWMultFact  = 500/$dieWidth;
+            if( $dieHMultFact < $dieWMultFact ) { $MICRONFACTOR = $dieHMultFact; }
+            else {  $MICRONFACTOR =  $dieWMultFact; }
+            print "$MICRONFACTOR\n";
+$GLOBAL->dbGlobalSetMicronFactor($MICRONFACTOR);
+
+&dbfTstgenCreateTopModule($TOP_MODULE,$numOfInputs,$numOfOutputs,$numOfSeq,$numOfCombi,$RC,$TC,$numOfClusters,$dieWidth,$dieHeight,$numOfComps);
+
+     }#if correct number of arguments
+}# sub createPseudoTopModule
+
+
+#****f* /createPseudoPlacementBlockage
+#  createPseudoPlacementBlockage
+# FUNCTION
+#
+#
+#
+#
+# SYNOPSIS
+#  createPseudoPlacementBlockage
+#
+#
+#
+#
+# INPUTS
+#
+#
+#
+#
+#	options :
+#
+#
+#
+#
+#	switches :
+#
+#
+#
+#
+# OUTPUTS
+#
+#
+#
+#
+#****
+sub createPseudoPlacementBlockage {
+my @blkgRect = ();
+my $noOfArguments = @_;
+if( $noOfArguments < 1 ) { print "Usage : createPseudoPlacementBlockage \n";
+                           print "                           -rect <llx lly urx ury>\n";
+                         }
+else {
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-rect"){
+                     $blkgRect[0] = $_[$i+1];
+                     $blkgRect[1] = $_[$i+2];
+                     $blkgRect[2] = $_[$i+3];
+                     $blkgRect[3] = $_[$i+4];
+                     }
+                                         } # for
+my $cnt = keys %{$PSEUDO_BLKG_ALREADY{$TOP_MODULE}};
+my $blkgName = "pblkg".$cnt;
+print "INFO-TST : 001 : while creating ";
+print join ",", @blkgRect;
+print "\n";
+&dbfTstgenCreatePlcBlkg($blkgName,@blkgRect);
+     }#if correct arguments
+}# sub createPseudoPlacementBlockage
+
+
+#****f* /createPseudoRoutingBlockage
+#  createPseudoRoutingBlockage
+# FUNCTION
+#
+#
+#
+#
+# SYNOPSIS
+#  createPseudoRoutingBlockage
+#
+#
+#
+#
+# INPUTS
+#
+#
+#
+#
+#	options :
+#
+#
+#
+#
+#	switches :
+#
+#
+#
+#
+# OUTPUTS
+#
+#
+#
+#
+#****
+sub createPseudoRoutingBlockage {
+my @blkgRect = ();
+my $dbfact = $DEF_DATABASE_UNIT;
+my $layer = "METAL1";
+my $noOfArguments = @_;
+if( $noOfArguments < 1 ) { print "Usage : createPseudoRoutingBlockage \n";
+                           print "                           -rect <llx lly urx ury>\n";
+                           print "                           -layer <routing layer name>\n";
+                         }
+else {
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-rect"){
+                     $blkgRect[0] = $_[$i+1];
+                     $blkgRect[1] = $_[$i+2];
+                     $blkgRect[2] = $_[$i+3];
+                     $blkgRect[3] = $_[$i+4];
+                     }
+if($_[$i] eq "-layer"){$layer = $_[$i+1] };
+
+                                         } # for
+my $cnt = keys %{$PSEUDO_BLKG_ALREADY{$TOP_MODULE}};
+my $blkgName = "rblkg".$cnt;
+print "INFO-TST-CR_PSUDO_RT_BLKG : 001 : while creating ";
+print join ",", @blkgRect;
+print "\n";
+&dbfTstgenCreateRouteBlkg($blkgName,@blkgRect,$layer);
+     }#if correct arguments
+}# sub createPseudoRoutingBlockage
+
+#****f* /createPseudoInstance
+#  createPseudoInstance
+# FUNCTION
+#
+#
+#
+#
+# SYNOPSIS
+#  createPseudoInstance
+#
+#
+#
+#
+# INPUTS
+#
+#
+#
+#
+#       options :
+#
+#
+#
+#
+#       switches :
+#
+#
+#
+#
+# OUTPUTS
+#
+#
+#
+#
+#****
+sub createPseudoInstance {
+my $noOfArguments = @_;
+#----------------- Defaults --------------------#
+my $inst; undef $inst;
+my $parent = $TOP_MODULE;
+my $cellref; undef $cellref;
+my $orient = "N";
+my $array ; undef $array ;
+my @bbox = ();
+my $loc_str = "";
+my $status = "UNPLACED";
+my $prefix;
+if( $noOfArguments < 1 ) { print "Usage : createPseudoInstance \n";
+                           print "                           -inst <instName>\n";
+                           print "                           -parent <parent module>\n";
+                           print "                           -cell <cellref>\n";
+                           print "                           -loc {x,y}\n";
+                           print "                           -orient N  :one of N,FS,E,FW\n";
+                           print "                           -array M  : creates M instances of the same cell\n";
+                         }
+else {
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-inst"){ $prefix = $_[$i+1]; }
+if($_[$i] eq "-parent"){ $parent = $_[$i+1]; }
+if($_[$i] eq "-cell"){ $cellref = $_[$i+1]; }
+if($_[$i] eq "-loc"){ $loc_str = $_[$i+1];  $loc_str =~ s/\{//; $loc_str =~ s/\}//; $status = "PLACED"; }
+if($_[$i] eq "-orient"){ $orient = $_[$i+1]; }
+if($_[$i] eq "-array"){ $array = $_[$i+1]; }
+                                         }#for all arguments
+
+unless ( exists $PLDB{$cellref} ) {
+  print "WARN-TST-CR_PSUDO_INST : 001 : leaf module $cellref undefined, pseudo instance $inst not created\n";
+  return "";
+} else {
+       my @size = $PLDB{$cellref}->dbMdbGetSize;
+       
+       my ($llx,$lly) = (split(/\,/,$loc_str))[0,1];
+       my $urx = $llx+$size[0];
+       my $ury = $lly+$size[1];
+       @bbox = ($llx,$lly,$urx,$ury);
+       }
+
+unless ( defined $prefix ) {
+  my $instCount = keys( %{$PSEUDO_VINST_ALREADY{$TOP_MODULE}} );
+  print "DBG-TST-CR_PSUDO_INST : 002 : $instCount instances already in $TOP_MODULE\n" if ($DEBUG > 21 );
+  $inst = "BD0_u".($instCount + 1);
+}
+else {
+  $inst =~ s:\\\[:\[:g;  # un-escape L bracket
+  $inst =~ s:\\\]:\]:g;  # un-escape R bracket
+  $inst = $prefix;
+}
+
+unless ( exists $PSEUDO_MODULE_ALREADY{$parent} ) {
+  print "WARN-TST-CR_PSUDO_INST : 003 : parent module $parent is not defined\n";
+  return "";
+}
+
+if ( exists $PSEUDO_VINST_ALREADY{$parent}{$inst} ) {
+  print "WARN-TST-CR_PSUDO_INST : 004 : instance $inst already exists\n";
+  return "";
+}
+
+unless ( defined $array ) {
+&dbfTstgenCreatePseudoInst($parent, $inst, $cellref,$status,$orient,@bbox);
+                       } else {
+for (my $xx = 1 ; $xx <= $array ; $xx++ ) {
+$inst = ${prefix}."_".${xx};
+&dbfTstgenCreatePseudoInst($parent, $inst, $cellref,$status,$orient,@bbox);
+                                      }
+return $inst;
+                              }
+}#if correct arguments
+
+}#sub createPseudoInstance
+
+
+#****f* /createPseudoRtlInstance
+#  createPseudoRtlInstance
+# FUNCTION
+#
+#
+#
+#
+# SYNOPSIS
+#  createPseudoRtlInstance
+#
+#
+#
+#
+# INPUTS
+#
+#
+#
+#
+#       options :
+#
+#
+#
+#
+#       switches :
+#
+#
+#
+#
+# OUTPUTS
+#
+#
+#
+#
+#****
+sub createPseudoRtlInstance {
+my $noOfArguments = @_;
+#----------------- Defaults --------------------#
+my $inst = "";
+my $parent = $TOP_MODULE;
+my $cellref = "UND";
+my $orient = "N";
+
+if( $noOfArguments < 1 ) { print "Usage : createPseudoInstance \n";
+                           print "                           -inst <instName>\n";
+                           print "                           -parent <parent module>\n";
+                           print "                           -cell <cellref>\n";
+                           print "                           -loc {x,y}\n";
+                           print "                           -orient N  :one of N,FS,E,FW\n";
+                         }
+else {
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-inst"){ $inst = $_[$i+1]; }
+if($_[$i] eq "-parent"){ $parent = $_[$i+1]; }
+if($_[$i] eq "-cell"){ $cellref = $_[$i+1]; }
+if($_[$i] eq "-loc"){ $Inst = $_[$i+1]; }
+if($_[$i] eq "-orient"){ $orient = $_[$i+1]; }
+                                         }#for all arguments
+
+if ( $inst eq "" ) {
+  my $instCount = keys( %{$PSEUDO_VINST_ALREADY{$TOP_MODULE}} );
+  print "DBG-TST : 001 : $instCount instances already in $TOP_MODULE\n" if ($DEBUG > 21 );
+  $inst = "BD0_u".($instCount + 1);
+}
+
+unless ( exists $PSEUDO_MODULE_ALREADY{$parent} ) {
+  print "WARN-TST : 002 : parent module $parent is not defined\n";
+  return(0);
+}
+
+if ( exists $PSEUDO_VINST_ALREADY{$parent}{$inst} ) {
+  print "WARN-TST : 003 : instance $inst already exists\n";
+  return(0);
+}
+
+&dbfTstgenCreatePseudoInst($parent, $inst, $cellref);
+return(1);
+}#if correct arguments
+
+}#sub createPseudoRtlInstance
+
+
+sub createPseudoRtlFifoInstance {
+my $noOfArguments = @_;
+#----------------- Defaults --------------------#
+my $inst = "";
+my $parent = $TOP_MODULE;
+my $cellref = "UND";
+my $orient = "N";
+
+if( $noOfArguments < 1 ) { print "Usage : createPseudoRtlFifoInstance \n";
+                           print "                           -inst <instName>\n";
+                           print "                           -parent <parent module>\n";
+                           print "                           -cell <cellref>\n";
+                           print "                           -loc {x,y}\n";
+                           print "                           -orient N  :one of N,FS,E,FW\n";
+                         }
+else {
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-inst"){ $inst = $_[$i+1]; }
+if($_[$i] eq "-parent"){ $parent = $_[$i+1]; }
+if($_[$i] eq "-cell"){ $cellref = $_[$i+1]; }
+if($_[$i] eq "-loc"){ $Inst = $_[$i+1]; }
+if($_[$i] eq "-orient"){ $orient = $_[$i+1]; }
+                                         }#for all arguments
+
+if ( $inst eq "" ) {
+  my $instCount = keys( %{$PSEUDO_VINST_ALREADY{$TOP_MODULE}} );
+  print "$instCount instances already in $TOP_MODULE\n" if ($DEBUG > 21 );
+  $inst = "BD0_u".($instCount + 1);
+}
+
+unless ( exists $PSEUDO_MODULE_ALREADY{$parent} ) {
+  print "WARN-TST : 001 : parent module $parent is not defined\n";
+  return(0);
+}
+
+if ( exists $PSEUDO_VINST_ALREADY{$parent}{$inst} ) {
+  print "WARN-TST : 002 : instance $inst already exists\n";
+  return(0);
+}
+
+&dbfTstgenCreatePseudoInst($parent, $inst, $cellref);
+print "INFO-TST : 003 : created $inst of $cellref inside $parent\n";
+return(1);
+}#if correct arguments
+
+}#sub createPseudoRtlFifoInstance
+
+
+#****f* /commitModule
+#  commitModule
+# FUNCTION
+#
+#
+#
+#
+# SYNOPSIS
+#  commitModule
+#
+#
+#
+#
+# INPUTS
+#
+#
+#
+#
+#	options :
+#
+#
+#
+#
+#	switches :
+#
+#
+#
+#
+# OUTPUTS
+#
+#
+#
+#
+#****
+sub commitModule {
+my $noOfArguments = @_;
+#----------------- Defaults --------------------#
+my $moduleName; undef $moduleName;
+my $flplanName; undef $flplanName;
+
+if ( $noOfArguments < 1 || $_[0] eq '-h' ) { print "Usage : commit_module \n";
+                           print "                   -module <module name>\n";
+}
+else {
+  for ( my $i = 0; $i < $noOfArguments; $i++ ) {
+    if ( $_[$i] eq "-module" ) { $moduleName = $_[$i+1]; }
+    if ( $_[$i] eq "-floorplan" ) { $flplanName = $_[$i+1]; }
+  } # for
+
+  unless ( defined $moduleName ) {
+    $moduleName = $TOP_MODULE;
+  }
+
+  unless ( exists $PSEUDO_MODULE_ALREADY{$moduleName} ) {
+    print "WARN-TST-COMMIT_MOD : 001 : module $moduleName is not being edited\n";
+    return;
+  }
+
+  print "INFO-TST-COMMIT_MOD : 002 : Commiting module $moduleName\n";
+
+  &dbfTstgenSetupPseudoConn($moduleName);
+  &dbfTstgenUpdateVNOMFromPseudo($moduleName);
+  &dbfTstgenGuidePinLocs($moduleName);
+  &dbfTstgenUpdateChildrenSizes($moduleName);
+  &dbfTstgenUpdateFlplanFromPseudo($moduleName, $flplanName);
+
+}#if correct number of arguments
+}# sub commitModule
+
+
+#****f* /editModule
+#  editModule
+# FUNCTION
+#
+#
+#
+#
+# SYNOPSIS
+#  editModule
+#
+#
+#
+#
+# INPUTS
+#
+#
+#
+#
+#	options :
+#
+#
+#
+#
+#	switches :
+#
+#
+#
+#
+# OUTPUTS
+#
+#
+#
+#
+#****
+sub editModule {
+my $noOfArguments = @_;
+#----------------- Defaults --------------------#
+my $moduleName; undef $moduleName;
+my $flplanName; undef $flplanName;
+my $util; undef $util;
+
+if ( $noOfArguments < 1 || $_[0] eq '-h' ) { print "Usage : edit_module \n";
+                           print "                   -module <module name>\n";
+                           print "                   -floorplan <floorplan name>\n";
+                           print "                   -util <chip utilization>\n";
+                           print "                   --top\n";
+}
+else {
+  for ( my $i = 0; $i < $noOfArguments; $i++ ) {
+    if ( $_[$i] eq "-module" ) { $moduleName = $_[$i+1]; }
+    if ( $_[$i] eq "-floorplan" ) { $flplanName = $_[$i+1]; }
+    if ( $_[$i] eq "-util" ) { $util = $_[$i+1]; }
+    if ( $_[$i] eq "--top" ) { if ( $TOP_MODULE ne "" ) {
+                                 $moduleName = $TOP_MODULE; } }
+  } # for
+
+  unless ( defined $moduleName ) {
+    my $count = keys %PSEUDO_MODULE_ALREADY;
+    $moduleName = "BD0_mod".$count;
+    while ( exists $PSEUDO_MODULE_ALREADY{$moduleName} ||
+            exists $MODULE_ALREADY{$moduleName} ) {
+      $count++;
+      $moduleName = "BD0_mod".$count;
+    }
+  }
+
+  if ( exists $PSEUDO_MODULE_ALREADY{$TOP_MODULE} ) {
+    $PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenSetIsModuleTop(0);
+  }
+  print "INFO-TST-EDIT_MOD : 001 : Editing module $moduleName ...\n";
+  &dbfTstgenEditModule($moduleName);
+
+  my $flplanID = &dbfTstgenLoadVNOMFlplan($moduleName, $flplanName);
+  if ( $flplanID == 0 ) {
+    $flplanID = &dbfTstgenCalcModuleSizeFromParentFlplan($moduleName);
+    if ( $flplanID == 0 && exists $MODULE_ALREADY{$moduleName} ) {
+      &find_verilog_area($moduleName, "0");
+      &dbfTstgenEstModuleSizeFromVNOMArea($moduleName, $util);
+    }
+  }
+  if ( ! defined $flplanName || $flplanName eq "$moduleName/_self_" ) {
+    &dbfTstgenCalcInstSizeFromChildFlplan($moduleName);
+  }
+
+}#if correct number of arguments
+}# sub editModule
+
+
+#****f* /purgeModule
+#  purgeModule
+# FUNCTION
+#
+#
+#
+#
+# SYNOPSIS
+#  purgeModule
+#
+#
+#
+#
+# INPUTS
+#
+#
+#
+#
+#	options :
+#
+#
+#
+#
+#	switches :
+#
+#
+#
+#
+# OUTPUTS
+#
+#
+#
+#
+#****
+sub purgeModule {
+my $noOfArguments = @_;
+my $moduleName;
+
+if ( $noOfArguments < 1 || $_[0] eq '-h' ) { print "Usage : purge_module \n";
+                           print "                   -module <module name>\n";
+                           print "                   --top\n";
+}
+else {
+  for ( my $i = 0; $i < $noOfArguments; $i++ ) {
+    if ( $_[$i] eq "-module" ) { $moduleName = $_[$i+1]; }
+    if ( $_[$i] eq "--top" ) { if ( $TOP_MODULE ne "" ) {
+                                 $moduleName = $TOP_MODULE; } }
+  } # for
+
+  unless ( defined $moduleName && $moduleName ne "" ) {
+    return;
+  }
+
+  print "INFO-TST-PURGE_MOD : 001 : purging module $moduleName ...\n";
+  &dbfTstgenPurgeModule($moduleName);
+
+}#if correct number of arguments
+}# sub purgeModule
+
+
+#****f* /testPseudo
+#  testPseudo
+# FUNCTION
+#
+#
+#
+#
+# SYNOPSIS
+#  testPseudo
+#
+#
+#
+#
+# INPUTS
+#
+#
+#
+#
+#	options :
+#               -output <fileName> : name of output file
+#               -name <objName> : name of object to be tested
+#
+#
+#
+#	switches :
+#
+#
+#
+#
+# OUTPUTS
+#
+#
+#
+#
+#****
+sub testPseudo {
+my $noOfArguments = @_;
+#----------------- Defaults --------------------#
+my ($cmd, $name);
+my $outputFile = "hpv_test.sv";
+
+if ($noOfArguments < 1 || $_[0] eq '-h') { print "Usage : test_pseudo \n";
+                           print "                   -cmd <subcommand name one of flplan|vnom|pin|smatrix>\n";
+                           print "                   -name <object name | module name>\n";
+                           print "                   -output <file name>\n";
+}
+else {
+  for ( my $i = 0; $i < $noOfArguments; $i++ ) {
+    if ($_[$i] eq "-cmd") { $cmd = $_[$i+1]; }
+    if ($_[$i] eq "-name") { $name = $_[$i+1]; }
+    if ($_[$i] eq "-output") { $outputFile = $_[$i+1]; }
+  } # for
+
+  if ( $cmd eq "vnom" ) {
+    &dbg_VNOM_module($outputFile, $name);
+  }
+  elsif ( $cmd eq "flplan" ) {
+    &dump_FLOORPLAN_ALREADY($outputFile, $name);
+  }
+  elsif ( $cmd eq "pin" ) {
+    &dump_PseudoModulePins($outputFile, $name);
+  }
+  elsif ( $cmd eq "smatrix" ) {
+    &dbfTstgenConstructConnSMatrix($name);
+  }
+  else {
+    &dump_PSEUDO_ALREADY($outputFile, $name);
+  }
+
+}#if correct arguments
+}# sub testPseudo
+
+#--------------------Added by Rajeev ------------------#
+
+#****f* /upHier
+#  upHier
+# FUNCTION
+#
+#
+#
+#
+# SYNOPSIS
+#  upHier
+#
+#
+#
+#
+# INPUTS
+#
+#
+#
+#
+#	options :
+#
+#
+#
+#
+#	switches :
+#
+#
+#
+#
+# OUTPUTS
+#
+#
+#
+#
+#****
+sub upHier {
+my $noOfArguments = @_;
+#----------------- Defaults --------------------#
+my $moduleName = $TOP_MODULE;
+my $parentName;
+
+if ( $_[0] eq '-h' ) {
+  &upHier_Help;
+}
+else {
+  for ( my $i = 0; $i < $noOfArguments; $i++ ) {
+    if ( $_[$i] eq "-module" ) { $moduleName = $_[$i+1]; }
+    elsif ( $_[$i] eq "-parent" ) { $parentName = $_[$i+1]; }
+    elsif ( $_[$i] =~ m/^-\w/) { print "WARN-TST-UP_HIER : 001 : invalid option $_[$i]\n"; &upHier_Help; }
+  } # for
+
+  unless ( exists $PSEUDO_MODULE_ALREADY{$moduleName} ) {
+    print "WARN-TST-UP_HIER : 002 : module $moduleName has not been edited\n";
+    return();
+  }
+  if ( $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetDirty ) {
+    print "WARN-TST-UP_HIER : 003 : module $moduleName has to be committed before ascending\n";
+    return();
+  }
+
+  my $parent = &dbfTstgenIdentifyModuleParent($moduleName, $parentName);
+  unless ( defined $parent && $parent ne "" ) {
+    if ( defined $parentName ) {
+      print "WARN-TST-UP_HIER : 004 : module $moduleName does not have parent $parentName\n";
+    }
+    else {
+      print "WARN-TST-UP_HIER : 005 : unable to identify a unique parent of module $moduleName\n";
+      &upHier_Help;
+    }
+    return();
+  }
+
+  print "INFO-TST-UP_HIER : 006 : ascending up the hierarchy .... opening $parent for edit\n";
+  if ( exists $PSEUDO_MODULE_ALREADY{$parent} ) {
+    $TOP_MODULE = $parent;
+    $PSEUDO_MODULE_ALREADY{$parent}->dbaTstgenSetIsModuleTop(1);
+    #<!-- save floorplan name before getting wiped out -->
+    my $flplan = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetFloorplan;
+    &dbfTstgenLoadVNOMPins($moduleName);
+    $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenSetIsModuleTop(0);
+    &dbfTstgenLoadVNOMFlplan($moduleName, $flplan);
+    &dbfTstgenCalcInstSizeFromChildFlplan($parent, $moduleName);
+  }
+  else {
+    &dbfTstgenEditModule($parent);
+    &dbfTstgenLoadVNOMFlplan($parent);
+    &dbfTstgenCalcInstSizeFromChildFlplan($parent);
+  }
+
+}#if correct number of arguments
+}# sub upHier
+
+sub upHier_Help {
+print "Usage : up_hier \n";
+print "                   -module <module name>\n";
+print "                   -parent <parent module name>\n";
+}# sub upHier_Help
+
+
+#****f* /downHier
+#  downHier
+# FUNCTION
+#
+#
+#
+#
+# SYNOPSIS
+#  downHier
+#
+#
+#
+#
+# INPUTS
+#
+#
+#
+#
+#	options :
+#
+#
+#
+#
+#	switches :
+#
+#
+#
+#
+# OUTPUTS
+#
+#
+#
+#
+#****
+sub downHier {
+my $noOfArguments = @_;
+
+#----------------- Defaults --------------------#
+my $parentName = $TOP_MODULE;
+my $instName;
+my $flplanName;
+
+if ( $noOfArguments < 1 || $_[0] eq '-h' ) { print "Usage : down_hier \n";
+                           print "                   -parent <module name>\n";
+                           print "                   -inst <instance name>\n";
+                           print "                   -floorplan <floorplan name>\n";
+}
+else {
+  for ( my $i = 0; $i < $noOfArguments; $i++ ) {
+    if ( $_[$i] eq "-inst" ) { $instName = $_[$i+1]; }
+    if ( $_[$i] eq "-parent" ) { $parentName = $_[$i+1]; }
+    if ( $_[$i] eq "-floorplan" ) { $flplanName = $_[$i+1]; }
+  } # for
+
+# from the instance name, try to get the module name (cellref), this modulename 
+# is then passed on to get the innards of the hierarchical Instance
+# the shape of the module is determined from the instance it is associated with
+  my $moduleName;
+  if ( exists $PSEUDO_VINST_ALREADY{$parentName}{$instName} ) {
+       $moduleName = $PSEUDO_VINST_ALREADY{$parentName}{$instName}->dbPimDBGetInstCellref;
+                                                              }
+  else { print "WARN-TST-DWN_HIER : 001 : either parent $parentName or instance $instName does not exist in the current view\n";
+         return();
+       }
+
+  if ( $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetDirty ) {
+    print "WARN-TST-DWN_HIER : 002 : module $parentName has to be commited before descending\n";
+    return();
+  }
+
+  print "INFO-TST-DWN_HIER : 003 : descending down the hierarchy .... opening $moduleName for edit\n";
+  $PSEUDO_MODULE_ALREADY{$parentName}->dbaTstgenSetIsModuleTop(0);
+  &dbfTstgenDownHier($moduleName);
+  &dbfTstgenDownHierFlplan($parentName, $instName, $flplanName);
+  &editModule("-module",$moduleName, "-floorplan",$flplanName);
+
+}#if correct number of arguments
+}# sub downHier
+
+#****f* /commitModuleLocOnly
+#  commitModuleLocOnly
+# FUNCTION
+#
+#
+#
+#
+# SYNOPSIS
+#  commitModuleLocOnly
+#
+#
+#
+#
+# INPUTS
+#
+#
+#
+#
+#	options :
+#
+#
+#
+#
+#	switches :
+#
+#
+#
+#
+# OUTPUTS
+#
+#
+#
+#
+#****
+sub commitModuleLocOnly {
+my $noOfArguments = @_;
+#----------------- Defaults --------------------#
+my $moduleName; undef $moduleName;
+my $flplanName; undef $flplanName;
+
+if ( $noOfArguments < 1 || $_[0] eq '-h' ) { print "Usage : commit_module \n";
+                           print "                   -module <module name>\n";
+}
+else {
+  for ( my $i = 0; $i < $noOfArguments; $i++ ) {
+    if ( $_[$i] eq "-module" ) { $moduleName = $_[$i+1]; }
+    if ( $_[$i] eq "-floorplan" ) { $flplanName = $_[$i+1]; }
+  } # for
+
+  unless ( defined $moduleName ) {
+    $moduleName = $TOP_MODULE;
+  }
+
+  unless ( exists $PSEUDO_MODULE_ALREADY{$moduleName} ) {
+    print "WARN-TST-CMT_MOD_LOC : 001 : module $moduleName is not being edited\n";
+    return;
+  }
+
+  print "INFO-TST-CMT_MOD_LOC : 002 : Commiting module $moduleName\n";
+
+  #&dbfTstgenSetupPseudoConn($moduleName);
+  #&dbfTstgenUpdateVNOMFromPseudo($moduleName);
+  #&dbfTstgenGuidePinLocs($moduleName);
+  &dbfTstgenUpdateChildrenSizes($moduleName);
+  &dbfTstgenUpdateFlplanFromPseudo($moduleName, $flplanName);
+
+}#if correct number of arguments
+}# sub commitModuleLocOnly
+
+sub edit_module_hierarchy{
+
+my $noOfArguments = @_;
+my $moduleName = "";
+
+if($_[0] eq '-h' ){ 
+  print "Usage : edit_module_hierarchy -module <module name (default TOP_MODULE)> \n";
+}
+else{
+  for ( my $i = 0; $i < $noOfArguments; $i++ ){
+    if ( $_[$i] eq "-module" ){
+      $moduleName = $_[$i+1];
+    }
+  }
+  if($moduleName eq ""){
+    $moduleName = $GLOBAL->dbfGlobalGetTOP;
+  }
+  &editModule("-module",$moduleName);
+  if(exists $PSEUDO_MODULE_ALREADY{$moduleName} ){
+    foreach my $instance ( keys %{$PSEUDO_VINST_ALREADY{$moduleName}} ){
+      my $cellref = $PSEUDO_VINST_ALREADY{$moduleName}{$instance}->dbPimDBGetInstCellref;
+      if($instance eq "PIN"){ 
+      }else{ 
+        if(exists $PSEUDO_MODULE_ALREADY{$cellref}){
+          #&edit_module_hierarchy("-module",$cellref);
+          &editModule("-module",$cellref);
+print "TOP MODULE $TOP_MODULE\n";
+        }
+      }
+    }
+  }
+  &editModule("-module",$moduleName);
+}
+}#sub edit_module_hierarchy
+
+sub report_design_hierarchy_new {
+
+my $noOfArguments = @_;
+my $moduleName = "";
+
+if($_[0] eq '-h' ){ 
+  print "Usage : edit_module_hierarchy -module <module name (default TOP_MODULE)> \n";
+}
+else{
+  for ( my $i = 0; $i < $noOfArguments; $i++ ){
+    if ( $_[$i] eq "-module" ){
+      $moduleName = $_[$i+1];
+    }
+  }
+  open (WRITE, ">hierarchy");
+  if($moduleName eq ""){
+    $moduleName = $GLOBAL->dbfGlobalGetTOP;
+  }else{print "\t";}
+  &editModule("-module",$moduleName);
+  print "Module: $moduleName\n";
+  print WRITE "Module: $moduleName\n";
+  if(exists $PSEUDO_MODULE_ALREADY{$moduleName} ){
+    foreach my $instance ( keys %{$PSEUDO_VINST_ALREADY{$moduleName}} ){
+      print "Instance: $instance\n";
+      print WRITE "Instance: $instance\n";
+      my $cellref = $PSEUDO_VINST_ALREADY{$moduleName}{$instance}->dbPimDBGetInstCellref;
+      if($instance eq "PIN"){ 
+      }else{ 
+        if(exists $PSEUDO_MODULE_ALREADY{$cellref}){
+          &edit_module_hierarchy("-module",$cellref);
+        }
+      }
+    }
+  }
+  #&editModule("-module",$moduleName);
+close(WRITE);
+}
+
+}#sub report_design_hierarchy_new
+#------------------------------------------------------------------------------#
+sub create_pseudo_floorplan_already_for_routing_net {
+  my $moduleName = $_[0];
+  my $netName = $_[1];
+  my $netroutingCoords = $_[2];
+
+  my @routes = ();
+  my @data_list = (split(/\,/,$netroutingCoords));
+
+  for(my $i= 0; $i<=$#data_list; $i=$i+5){
+      push(@routes, [$data_list[$i], $data_list[$i+1], $data_list[$i+2],$data_list[$i+3],$data_list[$i+4]]);
+  }#for
+
+  $PSEUDO_VNET_ALREADY{$moduleName}->{$netName}->dbaTstgenSetPseudoExtNetCoords(@routes);
+
+}#sub create_pseudo_floorplan_already_for_routing_net
+#------------------------------------------------------------------------------#
+1;
+

@@ -1,0 +1,677 @@
+#!/usr/bin/perl 
+#use lib "/usr/lib/perl5/vendor_perl/5.8.5/";
+#use lib "/usr/lib/perl5/site_perl/5.8.5";
+#use lib "/usr/lib/perl5/5.8.5";
+#use lib "/usr/lib/perl5/vendor_perl/5.8.5/i386-linux-thread-multi/Tk";
+#use lib "/usr/lib/perl5/site_perl/5.8.5/i386-linux-thread-multi/Tk";
+#use lib "/usr/lib/perl5/5.8.5/i386-linux-thread-multi/Tk";
+
+use lib "/usr/lib64/perl5/vendor_perl/5.10.0/x86_64-linux-thread-multi/Tk";
+use lib "/usr/lib/perl5/vendor_perl/5.10.0/Pod/Perldoc/ToTk.pm";
+use lib "/usr/lib/perl5/vendor_perl/5.10.0/i386-linux-thread-multi/Tk";
+use lib "/usr/lib/perl5/site_perl/5.10.0/i386-linux-thread-multi/Tk";
+#use lib "/usr/lib/perl5/site_perl/5.10.0/i386-linux-thread-multi/Tk";
+#use lib "/usr/lib/perl5/5.10.0/i386-linux-thread-multi/Tk";
+
+#use lib "/usr/lib/perl5/vendor_perl/5.8.4/i386-linux-thread-multi/Tk";
+#use lib "/usr/lib/perl5/site_perl/5.8.4/i386-linux-thread-multi/Tk";
+#use lib "/usr/lib/perl5/5.8.4/i386-linux-thread-multi/Tk";
+#
+#use lib "/usr/lib/perl5/vendor_perl/5.8.3/i386-linux-thread-multi/Tk";
+#use lib "/usr/lib/perl5/site_perl/5.8.3/i386-linux-thread-multi/Tk";
+#use lib "/usr/lib/perl5/5.8.3/i386-linux-thread-multi/Tk";
+#
+#use lib "/usr/lib/perl5/vendor_perl/5.8.2/i386-linux-thread-multi/Tk";
+#use lib "/usr/lib/perl5/site_perl/5.8.2/i386-linux-thread-multi/Tk";
+#use lib "/usr/lib/perl5/5.8.2/i386-linux-thread-multi/Tk";
+#
+#use lib "/usr/lib/perl5/vendor_perl/5.8.1/i386-linux-thread-multi/Tk";
+#use lib "/usr/lib/perl5/site_perl/5.8.1/i386-linux-thread-multi/Tk";
+#use lib "/usr/lib/perl5/5.8.1/i386-linux-thread-multi/Tk";
+#
+#use lib "/usr/lib/perl5/vendor_perl/5.8.0/i386-linux-thread-multi/Tk";
+#use lib "/usr/lib/perl5/site_perl/5.8.0/i386-linux-thread-multi/Tk";
+#use lib "/usr/lib/perl5/5.8.0/i386-linux-thread-multi/Tk";
+#perl2exe_noopt ;
+#perl2exe_include utf8 ;
+#perl2exe_include Tk::FBox ;
+#perl2exe_include Tk::Scale ;
+#perl2exe_include Tk::IconList ;
+#perl2exe_include Tk::Optionmenu ;
+#perl2exe_include Tk::Bitmap ;
+#perl2exe_include Tk::After ;
+
+#use Tk::MainWindow;
+
+use Tk;
+use Tk::WorldCanvas;
+use Tk::Widget;
+use Tk::Entry;
+use Tk::Frame;
+use Tk::Scrollbar;
+use Tk::Checkbutton;
+use Tk::Canvas;
+use Tk::DummyEncode;
+use Tk::ROText;
+
+my $cmdVar; 
+my %COMMAND;
+
+my %CHIP_AREA;
+my %DBNode;
+my %DBNet;
+my %NET_COORDS;
+my %DBCN;
+
+my $canvas;
+my $displayFactor;
+my $shiftX;
+my $shiftY; 
+my $readGraphVar = 0; 
+my $canvasWidth = 700;
+my $canvasHeight = 500;
+my $box = [0, 0, $canvasWidth, $canvasHeight];
+my $foundFile = 0;
+my $fileName = ""; 
+my $graphfile = ""; 
+
+for(my $i = 0; $i <= $#ARGV; $i++){
+    if($ARGV[$i] eq "-f"){$fileName = $ARGV[$i+1]; $foundFile =1;}
+    if($ARGV[$i] eq "-canvw"){$canvasWidth = $ARGV[$i+1];} 
+    if($ARGV[$i] eq "-canvh"){$canvasHeight = $ARGV[$i+1];} 
+    if($ARGV[$i] eq "-help"){ print "Usage : fileName  -f <tcl file> \n";
+                          print "                  -canw <value> \n";
+                          print "                  -canh <value>\n";
+                          exit;}
+                                    } # for
+#####################################################################################
+   $mw   = MainWindow->new;
+   $mw->title (" GRAPH DISPLAY ");
+
+#---------------------------------- Menu Frame --------------------------------#
+my $menubar = $mw->Frame(-relief=>"ridge", -borderwidth=>0,-background=>"wheat");
+   $menubar->pack(-side=>'top', -fill=>'both');
+
+   $menubar->Label(-text => "FileName", -foreground=>"blue", -background=>"wheat")->pack(-side =>'left', -anchor => 'w');
+   $menubar->Entry(-textvariable =>\$graphfile ,-background=>"LightYellow2",)->pack(-side =>'left', -anchor => 'w', -fill => 'x');
+my $image = $mw->Getimage('folder');
+my $Browsebutton = $menubar->Button(-text=>'BrowseFile',-image=>$image,-command =>sub {&filelist_popup;})->pack(-side => 'left'); 
+
+my $readButton = $menubar->Button(-text=>"ReadGraph", -underline => 0,-background=>"wheat",-foreground=>"blue",-activebackground=>"white",-activeforeground=>"black",-relief=>"raised",-highlightthickness=>1,-highlightbackground=>"purple",-pady=>0, -command => sub {&read_graph("-f", $graphfile); });
+$readButton->pack(-side=>'left');
+
+my $displayButton = $menubar->Button(-text=>"DisplayGraph", -underline => 0,-background=>"wheat",-foreground=>"blue",-activebackground=>"white",-activeforeground=>"black",-relief=>"raised",-highlightthickness=>1,-highlightbackground=>"purple",-pady=>0, -command => sub {&display_graph;});
+$displayButton->pack(-side=>'left');
+
+#--------------------------------- Canvas Frame ------------------------------------------------#
+
+my $canvasFrame = $mw->Frame(-relief=>"flat")->pack(-side=>'top', -fill=>'both',-expand=>1);
+
+$canvas  = $canvasFrame->Scrolled('WorldCanvas', -scrollbars=>'se',-bg =>'black',-width=>$canvasWidth, -height=>$canvasHeight)->pack(qw/-side left -expand 1 -fill both/);
+$canvas->Subwidget("xscrollbar")->configure(-width=>10,-borderwidth=>0,-background=>'orange',-activebackground=>"red",-highlightbackground=>"green");
+$canvas->Subwidget("yscrollbar")->configure(-width=>10,-borderwidth=>0,-background=>'orange',-activebackground=>"red",-highlightbackground=>"green");
+$canvas->configure(-confine => 1);
+
+#--------------------------------- Command frame -----------------------------------------------#
+
+my $commandFame = $mw->Frame(-relief=>'flat')->pack(-side=>'bottom', -fill=>'both');
+my $scrolly = $commandFame->Scrollbar(-orient=>"vertical",-background=>'green',-activebackground=>"red",-highlightbackground=>"red",-width=>10);
+my $readOnlyText = $commandFame->ROText(height=>5,-yscrollcommand=>['set'=>$scrolly],-background=>"plum");
+$scrolly->configure(-command=>['yview'=>$readOnlyText]);
+$scrolly->pack(-side=>'right',-fill=>'y');
+$readOnlyText->pack(-side=>'top', -fill=>'both');
+
+my $cmdLineText = $commandFame->Entry(-borderwidth=>1, -highlightthickness=>1, -textvariable=>\$cmdVar,-background=>"wheat",-highlightbackground=>"green")->pack(-side=>'bottom', -fill=>'both');
+$cmdLineText->bind("<Return>", sub {
+                                 my ($cmd, @arguments) = split(/\s+/, $cmdVar);
+                                 my $noOfargs = @arguments;
+                                 tie *STDOUT, ref $readOnlyText, $readOnlyText;
+                                 if(exists $COMMAND{$cmd}){
+                                                    print "$cmd found\n";
+                                                    &{$COMMAND{$cmd}}(@arguments); 
+                                                            }
+                                 else {print "$cmd not found\n";}
+                                  }
+                    );
+#---------------------------------- check buttons --------------------------------------------#
+
+$menubar->Checkbutton(-text=>'LineText',-relief=>"groove",-background=>"pale turquoise",-activebackground=>"pale turquoise",-activeforeground=>"red",
+                        -variable =>\$var4,
+                        -command=> sub{ if($var4 == 0) { $canvas->delete("LINETEXT"); }
+                                                       else { &display_graph("-netText", 1);}
+                                      })->pack(-side=>"right", -anchor=>'w');
+
+$menubar->Checkbutton(-text=>'Text',-relief=>"groove",-background=>"pale turquoise",-activebackground=>"pale turquoise",-activeforeground=>"red",
+                        -variable =>\$var3,
+                        -command=> sub{ if($var3 == 0) { $canvas->delete("TEXT"); }
+                                                       else { &display_graph("-nodeText", 1);}
+                                      })->pack(-side=>"right", -anchor=>'w');
+
+$menubar->Checkbutton(-text=>'Net',-relief=>"groove",-background=>"pale turquoise",-activebackground=>"pale turquoise",-activeforeground=>"red",
+                        -variable =>\$var2,
+                        -command=> sub{ if($var2 == 0) { $canvas->delete("NET"); }
+                                                       else { &display_graph("-net", 1);}
+                                      })->pack(-side=>"right", -anchor=>'w');
+
+$menubar->Checkbutton(-text=>'Node',-relief=>"groove",-background=>"pale turquoise",-activebackground=>"pale turquoise",-activeforeground=>"red",
+                        -variable =>\$var1,
+                        -command=> sub{ if($var1 == 0) { $canvas->delete("NODE"); }
+                                                       else { &display_graph("-node", 1);}
+                                      })->pack(-side=>"right", -anchor=>'w');
+
+&select_nodesWith_LMB;
+&Register_commands;
+
+if ( $foundFile == 1 ) {                                     
+     &source($fileName);                                     
+                        }
+
+MainLoop;
+
+############################ subroutine to open file list popup ##############################
+sub filelist_popup {
+    $graphfile =$_;
+my @types = (["Config Files", '.out'],
+             ["All Files", "*"]);
+$graphfile = $mw->getOpenFile(-filetypes =>\@types,
+                              -defaultextension => '.out'); 
+}#sub filelist_popup
+
+############################ Subroutine to Register Commands #################################
+
+sub Register_commands {
+%COMMAND = (
+            "display_graph" => "display_graph",   
+            "read_graph"    => "read_graph",
+            "select_node"   => "select_node",
+            "set"           => "set", 
+            "source"        => "source",
+            );
+ 
+}#sub Register_commands
+
+############################# subroutine to set variable #####################################
+sub set {
+my $varName = shift @_;
+my @args = @_;
+my $lenArgs = @args;
+my $varVal;
+if ($lenArgs == 1) { 
+   $varVal = $args[0]; 
+   ${$varName} = $varVal;
+}elsif($lenArgs > 1) {
+   if($args[0] =~ /^\s*\[/ ) {
+      my $str = "";
+      foreach my $tag ( @args) { $str = $str." ".$tag; }
+      $str =~ s/^\s*\[\s*//;
+      $str =~ s/\s*\]\s*$//;
+      my @newArgs = split(/\s+/, $str);
+      my $newCmd = shift @newArgs;
+      my $retVal = &{$newCmd}(@newArgs);
+         ${$varName} = $retVal;
+   }# if the expression has to be evaulated
+ }# if more than 2 argiments evaluate the expression to set the value
+}#sub set
+
+############################### subroutine to run the tcl file ###################################
+sub source {
+my $EXECUTE_FILE = $_[0];
+open (READ_EXE_FILE, "$EXECUTE_FILE");
+ while(<READ_EXE_FILE>){
+  chomp($_);
+  $_ =~ s/^\s+//;
+  if($_ =~ /^\s*#/){ # if the line is commented do nothing 
+  }elsif( $_ =~ /^\s*$/ ) { # if the line is empty
+  }else {
+     ($cmd, @arguments) = split(/\s+/, $_);
+     if(exists $COMMAND{$cmd}){
+       &{$COMMAND{$cmd}}(@arguments);
+     }else{
+       print "$cmd no such command\n"; 
+     }
+  }#if the line is not commented
+ }#while not EOF
+}#sub source
+
+########################################## Read Graph File ###########################################
+
+sub read_graph {
+my $noOfArg = @_;
+my $INPUT_GRAPH_FILE;
+
+my $chipName;
+my $chllx;
+my $chlly;
+my $churx;
+my $chury;
+
+my $currentNet;
+my $netSection;
+my $net0Section;
+my $net1Section;
+my $lineSection;
+my $node;
+my $xlo;
+my $ylo;
+my $xhi;
+my $yhi;
+
+my @Nets = ();
+my $netcount = 0;
+
+if (($noOfArg < 2) || ($_[1] eq "") ){ print "Usage:   read_graph -f <fileName>\n"; return;}
+
+else {
+
+for(my $i = 0; $i < $noOfArg ; $i++){
+if($_[$i] eq "-f"){$INPUT_GRAPH_FILE = $_[$i+1];}
+if($_[$i] eq "-help"){print " Usage:   read_graph -f <fileName>\n"; return;}
+                                          }#for all the arguments
+
+open(READ_GRAPH_FILE, "$INPUT_GRAPH_FILE");
+print "start reading graph file\n";
+while(<READ_GRAPH_FILE>){
+chomp($_);
+
+my $values = $_;
+
+if( $values =~ /^\s*#/ ) { next; }
+else {
+
+#-------------------------------------------------------------------------------#
+   if ($values=~ /^CHIP/){
+    my @coords = split(/\s+/, $values);
+       $chipName = $coords[0];
+       $chllx = $coords[1];
+       $chlly = $coords[2];
+       $churx = $coords[3];
+       $chury = $coords[4]; 
+$CHIP_AREA{chip} = [$chllx, $chlly, $churx, $chury];
+#print "$chipName, $chllx, $chlly, $churx, $chury\n";    
+      }#ifchip 
+   else {
+          if ($values=~ /^N1/) {
+              $currentNet = $values;
+	      $netSection = 0;
+	      $net0Section = 0;
+	      $net1Section = 1;
+	      $lineSection  = 0;
+#print " node $values\n";
+           } else {
+	  if ($values=~ /^N0/)  {
+	      $currentNet = $values;
+	      $netSection = 0;
+	      $net0Section = 1;
+	      $net1Section = 0;
+	      $lineSection = 0;
+	  } else {
+	  if ($values=~ /^NT/) {
+	      $currentNet = $values;
+	      $netSection = 1;
+	      $net0Section = 0;
+	      $net1Section = 0;
+	      $lineSection = 0;
+	  } else {
+	  if ($values=~/^LN/) {
+	      $net1Section = 0;
+              $net0Section = 0;
+	      $netSection = 0;
+	      $lineSection = 1;
+#print " line $values\n";
+          } else {
+		if ($values=~/^E/ )  {
+		    if ($netSection == 1 ) {
+			$netSection = 0;
+		    }
+		    if ($net0Section == 1 ) {
+			$net0Section = 0;
+		    }
+		    if ($net1Section == 1 ) {
+			$net1Section = 0;
+		    }
+		    if ($lineSection == 1 ) {
+			$lineSection = 0;
+		    }
+		} else {
+			    if ($netSection == 1 ) {
+			          ($node, $xlo, $ylo )= split (/\s+/, $values);
+				   $DBNode{$node} = [$xlo, $ylo];
+#print " net $node , $xlo, $ylo\n";
+			    } else {
+			    if ($net0Section == 1 ) {
+                                   ($node, $xlo, $ylo )= split (/\s+/, $values);
+                                    $DBNode{$node} = [$xlo, $ylo]
+			    } else {
+			    if ($net1Section == 1 ) {
+                                   ($node, $xlo, $ylo )= split (/\s+/, $values);
+                                    $DBNode{$node} = [$xlo, $ylo]
+			    } else {
+				if ($lineSection == 1 ) {
+                                      ($xlo, $ylo, $xhi, $yhi )= split (/\s+/, $values);
+                                    my @netCoords = ($xlo, $ylo, $xhi, $yhi);
+#print "line $xlo, $ylo, $xhi, $yhi\n";
+
+                                     if ($netcount > 0 ) {
+                                         my $j = $netcount-1; 
+                                         my $pNode = $DBCN{$j};
+                                         if ($node == $pNode) { push (@Nets ,  [@netCoords]);}
+                                         else { @Nets = [@netCoords];}
+                                                    
+                                                     }   
+                                     if($netcount ==  0 ){ push (@Nets , [@netCoords]);} 
+                                          $DBCN{$netcount} = $node;
+                                          $NET_COORDS{$netcount} = [$xlo, $ylo, $xhi, $yhi];
+                                          @{$DBNet{$node}} = @Nets; 
+                                        $netcount++;   
+				} else {last;
+
+                               } 
+			    }
+			}
+		    }
+		}
+	    }
+	    }
+	    }
+	    }
+	    }
+
+   }#else line is not blank
+}#while reading
+$readGraphVar = 1;
+print "end reading graph file\n";
+}#else correct no of arguments
+
+}#sub read_graph
+
+#-------------------------------------------------- Display Graph ---------------------------------------------------------#
+
+sub display_graph {
+my $noOfArg = @_;
+my $node_display = 0;
+my $net_display = 0;
+my $node_text = 0;
+my $net_text = 0;
+if($readGraphVar == 0) {print "Warning: first, you should read the graph\n"; return;}
+if($noOfArg == 0){
+   $node_display = 1;
+   $net_display = 0;
+   $node_text = 1;
+   $net_text = 0;
+                   }#default display
+else {
+   for(my $i = 0; $i < $noOfArg; $i++){
+       if($_[$i] eq "-node"){$node_display = $_[$i+1];}
+       if($_[$i] eq "-net"){$net_display = $_[$i+1];}
+       if($_[$i] eq "-nodeText"){$node_text = $_[$i+1];}
+       if($_[$i] eq "-netText"){$net_text = $_[$i+1];}
+       if($_[$i] eq "-help"){
+                             print "You can select options:\n";
+		    	     print "Usage: display_graph -node 1/0\n";
+	  	    	     print "                     -net 1/0\n";     
+		    	     print "                     -nodeText 1/0\n";     
+	            	     print "                     -netText 1/0\n";}
+                                           }#for all arguments
+           }                 
+
+if ( exists $CHIP_AREA{chip} ) {
+
+my $chip_llx = $CHIP_AREA{chip}[0]; 
+my $chip_lly = $CHIP_AREA{chip}[1]; 
+my $chip_urx = $CHIP_AREA{chip}[2]; 
+my $chip_ury = $CHIP_AREA{chip}[3]; 
+
+my $chipWidth = $chip_urx-$chip_llx;
+my $chipHeight = $chip_ury - $chip_lly;
+
+my $XdisplayFactor = $canvasWidth/$chipWidth; 
+my $YdisplayFactor = $canvasHeight/$chipHeight; 
+
+if ($XdisplayFactor > $YdisplayFactor) {
+	    $displayFactor = $YdisplayFactor;}
+else {
+	    $displayFactor = $XdisplayFactor;
+   	}
+
+   $shiftX =  $chip_llx;
+   $shiftY =  $chip_lly;
+#$chip_llx = $displayFactor*($chip_llx-$shiftX) + 20;
+#$chip_lly = $displayFactor*($chip_lly-$shiftY) + 20;
+#$chip_urx = $displayFactor*($chip_urx-$shiftX) + 20;
+#$chip_ury = $displayFactor*($chip_ury-$shiftY) + 20;
+#$canvas->createRectangle($chip_llx, $chip_lly, $chip_urx, $chip_ury, -outline,"blue" );
+#----------------- draw nodes --------------------#
+foreach my $node (keys %DBNode){
+        my $coords = $DBNode{$node};
+	my $x = @$coords[0];
+	my $y = @$coords[1];
+
+	my $llx = $displayFactor*($x-$shiftX) + 20;
+	my $lly = $displayFactor*($y-$shiftY) + 20;
+	my $urx = $llx + 2;
+	my $ury = $lly + 2;
+
+	if ($node_display == 1){
+	$canvas->createRectangle($llx, $lly, $urx, $ury, -outline,"magenta" ,-tags=>"NODE");
+                         	}#if node display
+	if ($node_text == 1){
+	$canvas->createText($llx, $ury, , -text=> $node, -fill=>"white", -tags=>"TEXT");
+                     		}#if node text display
+                              }#foreach node
+
+foreach my $net (keys %NET_COORDS){
+	my $net_coords = $NET_COORDS{$net};
+	my $llx = @$net_coords[0];
+	my $lly = @$net_coords[1];
+	my $urx = @$net_coords[2];
+	my $ury = @$net_coords[3];
+
+	   $llx = $displayFactor*($llx-$shiftX) + 20;
+	   $lly = $displayFactor*($lly-$shiftY) + 20;
+	   $urx = $displayFactor*($urx-$shiftX) + 20;
+	   $ury = $displayFactor*($ury-$shiftY) + 20;
+
+	if($net_display == 1){
+	$canvas->createLine($llx, $lly, $urx, $ury, -tags=>"NET", -fill,"green");
+        	               }#if net display
+
+	if ($net_text == 1){
+	my $midx = $llx + ($urx - $llx)/2;
+	my $midy = $lly + ($ury - $lly)/2;
+	$canvas->createText($midx, $midy, , -text=> $net, -fill=>"yellow", -tags=>"LINETEXT");
+        	             }#if net text display
+
+                                      }#foreach net
+
+                                    }#if chip dimentions found
+$canvas->viewAll;
+my @box_org = $canvas->getView();
+&graph_zoomInOut($canvas,\@box_org);
+}#sub display_graph
+
+
+sub graph_zoomInOut {
+my @arg = @_;
+my $canvas = $arg[0];
+my @view_bbox = @{$arg[1]};
+   $canvas->CanvasFocus;
+   #$canvas->configure(-bandColor => 'red');
+   $canvas->CanvasBind('<3>'               => sub {$canvas->configure(-bandColor => "");
+                                                   $canvas->configure(-bandColor => 'red');
+                                                   $canvas->rubberBand(0)});
+   $canvas->CanvasBind('<B3-Motion>'       => sub {$canvas->rubberBand(1)});
+   $canvas->CanvasBind('<ButtonRelease-3>' => sub {my @box = $canvas->rubberBand(2);
+                                                   $canvas->viewArea(@box, -border => 0)});
+                                                   
+   $canvas->CanvasBind('<2>'               => sub {$canvas->viewArea(@view_bbox, -border => 0)});
+
+   $canvas->CanvasBind('<i>' => sub {$canvas->zoom(1.25)});
+   $canvas->CanvasBind('<o>' => sub {$canvas->zoom(0.75)});
+   $canvas->CanvasBind('<f>' => sub {$canvas->viewArea(@view_bbox, -border => 0);});
+
+   $mw->bind('WorldCanvas',    '<Up>' => "");
+   $mw->bind('WorldCanvas',  '<Down>' => "");
+   $mw->bind('WorldCanvas',  '<Left>' => "");
+   $mw->bind('WorldCanvas', '<Right>' => "");
+
+   $canvas->CanvasBind('<KeyPress-Up>'   => sub {$canvas->panWorld(0,  200);});
+   $canvas->CanvasBind('<KeyPress-Down>' => sub {$canvas->panWorld(0, -200);});
+   $canvas->CanvasBind('<KeyPress-Left>' => sub {$canvas->panWorld(-200, 0);});
+   $canvas->CanvasBind('<KeyPress-Right>'=> sub {$canvas->panWorld( 200, 0);});
+
+}#sub graph_zoomInOut
+
+sub select_node {
+my $nodes = $_[0];
+my @array_nodes  = split(/\,/,$nodes);
+my $len = @array_nodes; 
+if($len < 1){print"Usage: select_node <n1,n2,n3.....>\n"; return;}
+my $color = "red";
+
+foreach my $node(@array_nodes){
+        my $coords = $DBNode{$node};
+	my $x = @$coords[0];
+	my $y = @$coords[1];
+	my $llx = $displayFactor*($x-$shiftX) + 20;
+	my $lly = $displayFactor*($y-$shiftY) + 20;
+	my $urx = $llx + 2;
+	my $ury = $lly + 2;
+	   $canvas->createRectangle($llx, $lly, $urx, $ury, -outline,$color ,-tags=>"SELECTED",-fill,$color,-stipple,"gray12");
+	   $canvas->createText($llx, $ury, -text=> $node, -fill=>"orange", -tags=>"SELECTED");
+
+	        my @nets_coords = @{$DBNet{$node}};
+	foreach my $netcoords (@nets_coords){
+		my $net_llx = @$netcoords[0];
+		my $net_lly = @$netcoords[1];
+		my $net_urx = @$netcoords[2];
+		my $net_ury = @$netcoords[3];
+		my $fnet_llx = $displayFactor*($net_llx -$shiftX) + 20;
+		my $fnet_lly = $displayFactor*($net_lly -$shiftY) + 20;
+		my $fnet_urx = $displayFactor*($net_urx -$shiftX) + 20;
+		my $fnet_ury = $displayFactor*($net_ury -$shiftY) + 20;
+		   $canvas->createLine($fnet_llx, $fnet_lly, $fnet_urx, $fnet_ury, -tags=>"SELECTED", -fill,$color);
+      
+               foreach $nodeName (keys %DBNode) {
+                    my $node_coords = $DBNode{$nodeName};
+                    my $node_llx = @$node_coords[0];
+                    my $node_lly = @$node_coords[1];  
+                    if (($net_urx == $node_llx) && ($net_ury == $node_lly)) {
+	               my $node_llx = $displayFactor*($node_llx-$shiftX) + 20;
+		       my $node_lly = $displayFactor*($node_lly-$shiftY) + 20;
+		       my $node_urx = $node_llx + 2;
+		       my $node_ury = $node_lly + 2;
+
+                       $canvas->createRectangle($node_llx, $node_lly, $node_urx, $node_ury, -outline,$color ,-tags=>"SELECTED",-fill,$color,-stipple,"gray12");
+	               $canvas->createText($llx, $ury, -text=> $nodeName, -fill=>"orange", -tags=>"SELECTED");
+                                                                                   }#if node connected with net
+                                      
+                                                         }
+
+                                                   }#foreach net  
+                               }#foreach node
+}#sub select_node
+
+sub select_nodesWith_LMB { 
+   $canvas->CanvasBind('<1>'                => sub {$canvas->configure(-bandColor => "white");
+                                                    $canvas->rubberBand(0);});
+   $canvas->CanvasBind('<B1-Motion>'        => sub {$canvas->rubberBand(1)});
+   $canvas->CanvasBind('<B1-ButtonRelease>' => sub {my @box = $canvas->rubberBand(2);
+                                                    &mouse_selected_nodes($box[0],$box[1],$box[2],$box[3]);
+                                                    });
+   $canvas->CanvasBind('<Control-2>'        => sub {$canvas->delete("SELECTED");});
+
+}#sub select_nodesWith_LMB
+
+sub mouse_selected_nodes {
+my $zoomRectCoords0 = $_[0];
+my $zoomRectCoords1 = $_[1];
+my $zoomRectCoords2 = $_[2];
+my $zoomRectCoords3 = $_[3];
+my $color = "red";
+
+foreach my $node(keys %DBNode ){
+        my %fanIn_nodes = ();
+        $fanIn_nodes{$node} = 1;
+        my $coords = $DBNode{$node};
+	my $x = @$coords[0];
+	my $y = @$coords[1];
+	my $llx = $displayFactor*($x-$shiftX) + 20;
+	my $lly = $displayFactor*($y-$shiftY) + 20;
+	my $urx = $llx + 2;
+	my $ury = $lly + 2;
+        if (($llx >= $zoomRectCoords0) && ($lly >= $zoomRectCoords1) && ($urx<=$zoomRectCoords2) && ($ury<=$zoomRectCoords3)) {
+	   $canvas->createRectangle($llx, $lly, $urx, $ury, -outline,$color ,-tags=>"SELECTED",-fill,$color,-stipple,"gray12");
+	   #$canvas->createText($llx, $ury, -text=> $node, -fill=>"orange", -tags=>"SELECTED");
+
+	        my $nets_coords = $DBNet{$node};
+	foreach my $netcoords (@$nets_coords){
+		my $net_llx = @$netcoords[0];
+		my $net_lly = @$netcoords[1];
+		my $net_urx = @$netcoords[2];
+		my $net_ury = @$netcoords[3];
+		my $fnet_llx = $displayFactor*($net_llx -$shiftX) + 20;
+		my $fnet_lly = $displayFactor*($net_lly -$shiftY) + 20;
+		my $fnet_urx = $displayFactor*($net_urx -$shiftX) + 20;
+		my $fnet_ury = $displayFactor*($net_ury -$shiftY) + 20;
+		   $canvas->createLine($fnet_llx, $fnet_lly, $fnet_urx, $fnet_ury, -tags=>"SELECTED", -fill,$color);
+      
+               foreach my $nodeName (keys %DBNode) {
+                    my $node_coords = $DBNode{$nodeName};
+                    my $node_llx = @$node_coords[0];
+                    my $node_lly = @$node_coords[1];  
+                    if (($net_urx == $node_llx) && ($net_ury == $node_lly)) {
+                         $fanIn_nodes{$nodeName} = 1;
+	                 $node_llx = $displayFactor*($node_llx-$shiftX) + 20;
+		         $node_lly = $displayFactor*($node_lly-$shiftY) + 20;
+		         my $node_urx = $node_llx + 2;
+		         my $node_ury = $node_lly + 2;
+
+                       $canvas->createRectangle($node_llx, $node_lly, $node_urx, $node_ury, -outline,$color ,-tags=>"SELECTED",-fill,$color,-stipple,"gray12");
+	               #$canvas->createText($node_llx, $node_ury, -text=> $nodeName, -fill=>"orange", -tags=>"SELECTED");
+                    }#if node connected with net
+               }
+
+        }#foreach net  
+        foreach my $net (keys %NET_COORDS){
+                my @in_coords = @{$NET_COORDS{$net}};
+                my $driver_node = $DBCN{$net};
+                if(exists $fanIn_nodes{$driver_node}){
+                }else{
+                   if($in_coords[2] == $x && $in_coords[3] == $y){
+                      my $net_llx = $displayFactor*($in_coords[0] - $shiftX) + 20;
+		      my $net_lly = $displayFactor*($in_coords[1] - $shiftY) + 20;
+		      my $net_urx = $displayFactor*($in_coords[2] - $shiftX) + 20;
+		      my $net_ury = $displayFactor*($in_coords[3] - $shiftY) + 20;
+		      $canvas->createLine($net_llx, $net_lly, $net_urx, $net_ury, -tags=>"SELECTED", -fill,$color);
+                      my $node_coords = $DBNode{$driver_node};
+                      my $node_llx = @$node_coords[0];
+                      my $node_lly = @$node_coords[1];
+                         $node_llx = $displayFactor*($node_llx-$shiftX) + 20;
+		         $node_lly = $displayFactor*($node_lly-$shiftY) + 20;
+		         my $node_urx = $node_llx + 2;
+		         my $node_ury = $node_lly + 2;
+                      $canvas->createRectangle($node_llx, $node_lly, $node_urx, $node_ury, -outline,$color ,-tags=>"SELECTED",-fill,$color,-stipple,"gray12");
+	              #$canvas->createText($node_llx, $node_ury, -text=> $driver_node, -fill=>"orange", -tags=>"SELECTED");
+                   }elsif($in_coords[0] == $x && $in_coords[1] == $y){
+                      my $net_llx = $displayFactor*($in_coords[0] - $shiftX) + 20;
+		      my $net_lly = $displayFactor*($in_coords[1] - $shiftY) + 20;
+		      my $net_urx = $displayFactor*($in_coords[2] - $shiftX) + 20;
+		      my $net_ury = $displayFactor*($in_coords[3] - $shiftY) + 20;
+		      $canvas->createLine($net_llx, $net_lly, $net_urx, $net_ury, -tags=>"SELECTED", -fill,$color);
+                      my $node_llx = $net_urx; 
+                      my $node_lly = $net_ury; 
+                      my $node_urx = $net_urx+2; 
+                      my $node_ury = $net_ury+2; 
+                      $canvas->createRectangle($node_llx, $node_lly, $node_urx, $node_ury, -outline,$color ,-tags=>"SELECTED",-fill,$color,-stipple,"gray12");
+	              #$canvas->createText($node_llx, $node_ury, -text=> $driver_node, -fill=>"orange", -tags=>"SELECTED");
+                   }
+                       
+                }
+        }
+     }
+}#foreach node
+}#sub mouse_selected_nodes
+
+
+
+

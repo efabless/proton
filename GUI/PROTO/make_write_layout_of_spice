@@ -1,0 +1,1851 @@
+###################################################################################
+sub write_edp_layout {
+  use Benchmark;
+  my $t0 = new Benchmark;
+  my $noOfArguments = @_;
+  if($noOfArguments < 0 || $_[0] eq "-h"){print "Usage : write_edp_layout\n"; 
+                                          print "      : -output <fileName>\n";
+                                          print "      : -chip_width <width>\n";
+                                          print "      : -chip_height <height>\n";
+                                          print "      : -trans_width <width>\n";
+                                          print "      : -trans_height <height>\n";
+                                          print "      : -tech_size <size>\n"; 
+                                         }
+  else{
+    my $out_file;
+    my $edp_width;
+    my $edp_height;
+    my $trans_width;
+    my $trans_height;
+    my $tech_size;
+    for(my $i=0; $i < $noOfArguments;$i++){
+      if($_[$i] eq "-output"){$out_file = $_[$i+1];}
+      if($_[$i] eq "-chip_width"){$edp_width = $_[$i+1];}
+      if($_[$i] eq "-chip_height"){$edp_height = $_[$i+1];}
+      if($_[$i] eq "-trans_width"){$trans_width = $_[$i+1];}
+      if($_[$i] eq "-trans_height"){$trans_height = $_[$i+1];}
+      if($_[$i] eq "-tech_size"){$tech_size = $_[$i+1];}
+    }#for
+    #my $loc_exists = &check_location_exists_in_spice;
+    if($loc_exists == 1){
+      #&calc_bbox_of_pType_and_nType_inst("-chip_width",$edp_width,"-chip_height",$edp_height,"-trans_width",$trans_width,"-trans_height",$trans_height,"-tech_size",$tech_size);
+      #&set_layout_loc_in_flplan("-chip_width",$edp_width,"-chip_height",$edp_height,"-trans_width",$trans_width,"-trans_height",$trans_height,"-tech_size",$tech_size);
+      #&elaborate;
+      #&hier2flat;
+      #&route_flat_for_spice; 
+      #&set_routing_coords_in_flplan;
+      #&editModule("-module", $TOP_MODULE);
+      #&write_spice_layout("-output",$out_file,"-chip_width",$edp_width,"-chip_height",$edp_height,"-trans_width",$trans_width,"-trans_height",$trans_height,"-tech_size",$tech_size);
+    }else {
+      #&create_lef_cell_according_to_spice($edp_width,$edp_height,$trans_width,$trans_height,$tech_size);
+      #&calc_bbox_of_pType_and_nType_inst("-chip_width",$edp_width,"-chip_height",$edp_height,"-trans_width",$trans_width,"-trans_height",$trans_height,"-tech_size",$tech_size);
+      #&set_layout_loc_in_flplan("-chip_width",$edp_width,"-chip_height",$edp_height,"-trans_width",$trans_width,"-trans_height",$trans_height,"-tech_size",$tech_size);
+      #&elaborate;
+      #&hier2flat;
+      #&route_flat_for_spice; 
+      &set_routing_coords_in_flplan;
+      &editModule("-module", $TOP_MODULE);
+      &write_spice_layout("-output",$out_file,"-chip_width",$edp_width,"-chip_height",$edp_height,"-trans_width",$trans_width,"-trans_height",$trans_height,"-tech_size",$tech_size);
+    }
+  }#else 
+  my $t1 = new Benchmark;
+  my $td = timediff($t1,$t0);
+  print "write_edp_layout: ",timestr($td),"\n"; 
+}#sub write_edp_layout
+####################################################################################################
+sub write_spice_layout {
+  my $noOfArguments = @_;
+  if($noOfArguments < 0 || $_[0] eq "-h"){print "Usage : write_spice_layout\n";
+                                            print "      : -output <fileName>\n";
+                                            print "      : -chip_width <width>\n";
+                                            print "      : -chip_height <height>\n";
+                                            print "      : -trans_height <height>\n";
+                                            print "      : -trans_width <width\n"; 
+                                            print "      : -tech_size <size>\n"; 
+                                           }
+   else{
+     my $out_file;
+     my $given_chip_width;
+     my $given_chip_height;
+     my $out_str = "";
+     my $sub_out_str = "";
+     my $glue_str = "";
+     my %INST_CONN_POINTS = ();
+     my %SPICE_INST_LOC = ();
+     my $trans_length = "";
+     my $trans_width = "";
+     my $tech_size = "";
+     for(my $i=0; $i < $noOfArguments;$i++){
+       if($_[$i] eq "-output"){$out_file = $_[$i+1];}
+       if($_[$i] eq "-chip_width"){$given_chip_width = $_[$i+1];}
+       if($_[$i] eq "-chip_height"){$given_chip_height = $_[$i+1];}
+       if($_[$i] eq "-trans_height"){$trans_height = $_[$i+1];}
+       if($_[$i] eq "-trans_width"){$trans_width = $_[$i+1];}
+       if($_[$i] eq "-tech_size") {$tech_size = $_[$i+1];}
+     }#for
+    open(WRITE,">$out_file");
+    my $dbu = $GLOBAL->dbfGlobalGetDBU;
+    if(exists $PSEUDO_MODULE_ALREADY{$TOP_MODULE} ) {
+       #---------------------------------------------------------------------#
+       my $multiFactor = "";
+       my @size = $PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenGetSize;   
+       my $get_temp_chip_width = $size[2]-$size[0];
+       my $get_temp_chip_height = $size[3]-$size[1];
+
+       my $temp_chip_width = $get_temp_chip_width/$dbu;
+       my $temp_chip_height = $get_temp_chip_height/$dbu; 
+
+       my $multiFactorX = 1000/$temp_chip_width;
+       my $multiFactorY = 500/$temp_chip_height;
+
+       #my $multiFactorX = $given_chip_width/$temp_chip_width;
+       #my $multiFactorY = $given_chip_height/$temp_chip_height;
+
+       if($multiFactorX > $multiFactorY){
+          $multiFactor = $multiFactorX;
+       }else{
+          $multiFactor = $multiFactorY;
+       }
+       my $chip_width =  $temp_chip_width*$multiFactor;
+       my $chip_height =  $temp_chip_height*$multiFactor;
+       $out_str = $out_str."{\"c\":{\"width\":$chip_width,\"height\":$chip_height,\"multiFactor\":$multiFactor,\"id\":\"canvasProps\",\"oType\":\"CanvasProps\"},"; #canvas block start 
+       if((keys %{$PSEUDO_MODULE_ALREADY{$TOP_MODULE}}) > 0){
+         $out_str = $out_str."\"s\":{\"figures\":["; #figure block start
+       }
+       my $cnt = 0;
+       my @idToIndex = ();
+       my $connPointIdCnt = 0;
+       my @instance_list = ();
+       foreach my $instance (keys %{$PSEUDO_VINST_ALREADY{$TOP_MODULE}}){
+         push (@instance_list,$instance);
+       }
+       my $number_of_instance = @instance_list;
+       my $bound_box_width = ($trans_width + 2*$tech_size);
+       my $bound_box_height = ($trans_height + 2*$tech_size);
+       foreach my $instance ( @instance_list ) {
+         $instance =~ s/^\d+_tmpslvr_//;
+         if($instance =~ /vdd/i){
+           #-----------------------------------ADD CODE FOR VSS/VDD-----------#
+         #  my @location = &calc_size_from_given_vdd_loc($chip_width,$chip_height,$bound_box_width);
+         #  $out_str = $out_str."{\"id\":$cnt,\"name\":\"vdd\",";
+         #  $out_str = $out_str."\"primitives\":["; #primitives block start
+         #  $out_str = $out_str."{\"points\":["; #points block start
+         #  my $midX = sprintf ("%.2f",($location[0] + $location[4])/2);
+         #  my $midY = sprintf ("%.2f",($location[1] + $location[5])/2);
+         #  my $vectorURY = $midY - 6; ###### midy -fontSize/2
+         #  my $new_vectorURY = "";
+         #  if($vectorURY < $location[1]){
+         #     $new_vectorURY = $vectorURY+6;
+         #  }else {
+         #     $new_vectorURY = $vectorURY;
+         #  }
+         #  #print "midX = $midX vectorURY = $vectorURY location = $location[1]\n"; 
+         #  for(my $i=0; $i<=7; $i=$i+2){
+         #    my $xxx = $location[$i];
+         #    my $yyy = $location[$i+1];
+         #    $out_str = $out_str."{\"x\":$xxx,\"y\":$yyy,\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"},";
+         #  }
+         #  $out_str =~ s/\,$//; #removing extra comma in last point
+         #  $out_str = $out_str."],";
+         #  $out_str = $out_str."\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},";
+         #  $out_str = $out_str."\"oType\":\"Polygon\"},"; #points block end
+         #  
+         #  $out_str = $out_str. "{\"str\":\"vdd\",\"font\":\"Arial\",\"size\":12,\"lineSpacing\":3,\"align\":\"center\",\"valign\":\"middle\","; #string block start
+         #  $out_str = $out_str."\"vector\":[{\"x\":$midX,\"y\":$new_vectorURY,\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"},{\"x\":$midX,\"y\":$location[1],\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"}],"; #vector block
+         #  $out_str = $out_str."\"style\":{\"fillStyle\":\"#000000\",\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},"; #style block
+         #  $out_str = $out_str."\"bounds\":{";
+         #  $out_str = $out_str."\"points\":["; #bounds block start
+         #  for(my $j=0; $j<=3; $j++){ #currently we are putting text bbox coordinates value = null
+         #    $out_str = $out_str."{\"x\":null,\"y\":null,\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"},";
+         #  }
+         #  $out_str =~ s/\,$//; #removing extra comma in last point
+         #  $out_str = $out_str."],";
+         #  $out_str = $out_str."\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},";
+         #  $out_str = $out_str."\"oType\":\"Polygon\"},"; #bounds block end
+         #  
+         #  $out_str = $out_str."\"debug\":false,\"oType\":\"Text\"}"; #string block end
+         #  
+         #  $out_str = $out_str."],"; #primitives block end 
+         #  $out_str = $out_str."\"groupId\":-1,\"properties\":[{\"name\":\"$instance Name\",\"property\":\"primitives.1.str\",\"type\":\"Text\"}],"; ##WARN: Currently we are using properties name : "$instance Name" (We should use 'Hard Macro Name'/'Soft Macro Name' according to their color 
+         #  $out_str = $out_str."\"style\":{\"strokeStyle\":\"#000000\",\"fillStyle\":\"#6A5ACD\",\"lineWidth\":0.5,\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},";
+         #  $out_str = $out_str."\"rotationCoords\":[{\"x\":$midX,\"y\":$midY,\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"},{\"x\":$midX,\"y\":$location[1],\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"}],";
+         #  $out_str = $out_str."\"oType\":\"Figure\"},";
+         #   ########################## Making connectionPoints string for connectors vdd ###############################
+         #   my $inst_width = $loc[4] - $loc[0];
+         #   my $inst_height = $loc[5] - $loc[1];
+         #   my $dx = $inst_width/6;
+         #   my $dy = $inst_height/6;
+         #   my @temp = ();
+
+         #   my $conn_point_left_x = $midX ;
+         #   my $conn_point_left_y = $location[1];
+         #   my $conn_point_bottom_x = $midX + $midX/2 ;
+         #   my $conn_point_bottom_y = $location[1];
+         #   my $conn_point_top_x =$midX -$midX/2 ;
+         #   my $conn_point_top_y =$location[1] ;
+         #   ##--------connections points ----------##
+         #   my $connXX = $midX-$dx; 
+         #   $sub_out_str = $sub_out_str."{\"id\":$connPointIdCnt,\"point\":{\"x\":$conn_point_left_x,\"y\":$conn_point_left_y,\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"},\"parentId\":$cnt,\"type\":\"figure\",\"color\":\"#FFFF33\",\"radius\":3,\"oType\":\"ConnectionPoint\"},";
+         #   push(@temp, $connPointIdCnt);         
+         #   $connPointIdCnt++;
+         #   $sub_out_str = $sub_out_str."{\"id\":$connPointIdCnt,\"point\":{\"x\":$conn_point_bottom_x,\"y\":$conn_point_bottom_y,\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"},\"parentId\":$cnt,\"type\":\"figure\",\"color\":\"#FFFF33\",\"radius\":3,\"oType\":\"ConnectionPoint\"},";
+         #   push(@temp, $connPointIdCnt); #push middle connection point id at bottom
+         #   $connPointIdCnt++;
+         #   $connXX = $midX+$dx;
+         #   push(@temp, $connPointIdCnt);       
+         #   $sub_out_str = $sub_out_str."{\"id\":$connPointIdCnt,\"point\":{\"x\":$conn_point_top_x,\"y\":$conn_point_top_y,\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"},\"parentId\":$cnt,\"type\":\"figure\",\"color\":\"#FFFF33\",\"radius\":3,\"oType\":\"ConnectionPoint\"},";
+         #   $connPointIdCnt++;
+         #   @{$INST_CONN_POINTS{$instance}} = @temp;
+            #####################################################################################################
+         }elsif ($instance =~ /vss|gnd/i){
+         #  my @location = &calc_size_from_given_vss_loc($chip_width,$chip_height,$bound_box_width);
+         #  $out_str = $out_str."{\"id\":$cnt,\"name\":\"vss\",";
+         #  $out_str = $out_str."\"primitives\":["; #primitives block start
+         #  $out_str = $out_str."{\"points\":["; #points block start
+         #  my $midX =  sprintf ("%.2f",($location[0] + $location[4])/2);
+         #  my $midY =  sprintf ("%.2f",($location[1] + $location[5])/2);
+         #  my $vectorURY = $midY - 6; ###### midy -fontSize/2
+         #  my $new_vectorURY = "";
+         #  if($vectorURY < $location[1]){
+         #     $new_vectorURY = $vectorURY+6;
+         #  }else {
+         #     $new_vectorURY = $vectorURY;
+         #  }
+         #  for(my $i=0; $i<=7; $i=$i+2){
+         #    my $xxx = $location[$i];
+         #    my $yyy = $location[$i+1];
+         #    $out_str = $out_str."{\"x\":$xxx,\"y\":$yyy,\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"},";
+         #  }
+         #  $out_str =~ s/\,$//; #removing extra comma in last point
+         #  $out_str = $out_str."],";
+         #  $out_str = $out_str."\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},";
+         #  $out_str = $out_str."\"oType\":\"Polygon\"},"; #points block end
+         #  
+         #  $out_str = $out_str. "{\"str\":\"vss\",\"font\":\"Arial\",\"size\":12,\"lineSpacing\":3,\"align\":\"center\",\"valign\":\"middle\","; #string block start
+         #  $out_str = $out_str."\"vector\":[{\"x\":$midX,\"y\":$new_vectorURY,\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"},{\"x\":$midX,\"y\":$location[1],\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"}],"; #vector block
+         #  $out_str = $out_str."\"style\":{\"fillStyle\":\"#000000\",\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},"; #style block
+         #  $out_str = $out_str."\"bounds\":{";
+         #  $out_str = $out_str."\"points\":["; #bounds block start
+         #  for(my $j=0; $j<=3; $j++){ #currently we are putting text bbox coordinates value = null
+         #    $out_str = $out_str."{\"x\":null,\"y\":null,\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"},";
+         #  }
+         #  $out_str =~ s/\,$//; #removing extra comma in last point
+         #  $out_str = $out_str."],";
+         #  $out_str = $out_str."\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},";
+         #  $out_str = $out_str."\"oType\":\"Polygon\"},"; #bounds block end
+         #  
+         #  $out_str = $out_str."\"debug\":false,\"oType\":\"Text\"}"; #string block end
+         #  
+         #  $out_str = $out_str."],"; #primitives block end 
+         #  $out_str = $out_str."\"groupId\":-1,\"properties\":[{\"name\":\"$instance Name\",\"property\":\"primitives.1.str\",\"type\":\"Text\"}],"; ##WARN: Currently we are using properties name : "$instance Name" (We should use 'Hard Macro Name'/'Soft Macro Name' according to their color 
+         #  $out_str = $out_str."\"style\":{\"strokeStyle\":\"#000000\",\"fillStyle\":\"#6A5ACD\",\"lineWidth\":0.5,\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},";
+         #  $out_str = $out_str."\"rotationCoords\":[{\"x\":$midX,\"y\":$midY,\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"},{\"x\":$midX,\"y\":$location[1],\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"}],";
+         #  $out_str = $out_str."\"oType\":\"Figure\"},";
+         #   ################################# Making connectionPoints string for connectors vss ##########################
+         #   my $inst_width = $loc[4] - $loc[0];
+         #   my $inst_height = $loc[5] - $loc[1];
+         #   my $dx = $inst_width/6;
+         #   my $dy = $inst_height/6;
+         #   my @temp = ();
+
+         #   my $conn_point_left_x = $midX ;
+         #   my $conn_point_left_y = $midY*2;
+         #   my $conn_point_bottom_x = $midX + $midX/2;
+         #   my $conn_point_bottom_y = $midY*2;
+         #   my $conn_point_top_x =$midX -$midX/2 ;
+         #   my $conn_point_top_y =$midY*2 ;
+         #   ##--------connections points ----------##
+         #   my $connXX = $midX-$dx; 
+         #   $sub_out_str = $sub_out_str."{\"id\":$connPointIdCnt,\"point\":{\"x\":$conn_point_left_x,\"y\":$conn_point_left_y,\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"},\"parentId\":$cnt,\"type\":\"figure\",\"color\":\"#FFFF33\",\"radius\":3,\"oType\":\"ConnectionPoint\"},";
+         #   push(@temp, $connPointIdCnt);         
+         #   $connPointIdCnt++;
+         #   $sub_out_str = $sub_out_str."{\"id\":$connPointIdCnt,\"point\":{\"x\":$conn_point_bottom_x,\"y\":$conn_point_bottom_y,\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"},\"parentId\":$cnt,\"type\":\"figure\",\"color\":\"#FFFF33\",\"radius\":3,\"oType\":\"ConnectionPoint\"},";
+         #   push(@temp, $connPointIdCnt); #push middle connection point id at bottom
+         #   $connPointIdCnt++;
+         #   $connXX = $midX+$dx;
+         #   push(@temp, $connPointIdCnt);       
+         #   $sub_out_str = $sub_out_str."{\"id\":$connPointIdCnt,\"point\":{\"x\":$conn_point_top_x,\"y\":$conn_point_top_y,\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"},\"parentId\":$cnt,\"type\":\"figure\",\"color\":\"#FFFF33\",\"radius\":3,\"oType\":\"ConnectionPoint\"},";
+         #   $connPointIdCnt++;
+         #   @{$INST_CONN_POINTS{$instance}} = @temp;
+            #####################################################################################################
+         }else{
+            my @loc = ();
+            my @trans_loc = ();
+            my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$instance}->dbPimDBGetInstCellref;
+            my $status = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$instance}->dbPimDBGetInstStatus;
+            @trans_loc = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$instance}->dbPimDBGetInstRelBbox;
+            for (my $i = 0; $i < 4; $i++) {
+              $trans_loc[$i] /= $dbu;
+            }
+            #print "trans $instance => @trans_loc\n"; 
+            #print "loc $instance => @loc\n"; 
+            #foreach (@loc){ 
+            #  $_ = sprintf("%.2f", ( $_*$multiFactor));
+            #}
+            foreach (@trans_loc){ 
+              $_ = sprintf("%.2f", ( $_*$multiFactor));
+            }
+            $loc[0] = $trans_loc[0] - $tech_size;
+            $loc[1] = $trans_loc[1] - $tech_size;
+            $loc[2] = $trans_loc[2] + $tech_size;
+            $loc[3] = $trans_loc[3] + $tech_size;
+            #print "trans $instance => @trans_loc\n"; 
+            #print "loc $instance => @loc\n"; 
+            if(@loc == 4){
+               @loc = ($loc[0], $loc[1], $loc[2], $loc[1], $loc[2], $loc[3], $loc[0], $loc[3]);
+            }
+            if(@trans_loc == 4){
+               @trans_loc = ($trans_loc[0], $trans_loc[1], $trans_loc[2], $trans_loc[1], $trans_loc[2], $trans_loc[3], $trans_loc[0], $trans_loc[3]);
+            }
+            my $trans_midX = ($trans_loc[0] + $trans_loc[4])/2;
+            my $trans_midY = ($trans_loc[1] + $trans_loc[5])/2;
+
+            my @poly_loc = ();
+            $poly_loc[0] = $trans_midX - $tech_size/2; 
+            $poly_loc[1] = $trans_loc[1];  
+            $poly_loc[2] = $trans_midX + $tech_size/2; 
+            $poly_loc[3] = $trans_loc[5]; 
+            #foreach (@poly_loc){ 
+            #  $_ = sprintf("%.2f", ( $_*$multiFactor));
+            #}
+            if(@poly_loc == 4){
+               @poly_loc = ($poly_loc[0], $poly_loc[1], $poly_loc[2], $poly_loc[1], $poly_loc[2], $poly_loc[3], $poly_loc[0], $poly_loc[3]);
+            }
+            #print "box @loc\n";
+            #print "trans @trans_loc\n";
+            #print "poly @poly_loc\n";
+            my $poly_midX = ($poly_loc[0] + $poly_loc[4])/2;
+            my $poly_midY = ($poly_loc[1] + $poly_loc[5])/2;
+            ############################################calculate co-ords#######################################
+             my $width = ($loc[2] - $loc[0]);
+             my $height = ($loc[5] - $loc[1]); 
+
+             ####################################################################################################
+           # $out_str = $out_str."{\"id\":$cnt,\"name\":\"Rectangle\",";
+             my $figure_name = "";
+             if($cellref =~ /n/i){
+               $figure_name = "nmos";
+             }elsif($cellref =~ /p/i){
+                $figure_name = "pmos"; 
+             }
+             ###########################################red layer################################################
+             $out_str = $out_str."{\"id\":$cnt,\"name\":\"$figure_name\",";
+             $out_str = $out_str."\"primitives\":["; #primitives block start
+             $out_str = $out_str."{\"points\":["; #points block start
+             my $midX = sprintf ("%.2f",($loc[0] + $loc[4])/2);
+             my $midY = sprintf ("%.2f",($loc[1] + $loc[5])/2);
+             my $vectorURY = $midY - 6; ###### midy -fontSize/2
+             my $new_vectorURY = "";
+             if($vectorURY < $loc[1]){
+                $new_vectorURY = $vectorURY+6;
+             }else {
+                $new_vectorURY = $vectorURY;
+             }
+             #print "midX = $midX vectorURY = $vectorURY location = $location[1]\n"; 
+             for(my $i=0; $i<=7; $i=$i+2){
+               my $xxx = $loc[$i];
+               my $yyy = $loc[$i+1];
+               $out_str = $out_str."{\"x\":$xxx,\"y\":$yyy,\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"},";
+             }
+             $out_str =~ s/\,$//; #removing extra comma in last point
+             $out_str = $out_str."],";
+             $out_str = $out_str."\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},";
+             $out_str = $out_str."\"oType\":\"Polygon\"},"; #points block end
+             
+             $out_str = $out_str. "{\"str\":\"$instance\",\"font\":\"Arial\",\"size\":12,\"lineSpacing\":3,\"align\":\"center\",\"valign\":\"middle\","; #string block start
+             $out_str = $out_str."\"vector\":[{\"x\":$midX,\"y\":$new_vectorURY,\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"},{\"x\":$midX,\"y\":$loc[1],\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"}],"; #vector block
+             $out_str = $out_str."\"style\":{\"fillStyle\":\"#000000\",\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},"; #style block
+             $out_str = $out_str."\"bounds\":{";
+             $out_str = $out_str."\"points\":["; #bounds block start
+             for(my $j=0; $j<=3; $j++){ #currently we are putting text bbox coordinates value = null
+               $out_str = $out_str."{\"x\":null,\"y\":null,\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"},";
+             }
+             $out_str =~ s/\,$//; #removing extra comma in last point
+             $out_str = $out_str."],";
+             $out_str = $out_str."\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},";
+             $out_str = $out_str."\"oType\":\"Polygon\"},"; #bounds block end
+             
+             $out_str = $out_str."\"debug\":false,\"oType\":\"Text\"}"; #string block end
+             
+             $out_str = $out_str."],"; #primitives block end 
+             $out_str = $out_str."\"groupId\":-1,\"properties\":[{\"name\":\"$instance Name\",\"property\":\"primitives.1.str\",\"type\":\"Text\"}],"; ##WARN: Currently we are using properties name : "$instance Name" (We should use 'Hard Macro Name'/'Soft Macro Name' according to their color 
+             $out_str = $out_str."\"style\":{\"strokeStyle\":\"#000000\",\"fillStyle\":\"red\",\"lineWidth\":0.5,\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},";
+             $out_str = $out_str."\"rotationCoords\":[{\"x\":$midX,\"y\":$midY,\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"},{\"x\":$midX,\"y\":$loc[1],\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"}],";
+             $out_str = $out_str."\"oType\":\"Figure\"},";
+             #########################################################blue layer##################################################
+             $cnt++;
+             $out_str = $out_str."{\"id\":$cnt,\"name\":\"$figure_name\",";
+             $out_str = $out_str."\"primitives\":["; #primitives block start
+             $out_str = $out_str."{\"points\":["; #points block start
+             my $trans_vectorURY = $trans_midY - 6; ###### midy -fontSize/2
+             my $trans_new_vectorURY = "";
+             if($trans_vectorURY < $trans_loc[1]){
+                $trans_new_vectorURY = $trans_vectorURY+6;
+             }else {
+                $trans_new_vectorURY = $trans_vectorURY;
+             }
+             for(my $i=0; $i<=7; $i=$i+2){
+               my $xxx = $trans_loc[$i];
+               my $yyy = $trans_loc[$i+1];
+               $out_str = $out_str."{\"x\":$xxx,\"y\":$yyy,\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"},";
+             }
+             $out_str =~ s/\,$//; #removing extra comma in last point
+             $out_str = $out_str."],";
+             $out_str = $out_str."\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},";
+             $out_str = $out_str."\"oType\":\"Polygon\"},"; #points block end
+             
+             $out_str = $out_str. "{\"str\":\"$instance\",\"font\":\"Arial\",\"size\":12,\"lineSpacing\":3,\"align\":\"center\",\"valign\":\"middle\","; #string block start
+             $out_str = $out_str."\"vector\":[{\"x\":$trans_midX,\"y\":$trans_new_vectorURY,\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"},{\"x\":$trans_midX,\"y\":$trans_loc[1],\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"}],"; #vector block
+             $out_str = $out_str."\"style\":{\"fillStyle\":\"#000000\",\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},"; #style block
+             $out_str = $out_str."\"bounds\":{";
+             $out_str = $out_str."\"points\":["; #bounds block start
+             for(my $j=0; $j<=3; $j++){ #currently we are putting text bbox coordinates value = null
+               $out_str = $out_str."{\"x\":null,\"y\":null,\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"},";
+             }
+             $out_str =~ s/\,$//; #removing extra comma in last point
+             $out_str = $out_str."],";
+             $out_str = $out_str."\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},";
+             $out_str = $out_str."\"oType\":\"Polygon\"},"; #bounds block end
+             
+             $out_str = $out_str."\"debug\":false,\"oType\":\"Text\"}"; #string block end
+             
+             $out_str = $out_str."],"; #primitives block end 
+             $out_str = $out_str."\"groupId\":-1,\"properties\":[{\"name\":\"$instance Name\",\"property\":\"primitives.1.str\",\"type\":\"Text\"}],"; ##WARN: Currently we are using properties name : "$instance Name" (We should use 'Hard Macro Name'/'Soft Macro Name' according to their color 
+             $out_str = $out_str."\"style\":{\"strokeStyle\":\"#000000\",\"fillStyle\":\"#CCCC00\",\"lineWidth\":0.5,\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},";
+             $out_str = $out_str."\"rotationCoords\":[{\"x\":$trans_midX,\"y\":$trans_midY,\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"},{\"x\":$trans_midX,\"y\":$trans_loc[1],\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"}],";
+             $out_str = $out_str."\"oType\":\"Figure\"},";
+
+             ##############################################green layer#############################################
+             $cnt++;
+             $out_str = $out_str."{\"id\":$cnt,\"name\":\"$figure_name\",";
+             $out_str = $out_str."\"primitives\":["; #primitives block start
+             $out_str = $out_str."{\"points\":["; #points block start
+             my $poly_vectorURY = $poly_midY - 6; ###### midy -fontSize/2
+             my $poly_new_vectorURY = "";
+             if($poly_vectorURY < $poly_loc[1]){
+                $poly_new_vectorURY = $poly_vectorURY+6;
+             }else {
+                $poly_new_vectorURY = $poly_vectorURY;
+             }
+             for(my $i=0; $i<=7; $i=$i+2){
+               my $xxx = $poly_loc[$i];
+               my $yyy = $poly_loc[$i+1];
+               $out_str = $out_str."{\"x\":$xxx,\"y\":$yyy,\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"},";
+             }
+             $out_str =~ s/\,$//; #removing extra comma in last point
+             $out_str = $out_str."],";
+             $out_str = $out_str."\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},";
+             $out_str = $out_str."\"oType\":\"Polygon\"},"; #points block end
+             
+             $out_str = $out_str. "{\"str\":\"$instance\",\"font\":\"Arial\",\"size\":12,\"lineSpacing\":3,\"align\":\"center\",\"valign\":\"middle\","; #string block start
+             $out_str = $out_str."\"vector\":[{\"x\":$poly_midX,\"y\":$poly_new_vectorURY,\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"},{\"x\":$poly_midX,\"y\":$poly_loc[1],\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"}],"; #vector block
+             $out_str = $out_str."\"style\":{\"fillStyle\":\"#000000\",\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},"; #style block
+             $out_str = $out_str."\"bounds\":{";
+             $out_str = $out_str."\"points\":["; #bounds block start
+             for(my $j=0; $j<=3; $j++){ #currently we are putting text bbox coordinates value = null
+               $out_str = $out_str."{\"x\":null,\"y\":null,\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"},";
+             }
+             $out_str =~ s/\,$//; #removing extra comma in last point
+             $out_str = $out_str."],";
+             $out_str = $out_str."\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},";
+             $out_str = $out_str."\"oType\":\"Polygon\"},"; #bounds block end
+             
+             $out_str = $out_str."\"debug\":false,\"oType\":\"Text\"}"; #string block end
+             
+             $out_str = $out_str."],"; #primitives block end 
+             $out_str = $out_str."\"groupId\":-1,\"properties\":[{\"name\":\"$instance Name\",\"property\":\"primitives.1.str\",\"type\":\"Text\"}],"; ##WARN: Currently we are using properties name : "$instance Name" (We should use 'Hard Macro Name'/'Soft Macro Name' according to their color 
+             $out_str = $out_str."\"style\":{\"strokeStyle\":\"#000000\",\"fillStyle\":\"green\",\"lineWidth\":0.5,\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},";
+             $out_str = $out_str."\"rotationCoords\":[{\"x\":$poly_midX,\"y\":$poly_midY,\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"},{\"x\":$poly_midX,\"y\":$poly_loc[1],\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"}],";
+             $out_str = $out_str."\"oType\":\"Figure\"},";
+
+
+
+          
+            ################################# Making connectionPoints string for connectors ########################################
+            my $inst_width = $loc[4] - $loc[0];
+            my $inst_height = $loc[5] - $loc[1];
+            my $dx = $inst_width/6;
+            my $dy = $inst_height/6;
+            #my $dx=10; my $dy=10;
+            my @temp = ();
+            my $conn_point_left_x = $loc[0];
+            my $conn_point_left_y = $loc[1]+$height/2;
+            my $conn_point_bottom_x = $loc[4];
+            my $conn_point_bottom_y = $loc[3];
+            my $conn_point_top_x = $loc[4];
+            my $conn_point_top_y = $loc[5];
+            ##--------connections points ----------##
+            my $connXX = $midX-$dx; 
+            $sub_out_str = $sub_out_str."{\"id\":$connPointIdCnt,\"point\":{\"x\":$conn_point_left_x,\"y\":$conn_point_left_y,\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"},\"parentId\":$cnt,\"type\":\"figure\",\"color\":\"#FFFF33\",\"radius\":3,\"oType\":\"ConnectionPoint\"},";
+            push(@temp, $connPointIdCnt);            
+            $connPointIdCnt++;
+            $sub_out_str = $sub_out_str."{\"id\":$connPointIdCnt,\"point\":{\"x\":$conn_point_bottom_x,\"y\":$conn_point_bottom_y,\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"},\"parentId\":$cnt,\"type\":\"figure\",\"color\":\"#FFFF33\",\"radius\":3,\"oType\":\"ConnectionPoint\"},";
+            push(@temp, $connPointIdCnt); #push middle connection point id at bottom
+            $connPointIdCnt++;
+            $connXX = $midX+$dx;
+            $sub_out_str = $sub_out_str."{\"id\":$connPointIdCnt,\"point\":{\"x\":$conn_point_top_x,\"y\":$conn_point_top_y,\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"},\"parentId\":$cnt,\"type\":\"figure\",\"color\":\"#FFFF33\",\"radius\":3,\"oType\":\"ConnectionPoint\"},";
+            push(@temp, $connPointIdCnt);            
+            $connPointIdCnt++;
+            @{$INST_CONN_POINTS{$instance}} = @temp;
+           
+            ################################# Making connectionPoints string for connectors ########################################
+            my $inst_width = $loc[4] - $loc[0];
+            my $inst_height = $loc[5] - $loc[1];
+            my $dx = $inst_width/6;
+            my $dy = $inst_height/6;
+            #my $dx=10; my $dy=10;
+            my @temp = ();
+            my $conn_point_left_x = $loc[0];
+            my $conn_point_left_y = $loc[1]+$height/2;
+            my $conn_point_bottom_x = $loc[4];
+            my $conn_point_bottom_y = $loc[3];
+            my $conn_point_top_x = $loc[4];
+            my $conn_point_top_y = $loc[5];
+            ##--------connections points ----------##
+            my $connXX = $midX-$dx; 
+            $sub_out_str = $sub_out_str."{\"id\":$connPointIdCnt,\"point\":{\"x\":$conn_point_left_x,\"y\":$conn_point_left_y,\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"},\"parentId\":$cnt,\"type\":\"figure\",\"color\":\"#FFFF33\",\"radius\":3,\"oType\":\"ConnectionPoint\"},";
+            push(@temp, $connPointIdCnt);            
+            $connPointIdCnt++;
+            $sub_out_str = $sub_out_str."{\"id\":$connPointIdCnt,\"point\":{\"x\":$conn_point_bottom_x,\"y\":$conn_point_bottom_y,\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"},\"parentId\":$cnt,\"type\":\"figure\",\"color\":\"#FFFF33\",\"radius\":3,\"oType\":\"ConnectionPoint\"},";
+            push(@temp, $connPointIdCnt); #push middle connection point id at bottom
+            $connPointIdCnt++;
+            $connXX = $midX+$dx;
+            $sub_out_str = $sub_out_str."{\"id\":$connPointIdCnt,\"point\":{\"x\":$conn_point_top_x,\"y\":$conn_point_top_y,\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"},\"parentId\":$cnt,\"type\":\"figure\",\"color\":\"#FFFF33\",\"radius\":3,\"oType\":\"ConnectionPoint\"},";
+            push(@temp, $connPointIdCnt);            
+            $connPointIdCnt++;
+            @{$INST_CONN_POINTS{$instance}} = @temp;
+            ########################################################################################################################
+         }#if instance is not PIN
+         push (@idToIndex, $cnt);
+         $cnt++; 
+       }#for each instance
+       $out_str =~ s/\,$//; #removing extra comma in last point
+       if((keys %{$PSEUDO_VINST_ALREADY{$TOP_MODULE}}) > 0){
+          #my $num_net = keys %{$PSEUDO_VNET_ALREADY{$TOP_MODULE}};
+          my $num_net;
+          foreach my $net (keys %{$PSEUDO_VNET_ALREADY{$TOP_MODULE}}) {
+            my @routeBox = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net}->dbaTstgenGetPseudoExtNetCoords;
+            my $num =  @routeBox;
+            $num_net += $num;
+          }
+          my $currentId = $cnt + $num_net;
+          my $currentIdCount = $cnt -2;
+          $out_str = $out_str."],\"groups\":[],\"currentId\":$currentId,\"currentIdCount\":$currentIdCount,\"idToIndex\":[$idToIndex],\"oType\":\"Stack\"},"; #figure block end
+       }
+       ############################################# Net display ###########################################################
+       $out_str = $out_str."\"m\":{"; #connectivity block start
+       $out_str = $out_str."\"connectors\":["; #connector block start
+       my $type = "wire";
+       ##$wireWidth = $wireWidth*0.2; ### we have assumed width "1 = 0.2" in diagramo
+       foreach my $net (keys %{$PSEUDO_VNET_ALREADY{$TOP_MODULE}}) {
+         if(($net =~ /^\d+_tmpslvr_/) || ($net !~ /^\d+/)){
+           my @source = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net}->dbaTstgenGetPseudoNetSourceFanInList;
+           my @sink = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net}->dbaTstgenGetPseudoNetSinkFanOutList;
+           my @routeBox = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net}->dbaTstgenGetPseudoExtNetCoords; 
+           foreach my $rect (@routeBox){
+             my @coords = @$rect;
+             my $layer_name = shift @coords;
+             my $color = $PTDB{$layer_name}->dbTechGetLayerColor;
+             my $layer_color;
+             my $wire_width = $PTDB{$layer_name}->dbTechGetLayerWidth;
+             my $layer_dir = $PTDB{$layer_name}->dbTechGetLayerDir;
+             my $wireWidth = $wire_width;
+             foreach my $char (split /\s/, $color){
+               $layer_color = $layer_color."".$char; 
+             }#foreach
+              for (my $i = 0; $i < 4; $i++) {
+                $coords[$i] /= $dbu;
+              }
+             foreach (@coords){
+               $_ = sprintf("%.2f", ( $_*$multiFactor));
+             } 
+             if($layer_dir =~ /hori/i){
+               $coords[0] = $coords[0] - $wireWidth/2;
+               $coords[2] = $coords[2] + $wireWidth/2;
+             }elsif($layer_dir =~ /ver/i){
+               $coords[1] = $coords[1] - $wireWidth/2;
+               $coords[3] = $coords[3] + $wireWidth/2;
+             }
+             my ($text_llx, $text_lly, $text_urx, $text_ury) = ("null", "null", "null", "null");
+             $net =~ s/^\d+_tmpslvr_//; 
+             $out_str = $out_str."{";
+             $out_str = $out_str."\"id\":$cnt,";
+             $out_str = $out_str."\"turningPoints\":["; #turningPoints block start
+             for(my $i=0; $i<=$#coords; $i=$i+2){
+               $out_str = $out_str."{\"x\":$coords[$i],\"y\":$coords[$i+1],\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"},";
+             }
+             $out_str =~ s/\,$//; #removing extra comma at last 
+             $out_str = $out_str."],"; #turningPoints block end
+             $out_str = $out_str."\"type\":\"jagged\","; #wire type block
+             $out_str = $out_str."\"style\":{\"strokeStyle\":\"$layer_color\",\"lineWidth\":$wireWidth,\"length\":204,\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},"; #style block
+             $out_str = $out_str."\"middleText\":{";
+                        $out_str = $out_str."\"str\":\"$net\",\"font\":\"Arial\",\"size\":10,\"lineSpacing\":2.5,\"align\":\"center\",\"valign\":\"middle\","; #middle text sring block
+                        $out_str = $out_str."\"vector\":[{\"x\":$text_llx,\"y\":$text_lly,\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"},{\"x\":$text_urx,\"y\":$text_ury,\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"}],"; #middle text vector block
+                        $out_str = $out_str."\"style\":{\"strokeStyle\":\"#ffffff\",\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},"; #middle text style block
+                        $out_str = $out_str."\"bounds\":{"; #middle text bounds block start
+                                   $out_str = $out_str."\"points\":["; #bounds points block start
+                                   for(my $j=0; $j<=3; $j++){ #currently we are putting bounds coordinates value = null
+                                       $out_str = $out_str."{\"x\":null,\"y\":null,\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"},";
+                                   }
+                                   $out_str =~ s/\,$//; #removing extra comma in last point
+                                   $out_str = $out_str."],"; #bounds point block end 
+                                   $out_str = $out_str."\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},"; #bounds style block 
+                        $out_str = $out_str."\"oType\":\"Polygon\"},"; #bounds block end
+             $out_str = $out_str."\"debug\":false,\"oType\":\"Text\",\"bgStyle\":\"#ffffff\"},"; #middleText block end
+             if($wireWidth > 0.2){
+                $out_str = $out_str."\"properties\":[{\"name\":\"Bus\",\"property\":\"middleText.str\",\"type\":\"Text\"},{\"name\":\"Bus width\",\"property\":\"style.lineWidth\",\"type\":\"BusWidth\"},{\"name\":\"Length\",\"property\":\"style.length\",\"type\":\"Length\"}],"; #properties block
+             }else{
+                $out_str = $out_str."\"properties\":[{\"name\":\"Wire\",\"property\":\"middleText.str\",\"type\":\"Text\"}],"; #properties block
+             }
+             $out_str = $out_str."\"startStyle\":\"Normal\",\"endStyle\":\"Normal\",\"activeConnectionPointId\":-1,\"visualDebug\":false,\"oType\":\"Connector\"},";#Connector  block end
+
+             ########################## Making connectionPoints string ############################
+             $sub_out_str = $sub_out_str."{\"id\":$connPointIdCnt,\"point\":{\"x\":$coords[0],\"y\":$coords[1],\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"},\"parentId\":$cnt,\"type\":\"connector\",\"color\":\"#FFFF33\",\"radius\":3,\"oType\":\"ConnectionPoint\"},";
+             #if(($net =~ /vdd_net/) && ($sink_inst =~ /vdd/)){
+              #  $glue_str =  $glue_str."{\"id1\":$stID,\"id2\":$connPointIdCnt,\"type1\":\"figure\",\"type2\":\"connector\",\"oType\":\"Glue\"},"; 
+              #}else {
+                #$glue_str =  $glue_str."{\"id1\":$stID,\"id2\":$connPointIdCnt,\"type1\":\"figure\",\"type2\":\"connector\",\"oType\":\"Glue\"},"; 
+              #}
+              $connPointIdCnt++;
+              $sub_out_str = $sub_out_str."{\"id\":$connPointIdCnt,\"point\":{\"x\":$coords[-2],\"y\":$coords[-1],\"style\":{\"lineCap\":\"butt\",\"lineJoin\":\"miter\",\"addColorStop\":[],\"linearGradient\":[],\"dashLength\":0,\"oType\":\"Style\",\"STYLE_LINE_JOIN_ROUND\":\"round\",\"STYLE_LINE_JOIN_BEVEL\":\"bevel\",\"STYLE_LINE_JOIN_MITER\":\"miter\",\"STYLE_LINE_CAP_BUTT\":\"butt\",\"STYLE_LINE_CAP_ROUND\":\"round\",\"STYLE_LINE_CAP_SQUARE\":\"square\"},\"oType\":\"Point\"},\"parentId\":$cnt,\"type\":\"connector\",\"color\":\"#FFFF33\",\"radius\":3,\"oType\":\"ConnectionPoint\"},";
+              #if(($net =~ /vdd_net/) && ($sink_inst =~ /vdd/)){
+              #  $glue_str =  $glue_str."{\"id1\":$endID,\"id2\":$connPointIdCnt,\"type1\":\"figure\",\"type2\":\"connector\",\"oType\":\"Glue\"},"; 
+              #}else {
+               #$glue_str =  $glue_str."{\"id1\":$endID,\"id2\":$connPointIdCnt,\"type1\":\"figure\",\"type2\":\"connector\",\"oType\":\"Glue\"},"; 
+              #}
+              #print "$net => $source_inst => $sink_inst => $stID,$endID\n";
+              $connPointIdCnt++;
+              ######################################################################################
+             $cnt++; 
+             }#foreach rect
+           }#for each sink instance
+        }#foreach net
+        $out_str =~ s/\,$//; #removing extra comma in last point
+        $out_str = $out_str."],\"groups\":[],"; #connector block end
+
+        $out_str = $out_str."\"connectionPoints\":["; #connectionPoints block start
+        $sub_out_str =~ s/\,$//; #removing extra comma in last point
+        $out_str = $out_str.$sub_out_str;
+        $out_str = $out_str."],"; #connectionPoints block end
+
+        $out_str = $out_str."\"connectionPointCurrentId\":$connPointIdCnt,"; #connectionPointCurrentId block 
+                  
+        $out_str = $out_str."\"glues\":["; #glues block start
+        #$glue_str =~ s/\,$//; #removing extra comma in last point
+        #$out_str = $out_str.$glue_str."]"; #glues block end
+        $out_str = $out_str."]"; #glues block end  
+        $out_str = $out_str."}"; #connectivity block end
+
+        $out_str =~ s/\,$//; #removing extra comma in last point
+        $out_str = $out_str."}"; #canvas block end 
+
+    }#if top module exists
+    print WRITE "$out_str\n";
+    close WRITE;
+}#else
+}#sub write_spice_layout
+#############################################################################################################################
+sub set_layout_loc_in_flplan {
+use Benchmark;
+my $t0 = new Benchmark;
+my $noOfArguments = @_;
+if( $noOfArguments < 0 || $_[0] eq '-h') {print "Usage : set_layout_loc_in_flplan\n";
+                                          print "      : -trans_width <value>\n";
+                                          print "      : -trans_height <value>\n";
+                                          print "      : -tech_size <value>\n";
+                                         }
+else {
+  my $start_module = $TOP_MODULE;
+  my $no_of_level = -1;
+  my $trans_width;
+  my $trans_height;
+  my $tech_size;
+  my $chip_width;
+  my $chip_height;
+  for(my $i = 0; $i < $noOfArguments; $i++){
+    if($_[$i] eq "-chip_width"){$chip_width = $_[$i+1];} 
+    if($_[$i] eq "-chip_height"){$chip_height = $_[$i+1];} 
+    if($_[$i] eq "-trans_width"){$trans_width = $_[$i+1];}
+    if($_[$i] eq "-trans_height"){$trans_height = $_[$i+1];}
+    if($_[$i] eq "-tech_size"){$tech_size = $_[$i+1];}
+  }#for
+  $GLOBAL->dbfGlobalSetDBU(1000);
+  my $dbu = $GLOBAL->dbfGlobalGetDBU;
+  %TEMP_MODULE_ALREADY = ();
+  &populate_list_of_modules_in_hierachy_stop_at_given_level_from_start_module($start_module,$no_of_level);
+  @temp_module_list = sort { $TEMP_MODULE_ALREADY{$a} <=> $TEMP_MODULE_ALREADY{$b} } keys %TEMP_MODULE_ALREADY;
+  foreach my $moduleName (@temp_module_list){
+    my $class = $MODULE_ALREADY{$moduleName}->dbVNOMGetClass;
+    if($class == 11){next;}
+    my $flplanID = $GLOBAL->dbfGlobalGetNextFlplanID;   
+    $FLOORPLAN_LOOKUP{"$moduleName/_self_"} = $flplanID;
+    $FLOORPLAN_ALREADY{$flplanID} = Floorplan::new();
+    $FLOORPLAN_ALREADY{$flplanID}->dbFlplanSetID($flplanID);
+    $FLOORPLAN_ALREADY{$flplanID}->dbFlplanSetCellref($moduleName);  
+    my $new_chip_width = $chip_width*$dbu;
+    my $new_chip_height = $chip_height*$dbu;
+    $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$moduleName/_self_"}}->dbFlplanSetSize(0,0,$new_chip_width,$new_chip_height);
+    my @conns = $MODULE_ALREADY{$moduleName}->dbVNOMGetConn;
+    foreach my $connLine (@conns){
+      $connLine =~ s/\(/\)\,/;
+      $connLine =~ s/\s*\)\s*\)\s*\;?.*$/\)/;
+      my ($cell,$inst) = ( split(/\s+/, $connLine ))[0,1];
+      if ($MODULE_ALREADY{$moduleName}->dbVNOMHasHierInst($inst)){
+        my $class = $MODULE_ALREADY{$cell}->dbVNOMGetClass;
+        if(exists $PLDB{$cell}){
+          $MODULE_ALREADY{$moduleName}->dbVNOMAddLeafInst($inst);
+          $MODULE_ALREADY{$moduleName}->dbVNOMSetLeafInstCell($inst,$cell);
+          my $get_x_vl = "";
+          my $get_y_vl = "";
+          if($connLine =~ /\d+_tmpslvr_param_\$x/i){ 
+            $connLine =~ s/.*\d+_tmpslvr_param_\$x//i;
+            $connLine =~ s/\(//;
+            $connLine =~ s/\)//;
+            $connLine =~ s/,//;
+            $get_x_vl = (split(/\s+/,$connLine))[0];
+          }
+          if($connLine =~ /\d+_tmpslvr_param_\$y/i){ 
+            $connLine =~ s/.*\d+_tmpslvr_param_\$y//i;
+            $connLine =~ s/\(//;
+            $connLine =~ s/\)//;
+            $connLine =~ s/,//;
+            $get_y_vl = (split(/\s+/,$connLine))[0];
+          }
+          my $get_urx_vl = $get_x_vl+$trans_width;
+          my $get_ury_vl = $get_y_vl+$trans_height;
+          my @bbox = ($get_x_vl,$get_y_vl,$get_urx_vl,$get_ury_vl); 
+          #$FLOORPLAN_ALREADY{$flplanID}->dbFlplanAddHierInst($inst,@bbox,"N");
+
+          my $new_get_x_vl = $get_x_vl*$dbu;
+          my $new_get_y_vl = $get_y_vl*$dbu;
+
+          $FLOORPLAN_ALREADY{$flplanID}->dbFlplanAddLeafInst($inst, $new_get_x_vl, $new_get_y_vl,"N");
+          my ($width, $height) = $PLDB{$cell}->dbMdbGetSize;
+          #$width /= $dbu; $height /= $dbu;
+          $FLOORPLAN_ALREADY{$flplanID}->dbFlplanUpdateLeafInstBbox($inst, $width*$dbu, $height*$dbu);
+        }
+      } 
+    }#foreach
+  }#foreach 
+}#else
+}#sub set_layout_loc_in_flplan
+###############################################################################################################
+sub set_routing_coords_in_flplan {
+my $netID = 0;
+my $flplanID;
+if(exists $FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}){
+   $flplanID = $FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"};
+}
+foreach my $netName (keys %NETS_ROUTING_ALREADY){
+  if(exists $NADB{$netName}){
+    my $netType = $NADB{$netName}->dbNadbGetNetType;#return 0/1/2 (regular/fixed/special)
+    if($netType == 0){
+      if($NETS_ROUTING_ALREADY{$netName}->dbNetGetId){
+        $netID = $NETS_ROUTING_ALREADY{$netName}->dbNetGetId;
+      }
+      my @regularRoutes = $NETS_ROUTING_ALREADY{$netName}->dbNetRoutingDBGetRegularRoute;
+      $FLOORPLAN_ALREADY{$flplanID}->dbFlplanAddNets($netName); 
+      $FLOORPLAN_ALREADY{$flplanID}->dbFlplanSetNetId($netName, $netID); 
+      $FLOORPLAN_ALREADY{$flplanID}->dbFlplanSetNetType($netName, $netType); 
+      foreach my $route (@regularRoutes){
+        $FLOORPLAN_ALREADY{$flplanID}->dbFlplanAddNetRoutingData($netName, $route); 
+      }
+      $netID++;
+    }#if netType == 0
+  }
+}#foreach nets
+}#sub set_routing_coords_in_flplan
+###############################################################################################################
+sub create_lef_trans_from_given_data_old {
+ my $noOfArguments = @_;
+ use Benchmark;
+ my $t0 = new Benchmark;
+ if($noOfArguments < 1 || $_[0] eq '-h' || $_[0] eq '-H' || $_[0] eq '-help' || $_[0] eq '-HELP') { 
+    print "Usage : create_lef_trans_from_given_data -trans <trans name>\n";
+    print "                        -trans_width <width>\n";
+    print "	                   -trans_height <height>\n"; 
+    print "                        -tech_size <tech_size>\n";
+ }else {
+  my $trans_name = "";
+  my $trans_width = "";
+  my $trans_height = "";
+  my $tech_size = "";
+  for (my $i=0; $i <$noOfArguments;$i++){
+    if($_[$i] eq "-trans"){$trans_name = $_[$i+1];}
+    if($_[$i] eq "-trans_width"){$trans_width = $_[$i+1];}
+    if($_[$i] eq "-trans_height"){$trans_height = $_[$i+1];}
+    if($_[$i] eq "-tech_size"){$tech_size = $_[$i+1];}
+  }#for 
+  my $layerName = "M1";
+  my $layerwidth = $PTDB{$layerName}->dbTechGetLayerWidth;
+  my $layerspacing = $PTDB{$layerName}->dbTechGetLayerSpacing;
+  my $total_width_and_spacing = $layerwidth + $layerspacing;
+  my $new_trans_width = (int($trans_width / $total_width_and_spacing)*$total_width_and_spacing);
+  my $new_trans_height = (int($trans_height / $total_width_and_spacing)*$total_width_and_spacing);
+  my $new_tech_size = (int($tech_size / $total_width_and_spacing)*$total_width_and_spacing); 
+
+  my $llx = 0;
+  my $lly = 0;
+  my $urx = $new_trans_width;
+  my $ury = $new_trans_height;
+
+  my $mid_x_of_trans  = ($urx+$llx)/2;
+  my $mid_y_of_trans  = ($ury+$lly)/2;
+  my $half_tech_size = $new_tech_size/2;
+
+  my $gate_llx = ($mid_x_of_trans-$half_tech_size);
+  my $gate_urx = ($mid_x_of_trans+$half_tech_size);
+#------------------------------------------------------------------#
+  my $new_gate_llx =  (int($gate_llx / $total_width_and_spacing)*$total_width_and_spacing); 
+  my $new_gate_lly = (int(0 / $total_width_and_spacing)*$total_width_and_spacing); 
+  my $new_gate_urx = (int($gate_urx / $total_width_and_spacing)*$total_width_and_spacing); 
+  my $new_gate_ury = $ury; 
+#------------------------------------------------------------------#
+  my @gate_rect = ($new_gate_llx,$new_gate_lly,$new_gate_urx,$new_gate_ury);
+  my @drain_rect = ($new_gate_urx,$new_gate_lly,$urx,$ury);
+  my @src_rect = ($llx,$lly,$new_gate_llx,$ury);
+#------------------------------------------------------------------#
+
+  #my @gate_rect = ($gate_llx,0,$gate_urx,$ury);
+  #my @drain_rect = ($gate_urx,0,$urx,$ury);
+  #my @src_rect = ($llx,$lly,$gate_llx,$ury);
+
+  my $frth_llx_1 = ($llx-$new_tech_size); 
+  my $frth_lly_1 = ($lly-$new_tech_size); 
+  my $frth_urx_1 =  $llx;
+  my $frth_ury_1 = ($ury+$new_tech_size);
+  
+  my $frth_llx_2 = $llx; 
+  my $frth_lly_2 = ($lly-$new_tech_size); 
+  my $frth_urx_2 = $urx;
+  my $frth_ury_2 = $lly;
+  
+  my $frth_llx_3 = $urx; 
+  my $frth_lly_3 = ($lly-$new_tech_size); 
+  my $frth_urx_3 = ($urx+$new_tech_size);
+  my $frth_ury_3 = ($ury+$new_tech_size);
+  
+  my $frth_llx_4 = $llx; 
+  my $frth_lly_4 = $ury; 
+  my $frth_urx_4 = $urx;
+  my $frth_ury_4 = ($ury+$new_tech_size);
+  
+  my @body_rect = ($frth_llx_1, $frth_lly_1, $frth_urx_1, $frth_ury_1,"M1",$frth_llx_2,$frth_lly_2,$frth_urx_2,$frth_ury_2,"M1",$frth_llx_3,$frth_lly_3,$frth_urx_3,$frth_ury_3,"M1",$frth_llx_4,$frth_lly_4,$frth_urx_4,$frth_ury_4);
+  print "gate => @gate_rect\n";
+  print "drain => @drain_rect\n";
+  print "src => @src_rect\n";
+  print "body => @body_rect\n";
+  my $body_rect_str = join ",",@body_rect;
+  my $pinData_drain = "{drain,output,M1,@drain_rect}";
+  my $pinData_gate = "{gate,input,M1,@gate_rect}";
+  my $pinData_src = "{source,output,M1,@src_rect}";
+  my $pinData_body = "{body,inout,M1,$body_rect_str}";
+  &create_lef_cell("-cell",$trans_name,"-class","core","-size","{$new_trans_width,$new_trans_height}","-pinData",$pinData_drain,"-pinData",$pinData_gate,"-pinData",$pinData_src,"-pinData",$pinData_body);
+}#else
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "Command create_lef_trans_from_given_data took:",timestr($td),"\n";
+
+}#sub create_lef_trans_from_given_data_old
+#------------------------------------------------------------------------------------------#
+sub get_pType_and_nType_trans {
+my @pType_inst = ();
+my @nType_inst = ();
+my @conns = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetConn;
+foreach my $connLine (@conns){
+  $connLine =~ s/\(/\)\,/;
+  $connLine =~ s/\s*\)\s*\)\s*\;?.*$/\)/;
+  my ($cell,$inst) = ( split(/\s+/, $connLine ))[0,1];
+  if($cell =~/p/i){
+    push(@pType_inst,$inst); 
+  }elsif($cell =~ /n/i){
+    push(@nType_inst,$inst); 
+  } 
+}#foreach
+return (\@pType_inst,\@nType_inst);
+}#sub get_pType_and_nType_trans
+#------------------------------------------------------------------------------------------#
+sub calc_loc_of_pType_inst {
+  my $chip_width = $_[0]; 
+  my $chip_height = $_[1]; 
+  my $trans_width = $_[2];
+  my $trans_height = $_[3];
+  my @inst_list = @{$_[4]};
+  my %INST_LOC_HASH = ();
+  my $row_width = $chip_width;
+  my $num_of_trans_in_one_row = @inst_list;
+  my $total_spacing = $row_width - ($num_of_trans_in_one_row*$trans_width);
+  my $number_of_spacing  = $num_of_trans_in_one_row+1;
+  my $spacing = $total_spacing/$number_of_spacing;
+  my $height_spacing = (($chip_height/2) - $trans_height)/2;
+  #my $llx = $trans_width/2; 
+  my $llx = 0;
+  my $lly = ($chip_height/2)+$height_spacing; 
+  my $urx = $chip_width;
+  my $ury = ($chip_height/2)-$height_spacing;
+  my ($gcell_width,$gcell_height) = &calculate_gcell_width_and_height($chip_width,$chip_height);
+  for(my $i=1;$i <=$num_of_trans_in_one_row;$i++){
+    my $x_1 = ($llx+$spacing*$i+($i-1)*$trans_width);
+    my $y_1 = ($lly+((0)*$trans_width)); 
+    my $inst = shift @inst_list;
+    my $new_x_1 = (int($x_1 /$gcell_width )*$gcell_width);
+    my $new_y_1 = (int($y_1 /$gcell_height )*$gcell_height);
+    $INST_LOC_HASH{$inst} = "$new_x_1 $new_y_1";
+    print "$inst => $new_x_1 $new_y_1\n";
+  }
+return(%INST_LOC_HASH);
+}#sub calc_loc_of_pType_inst
+#------------------------------------------------------------------------------------------#
+sub calc_loc_of_nType_inst {
+  my $chip_width = $_[0]; 
+  my $chip_height = $_[1]; 
+  my $trans_width = $_[2];
+  my $trans_height = $_[3];
+  my @inst_list = @{$_[4]};
+  my %INST_LOC_HASH = ();
+  my $row_width = $chip_width;
+  my $num_of_trans_in_one_row = @inst_list;
+  my $total_spacing = $row_width - ($num_of_trans_in_one_row*$trans_width);
+  my $number_of_spacing  = $num_of_trans_in_one_row+1;
+  my $spacing = $total_spacing/$number_of_spacing;
+  my $height_spacing = (($chip_height/2) - $trans_height)/2;
+  #my $llx = $trans_width/2; 
+  my $llx = 0; 
+  my $lly = $height_spacing; 
+  my $urx = $chip_width;
+  my $ury = ($chip_height/2)-$height_spacing;
+  my ($gcell_width,$gcell_height) = &calculate_gcell_width_and_height($chip_width,$chip_height);
+  for(my $i=1;$i <=$num_of_trans_in_one_row;$i++){
+    my $x_1 = ($llx+$spacing*$i+($i-1)*$trans_width);
+    my $y_1 = ($lly+((0)*$trans_width)); 
+    my $inst = shift @inst_list;
+    my $new_x_1 = (int($x_1 /$gcell_width)*$gcell_width);
+    my $new_y_1 = (int($y_1 /$gcell_height)*$gcell_height);
+    $INST_LOC_HASH{$inst} = "$new_x_1 $new_y_1";
+    print "$inst => $new_x_1 $new_y_1\n";
+  }
+return(%INST_LOC_HASH);
+}#sub calc_loc_of_nType_inst
+#------------------------------------------------------------------------------------------#
+sub calc_bbox_of_pType_and_nType_inst {
+use Benchmark;
+my $t0 = new Benchmark;
+my $noOfArguments = @_;
+if($noOfArguments < 0 || $_[0] eq "-h"){ print "Usage : calc_bbox_of_pType_and_nType_inst\n";
+                                         print "      : -chip_width<width>\n";
+                                         print "      : -chip_height<height>\n";
+                                         print "      : -trans_width <width>\n";
+                                         print "      : -trans_height <width>\n";
+                                       } 
+else {
+  my $chip_width;
+  my $chip_height;
+  my $trans_width;
+  my $trans_height;
+  for(my $i=0; $i < $noOfArguments;$i++){
+    if($_[$i] eq "-chip_width"){$chip_width = $_[$i+1];}
+    if($_[$i] eq "-chip_height"){$chip_height = $_[$i+1];}
+    if($_[$i] eq "-trans_width"){$trans_width = $_[$i+1];}
+    if($_[$i] eq "-trans_height"){$trans_height = $_[$i+1];}
+  }#for
+  my $moduleName = $TOP_MODULE;
+  my @conns = $MODULE_ALREADY{$moduleName}->dbVNOMGetConn; 
+  my ($pTypeInst,$nTypeInst) = &get_pType_and_nType_trans;
+  $MODULE_ALREADY{$moduleName}->dbVNOMWipeConn;
+  my @pTypeList = @$pTypeInst;
+  my @nTypeList = @$nTypeInst;
+  my %PTYPE_INST_LOC_HASH = &calc_loc_of_pType_inst($chip_width,$chip_height,$trans_width,$trans_height,\@pTypeList);
+  my %NTYPE_INST_LOC_HASH = &calc_loc_of_nType_inst($chip_width,$chip_height,$trans_width,$trans_height,\@nTypeList);
+  for(my $i=0; $i<=$#conns;$i++){
+    my $connLine = $conns[$i];
+    $connLine =~ s/\(/\)\,/; 
+    $connLine =~ s/\s*\)\s*\)\s*\;?.*$/\)/;
+    my ($cell,$inst) = ( split(/\s+/, $connLine ))[0,1];
+    if ($MODULE_ALREADY{$moduleName}->dbVNOMHasHierInst($inst)){
+      my $class = $MODULE_ALREADY{$cell}->dbVNOMGetClass;
+      if(exists $PLDB{$cell}){
+        if(exists $PTYPE_INST_LOC_HASH{$inst}){
+          my $value = $PTYPE_INST_LOC_HASH{$inst};
+          my ($llx,$lly) = (split(/\s+/,$value))[0,1];
+          $connLine =~ s/\)\,/\(/;
+          my @temp_data = (split(/\s+/,$connLine));
+          my $get_number = pop (@temp_data);
+          $get_number =~ s/_tmpslvr_param.*//;
+          $get_number =~ s/\.//;
+          $get_number++;
+          $X = "$get_number"."_tmpslvr_param_\$X".""."("."".$llx."".")";
+          $get_number++;
+          $Y = "$get_number"."_tmpslvr_param_\$Y".""."("."".$lly."".")";
+          $connLine = $connLine.", "."".$X;
+          $connLine = $connLine.", "."".$Y;
+          $connLine = $connLine.")".";";
+          $MODULE_ALREADY{$moduleName}->dbVNOMAddConn($connLine);
+        }elsif(exists $NTYPE_INST_LOC_HASH{$inst}){
+          my $value = $NTYPE_INST_LOC_HASH{$inst};
+          my ($llx,$lly) = (split(/\s+/,$value))[0,1];
+          $connLine =~ s/\)\,/\(/;
+          my @temp_data = (split(/\s+/,$connLine));
+          my $get_number = pop (@temp_data);
+          $get_number =~ s/_tmpslvr_param.*//;
+          $get_number =~ s/\.//;
+          $get_number++;
+          $X = "$get_number"."_tmpslvr_param_\$X".""."("."".$llx."".")";
+          $get_number++;
+          $Y = "$get_number"."_tmpslvr_param_\$Y".""."("."".$lly."".")";
+          $connLine = $connLine.", "."".$X;
+          $connLine = $connLine.", "."".$Y;
+          $connLine = $connLine.")".";";
+          $MODULE_ALREADY{$moduleName}->dbVNOMAddConn($connLine);
+        }
+      }
+    }#if
+  }#for
+}#else
+my $t1 = new Benchmark;
+my $td = timediff($t1,$t0);
+print "calc_bbox_of_pType_and_nType_inst :",timestr($td),"\n"; 
+}#sub calc_bbox_of_pType_and_nType_inst
+#------------------------------------------------------------------------------------------#
+sub set_layer_width_and_spacing_in_db {
+my $noOfArguments = @_;
+if($noOfArguments < 1 || $_[0] eq '-h'){print "set_layer_width_and_spacing_in_db\n";
+                                        print " -layer<{layerName,width,spacing,.......}>\n";
+
+}else {
+  my @layer_info = ();
+  for(my $i=0;$i <$noOfArguments;$i++){
+    if($_[$i] eq "-layer"){my $layerData = $_[$i+1];
+                           $layerData =~ s/\s*{\s*//;
+                           $layerData =~ s/\s*}\s*//;
+                           @layer_info = (split(/,/,$layerData));
+                          }
+  }#for
+  for(my $i=0;$i<=$#layer_info;$i=$i+4){
+    my $layerName = $layer_info[$i]; 
+    my $layerWidth = $layer_info[$i+1]; 
+    my $layerSpacing = $layer_info[$i+2]; 
+    my $layerDir = $layer_info[$i+3]; 
+    my $layerPitch = $layerWidth + $layerSpacing;
+    my $layerNum = keys %PTDB;
+    my $layerColor = $HashCol{$layerNum};
+    $PTDB{$layerName} = TechDB::new();
+    $PTDB{$layerName}->dbTechSetLayerName($layerName);
+    $PTDB{$layerName}->dbTechSetLayerNum($layerNum);
+    $PTDB{$layerName}->dbTechSetLayerWidth($layerWidth);
+    $PTDB{$layerName}->dbTechSetLayerSpacing($layerSpacing);
+    $PTDB{$layerName}->dbTechSetLayerPitch($layerPitch);
+    $PTDB{$layerName}->dbTechSetLayerDir($layerDir);
+    $PTDB{$layerName}->dbTechSetLayerType("ROUTING");
+    $PTDB{$layerName}->dbTechSetLayerColor($layerColor);
+  }#for
+}
+}#sub set_layer_width_and_spacing_in_db
+#------------------------------------------------------------------------------------------#
+sub create_lef_trans_from_given_data_outside {
+ my $noOfArguments = @_;
+ use Benchmark;
+ my $t0 = new Benchmark;
+ if($noOfArguments < 1 || $_[0] eq '-h' || $_[0] eq '-H' || $_[0] eq '-help' || $_[0] eq '-HELP') { 
+    print "Usage : create_lef_trans_from_given_data -trans <trans name>\n";
+    print "                        -trans_width <width>\n";
+    print "	                   -trans_height <height>\n"; 
+    print "                        -tech_size <tech_size>\n";
+ }else {
+  my $trans_name = "";
+  my $trans_width = "";
+  my $trans_height = "";
+  my $tech_size = "";
+  for (my $i=0; $i <$noOfArguments;$i++){
+    if($_[$i] eq "-trans"){$trans_name = $_[$i+1];}
+    if($_[$i] eq "-trans_width"){$trans_width = $_[$i+1];}
+    if($_[$i] eq "-trans_height"){$trans_height = $_[$i+1];}
+    if($_[$i] eq "-tech_size"){$tech_size = $_[$i+1];}
+  }#for 
+  my $layerName = "M1";
+  my $layerwidth = $PTDB{$layerName}->dbTechGetLayerWidth;
+  my $layerspacing = $PTDB{$layerName}->dbTechGetLayerSpacing;
+  my $total_width_and_spacing = $layerwidth + $layerspacing;
+  my $new_trans_width = (int($trans_width / $total_width_and_spacing)*$total_width_and_spacing);
+  my $new_trans_height = (int($trans_height / $total_width_and_spacing)*$total_width_and_spacing);
+  my $new_tech_size = (int($tech_size / $total_width_and_spacing)*$total_width_and_spacing); 
+
+  my $llx = 0;
+  my $lly = 0;
+  my $urx = $llx+$new_trans_width+2*$new_tech_size;
+  my $ury = $lly+$new_trans_height+2*$new_tech_size;
+
+  my $mid_x_of_trans  = $new_trans_width/2;
+  my $mid_y_of_trans = $new_trans_height/2;
+  my $half_tech_size = $new_tech_size/2;
+  
+  
+  my $frth_llx_1 = $llx; 
+  my $frth_lly_1 = $lly+$new_tech_size; 
+  my $frth_urx_1 = $new_tech_size;
+  my $frth_ury_1 = $ury-$new_tech_size;
+
+  my $frth_llx_2 = $llx; 
+  my $frth_lly_2 = $lly; 
+  my $frth_urx_2 = $urx;
+  my $frth_ury_2 = $new_tech_size;
+
+  my $frth_llx_3 = $urx-$new_tech_size; 
+  my $frth_lly_3 = $new_tech_size; 
+  my $frth_urx_3 = $urx; 
+  my $frth_ury_3 = $ury-$new_tech_size; 
+
+  my $frth_llx_4 = $llx; 
+  my $frth_lly_4 = $ury-$new_tech_size; 
+  my $frth_urx_4 = $urx;
+  my $frth_ury_4 = $ury;
+
+  my $src_llx = $llx+$new_tech_size;
+  my $src_lly = $lly+$new_tech_size;
+  my $srcurx = ($mid_x_of_trans-$half_tech_size) + $new_tech_size; 
+  my $src_urx = (int($srcurx / $total_width_and_spacing)*$total_width_and_spacing); 
+  my $src_ury = $ury-$new_tech_size; 
+ 
+  my @src_rect = ($src_llx,$src_lly,$src_urx,$src_ury); 
+  
+  my $gate_llx = $src_urx; 
+  my $gate_lly = $lly+$new_tech_size; 
+  my $gate_urx = $gate_llx + $new_tech_size; 
+  my $gate_ury = $ury-$new_tech_size; 
+
+  my @gate_rect = ($gate_llx,$gate_lly,$gate_urx,$gate_ury);
+
+  my $drain_llx = $gate_urx; 
+  my $drain_lly = $lly+$new_tech_size; 
+  my $drain_urx = $frth_llx_3; 
+  my $drain_ury = $ury-$new_tech_size; 
+
+  my @drain_rect = ($drain_llx,$drain_lly,$drain_urx,$drain_ury);
+  
+  my @body_rect = ($frth_llx_1, $frth_lly_1, $frth_urx_1, $frth_ury_1,"M1",$frth_llx_2,$frth_lly_2,$frth_urx_2,$frth_ury_2,"M1",$frth_llx_3,$frth_lly_3,$frth_urx_3,$frth_ury_3,"M1",$frth_llx_4,$frth_lly_4,$frth_urx_4,$frth_ury_4);
+  print "gate => @gate_rect\n";
+  print "drain => @drain_rect\n";
+  print "src => @src_rect\n";
+  print "body => @body_rect\n";
+  my $body_rect_str = join ",",@body_rect;
+  my $pinData_drain = "{0_tmpslvr_drain,output,M1,@drain_rect}";
+  my $pinData_gate = "{1_tmpslvr_gate,input,M1,@gate_rect}";
+  my $pinData_src = "{2_tmpslvr_source,output,M1,@src_rect}";
+  my $pinData_body = "{3_tmpslvr_body,inout,M1,$body_rect_str}";
+  #&create_lef_cell("-cell",$trans_name,"-class","core","-size","{$new_trans_width,$new_trans_height}","-pinData",$pinData_drain,"-pinData",$pinData_gate,"-pinData",$pinData_src,"-pinData",$pinData_body);
+  &create_lef_cell("-cell",$trans_name,"-class","core","-size","{$urx,$ury}","-pinData",$pinData_drain,"-pinData",$pinData_gate,"-pinData",$pinData_src,"-pinData",$pinData_body);
+}#else
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+}#sub create_lef_trans_from_given_data_outside 
+#------------------------------------------------------------------------------------------#
+sub create_lef_trans_from_given_data_before_gcell {
+ my $noOfArguments = @_;
+ use Benchmark;
+ my $t0 = new Benchmark;
+ if($noOfArguments < 1 || $_[0] eq '-h' || $_[0] eq '-H' || $_[0] eq '-help' || $_[0] eq '-HELP') { 
+    print "Usage : create_lef_trans_from_given_data -trans <trans name>\n";
+    print "                        -trans_width <width>\n";
+    print "	                   -trans_height <height>\n"; 
+    print "                        -tech_size <tech_size>\n";
+ }else {
+  my $trans_name = "";
+  my $trans_width = "";
+  my $trans_height = "";
+  my $tech_size = "";
+  for (my $i=0; $i <$noOfArguments;$i++){
+    if($_[$i] eq "-trans"){$trans_name = $_[$i+1];}
+    if($_[$i] eq "-trans_width"){$trans_width = $_[$i+1];}
+    if($_[$i] eq "-trans_height"){$trans_height = $_[$i+1];}
+    if($_[$i] eq "-tech_size"){$tech_size = $_[$i+1];}
+  }#for 
+  my $layerName = "M1";
+  my $layerwidth = $PTDB{$layerName}->dbTechGetLayerWidth;
+  my $layerspacing = $PTDB{$layerName}->dbTechGetLayerSpacing;
+  my $total_width_and_spacing = $layerwidth + $layerspacing;
+  my $new_trans_width = (int($trans_width / $total_width_and_spacing)*$total_width_and_spacing);
+  my $new_trans_height = (int($trans_height / $total_width_and_spacing)*$total_width_and_spacing);
+  my $new_tech_size = (int($tech_size / $total_width_and_spacing)*$total_width_and_spacing); 
+
+  my $llx = 0;
+  my $lly = 0;
+  my $urx = $new_trans_width;
+  my $ury = $new_trans_height;
+
+  my $mid_x_of_trans  = $new_trans_width/2;
+  my $mid_y_of_trans = $new_trans_height/2;
+  my $half_tech_size = $new_tech_size/2;
+  
+  
+  my $frth_llx_1 = $llx; 
+  my $frth_lly_1 = $lly+$new_tech_size; 
+  my $frth_urx_1 = $new_tech_size;
+  my $frth_ury_1 = $ury-$new_tech_size;
+
+  my $frth_llx_2 = $llx; 
+  my $frth_lly_2 = $lly; 
+  my $frth_urx_2 = $urx;
+  my $frth_ury_2 = $new_tech_size;
+
+  my $frth_llx_3 = $urx-$new_tech_size; 
+  my $frth_lly_3 = $new_tech_size; 
+  my $frth_urx_3 = $urx; 
+  my $frth_ury_3 = $ury-$new_tech_size; 
+
+  my $frth_llx_4 = $llx; 
+  my $frth_lly_4 = $ury-$new_tech_size; 
+  my $frth_urx_4 = $urx;
+  my $frth_ury_4 = $ury;
+  
+  my $temp_trans_w = $urx-(2*$new_tech_size);
+  my $temp_trans_h = $ury-(2*$new_tech_size);
+  
+  my $temp_mid_x_of_trans = $temp_trans_w/2; 
+  my $temp_mid_y_of_trans = $temp_trans_h/2; 
+
+  my $src_llx = $llx+$new_tech_size;
+  my $src_lly = $lly+$new_tech_size;
+  my $srcurx = ($temp_mid_x_of_trans-$half_tech_size) + $new_tech_size ; 
+  my $src_urx = (int($srcurx / $total_width_and_spacing)*$total_width_and_spacing);            
+  my $src_ury = $ury-$new_tech_size; 
+ 
+  my @src_rect = ($src_llx,$src_lly,$src_urx,$src_ury); 
+  
+  my $gate_llx = $src_urx; 
+  my $gate_lly = $lly+$new_tech_size; 
+  my $gate_urx = $gate_llx + $new_tech_size; 
+  my $gate_ury = $ury-$new_tech_size; 
+
+  my @gate_rect = ($gate_llx,$gate_lly,$gate_urx,$gate_ury);
+
+  my $drain_llx = $gate_urx; 
+  my $drain_lly = $lly+$new_tech_size; 
+  my $drain_urx = $frth_llx_3; 
+  my $drain_ury = $ury-$new_tech_size; 
+
+  my @drain_rect = ($drain_llx,$drain_lly,$drain_urx,$drain_ury);
+#------------------------------------------------------------------#
+  
+  my @body_rect = ($frth_llx_1, $frth_lly_1, $frth_urx_1, $frth_ury_1,"M1",$frth_llx_2,$frth_lly_2,$frth_urx_2,$frth_ury_2,"M1",$frth_llx_3,$frth_lly_3,$frth_urx_3,$frth_ury_3,"M1",$frth_llx_4,$frth_lly_4,$frth_urx_4,$frth_ury_4);
+  print "gate => @gate_rect\n";
+  print "drain => @drain_rect\n";
+  print "src => @src_rect\n";
+  print "body => @body_rect\n";
+  my $body_rect_str = join ",",@body_rect;
+  my $pinData_drain = "{0_tmpslvr_drain,inout,M1,@drain_rect}";
+  my $pinData_gate = "{1_tmpslvr_gate,inout,M1,@gate_rect}";
+  my $pinData_src = "{2_tmpslvr_source,inout,M1,@src_rect}";
+  my $pinData_body = "{3_tmpslvr_body,inout,M1,$body_rect_str}";
+  #&create_lef_cell("-cell",$trans_name,"-class","core","-size","{$new_trans_width,$new_trans_height}","-pinData",$pinData_drain,"-pinData",$pinData_gate,"-pinData",$pinData_src,"-pinData",$pinData_body);
+  &create_lef_cell("-cell",$trans_name,"-class","core","-size","{$urx,$ury}","-pinData",$pinData_drain,"-pinData",$pinData_gate,"-pinData",$pinData_src,"-pinData",$pinData_body);
+}#else
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+}#sub create_lef_trans_from_given_data_before_gcell 
+#------------------------------------------------------------------#
+sub calculate_gcell_width_and_height {
+my $chip_width = $_[0];
+my $chip_height = $_[1];
+my $gcell_width = int ($chip_width/536)+1;
+my $gcell_height = int ($chip_height/536)+1;
+return($gcell_width,$gcell_height);
+}#sub calculate_gcell_width_and_height
+#------------------------------------------------------------------#
+sub create_lef_trans_from_given_data {
+my $noOfArguments = @_;
+use Benchmark;
+my $t0 = new Benchmark;
+if($noOfArguments < 1 || $_[0] eq '-h' || $_[0] eq '-H' || $_[0] eq '-help' || $_[0] eq '-HELP') { 
+    print "Usage : create_lef_trans_from_given_data -trans <trans name>\n";
+    print "                        -chip_width<width>\n";
+    print "                        -chip_height<height>\n";
+    print "                        -trans_width <width>\n";
+    print "	                   -trans_height <height>\n"; 
+    print "                        -tech_size <tech_size>\n";
+}else {
+  my $trans_name = "";
+  my $trans_width = "";
+  my $trans_height = "";
+  my $tech_size = "";
+  my $chip_width = "";
+  my $chip_height = "";
+  for (my $i=0; $i <$noOfArguments;$i++){
+    if($_[$i] eq "-trans"){$trans_name = $_[$i+1];}
+    if($_[$i] eq "-chip_width"){$chip_width = $_[$i+1];}
+    if($_[$i] eq "-chip_height"){$chip_height = $_[$i+1];}
+    if($_[$i] eq "-trans_width"){$trans_width = $_[$i+1];}
+    if($_[$i] eq "-trans_height"){$trans_height = $_[$i+1];}
+    if($_[$i] eq "-tech_size"){$tech_size = $_[$i+1];}
+  }#for 
+  my ($gcell_width,$gcell_height) = &calculate_gcell_width_and_height($chip_width,$chip_height); 
+  my $new_trans_width = (int($trans_width / $gcell_width)*$gcell_width);
+  my $new_trans_height = (int($trans_height / $gcell_height)*$gcell_height);
+  my $new_tech_size = (int($tech_size /$gcell_width )*$gcell_width); 
+
+  my $llx = 0;
+  my $lly = 0;
+  my $urx = $new_trans_width;
+  my $ury = $new_trans_height;
+
+  my $mid_x_of_trans  = $new_trans_width/2;
+  my $mid_y_of_trans = $new_trans_height/2;
+  my $half_tech_size = $new_tech_size/2;
+  
+  
+  my $frth_llx_1 = $llx; 
+  my $frth_lly_1 = $lly+$new_tech_size; 
+  my $frth_urx_1 = $new_tech_size;
+  my $frth_ury_1 = $ury-$new_tech_size;
+
+  my $frth_llx_2 = $llx; 
+  my $frth_lly_2 = $lly; 
+  my $frth_urx_2 = $urx;
+  my $frth_ury_2 = $new_tech_size;
+
+  my $frth_llx_3 = $urx-$new_tech_size; 
+  my $frth_lly_3 = $new_tech_size; 
+  my $frth_urx_3 = $urx; 
+  my $frth_ury_3 = $ury-$new_tech_size; 
+
+  my $frth_llx_4 = $llx; 
+  my $frth_lly_4 = $ury-$new_tech_size; 
+  my $frth_urx_4 = $urx;
+  my $frth_ury_4 = $ury;
+  
+  my $temp_trans_w = $urx-(2*$new_tech_size);
+  my $temp_trans_h = $ury-(2*$new_tech_size);
+  
+  my $temp_mid_x_of_trans = $temp_trans_w/2; 
+  my $temp_mid_y_of_trans = $temp_trans_h/2; 
+
+  my $src_llx = $llx+$new_tech_size;
+  my $src_lly = $lly+$new_tech_size;
+  my $srcurx = ($temp_mid_x_of_trans-$half_tech_size) + $new_tech_size ; 
+  my $src_urx = (int($srcurx / $gcell_width)*$gcell_width);            
+  my $src_ury = $ury-$new_tech_size; 
+ 
+  my @src_rect = ($src_llx,$src_lly,$src_urx,$src_ury); 
+  
+  my $gate_llx = $src_urx; 
+  my $gate_lly = $lly+$new_tech_size; 
+  my $gate_urx = $gate_llx + $new_tech_size; 
+  my $gate_ury = $ury-$new_tech_size; 
+
+  my @gate_rect = ($gate_llx,$gate_lly,$gate_urx,$gate_ury);
+
+  my $drain_llx = $gate_urx; 
+  my $drain_lly = $lly+$new_tech_size; 
+  my $drain_urx = $frth_llx_3; 
+  my $drain_ury = $ury-$new_tech_size; 
+
+  my @drain_rect = ($drain_llx,$drain_lly,$drain_urx,$drain_ury);
+#------------------------------------------------------------------#
+  my @body_rect = ($frth_llx_1, $frth_lly_1, $frth_urx_1, $frth_ury_1,"M1",$frth_llx_2,$frth_lly_2,$frth_urx_2,$frth_ury_2,"M1",$frth_llx_3,$frth_lly_3,$frth_urx_3,$frth_ury_3,"M1",$frth_llx_4,$frth_lly_4,$frth_urx_4,$frth_ury_4);
+  #print "gate => @gate_rect\n";
+  #print "drain => @drain_rect\n";
+  #print "src => @src_rect\n";
+  #print "body => @body_rect\n";
+  my $body_rect_str = join ",",@body_rect;
+  my $pinData_drain = "{0_tmpslvr_drain,inout,M1,@drain_rect}";
+  my $pinData_gate = "{1_tmpslvr_gate,inout,M1,@gate_rect}";
+  my $pinData_src = "{2_tmpslvr_source,inout,M1,@src_rect}";
+  my $pinData_body = "{3_tmpslvr_body,inout,M1,$body_rect_str}";
+  &create_lef_cell("-cell",$trans_name,"-class","core","-size","{$urx,$ury}","-pinData",$pinData_drain,"-pinData",$pinData_gate,"-pinData",$pinData_src,"-pinData",$pinData_body);
+}#else
+my $t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "Command create_lef_trans_from_given_data took:",timestr($td),"\n";
+}#sub create_lef_trans_from_given_data 
+#------------------------------------------------------------------#
+sub create_lef_cell_according_to_spice {
+  my $chip_width = $_[0];
+  my $chip_height = $_[1];
+  my $trans_width = $_[2];
+  my $trans_height = $_[3];
+  my $tech_size = $_[4];
+  my $moduleName = $TOP_MODULE;
+  my @conns = $MODULE_ALREADY{$moduleName}->dbVNOMGetConn;
+  foreach my $connLine (@conns){
+    $connLine =~ s/\(/\)\,/;
+    $connLine =~ s/\s*\)\s*\)\s*\;?.*$/\)/;
+    my ($cell,$inst) = ( split(/\s+/, $connLine ))[0,1];
+    if(!exists $PLDB{$cell}){
+      &create_lef_trans_from_given_data("-trans",$cell,"-trans_width",$trans_width,"-trans_height",$trans_height,"-tech_size",$tech_size,"-chip_width",$chip_width,"-chip_height",$chip_height);
+      &create_lef_trans_from_given_data("-trans",$cell,"-trans_width",$trans_width,"-trans_height",$trans_height,"-tech_size",$tech_size,"-chip_width",$chip_width,"-chip_height",$chip_height);
+    }else {
+      #return;
+    }
+  }#foreach
+}#sub create_lef_cell_according_to_spice
+#------------------------------------------------------------------#
+
+#sub verilog2gschematic{
+#  my $noOfArguments = @_;
+#  if($noOfArguments < 0 || $_[0] eq "-h"){print "Usage : -output <fileName>\n";
+#                                          print "      : -W <width>\n";
+#                                          print "      : -H <height>\n";
+#                                         }
+#  else{
+#    my $out_file;
+#    #my $temp_out_file;
+#    my $out_str = "";
+#    my $sub_out_str = "";
+#    my $glue_str = "";
+#    my %INST_CONN_POINTS = ();
+#    my $edp_width;
+#    my $edp_height;
+#    for(my $i=0; $i < $noOfArguments;$i++){
+#      if($_[$i] eq "-output"){$out_file = $_[$i+1];}
+#      if($_[$i] eq "-W"){$edp_width = $_[$i+1];}
+#      if($_[$i] eq "-H"){$edp_height = $_[$i+1];}
+#    }#for
+#    if(exists $PSEUDO_MODULE_ALREADY{$TOP_MODULE} ) {
+#       #print "$TOP_MODULE is the current top module\n";
+#       my @size = $PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenGetSize;   
+#       my $chip_width = $size[2]-$size[0];
+#       my $chip_height = $size[3]-$size[1];
+#       if($chip_height == 0 || $chip_height == 0){
+#          print "WARN: Module $TOP_MODULE has size @size..\n";
+#          return;
+#       }
+#       #$temp_out_file = $out_file."_slvrn_temp_";
+#       open(WRITE,">$out_file");
+#       #--------------------------------------------------------------------------------------#
+#       my $multiFactorX = $edp_width/$chip_width;
+#       my $multiFactorY = $edp_height/$chip_height;
+#       if($multiFactorX > $multiFactorY){
+#          $multiFactor = $multiFactorX;
+#       }else{
+#          $multiFactor = $multiFactorY;
+#       }
+#       #print "X:$multiFactorX==Y:$multiFactorY==FF:$multiFactor==chipH:$chip_height==chipW:$chip_width\n";
+#       
+#       my $new_chip_width =  $chip_width*$multiFactor;
+#       my $new_chip_height =  $chip_height*$multiFactor;
+#       #--------------------------------------------------------------------------------------#
+#       #$out_str = $out_str."{\"c\":{\"width\":$width,\"height\":$height,\"id\":\"canvasProps\",\"oType\":\"CanvasProps\"},"; #canvas block start 
+#       $out_str = $out_str."{\"c\":{\"width\":$new_chip_width,\"height\":$new_chip_height,\"multiFactor\":$multiFactor,\"id\":\"canvasProps\",\"oType\":\"CanvasProps\"},"; #canvas block start 
+#      
+#       if((keys %{$PSEUDO_VINST_ALREADY{$TOP_MODULE}}) > 0){
+#          $out_str = $out_str."\"s\":{\"figures\":["; #figure block start
+#       }
+#       my $cnt = 0;
+#       my @idToIndex = ();
+#       my $connPointIdCnt = 0;
+#       my %PORT_HASH = ();
+#       my @output_pins = $PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenGetOutput;
+#       foreach my $out (@output_pins) {
+#         if ( $PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenGetOutputType($out) == 0 ) {
+#           $PORT_HASH{$out} = $nodeCnt++;
+#         } else {
+#           my $bits = $PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenGetOutputBits($out);
+#           my $pin = $out . $bits;
+#           my @portList = utilSplitBusBits($pin);
+#           foreach my $port ( @portList ) {
+#             $PORT_HASH{$port} = $nodeCnt++;
+#           }
+#         }
+#       }#foreach out
+#       
+#       my @input_pins = $PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenGetInput;
+#       foreach my $in (@input_pins) {
+#         if ( $PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenGetInputType($in) == 0 ) {
+#           $PORT_HASH{$in} = $nodeCnt++;
+#         } else {
+#           my $bits = $PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenGetInputBits($in);
+#           my $pin = $in . $bits;
+#           my @portList = utilSplitBusBits($pin);
+#           foreach my $port ( @portList ) {
+#             $PORT_HASH{$port} = $nodeCnt++;
+#           }
+#         }
+#       }#foreach in
+#       
+#       my @bidi_pins = $PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenGetBidi;
+#       foreach my $bidi (@bidi_pins){
+#         if ( $PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenGetBidiType($bidi) == 0 ) {
+#           $PORT_HASH{$bidi} = $nodeCnt++;
+#         } else {
+#           my $bits = $PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenGetBidiBits($bidi);
+#           my $pin = $bidi . $bits;
+#           my @portList = utilSplitBusBits($pin);
+#           foreach my $port ( @portList ) {
+#             $PORT_HASH{$port} = $nodeCnt++;
+#           }
+#         }
+#       }#foreach bidi
+#       foreach my $temp_pin (keys %PORT_HASH){
+#        my $temp_pin_1 = $temp_pin;
+#        $temp_pin_1 =~ s/\[.*//;
+#        my @rectline = $PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenGetPinRect($temp_pin);
+#        my ($layer, $pinllx, $pinlly,$pinurx,$pinury) = (split(/\s+/,$rectline[0])) [0,1,2,3,4];
+#        my $pin_mid_x = ($pinllx+$pinurx)*$multiFactor/2;
+#        my $pin_mid_y = ($pinlly+$pinury*$multiFactor)/2;
+#        my $first_x ;
+#        my $first_y ;
+#        my $second_x ;
+#        my $second_y ;
+#        my $third_x ;
+#        my $third_y ;
+#        my $fourth_x ;
+#        my $fourth_y ;
+#        my @loc = ();
+#        my $x_pos = "b";
+#        my $y_pos = "l";
+#        my $x_diff = 0;
+#        my $y_diff = 0;
+#        if (abs($edp_width -$pin_mid_x) < $pin_mid_x){
+#          $x_pos = "T";
+#          $x_diff = abs($edp_width -$pin_mid_x);
+#        }else{
+#          $x_pos = "B";
+#          $x_diff = $pin_mid_x;
+#        }
+#        if (abs($edp_height -$pin_mid_y) < $pin_mid_y){
+#          $y_pos = "R";
+#          $y_diff = abs($edp_height -$pin_mid_y);
+#        }else{
+#          $y_pos = "L";
+#          $y_diff = $pin_mid_y;
+#        }
+#        if($x_diff < $y_diff){
+#          $pin_pos = $x_pos;
+#        }else{
+#          $pin_pos = $y_pos;
+#        }
+#        #print "pin_pos is $pin_pos";
+#        if($PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenHasBidi($temp_pin_1)){
+#          if($pin_pos eq "B"){
+#            $pin_mid_y = $pin_mid_y + 25.98;
+#          }elsif($pin_pos eq "T"){
+#            $pin_mid_y = $pin_mid_y - 25.98;
+#          }elsif($pin_pos eq "L"){
+#            $pin_mid_x = $pin_mid_x + 25.98;
+#          }elsif($pin_pos eq "R"){
+#            $pin_mid_x = $pin_mid_x - 25.98;
+#          }
+#          if(($pin_pos eq "B")||($pin_pos eq "T")){
+#            $first_x  = $pin_mid_x;
+#            $first_y  = $pin_mid_y -25.98;
+#            $second_x = $pin_mid_x -15;
+#            $second_y  = $pin_mid_y;
+#            $third_x  = $pin_mid_x ;;
+#            $third_y  = $pin_mid_y + 25.98;
+#            $fourth_x = $pin_mid_x + 15;
+#            $fourth_y = $pin_mid_y ;
+#          }elsif(($pin_pos eq "L")||($pin_pos eq "R")){
+#            $first_x  = $pin_mid_x -25.98;
+#            $first_y  = $pin_mid_y; 
+#            $second_x = $pin_mid_x +25.98;
+#            $second_y  = $pin_mid_y;
+#            $third_x  = $pin_mid_x ;
+#            $third_y  = $pin_mid_y + 15;
+#            $fourth_x = $pin_mid_x ;
+#            $fourth_y = $pin_mid_y -15;
+#          }
+#          push(@loc,$first_x);
+#          push(@loc,$first_y);
+#          push(@loc,$second_x);
+#          push(@loc,$second_y);
+#          push(@loc,$third_x);
+#          push(@loc,$third_y);
+#          push(@loc,$fourth_x);
+#          push(@loc,$fourth_y);
+#        }else{
+#          if($pin_pos eq "B"){
+#            if($PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenHasInput($temp_pin_1)) {
+#              $first_x = $pin_mid_x -15;
+#              $first_y = $pin_mid_y;
+#              $second_x = $pin_mid_x +15;
+#              $second_y = $pin_mid_y;
+#              $third_x = $pin_mid_x;
+#              $third_y = $pin_mid_y + 25.98;
+#            }elsif($PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenHasOutput($temp_pin_1)) {
+#              $first_x = $pin_mid_x;
+#              $first_y = $pin_mid_y;
+#              $second_x = $pin_mid_x +15;
+#              $second_y = $pin_mid_y + 25.98;
+#              $third_x = $pin_mid_x - 15;
+#              $third_y = $pin_mid_y + 25.98;
+#            }
+#          }elsif($pin_pos eq "T"){
+#            if($PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenHasInput($temp_pin_1)) {
+#              $first_x = $pin_mid_x -15;
+#              $first_y = $pin_mid_y;
+#              $second_x = $pin_mid_x ;
+#              $second_y = $pin_mid_y -25.98;
+#              $third_x = $pin_mid_x + 15;
+#              $third_y = $pin_mid_y ;
+#            }elsif($PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenHasOutput($temp_pin_1)) {
+#              $first_x = $pin_mid_x -15 ;
+#              $first_y = $pin_mid_y -25.98;
+#              $second_x = $pin_mid_x +15;
+#              $second_y = $pin_mid_y - 25.98;
+#              $third_x = $pin_mid_x ;
+#              $third_y = $pin_mid_y ;
+#            }
+#          }elsif($pin_pos eq "L"){
+#            if($PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenHasInput($temp_pin_1)) {
+#              $first_x = $pin_mid_x; 
+#              $first_y = $pin_mid_y- 15;
+#              $second_x = $pin_mid_x + 25.98;
+#              $second_y = $pin_mid_y ;
+#              $third_x = $pin_mid_x ;
+#              $third_y = $pin_mid_y +15;
+#            }elsif($PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenHasOutput($temp_pin_1)) {
+#              $first_x = $pin_mid_x;
+#              $first_y = $pin_mid_y;
+#              $second_x = $pin_mid_x +25.98;
+#              $second_y = $pin_mid_y - 15;
+#              $third_x = $pin_mid_x + 25.98 ;
+#              $third_y = $pin_mid_y + 15;
+#            }
+#          }elsif($pin_pos eq "R"){
+#            if($PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenHasInput($temp_pin_1)) {
+#              $first_x = $pin_mid_x; 
+#              $first_y = $pin_mid_y- 15;
+#              $second_x = $pin_mid_x ;
+#              $second_y = $pin_mid_y +15 ;
+#              $third_x = $pin_mid_x -25.98 ;
+#              $third_y = $pin_mid_y ;
+#            }elsif($PSEUDO_MODULE_ALREADY{$TOP_MODULE}->dbaTstgenHasOutput($temp_pin_1)) {
+#              $first_x = $pin_mid_x;
+#              $first_y = $pin_mid_y;
+#              $second_x = $pin_mid_x - 25.98 ;
+#              $second_y = $pin_mid_y + 15;
+#              $third_x = $pin_mid_x -25.98;
+#              $third_y = $pin_mid_y - 15;
+#            }
+#          }
+#          push(@loc,$first_x);
+#          push(@loc,$first_y);
+#          push(@loc,$second_x);
+#          push(@loc,$second_y);
+#          push(@loc,$third_x);
+#          push(@loc,$third_y);
+#        }
+#        $out_str = $out_str."{\"id\":$cnt,\"name\":\"$temp_pin\",";
+#        $out_str = $out_str."\"primitives\":["; #primitives block start 
+#
+#        $out_str = $out_str."{\"points\":["; #points block start
+#        #my $vectorURY = $midY - 6; ###### midy -fontSize/2
+#        my $vectorURY = $midY; ###### midy -fontSize/2
+#        my $min_x = $loc[0];
+#        my $max_x = $loc[0];
+#        my $min_y = $loc[1];
+#        my $max_y = $loc[1];
+#        for(my $i=0; $i<=$#loc; $i=$i+2){
+#            my $xx = $loc[$i];
+#            my $yy = $loc[$i+1];
+#            if($xx > $max_x){
+#              $max_x = $xx;
+#            }
+#            if($xx < $min_x){
+#              $min_x = $xx;
+#            }
+#            if($yy > $max_y){
+#              $max_y = $yy;
+#            }
+#            if($yy < $min_y){
+#              $min_y = $yy;
+#            }
+#            #$out_str = $out_str."{\"x\":$xx,\"y\":$yy,\"oType\":\"Point\"},";
+#            $out_str = $out_str."{\"x\":$xx,\"y\":$yy,\"style\":{},\"oType\":\"Point\"},";
+#        }
+#        my $midX = $min_x;
+#        my $midY = ($min_y + $max_y)/2;
+#        $out_str =~ s/\,$//; #removing extra comma in last point
+#        $out_str = $out_str."],";
+#        $out_str = $out_str."\"style\":{},";
+#        $out_str = $out_str."\"oType\":\"Polygon\"},"; #points block end
+#
+#        #$out_str = $out_str. "{\"str\":\"\",\"font\":\"Arial\",\"size\":12,\"lineSpacing\":3,\"align\":\"center\",\"valign\":\"middle\","; #string block start
+#        $out_str = $out_str. "{\"str\":\"$temp_pin\",\"font\":\"Arial\",\"size\":12,\"lineSpacing\":3,\"align\":\"center\",\"valign\":\"middle\","; #string block start
+#        $out_str = $out_str."\"vector\":[{\"x\":$midX,\"y\":$midY,\"style\":{},\"oType\":\"Point\"},{\"x\":$midX,\"y\":$midY,\"style\":{},\"oType\":\"Point\"}],"; #vector block
+#        $out_str = $out_str."\"style\":{\"fillStyle\":\"#ffffff\"},"; #style block
+#        $out_str = $out_str."\"bounds\":{";
+#        $out_str = $out_str."\"points\":[],"; #bounds block start
+#        $out_str = $out_str."\"style\":{},";
+#        $out_str = $out_str."\"oType\":\"Polygon\"},"; #bounds block end
+#
+#        $out_str = $out_str."\"debug\":false,\"oType\":\"Text\"}"; #string block end
+#
+#        $out_str = $out_str."],"; #primitives block end 
+#        #$out_str = $out_str."\"groupId\":-1,\"properties\":[{\"name\":\"$instance Name\",\"property\":\"primitives.1.str\",\"type\":\"Text\"}],"; ##WARN: Currently we are using properties name : "$instance Name" (We should use 'Hard Macro Name'/'Soft Macro Name' according to their color
+#        $out_str = $out_str."\"groupId\":-1,\"properties\":[{\"name\":\"Text\",\"property\":\"primitives.1.str\",\"type\":\"Text\"},{\"name\":\"Constant Area\",\"property\":\"\",\"type\":\"FigArea\"},{\"name\":\"LocX\",\"property\":\"\",\"type\":\"LocX\"},{\"name\":\"LocY\",\"property\":\"\",\"type\":\"LocY\"}],"; ##WARN: Currently we are using properties name : "$instance Name" (We should use 'Hard Macro Name'/'Soft Macro Name' according to their color 
+#         $out_str = $out_str."\"style\":{\"strokeStyle\":\"#FFA824\",\"fillStyle\":\"#FFFF00\"},";
+#        $out_str = $out_str."\"rotationCoords\":[{\"x\":$midX,\"y\":$midY,\"style\":{},\"oType\":\"Point\"},{\"x\":$midX,\"y\":$loc[5],\"style\":{},\"oType\":\"Point\"}],";
+#       # $out_str = $out_str."\"rotationCoords\":[{\"x\":$midX,\"y\":$midY,\"style\":{},\"oType\":\"Point\"},{\"x\":$midX,\"y\":$midY,\"style\":{},\"oType\":\"Point\"}],";
+#        $out_str = $out_str."\"oType\":\"Figure\"},";
+#        push (@idToIndex, $cnt);
+#        $cnt++;
+#       }#for ports
+#
+#       foreach my $instance ( keys %{$PSEUDO_VINST_ALREADY{$TOP_MODULE}} ) {
+#        #if($cnt eq 1000){last;}
+#         if($instance eq "PIN"){ 
+#         }else{ 
+#            my $cellref = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$instance}->dbPimDBGetInstCellref;
+#            my $status = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$instance}->dbPimDBGetInstStatus;
+#
+#            my @loc = ();
+#            if($status eq "UNPLACED" || $status eq "UND"){
+#               @loc = &return_pseudo_vinst_size($TOP_MODULE,$instance);
+#            }else{
+#               @loc = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$instance}->dbPimDBGetInstRelBbox;
+#            }
+#
+#            foreach (@loc){ 
+#              $_ = sprintf("%.2f", ( $_*$multiFactor));
+#            }
+#            #print "INSTANCE: $instance  CELL: $cellref LOC: @loc  STATUS:$status\n";
+#            if(@loc == 4){
+#               @loc = ($loc[0], $loc[1], $loc[2], $loc[1], $loc[2], $loc[3], $loc[0], $loc[3]);
+#            }
+#            $out_str = $out_str."{\"id\":$cnt,\"name\":\"$cellref\",";
+#            $out_str = $out_str."\"primitives\":["; #primitives block start 
+#
+#            $out_str = $out_str."{\"points\":["; #points block start
+#            my $midX = ($loc[0] + $loc[4])/2;
+#            my $midY = ($loc[1] + $loc[5])/2;
+#            #my $vectorURY = $midY - 6; ###### midy -fontSize/2
+#            my $vectorURY = $midY; ###### midy -fontSize/2
+#            for(my $i=0; $i<=$#loc; $i=$i+2){
+#                my $xx = $loc[$i];
+#                my $yy = $loc[$i+1];
+#                #$out_str = $out_str."{\"x\":$xx,\"y\":$yy,\"oType\":\"Point\"},";
+#                $out_str = $out_str."{\"x\":$xx,\"y\":$yy,\"style\":{},\"oType\":\"Point\"},";
+#            }
+#
+#            $out_str =~ s/\,$//; #removing extra comma in last point
+#            $out_str = $out_str."],";
+#             $out_str = $out_str."\"style\":{},";
+#             $out_str = $out_str."\"oType\":\"Polygon\"},"; #points block end
+#
+#            #$out_str = $out_str. "{\"str\":\"\",\"font\":\"Arial\",\"size\":12,\"lineSpacing\":3,\"align\":\"center\",\"valign\":\"middle\","; #string block start
+#            $out_str = $out_str. "{\"str\":\"$instance\",\"font\":\"Arial\",\"size\":12,\"lineSpacing\":3,\"align\":\"center\",\"valign\":\"middle\","; #string block start
+#            #$out_str = $out_str."\"vector\":[{\"x\":$midX,\"y\":$vectorURY,\"oType\":\"Point\"},{\"x\":$midX,\"y\":$loc[1],\"oType\":\"Point\"}],"; #vector block
+#            $out_str = $out_str."\"vector\":[{\"x\":$midX,\"y\":$vectorURY,\"style\":{},\"oType\":\"Point\"},{\"x\":$midX,\"y\":$vectorURY,\"style\":{},\"oType\":\"Point\"}],"; #vector block
+#            $out_str = $out_str."\"style\":{\"fillStyle\":\"#ffffff\"},"; #style block
+#            $out_str = $out_str."\"bounds\":{";
+#            $out_str = $out_str."\"points\":[],"; #bounds block start
+#            $out_str = $out_str."\"style\":{},";
+#            $out_str = $out_str."\"oType\":\"Polygon\"},"; #bounds block end
+#
+#            $out_str = $out_str."\"debug\":false,\"oType\":\"Text\"}"; #string block end
+#
+#            $out_str = $out_str."],"; #primitives block end 
+#            #$out_str = $out_str."\"groupId\":-1,\"properties\":[{\"name\":\"$instance Name\",\"property\":\"primitives.1.str\",\"type\":\"Text\"}],"; ##WARN: Currently we are using properties name : "$instance Name" (We should use 'Hard Macro Name'/'Soft Macro Name' according to their color
+#            $out_str = $out_str."\"groupId\":-1,\"properties\":[{\"name\":\"Text\",\"property\":\"primitives.1.str\",\"type\":\"Text\"},{\"name\":\"Constant Area\",\"property\":\"\",\"type\":\"FigArea\"},{\"name\":\"LocX\",\"property\":\"\",\"type\":\"LocX\"},{\"name\":\"LocY\",\"property\":\"\",\"type\":\"LocY\"}],"; ##WARN: Currently we are using properties name : "$instance Name" (We should use 'Hard Macro Name'/'Soft Macro Name' according to their color 
+#            $out_str = $out_str."\"style\":{\"strokeStyle\":\"red\",\"fillStyle\":\"#480000\"},";
+#            #$out_str = $out_str."\"rotationCoords\":[{\"x\":$midX,\"y\":$midY,\"oType\":\"Point\"},{\"x\":$midX,\"y\":$loc[1],\"oType\":\"Point\"}],";
+#            $out_str = $out_str."\"rotationCoords\":[{\"x\":$midX,\"y\":$midY,\"style\":{},\"oType\":\"Point\"},{\"x\":$midX,\"y\":$loc[5],\"style\":{},\"oType\":\"Point\"}],";
+#            $out_str = $out_str."\"oType\":\"Figure\"},";
+#          
+#            ################################# Making connectionPoints string for connectors ########################################
+#            push (@idToIndex, $cnt);
+#            $cnt++; 
+#         }#if instance is not PIN
+#       }#for each instance
+#
+#       foreach my $net (keys %{$PSEUDO_VNET_ALREADY{$TOP_MODULE}}) {
+#          my @coords = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net}->dbaTstgenGetPseudoExtNetCoords; 
+#          my $type = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net}->dbaTstgenGetPseudoNetType;
+#          my $wireWidth = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net}->dbaTstgenGetPseudoNetWidth;
+#          #$wireWidth = $wireWidth*0.2; ### we have assumed width "1 = 0.2" in diagramo
+#          $wireWidth = $wireWidth;
+#          my @source = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net}->dbaTstgenGetPseudoNetSourceFanInList;
+#          #my $cellref_source = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{@source[0]}->dbPimDBGetInstCellref;
+#          #push (@source ,$cellref_source);
+#          my @sink = $PSEUDO_VNET_ALREADY{$TOP_MODULE}->{$net}->dbaTstgenGetPseudoNetSinkFanOutList;
+#          #my @sinkInstCellref =(); 
+#          #for(my $k=0; $k<=$#sink; $k=$k+2){
+#          #    my $sinkcell = @sink[$k];
+#          #    my $sinkPin = @sink[$k+1];
+#          #    my $cellref_sink = $PSEUDO_VINST_ALREADY{$TOP_MODULE}{$sinkcell}->dbPimDBGetInstCellref;
+#          #    push(@sinkInstCellref,$sinkcell,$sinkPin,$cellref_sink);
+#          # 
+#          #}
+#          
+#          #print "========NET: $net TYPE: $type  SRC: @source SINK: @sink WIREWIDTH:$wireWidth\n";
+#
+#          if ($#coords < 0){ next;}
+#          foreach my $rect (@coords){
+#            my @routeBox = @$rect;
+#            my $layer_name = shift @routeBox;
+#            $routeBox[0] *= $multiFactor;
+#            $routeBox[1] *= $multiFactor;
+#            $routeBox[2] *= $multiFactor;
+#            $routeBox[3] *= $multiFactor;
+#            my $vector1 = ($routeBox[3] + $routeBox[1])/2;
+#            my $vector = $routeBox[0] - 20; 
+#            my $layer_color = $PTDB{$layer_name}->dbTechGetLayerColor;
+#            $out_str = $out_str."{\"id\":$cnt,\"name\":\"$figure_name\",\"source\":\"@source\",\"sink\":\"@sink\",\"wireType\":\"$type\",\"wireWidth\":\"$wireWidth\",\"defNet\":\"$net\",\"defNetLayer\":\"$layer_name\","; # mohit
+#            #$out_str = $out_str."{\"id\":$cnt,\"name\":\"$figure_name\",\"source\":\"@source\",\"sink\":\"@sinkInstCellref\",\"wireType\":\"$type\",\"wireWidth\":\"$wireWidth\",\"defNet\":\"$net\",\"defNetLayer\":\"$layer_name\","; # mohit
+#            $out_str = $out_str."\"primitives\":["; #primitives block start 
+#            $out_str = $out_str."{\"startPoint\":"; #points block start
+#            $out_str = $out_str."{\"x\":$routeBox[0],\"y\":$routeBox[1],\"style\":{},\"oType\":\"Point\"},";
+#            $out_str = $out_str."\"endPoint\":"; 
+#            $out_str = $out_str."{\"x\":$routeBox[2],\"y\":$routeBox[3],\"style\":{},\"oType\":\"Point\"},";
+#            $out_str = $out_str."\"style\":{},";
+#            $out_str = $out_str."\"oType\":\"Line\"},";
+#            $out_str = $out_str. "{\"str\":\"\",\"font\":\"Arial\",\"size\":12,\"lineSpacing\":3,\"align\":\"center\",\"valign\":\"middle\","; #string block start
+#            $out_str = $out_str."\"vector\":[{\"x\":$routeBox[0],\"y\":$vector1,\"style\":{},\"oType\":\"Point\"},{\"x\":$routeBox[0],\"y\":$vector1,\"style\":{},\"oType\":\"Point\"}],"; #vector block
+#            $out_str = $out_str."\"style\":{\"fillStyle\":\"#ffffff\"},"; #style block
+#            $out_str = $out_str."\"bounds\":{";
+#            $out_str = $out_str."\"points\":["; #bounds block start
+#            for(my $j=0; $j<=3; $j++){ #currently we are putting text bbox coordinates value = null
+#            }#for
+#            $out_str =~ s/\,$//; #removing extra comma in last point
+#            $out_str = $out_str."],";
+#            $out_str = $out_str."\"style\":{},";
+#            $out_str = $out_str."\"oType\":\"Polygon\"},"; #bounds block end
+#            $out_str = $out_str."\"debug\":false,\"oType\":\"Text\"}"; #string block end
+#            $out_str = $out_str."],"; #primitives block end 
+#            $out_str = $out_str."\"groupId\":-1,\"properties\":[{\"name\":\"Text\",\"property\":\"primitives.1.str\",\"type\":\"Text\"},{\"name\":\"$layer_name\",\"property\":\"style.strokeStyle\",\"type\":\"Color\"}],"; ##WARN: Currently we are using properties name : "$instance Name" (We should use 'Hard Macro Name'/'Soft Macro Name' according to their color 
+#            $out_str = $out_str."\"style\":{\"strokeStyle\":\"#ffffff\",\"fillStyle\":\"#ffffff\"},";
+#            $out_str = $out_str."\"rotationCoords\":[{\"x\":null,\"y\":null,\"style\":{},\"oType\":\"Point\"},{\"x\":null,\"y\":null,\"style\":{},\"oType\":\"Point\"}],";
+#            $out_str = $out_str."\"oType\":\"Figure\"},";
+#            push (@idToIndex, $cnt);
+#            $cnt++;
+#          } 
+#
+#       }
+#       my $idToIndex = join ",", @idToIndex;
+#       $out_str =~ s/\,$//; #removing extra comma in last point
+#       if((keys %{$PSEUDO_VINST_ALREADY{$TOP_MODULE}}) > 0){
+#          my $num_net = keys %{$PSEUDO_VNET_ALREADY{$TOP_MODULE}};
+#          my $currentId = $cnt + $num_net;
+#          $out_str = $out_str."],\"groups\":[],\"currentId\":$currentId,\"idToIndex\":[$idToIndex],\"oType\":\"Stack\"},"; #figure block end
+#          #$out_str = $out_str."],\"oType\":\"Stack\"},"; #figure block end
+#       }
+#
+#       ############################################# Net display ###########################################################
+#       $out_str = $out_str."\"m\":{"; #connectivity block start
+#                  $out_str = $out_str."\"connectors\":["; #connector block start
+#                  $out_str = $out_str."],\"groups\":[],"; #connector block end
+#
+#                  $out_str = $out_str."\"connectionPoints\":["; #connectionPoints block start
+#                             $sub_out_str =~ s/\,$//; #removing extra comma in last point
+#                             $out_str = $out_str.$sub_out_str;
+#                  $out_str = $out_str."],"; #connectionPoints block end
+#
+#                  $out_str = $out_str."\"connectionPointCurrentId\":$connPointIdCnt,"; #connectionPointCurrentId block 
+#                  
+#                  $out_str = $out_str."\"glues\":["; #glues block start
+#                             $glue_str =~ s/\,$//; #removing extra comma in last point
+#                  $out_str = $out_str.$glue_str."]"; #glues block end
+#                  
+#       $out_str = $out_str."}"; #connectivity block end
+#
+#       $out_str =~ s/\,$//; #removing extra comma in last point
+#       $out_str = $out_str."}"; #canvas block end 
+#       print WRITE "$out_str\n";
+#       close WRITE;
+#       #&convert_proton_dia_to_gui_dia($temp_out_file,$out_file,800);
+#       #my @temp_cmd_arg = ("-rf",$temp_out_file);
+#       #system("rm",@temp_cmd_arg);
+#    }#if top module exists
+#  }#else
+#}#sub verilog2gschematic
+
+1;

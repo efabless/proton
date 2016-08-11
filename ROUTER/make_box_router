@@ -1,0 +1,334 @@
+
+sub write_router_graph {
+#****f* /write_router_graph
+# NAME
+#   write_router_graph
+# FUNCTION
+#    write_router_graph  writes the graph file .
+#    write_router_graph has the following command line options .
+# SYNOPSIS
+# write_router_graph -file <fileName> -count <no of nets to print>
+# INPUTS
+#      options :
+#      	-file <fileName with extension .grf> : output graph file.
+#       -count <no of nets to print> : optional default value is total no of nets. 
+# OUTPUTS
+#      generate graph file. 
+#****
+
+my $noOfArguments = @_;
+my $netsToPrint = -1;
+
+if($noOfArguments < 2 || $_[0] eq '-h' || $_[0] eq "-help" || $_[0] eq "-HELP") {
+                                         print "Usage: write_router_graph -file <fileName>\n";
+                                         print "                          -count <no of Nets>\n";
+                                         return;}
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-count"){$netsToPrint = $_[$i+1]; }
+if($_[$i] eq "-file"){$GRFFILE = $_[$i+1]; }
+                                         } # for
+
+print "INFO-RTR-WTE_GRH : 001 : printing $netsToPrint nets in the graph file\n";
+my $dbu = $GLOBAL->dbfGlobalGetDBU;
+
+if ( exists $DIE_ALREADY{dieArea} ) {
+$guiDiellx = $DIE_ALREADY{dieArea}[0];
+$guiDielly = $DIE_ALREADY{dieArea}[1];
+$guiDieurx = $DIE_ALREADY{dieArea}[2];
+$guiDieury = $DIE_ALREADY{dieArea}[3];
+
+$guiMuDiellx = $guiDiellx/$dbu;
+$guiMuDielly = $guiDielly/$dbu;
+$guiMuDieurx = $guiDieurx/$dbu;
+$guiMuDieury = $guiDieury/$dbu;
+
+if ( $guiDiellx == 0 && $guiDielly == 0 ) { $dieIsCentre = 0;} 
+elsif ( $guiDiellx+$guiDieurx == 0 && $guiDieury+$guiDielly == 0 ) { $dieIsCentre = 1}
+else {$dieIsCentre = 2}
+     }
+
+#------------------ find size of Gcells -------------------#
+$guiWidth = abs($guiMuDieurx - $guiMuDiellx) ;
+$guiHeight = abs($guiMuDieury - $guiMuDielly) ;
+
+my $dieHMultFact  = 499/$guiHeight;
+my $dieWMultFact  = 499/$guiWidth;
+#my $dieHMultFact  = 500/$guiHeight;
+#my $dieWMultFact  = 500/$guiWidth;
+
+if( $dieHMultFact < $dieWMultFact ) { $MICRONFACTOR = $dieHMultFact; }
+else {  $MICRONFACTOR =  $dieWMultFact; }
+
+#print "multiplication factor is : $MICRONFACTOR\n";
+$GLOBAL->dbGlobalSetMicronFactor($MICRONFACTOR);
+
+my $GcellFactor = $GLOBAL->dbGlobalGetMicronFactor;
+my $GcellSize = 1/$GcellFactor;
+print "INFO-RTR-WTE_GRH : 002 : Gcell size is $GcellSize \n";
+
+my $maxYbox = int($GcellFactor*$guiHeight + 1);
+my $maxXbox = int($GcellFactor*$guiWidth + 1);
+#my $maxYbox = $GcellFactor*$guiHeight;
+#my $maxXbox = $GcellFactor*$guiWidth ;
+
+#------------------ find routing capacity of Gcells -------------------#
+my $gcellHorizCapacity = 0;
+my $gcellVerCapacity = 0;
+
+foreach my $layerName ( keys %PTDB ) {
+        my $layerType = $PTDB{$layerName}->dbTechGetLayerType;
+           if ( $layerType eq 'ROUTING' ) {
+        my $layerPitch = $PTDB{$layerName}->dbTechGetLayerPitch;
+           if ( $layerPitch > 0 ) {
+        my $numOfTrax = int($GcellSize/$layerPitch) ;
+        my $layerDir   = $PTDB{$layerName}->dbTechGetLayerDir;
+           if ( $layerDir eq 'HORIZONTAL' ) { $gcellHorizCapacity = $gcellHorizCapacity + $numOfTrax; }
+           elsif ( $layerDir eq 'VERTICAL' ) { $gcellVerCapacity = $gcellVerCapacity + $numOfTrax; }
+                                 }# pitch should be greater than zero
+                                          }#if layer is of routing type
+                                     }
+
+#------------------ find how many nets need to be printed -------------------#
+my $limit = 0;
+foreach my $netName ( keys %NETS_ALREADY ) {
+        my $numOfSinks = keys %{$NETS_ALREADY{$netName}};
+   if ( $numOfSinks >= 2 ) { $limit ++; }
+                                           }
+open( WRITE, ">$GRFFILE");
+#print WRITE "#FILE written from proton verion-$TOOL_VERSION\n";
+print WRITE "grid $maxXbox $maxYbox\n";
+print WRITE "vertical capacity $gcellVerCapacity\n";
+print WRITE "horizontal capacity $gcellHorizCapacity\n";
+if ($netsToPrint == -1 ) { 
+print WRITE "num net $limit\n";
+                         }
+else {
+print WRITE "num net $netsToPrint\n";
+$limit = $netsToPrint ;
+                         }
+my $netcount = 0;
+foreach $netName ( keys %NETS_ALREADY ) {
+   last if($netcount == $limit);
+   my $numOfSinks = keys %{$NETS_ALREADY{$netName}};
+   if ( $numOfSinks < 2 ) { next ; }
+   else {
+   print WRITE "net$netcount $netcount $numOfSinks\n";
+   foreach my $inst ( keys %{$NETS_ALREADY{$netName}} ) {
+           if ( exists $COMP_ALREADY{$inst} ) {
+           my @instLoc = $CADB{$inst}->dbCadbGetLoc;
+           my $x = int($instLoc[0]*$GcellFactor/$dbu);
+           my $y = int($instLoc[1]*$GcellFactor/$dbu);
+           print WRITE " $x $y\n";
+                                               }
+           elsif ( exists $PORTS_ALREADY{$TOP_MODULE}{$inst} ) {
+                  # print  "$inst is a port\n";
+                   my @portLoc = $PORTS_ALREADY{$TOP_MODULE}{$inst}->dbPortGetLoc;
+                   my $x = int($portLoc[0]*$GcellFactor/$dbu);
+                   my $y = int($portLoc[1]*$GcellFactor/$dbu);
+                   print WRITE "$x $y\n";
+                                                               }
+           elsif ( $inst eq "PIN" ) {
+                   my $portName = $NETS_ALREADY{$netName}{$inst};
+                   my @portLoc = $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortGetLoc;
+                   my $x = int($portLoc[0]*$GcellFactor/$dbu);
+                   my $y = int($portLoc[1]*$GcellFactor/$dbu);
+                   print WRITE "$x $y\n";
+                                                               }
+ 
+          else { print "WARN-RTR-WTE_GRH : 003 : $netName has a inst $inst of unknown type\n"; }
+                                                        }
+   $netcount++;
+          }
+                                   }#foreach net
+close(WRITE);
+}#sub write_router_graph
+
+sub write_router_graph_new {
+#****f* /write_router_graph_new
+# NAME
+#   write_router_graph_new
+# FUNCTION
+#    write_router_graph_new  writes the graph file .
+#    write_router_graph_new has the following command line options .
+# SYNOPSIS
+# write_router_graph_new -file <fileName> -count <no of nets to print> -size <grid size>
+# INPUTS
+#      options :
+#      	-file <fileName with extension .grf> : output graph file.
+#       -count <no of nets to print> : optional default value is total no of nets.
+#       -size <grid size>  
+# OUTPUTS
+#      generates graph file.
+
+my $noOfArguments = @_;
+my $netsToPrint = -1;
+my $sizeOption = 0;
+
+if($noOfArguments < 2 || $_[0] eq '-h' || $_[0] eq "-help" || $_[0] eq "-HELP") {
+                                         print "Usage: write_router_graph -file <fileName>\n";
+                                         print "                          -count <no of Nets>\n";
+                                         print "                          -size <grid size>\n"; 
+                                         return;}
+
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-count"){$netsToPrint = $_[$i+1]; }
+if($_[$i] eq "-file"){$GRFFILE = $_[$i+1]; }
+if($_[$i] eq "-size"){$sizeOption = 1;$gridSize = $_[$i+1]; }
+                                         } # for
+
+print "INFO-RTR-WTE_GRH_NW : 001 : printing $netsToPrint nets in the graph file\n";
+my $dbu = $GLOBAL->dbfGlobalGetDBU;
+
+if ( exists $DIE_ALREADY{dieArea} ) {
+$guiDiellx = $DIE_ALREADY{dieArea}[0];
+$guiDielly = $DIE_ALREADY{dieArea}[1];
+$guiDieurx = $DIE_ALREADY{dieArea}[2];
+$guiDieury = $DIE_ALREADY{dieArea}[3];
+
+$guiMuDiellx = $guiDiellx/$dbu;
+$guiMuDielly = $guiDielly/$dbu;
+$guiMuDieurx = $guiDieurx/$dbu;
+$guiMuDieury = $guiDieury/$dbu;
+
+if ( $guiDiellx == 0 && $guiDielly == 0 ) { $dieIsCentre = 0;} 
+elsif ( $guiDiellx+$guiDieurx == 0 && $guiDieury+$guiDielly == 0 ) { $dieIsCentre = 1}
+else {$dieIsCentre = 2}
+     }
+
+#------------------ find size of Gcells -------------------#
+$guiWidth = abs($guiMuDieurx - $guiMuDiellx) ;
+$guiHeight = abs($guiMuDieury - $guiMuDielly) ;
+
+my $maxYbox;
+my $maxXbox;
+my $GcellFactor;
+my $GcellSize;
+
+
+if($sizeOption == 1){
+                  my $dieHMultFact  = ($gridSize-1)/$guiHeight;
+                  my $dieWMultFact  = ($gridSize-1)/$guiWidth;
+
+
+                  if($dieHMultFact < $dieWMultFact ) { $MICRONFACTOR = $dieHMultFact; }
+                  else {  $MICRONFACTOR =  $dieWMultFact; }
+
+                     #print "multiplication factor is : $MICRONFACTOR\n";
+                     $GLOBAL->dbGlobalSetMicronFactor($MICRONFACTOR);
+
+                     $GcellFactor = $GLOBAL->dbGlobalGetMicronFactor;
+                     $GcellSize = 1/$GcellFactor;
+                     #print "Gcell size is $GcellSize \n";
+
+                     $maxYbox = int($GcellFactor*$guiHeight + 1);
+                     $maxXbox = int($GcellFactor*$guiWidth + 1);
+
+                     }#if grid option is given
+else {
+     my @LayerPitch = ();
+     my $gCellwidth;
+     foreach my $layerName ( keys %PTDB ) {
+             my $layerType = $PTDB{$layerName}->dbTechGetLayerType;
+                if ( $layerType eq 'ROUTING' ) {
+             my $layerPitch = $PTDB{$layerName}->dbTechGetLayerPitch;
+             push (@LayerPitch ,$layerPitch); 
+                                                }#if routing layer
+                                            }#for each layer
+              @LayerPitch = sort{$a<=>$b}@LayerPitch;
+             my $MinPitch = $LayerPitch[0];
+             my $MaxPitch = $LayerPitch[-1]; 
+             if((10*$MinPitch) >= $MaxPitch){ $gCellwidth = 10*$MinPitch;}
+             else {$gCellwidth = $MaxPitch;}
+
+                 $GcellSize = $gCellwidth;
+                 $MICRONFACTOR = 1/$GcellSize;
+
+             $GLOBAL->dbGlobalSetMicronFactor($MICRONFACTOR);
+             $GcellFactor = $GLOBAL->dbGlobalGetMicronFactor;
+
+             my $Y = $GcellFactor*$guiHeight;
+             my $X = $GcellFactor*$guiWidth;
+                if (int($GcellFactor*$guiHeight)< $Y){$maxYbox = int($GcellFactor*$guiHeight + 1);}
+                else {$maxYbox = $Y;}
+
+                if (int($GcellFactor*$guiWidth) < $X){$maxXbox = int($GcellFactor*$guiWidth + 1);}
+                else {$maxXbox = $X;} 
+  }#defaul value of grid size
+
+########################################################################################
+#------------------ find routing capacity of Gcells -------------------#
+my $gcellHorizCapacity = 0;
+my $gcellVerCapacity = 0;
+
+foreach my $layerName ( keys %PTDB ) {
+        my $layerType = $PTDB{$layerName}->dbTechGetLayerType;
+           if ( $layerType eq 'ROUTING' ) {
+        my $layerPitch = $PTDB{$layerName}->dbTechGetLayerPitch;
+           if ( $layerPitch > 0 ) {
+        my $numOfTrax = int($GcellSize/$layerPitch) ;
+        my $layerDir   = $PTDB{$layerName}->dbTechGetLayerDir;
+           if ( $layerDir eq 'HORIZONTAL' ) { $gcellHorizCapacity = $gcellHorizCapacity + $numOfTrax; }
+           elsif ( $layerDir eq 'VERTICAL' ) { $gcellVerCapacity = $gcellVerCapacity + $numOfTrax; }
+                                 }# pitch should be greater than zero
+                                          }#if layer is of routing type
+                                     }
+
+#------------------ find how many nets need to be printed -------------------#
+my $limit = 0;
+foreach my $netName ( keys %NETS_ALREADY ) {
+        my $numOfSinks = keys %{$NETS_ALREADY{$netName}};
+   if ( $numOfSinks >= 2 ) { $limit ++; }
+                                           }
+open( WRITE, ">$GRFFILE");
+#print WRITE "#FILE written from proton verion-$TOOL_VERSION\n";
+print WRITE "grid $maxXbox $maxYbox\n";
+print WRITE "vertical capacity $gcellVerCapacity\n";
+print WRITE "horizontal capacity $gcellHorizCapacity\n";
+if ($netsToPrint == -1 ) { 
+print WRITE "num net $limit\n";
+                         }
+else {
+print WRITE "num net $netsToPrint\n";
+$limit = $netsToPrint ;
+                         }
+my $netcount = 0;
+foreach $netName ( keys %NETS_ALREADY ) {
+   last if($netcount == $limit);
+   my $numOfSinks = keys %{$NETS_ALREADY{$netName}};
+   if ( $numOfSinks < 2 ) { next ; }
+   else {
+   print WRITE "net$netcount $netcount $numOfSinks\n";
+   foreach my $inst ( keys %{$NETS_ALREADY{$netName}} ) {
+           if ( exists $COMP_ALREADY{$inst} ) {
+           my @instLoc = $CADB{$inst}->dbCadbGetLoc;
+           my $x = int($instLoc[0]*$GcellFactor/$dbu);
+           my $y = int($instLoc[1]*$GcellFactor/$dbu);
+           print WRITE " $x $y\n";
+                                               }
+           elsif ( exists $PORTS_ALREADY{$TOP_MODULE}{$inst} ) {
+                  # print  "$inst is a port\n";
+                   my @portLoc = $PORTS_ALREADY{$TOP_MODULE}{$inst}->dbPortGetLoc;
+                   my $x = int($portLoc[0]*$GcellFactor/$dbu);
+                   my $y = int($portLoc[1]*$GcellFactor/$dbu);
+                   print WRITE "$x $y\n";
+                                                               }
+           elsif ( $inst eq "PIN" ) {
+                   my $portName = $NETS_ALREADY{$netName}{$inst};
+                   my @portLoc = $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortGetLoc;
+                   my $x = int($portLoc[0]*$GcellFactor/$dbu);
+                   my $y = int($portLoc[1]*$GcellFactor/$dbu);
+                   print WRITE "$x $y\n";
+                                                               }
+ 
+          else { print "WARN-RTR-WTE_GRH_NW : 002 : $netName has a inst $inst of unknown type\n"; }
+                                                        }
+   $netcount++;
+          }
+                                   }#foreach net
+close(WRITE);
+}#sub write_router_graph_new
+
+
+1;
+                                         
+

@@ -1,0 +1,151 @@
+
+
+sub  get_routing_resource {
+
+my $llx_micron = $_[0];
+my $lly_micron = $_[1];
+my $urx_micron = $_[2];
+my $ury_micron = $_[3];
+
+my $DEF_SCALING_FACTOR = $_[4];
+
+   $llx_micron = $llx_micron/$DEF_SCALING_FACTOR ;
+   $lly_micron = $lly_micron/$DEF_SCALING_FACTOR ;
+   $urx_micron = $urx_micron/$DEF_SCALING_FACTOR ;
+   $ury_micron = $ury_micron/$DEF_SCALING_FACTOR ;
+
+my $horizontal_length = 0;
+my $vertical_length = 0;
+
+if ( $ury_micron > $lly_micron ){ $vertical_length = $ury_micron - $lly_micron ; }
+if ( $ury_micron < $lly_micron ){ $vertical_length = $lly_micron - $ury_micron ; }
+
+if ( $urx_micron > $llx_micron ){ $horizontal_length = $urx_micron - $llx_micron ; }
+if ( $urx_micron < $llx_micron ){ $horizontal_length = $llx_micron - $urx_micron ; }
+
+my $noOfHorizontalTracks = 0;
+my $noOfVerticalTracks = 0;
+
+my $layer = "";
+
+foreach $layer ( keys %TECHNOLOGY_PHYSICAL ) {
+ if( $TECHNOLOGY_PHYSICAL{$layer}{TYPE} eq "ROUTING" && $TECHNOLOGY_PHYSICAL{$layer}{DIRECTION} eq "HORIZONTAL"){ 
+     $noOfHorizontalTracks = $noOfHorizontalTracks + $vertical_length / $TECHNOLOGY_PHYSICAL{$layer}{PITCH};
+                                                           } # if the layer is type routing
+ if( $TECHNOLOGY_PHYSICAL{$layer}{TYPE} eq "ROUTING" && $TECHNOLOGY_PHYSICAL{$layer}{DIRECTION} eq "VERTICAL"){ 
+     $noOfVerticalTracks = $noOfVerticalTracks + $horizontal_length / $TECHNOLOGY_PHYSICAL{$layer}{PITCH};
+                                                           } # if the layer is type routing
+                                             }#foreach layer
+
+my $wireLengthHorizontal = $noOfHorizontalTracks * $horizontal_length;
+my $wireLengthVertical = $noOfVerticalTracks * $vertical_length;
+
+print "INFO-PAR : 001 : wirelength in horizontal direction is $wireLengthHorizontal\n";
+print "INFO-PAR : 002 : wirelength in vertical direction is $wireLengthVertical\n";
+
+
+
+
+
+my $total_routing_resource_area = $wireLengthHorizontal + $wireLengthVertical;
+
+
+return($total_routing_resource_area);
+}#sub  get_routing_resource
+#-------------------------------------------------------------------------------------------------------------------------------------------------------------#
+sub get_site_hght_wdth_from_cell {
+my $site_name_default = "SITENAME";
+my $cnt = 0;
+my $cont = 0;
+my $min_h;
+my $min_w_1;
+my $min_w_2;
+my $site_width;
+my $site_height;
+foreach my $cellName (keys %PLDB){
+        my @cellSize = $PLDB{$cellName}->dbMdbGetSize;
+           if($cnt == 0){
+              $min_w_1 = $cellSize[0];
+              $min_h  = $cellSize[1];
+              $cnt = $cnt+1;
+              next;
+           }
+           if($cellSize[0] < $min_w_1 ){
+              $min_w_1 = $cellSize[0];
+           }
+           if($cellSize[1] < $min_h){
+              $min_h = $cellSize[1];
+           }
+}#foreach cellName
+foreach my $cell_name (keys %PLDB){
+        my @cell_Size = $PLDB{$cell_name}->dbMdbGetSize;
+        if($cont == 0){
+           $min_w_2 = $cell_Size[0];
+           $cont = $cont+1;
+           next;
+        }
+        if(($cell_Size[0] < $min_w_2) && ($cell_Size[0] > $min_w_1)){
+            $min_w_2 = $cell_Size[0];
+        }
+        if($min_w_1 == $min_w_2){
+          if($cell_Size[0] > $min_w_1){
+             $min_w_2 = $cell_Size[0];
+          }
+       }
+}#foreach cell_name
+if($min_w_2 == $min_w_1){
+$site_width = $min_w_1;
+}else {
+$site_width = ($min_w_2 - $min_w_1);
+}
+$site_height = $min_h;
+print "DBG-PAR : 001 : MIN_HEIGHT $min_h WIDTH_1 $min_w_1 WIDTH_2 $min_w_2\n"if ($DEBUG);
+print "DBG-PAR : 002 : SITE_WIDTH $site_width SITE_HEIGHT $site_height\n"if ($DEBUG);
+return($site_width,$site_height);
+}#sub get_site_hght_wdth_from_cell
+#-----------------------------------------------------------------------------------------------------------#
+sub set_site_width_height{
+my $get_height = $GLOBAL->dbGlobalGetRowHeight;
+if($get_height == -1){
+  my($width,$height) = &get_site_hght_wdth_from_cell;
+  $GLOBAL->dbGlobalSetRowHeight($height);
+  $TECHNOLOGY_PHYSICAL{DEFAULT_SITENAME}{SIZE} = "$width $height";
+  $TECHNOLOGY_PHYSICAL{DEFAULT_SITENAME}{TYPE} = SITE;
+  $TECHNOLOGY_PHYSICAL{DEFAULT_SITENAME}{CLASS} = CORE;
+}
+}#sub set_site_width_height
+#-----------------------------------------------------------------------------------------------------------#
+sub check_multiple_site_and_set_width_height {
+my $get_height = $GLOBAL->dbGlobalGetRowHeight;
+my $class_cnt = 0;
+  foreach $tag (keys %TECHNOLOGY_PHYSICAL ) {
+    if (exists $TECHNOLOGY_PHYSICAL{$tag}{CLASS}){
+        $class_cnt++;
+    }
+  }
+if($class_cnt > 1){
+  my ($width,$height) = &get_site_hght_wdth_from_cell;
+  if ($get_height < $height){
+      $GLOBAL->dbGlobalSetRowHeight($height);
+      $TECHNOLOGY_PHYSICAL{DEFAULT_SITENAME}{SIZE} = "$width $height";
+      $TECHNOLOGY_PHYSICAL{DEFAULT_SITENAME}{TYPE} = SITE;
+      $TECHNOLOGY_PHYSICAL{DEFAULT_SITENAME}{CLASS} = CORE;
+  }
+}     
+}#sub check_multiple_site_and_set_width_height
+#-------------------------------------------------------------------------------------------------------------------------------------------------------------#
+sub set_std_row_height {
+my $noOfArguments = @_;
+if($noOfArguments < 0 || $_[0] eq '-h'){print "Usage : set_std_row_height\n";
+                                        print "      : -row_height\n";
+                                       }
+else {
+my $row_height = "";
+  for(my $i=0; $i<$noOfArguments; $i++){
+      if($_[$i] eq "-row_height"){$row_height = $_[$i+1];}
+  }
+  $GLOBAL->dbGlobalSetRowHeight($row_height);
+}
+}#sub set_std_row_height
+#--------------------------------------------------------------------------------------------------------------------------------------------------------------#
+1;

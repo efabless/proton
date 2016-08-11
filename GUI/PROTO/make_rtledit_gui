@@ -1,0 +1,93 @@
+sub rtledit_module {
+my $moduleName = "";
+my $moduleIsPreStitch = 1;
+my $case = 0;
+$noOfArguments = @_;
+if( $noOfArguments < 1 || $_[0] eq '-h') { print "Usage : rtledit_module -module <moduleName> \n";
+#                           print "                        	-type <number of connections>\n";
+                         }
+else {
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-module"){ $moduleName = $_[$i+1]; }
+                                         } # for
+
+if ( exists $PSEUDO_MODULE_ALREADY{$moduleName} && exists $MODULE_ALREADY{$moduleName} ) {
+                                                               }
+if ( exists $PSEUDO_MODULE_ALREADY{$moduleName} ) {
+     $case = 1;
+                                                               }
+# check if the module exists in PSEUDO_MODULE_ALREADY, If the dirty bit is set and If this module is also the current TOP_MODULE
+# if it is current top module and dirty bit is also set, then take data only from PSEUDO_MODULE_ALREADY
+# if it is not the top module but the dirty bit is set, use the IO's from the PSEUDO_MODULE and internals from MODULE_ALREADY
+# case == 1 , if the module only exists in PSEUDO_MODULE only, then all data is taken from there
+
+if ( $case == 1 ) {
+      $rtl_tab2->delete('1.0','end');
+      $line = "module $moduleName (\n";  
+      $rtl_tab2->insert('end', "$line");
+      $rtl_tab2->insert('end', "\n");
+
+    my @inPorts = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetInput; 
+    my @outPorts = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetOutput; 
+    my @bidiPorts = $PSEUDO_MODULE_ALREADY{$moduleName}->dbaTstgenGetBidi; 
+       $line = join(",", @inPorts) ;
+       $rtl_tab2->insert('end', "$line");
+       $line = join(",", @inPorts) ;
+       $rtl_tab2->insert('end', "$line");
+       $line = join(",", @inPorts) ;
+       $rtl_tab2->insert('end', "$line");
+       $line = ") \;\n";
+       $rtl_tab2->insert('end', "$line");
+       foreach my $i ( @inPorts ) { $rtl_tab2->insert('end',"input $i \;\n"); }
+       foreach my $i ( @outPorts ) { $rtl_tab2->insert('end',"output $i \;\n"); }
+       foreach my $i ( @bidiPorts ) { $rtl_tab2->insert('end',"inout $i \;\n"); }
+      if ( $moduleIsPreStitch == 0 ) {
+      $rtl_tab2->insert('end', "\n");
+       my @conns = dbfTstgenGetPseudoModuleConn($moduleName); 
+       foreach my $i ( @conns ) { $rtl_tab2->insert('end',"\t$i \;\n"); }
+      $rtl_tab2->insert('end', "\n");
+                                     }
+      elsif ( $moduleIsPreStitch == 1 ) {
+      $rtl_tab2->insert('end', "\n");
+		foreach my $inst ( keys %{$PSEUDO_VINST_ALREADY{$moduleName}} )  {
+		   my $cellref = $PSEUDO_VINST_ALREADY{$moduleName}{$inst}->dbPimDBGetInstCellref;
+		   my $name = $PSEUDO_VINST_ALREADY{$moduleName}{$inst}->dbPimDBGetInstName;
+		   my $iname = $PSEUDO_VINST_ALREADY{$moduleName}{$inst}->dbPimDBGetInstIName;
+		   my $file = $PSEUDO_VINST_ALREADY{$moduleName}{$inst}->dbPimDBGetInstFile;
+		   my $clk = $PSEUDO_VINST_ALREADY{$moduleName}{$inst}->dbPimDBGetInstClk;
+		   my $rst = $PSEUDO_VINST_ALREADY{$moduleName}{$inst}->dbPimDBGetInstRst;
+		   my $width = $PSEUDO_VINST_ALREADY{$moduleName}{$inst}->dbPimDBGetInstWidth;
+		   my $depth = $PSEUDO_VINST_ALREADY{$moduleName}{$inst}->dbPimDBGetInstDepth;
+		   my $input = $PSEUDO_VINST_ALREADY{$moduleName}{$inst}->dbPimDBGetInstInput;
+		   my $output = $PSEUDO_VINST_ALREADY{$moduleName}{$inst}->dbPimDBGetInstOutput;
+		   my $rd_en = $PSEUDO_VINST_ALREADY{$moduleName}{$inst}->dbPimDBGetInstRd_en;
+		   my $wr_en = $PSEUDO_VINST_ALREADY{$moduleName}{$inst}->dbPimDBGetInstWr_en;
+		   my $operand = $PSEUDO_VINST_ALREADY{$moduleName}{$inst}->dbPimDBGetInstOperand;
+		 if($cellref eq "::fifo"){
+		 $rtl_tab2->insert('end',"$cellref\(.name=$name .iname=$iname .file=$file .clk=$clk .rst=$rst .width=$width .depth=$depth .in=$input .out=$output .rd_en=$rd_en .wr_en=$wr_en\)\;\n");
+		 }elsif($cellref eq "::datapath"){
+		 $rtl_tab2->insert('end',"$cellref\(.name=$name .op=$operand .in=\"$input\" .out=$output .clk=$clk\)\;\n");
+		 }elsif($cellref eq "::combo"){
+		 $rtl_tab2->insert('end', "$cellref\(.name=$name .in=$input .out=$output\)\;\n");
+		 }elsif($cellref eq "::flop"){
+		 $rtl_tab2->insert('end', "$cellref\(.name=$name .in=$input .out=$output .clk=$clk .rst=$rst\)\;\n");
+		}
+		}#foreach instance
+      $rtl_tab2->insert('end', "\n");
+                                        }
+
+      $line = "endmodule\n";  
+      $rtl_tab2->insert('end', "$line");
+      $rtl_tab2->insert('end', "\n");
+                  }
+
+
+      }# if correct arguments
+
+
+
+
+}#sub rtledit_module
+
+
+1;

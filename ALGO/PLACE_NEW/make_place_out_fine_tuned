@@ -1,0 +1,500 @@
+#!/bin/perl -w
+
+sub place_output_fine_tune {
+  use Benchmark;
+  my $t0 = new Benchmark;
+  my $noOfArguments = @_;
+  my $cmd = $GLOBAL->dbfGlobalGetCurrCommand; 
+  if( $_[0] eq '-h') {
+    #print "Usage : snapPlace \n";
+    print "Usage : $cmd \n";
+    print "        --no_x_sites\n";
+    print "        --no_y_sites\n";
+    print "        --no_orientation\n";
+    print "        --stdCell\n";
+    print "        --block\n";
+    print "        --all\n";
+    return ;
+  }
+  my $no_x_sites = 0;
+  my $no_y_sites = 0;
+  my $no_orientation = 0;
+  my $snap_to_std_cell = 0;
+  my $snap_to_block = 0;
+  my $snap_to_all = 0;
+  
+  for(my $i = 0; $i < $noOfArguments; $i++){
+    if($_[$i] eq "--no_x_sites"){$no_x_sites = 1; }
+    if($_[$i] eq "--no_y_sites"){$no_y_sites = 1; }
+    if($_[$i] eq "--no_orientation"){$no_orientation = 1}
+    if($_[$i] eq "--stdCell"){$snap_to_std_cell = 1}
+    if($_[$i] eq "--block"){$snap_to_block = 1}
+    if($_[$i] eq "--all"){$snap_to_all = 1}
+  }
+  if($snap_to_std_cell == 0 && $snap_to_block == 0 && $snap_to_all == 0){
+     $snap_to_all = 1;
+  }
+
+  use POSIX qw(ceil floor);
+  my @rows = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetRows;
+  %new_tempRowHash = ();
+  foreach my $tag ( @rows ) {
+    my ($rowName,$y) = (split(/\s+/, $tag))[0,3];
+    $new_tempRowHash{$y}=$rowName;
+  }
+
+  my $cellHeight = $GLOBAL->dbGlobalGetRowHeight;
+  $cellHeight = $cellHeight*$DEF_DATABASE_UNIT;
+  if ( exists $PLACE{$TOP_MODULE} ) {
+    foreach my $inst ( keys %COMP_ALREADY ) {
+      my $status = $CADB{$inst}->dbCadbGetStatus; 
+      if ( $status ne "FIXED"){
+        my $cellref = $CADB{$inst}->dbCadbGetCellref;
+        if(exists $PLDB{$cellref}){
+           my $class = $PLDB{$cellref}->dbMdbGetClass;
+           if($snap_to_all == 0){
+              if($class eq "CORE" && $snap_to_std_cell == 1){
+              }elsif($class eq "BLOCK" && $snap_to_block == 1){
+              }else{next;}  
+           }
+        }
+        my $isInstFlop = $PLACE{$TOP_MODULE}->dbPlaceGetIsInstFlop($inst);
+        if ( $isInstFlop == 1 ) {
+          my @temp_array = $PLACE{$TOP_MODULE}->dbPlaceGetFlopLoc($inst);
+          my  ($X)  = $temp_array[0];
+          my  ($Y) = $temp_array[1];    
+          if($no_y_sites == 0) {$Y = dbPlaceGetNearestRow($Y);}
+          if($no_x_sites ==0) {$X = dbPlaceGetNearestXStep($X);}
+          $PLACE{$TOP_MODULE}->dbPlaceSetFlopLoc($inst,$X,$Y);
+          $CADB{$inst}->dbCadbSetLoc($X,$Y);
+        } elsif ( $isInstFlop == 0 ) {
+          my @temp_array = $CADB{$inst}->dbCadbGetLoc;
+          my  ($X)  = $temp_array[0];
+          my  ($Y) = $temp_array[1];
+          if($no_y_sites == 0) {$Y = dbPlaceGetNearestRow($Y);}
+          if($no_x_sites ==0) {$X = dbPlaceGetNearestXStep($X);}
+          $CADB{$inst}->dbCadbSetLoc($X,$Y);
+        }
+      }
+    }
+  }
+
+  if($no_orientation ==0) {&dbPlaceFineTuneSetOrient ;}
+  
+  print "Updating instance bbox ....\n";
+  &set_inst_box(@_);
+
+  my $t1 = new Benchmark;
+  my $td = timediff($t1, $t0);
+  print "Command $cmd took:",timestr($td),"\n";
+}#sub place_output_fine_tune
+
+sub dbPlaceGetNearestRow {
+  my $origY = $_[0];
+  my $cellHeight = $GLOBAL->dbGlobalGetRowHeight; 
+  $cellHeight = $cellHeight*$DEF_DATABASE_UNIT;
+  my $numBelow  = floor($origY/$cellHeight);
+  my $numAbove  = ceil($origY/$cellHeight);
+  my $newYBelow = $numBelow*$cellHeight;
+  my $newYAbove = $numAbove*$cellHeight;
+  if((abs($newYAbove - $origY) < abs($newYBelow - $origY)) && ( exists $new_tempRowHash{$newYAbove})){
+    return $newYAbove ;
+  } elsif ( exists $new_tempRowHash{$newYBelow}){
+    return $newYBelow ;
+  }else {
+    return get_nearest_row($origY) ; 
+  }
+}#sub dbPlaceGetNearestRow
+
+sub dbPlaceGetNearestXStep {
+  my @rows = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetRows;
+  #foreach my $tag ( @rows ) {
+  #  my ($y,$x_space) = (split(/\s+/, $tag))[3,8];
+  #  $x_space = $x_space*$DEF_DATABASE_UNIT;
+  #}
+  $tag = $rows[0];
+  my $x_space = (split(/\s+/, $tag))[7];
+  #$x_space = $x_space*$DEF_DATABASE_UNIT;
+  my $origX = $_[0];
+  my $numBelow  = floor($origX/$x_space);
+  my $numAbove  = ceil($origX/$x_space);
+  my $newXBelow = $numBelow*$x_space;
+  my $newXAbove = $numAbove*$x_space;
+  if(abs($newXAbove - $origX) < abs($newXBelow - $origX)){
+    return $newXAbove ;
+  } else {
+    return $newXBelow ;
+  }
+}#sub dbPlaceGetNearestXStep
+
+sub dbPlaceFineTuneSetOrient {
+  my $tempOrient = "" ;
+  my @rows = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetRows;
+  my %row_y2orient = ();
+  foreach my $tag ( @rows ) {
+    my ($rowName,$x,$y,$row_orient) = (split(/\s+/, $tag))[0,2,3,4];
+    $row_y2orient{$y} = $row_orient;
+    #printf("\nfor row $y and its orientation is $row_orient \n") ;
+  }
+  if ( exists $PLACE{$TOP_MODULE} ) {
+    foreach my $inst ( keys %COMP_ALREADY ) {
+      my $isInstFlop = $PLACE{$TOP_MODULE}->dbPlaceGetIsInstFlop($inst);
+      my @temp_array = ();
+      if ( $isInstFlop == 1 ) {
+        @temp_array = $PLACE{$TOP_MODULE}->dbPlaceGetFlopLoc($inst);
+      }elsif ( $isInstFlop == 0 ) {
+        @temp_array = $CADB{$inst}->dbCadbGetLoc;
+      }
+      my  ($Y) = $temp_array[1];    
+      if ( exists $row_y2orient{$Y}){
+        $tempOrient = $row_y2orient{$Y};
+      }else{
+        my $cellHeight = $GLOBAL->dbGlobalGetRowHeight; 
+        $cellHeight = $cellHeight*$DEF_DATABASE_UNIT;
+        my $numRow  = $Y/$cellHeight;
+        printf("\nERR-ALGO_PL_NW : 001 : Row not found for $inst\n") ;
+        if($numRow%2 ==0) {
+          $tempOrient = "FS";
+        }else {
+          $tempOrient = "N";
+         }
+       }
+       #print "$inst $tempOrient \n";
+       my $node = $CADB{$inst}->dbCadbGetNodeNum;
+       if(exists $INST_FLIP{$node}){
+         if($INST_FLIP{$node} == 1){
+             if($tempOrient eq "N"){$tempOrient = "FN";}
+             elsif($tempOrient eq "FN"){$tempOrient = "N";}
+             elsif($tempOrient eq "S"){$tempOrient = "FS";}
+             elsif($tempOrient eq "FS"){$tempOrient = "S";}
+             elsif($tempOrient eq "E"){$tempOrient = "FE";}
+             elsif($tempOrient eq "FE"){$tempOrient = "E";}
+             elsif($tempOrient eq "W"){$tempOrient = "FW";}
+             elsif($tempOrient eq "FW"){$tempOrient = "W";}
+
+         }#if exists $INST_FLIP{$node}
+       }#if exists $INST_FLIP{$node}
+       $CADB{$inst}->dbCadbSetOrient($tempOrient);
+       $new =$CADB{$inst}->dbCadbGetOrient;
+       #print "$inst $new \n";
+       #printf("\nFor row $Y FINE tune instance is $inst and its orientation is $tempOrient \n") ;
+    }
+  }
+}#sub dbPlaceFineTuneSetOrient
+
+sub get_nearest_row {
+  my $origY = $_[0];
+  my $imm_more_val = ""; 
+  my $imm_less_val = ""; 
+  foreach my $row_y_val ( sort {$a <=> $b } keys %new_tempRowHash ) {
+    if($row_y_val < $origY) {
+      $imm_less_val = $row_y_val ;
+    } elsif($row_y_val > $origY) {
+      $imm_more_val = $row_y_val ;
+    } elsif($row_y_val == $origY) {
+      return $row_y_val ;
+    }
+    if(($imm_more_val ne "")&&($imm_less_val ne "")) {
+      if(abs($imm_more_val - $origY) < abs($origY - $imm_less_val)){
+        return $imm_more_val ;
+      }else {
+        return $imm_less_val ;
+      }
+    }
+  }
+  if(($imm_more_val eq "") && ($imm_less_val ne "")){
+    return $imm_less_val ;
+  }
+  if(($imm_more_val ne "") && ($imm_less_val eq "")){
+    return $imm_more_val ;
+  }
+  return $origY ;
+}#sub get_nearest_row
+
+sub get_nearest_previous_row {
+  my $origY = $_[0];
+  my $imm_more_val = ""; 
+  my $imm_less_val = ""; 
+  foreach my $row_y_val (sort {$a<=>$b} keys %flat_new_tempRowHash ) {
+    if($row_y_val < $origY) {
+      $imm_less_val = $row_y_val ;
+    } elsif($row_y_val > $origY) {
+      $imm_more_val = $row_y_val ;
+    } elsif($row_y_val == $origY) {
+      return $row_y_val ;
+    }
+    if(($imm_more_val ne "")&&($imm_less_val ne "")) {
+      return $imm_less_val ;
+    }
+  }
+  return $origY ;
+}#sub get_nearest_previous_row
+
+sub get_nearest_next_row {
+  my $origY = $_[0];
+  my $imm_more_val = ""; 
+  my $imm_less_val = ""; 
+  foreach my $row_y_val (sort {$a<=>$b} keys %flat_new_tempRowHash ) {
+    if($row_y_val < $origY) {
+      $imm_less_val = $row_y_val ;
+    } elsif($row_y_val > $origY) {
+      $imm_more_val = $row_y_val ;
+    } elsif($row_y_val == $origY) {
+      return $row_y_val ;
+    }
+    if(($imm_more_val ne "")&&($imm_less_val ne "")) {
+      return $imm_more_val ;
+    }
+  }
+  return $origY ;
+}#sub get_nearest_next_row
+
+sub dstrbt_inst_unfrmly_in_row_btwn_row 
+{
+  my @row_y_coords = ();
+  my @rows = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetRows;
+  foreach my $tag ( @rows ) {
+    my $y = (split(/\s+/, $tag))[3];
+    push(@row_y_coords,$y);
+  }
+  my @curr_row_inst_array= ();
+  my @sorted_row_y_coords = sort {$a <=> $b} @row_y_coords;
+  my $curr_row_utilzation = 0 ;
+  my $curr_row_no = 0 ;
+  my $curr_row_no_cells = 0 ;
+  my $curr_row_total_cells_width = 0 ;
+  my $dbu = $GLOBAL->dbfGlobalGetDBU;
+  my $utilization = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetUtilization;
+  my @size = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetSize ;
+  my $chip_width = $size[2] - $size[0];
+  my $chip_width_utilized = ($utilization/100) * $chip_width;
+  my $curr_row_y = $sorted_row_y_coords[$curr_row_no];
+  my @sorted_component_list_x_y = sort sort_instance_row_increasing_x_increasing keys %CADB;
+  for(my $sorted_inst_index =0; $sorted_inst_index<=$#sorted_component_list_x_y; $sorted_inst_index++){
+    my $curr_inst = $sorted_component_list_x_y[$sorted_inst_index];
+    my @instLoc = $CADB{$curr_inst}->dbCadbGetLoc;
+    my $instloc_X = $instLoc[0];
+    my $cellref = $CADB{$curr_inst}->dbCadbGetCellref;
+    my @box = $PLDB{$cellref}->dbMdbGetSize;
+    my $cell_dim_X  =  $box[0]*$dbu;
+    if((($curr_row_total_cells_width + $cell_dim_X) >= $chip_width_utilized)
+      ||($sorted_inst_index==$#sorted_component_list_x_y)){
+      if(($curr_row_total_cells_width + $cell_dim_X) <= $chip_width){
+        $curr_row_total_cells_width += $cell_dim_X ;
+        $curr_row_no_cells++ ;
+        push(@curr_row_inst_array,$curr_inst);
+      }
+      my $total_spacing_in_row = $chip_width - $curr_row_total_cells_width;
+      my $average_spacing_in_row = $total_spacing_in_row/($curr_row_no_cells +1);
+      my $prev_inst_x_loc = 0 ;
+      my $prev_inst_width = 0 ;
+      for(my $inst_index =0; $inst_index<=$#curr_row_inst_array; $inst_index++){
+        my $temp_curr_inst = $curr_row_inst_array[$inst_index];
+        my $temp_curr_inst_x_loc = $prev_inst_x_loc + $prev_inst_width + $average_spacing_in_row;
+        $CADB{$temp_curr_inst}->dbCadbSetLoc($temp_curr_inst_x_loc,$curr_row_y);
+        $prev_inst_x_loc = $temp_curr_inst_x_loc ;
+        my $temp_curr_cellref = $CADB{$temp_curr_inst}->dbCadbGetCellref;
+        my @temp_curr_inst_box = $PLDB{$temp_curr_cellref}->dbMdbGetSize;
+        $prev_inst_width = $temp_curr_inst_box[0]*$dbu;
+      }
+      $curr_row_no_cells = 0 ;
+      @curr_row_inst_array= ();
+      $curr_row_no++;
+      $curr_row_y = $sorted_row_y_coords[$curr_row_no];
+      if(($curr_row_total_cells_width + $cell_dim_X) > $chip_width){
+        $curr_row_total_cells_width = $cell_dim_X ;
+        $curr_row_no_cells++ ;
+        push(@curr_row_inst_array,$curr_inst);
+      }else{
+        $curr_row_total_cells_width = 0 ;
+      }
+    }else{
+      $curr_row_total_cells_width += $cell_dim_X ;
+      $curr_row_no_cells++ ;
+      push(@curr_row_inst_array,$curr_inst);
+    }
+  }
+  &set_inst_box;
+}#sub dstrbt_inst_unfrmly_in_row_btwn_row
+
+sub sort_instance_row_increasing_x_increasing 
+{
+  my @a_instloc = $CADB{$a}->dbCadbGetLoc;
+  my $a_instloc_X = $a_instloc[0];
+  my $a_instloc_Y = $a_instloc[1];
+
+  my @b_instloc = $CADB{$b}->dbCadbGetLoc;
+  my $b_instloc_X = $b_instloc[0];
+  my $b_instloc_Y = $b_instloc[1];
+
+  my $ret_val = 0;
+  if ($a_instloc_Y > $b_instloc_Y){
+    $ret_val = 1;
+  }elsif($a_instloc_Y == $b_instloc_Y){
+    $ret_val = $a_instloc_X <=> $b_instloc_X;
+  }else{
+    $ret_val = -1;
+  }
+  return $ret_val;
+}#sub sort_instance_row_increasing_x_increasing 
+
+sub add_filler_cells_in_gaps 
+{
+  my @row_y_coords = ();
+  my %row_orients = ();
+  my @rows = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetRows;
+  foreach my $tag ( @rows ) {
+    my ($y,$orient) = (split(/\s+/, $tag))[3,4];
+    push(@row_y_coords,$y);
+    $row_orients{$y}= $orient;
+  }
+  my @sorted_row_y_coords = sort {$a <=> $b} @row_y_coords;
+  my @sorted_filler_non_pad_cell_list = &create_list_filler_non_pad_cells;
+  my $curr_filler_cnt = 0 ;
+  my $curr_row_total_cells_width = 0 ;
+  my $dbu = $GLOBAL->dbfGlobalGetDBU;
+  my @size = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetSize ;
+  my $chip_width = $size[2] - $size[0];
+  my @sorted_component_list_x_y = sort sort_instance_row_increasing_x_increasing keys %CADB;
+  my $curr_x_val = 0;
+  my $curr_row_y = $sorted_row_y_coords[0];
+  my $curr_row_orient = $row_orients{$curr_row_y};
+  my $curr_row_no = 0;
+  my $instloc_X = 0;
+  my $instloc_Y = 0;
+  my $cell_dim_X  = 0;
+  print "processing row $curr_row_no\n";
+  for(my $sorted_inst_index =0; $sorted_inst_index<=$#sorted_component_list_x_y +1; $sorted_inst_index++){
+    if($sorted_inst_index <$#sorted_component_list_x_y +1){
+      my $curr_inst = $sorted_component_list_x_y[$sorted_inst_index];
+      my @instLoc = $CADB{$curr_inst}->dbCadbGetLoc;
+      $instloc_X = $instLoc[0];
+      $instloc_Y = $instLoc[1];
+      my $cellref = $CADB{$curr_inst}->dbCadbGetCellref;
+      my @box = $PLDB{$cellref}->dbMdbGetSize;
+      $cell_dim_X  =  $box[0]*$dbu;
+    }else {
+      $instloc_X = $chip_width;
+      $instloc_Y = $curr_row_y;
+      $cell_dim_X  = 0;
+    }
+    if($instloc_Y > $curr_row_y) {
+      if($curr_x_val == $chip_width){
+        $curr_x_val = 0;
+        $curr_row_no++;
+        $curr_row_y = $sorted_row_y_coords[$curr_row_no];
+        $curr_row_orient = $row_orients{$curr_row_y};
+        print "processing row $curr_row_no\n";
+      }else{
+        $instloc_X = $chip_width;
+        $cell_dim_X  =  0;
+        $sorted_inst_index--;
+      }
+    }
+    my $curr_x_gap = $instloc_X - $curr_x_val;
+    while($curr_x_gap>0){
+      my $curr_filler_index = 0;
+      my $curr_filler_inst_name = "slvrn_std_filler_inst_".$curr_filler_cnt;
+      my $curr_filler_cell = $sorted_filler_non_pad_cell_list[$curr_filler_index];
+      my @box = $PLDB{$curr_filler_cell}->dbMdbGetSize;
+      $filler_used_width  =  $box[0]*$dbu;
+      while($curr_x_gap < $filler_used_width){ 
+        $curr_filler_index++;
+        $curr_filler_cell = $sorted_filler_non_pad_cell_list[$curr_filler_index];
+        @box = $PLDB{$curr_filler_cell}->dbMdbGetSize;
+        $filler_used_width  =  $box[0]*$dbu;
+      }
+      $curr_filler_cell_y_val = $curr_row_y;
+      $curr_filler_cell_x_val = $curr_x_val;
+
+      $CADB{$curr_filler_inst_name} = CompAttDB::new();
+      $CADB{$curr_filler_inst_name}->dbCadbSetCellref($curr_filler_cell);
+      $COMP_ALREADY{$curr_filler_inst_name} = \%{$curr_filler_inst_name};
+      $CADB{$curr_filler_inst_name}->dbCadbSetStatus("PLACED");
+      $CADB{$curr_filler_inst_name}->dbCadbSetLoc($curr_filler_cell_x_val,$curr_filler_cell_y_val); 
+      $CADB{$curr_filler_inst_name}->dbCadbSetOrient($curr_row_orient);
+
+      $curr_x_gap -= $filler_used_width;
+      $curr_x_val += $filler_used_width;
+      $curr_filler_cnt++;
+    }
+    $curr_x_val = $instloc_X + $cell_dim_X;
+  }
+  &set_inst_box;
+  my @sorted_component_list_x_y = sort sort_instance_row_increasing_x_increasing keys %CADB;
+  my $curr_row_width = 0 ;
+  $curr_row_no =0;
+  $curr_row_y = $sorted_row_y_coords[$curr_row_no];
+  for(my $sorted_inst_index =0; $sorted_inst_index<=$#sorted_component_list_x_y +1; $sorted_inst_index++){
+    if($sorted_inst_index <$#sorted_component_list_x_y +1){
+      my $curr_inst = $sorted_component_list_x_y[$sorted_inst_index];
+      my @instLoc = $CADB{$curr_inst}->dbCadbGetLoc;
+      $instloc_Y = $instLoc[1];
+      my $cellref = $CADB{$curr_inst}->dbCadbGetCellref;
+      my @box = $PLDB{$cellref}->dbMdbGetSize;
+      $cell_dim_X  =  $box[0]*$dbu;
+    }else {
+      $instloc_Y = $curr_row_y;
+      $cell_dim_X  = 0;
+      print "curr row width $curr_row_no is $curr_row_width\n";
+    }
+    if($instloc_Y > $curr_row_y) {
+      print "curr row width $curr_row_no is $curr_row_width\n";
+      $curr_row_width = 0 ;
+      $curr_x_val = 0;
+      $curr_row_no++;
+      $curr_row_y = $sorted_row_y_coords[$curr_row_no];
+    }
+    $curr_row_width += $cell_dim_X;
+  }
+}#sub add_filler_cells_in_gaps 
+
+sub create_list_filler_non_pad_cells
+{
+  my @filler_non_pad_cell_list = ();
+  foreach my $cell (keys %PLDB){
+    my $filler = 0; 
+    my @pins = $PLDB{$cell}->dbMdbGetPins; 
+    if(@pins == 2){
+      foreach my $pin (@pins){
+        my $type = $PLDB{$cell}->dbMdbGetPinType($pin);
+        if (($type == 1)||($type == 2)) {
+          $filler = 1; 
+        }else{
+          $filler = 0; 
+        }
+      }
+    }
+    if($filler ==1){
+      push(@filler_non_pad_cell_list,$cell);
+    }
+  }
+  my @sorted_filler_non_pad_cell_list = sort sort_filler_cell_decreasing_width @filler_non_pad_cell_list;
+  print "filler cells \n";
+  print join ",", @sorted_filler_non_pad_cell_list;
+  print "\n";
+  return @sorted_filler_non_pad_cell_list;
+}#sub create_list_filler_non_pad_cells
+
+sub sort_filler_cell_decreasing_width 
+{
+  my $dbu = $GLOBAL->dbfGlobalGetDBU;
+
+  my @box = $PLDB{$a}->dbMdbGetSize;
+  my $cell_dim_a  =  $box[0]*$dbu;
+
+  @box = $PLDB{$b}->dbMdbGetSize;
+  my $cell_dim_b  =  $box[0]*$dbu;
+
+  my $ret_val = 0;
+  if ($cell_dim_a > $cell_dim_b){
+    $ret_val = -1;
+  }elsif($cell_dim_a == $cell_dim_b){
+    $ret_val = 1;
+  }else{
+    $ret_val = 1;
+  }
+  return $ret_val;
+}#sub sort_filler_cell_decreasing_width 
+
+1;

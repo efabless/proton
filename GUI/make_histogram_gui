@@ -1,0 +1,557 @@
+sub activate_DesignStatTab{
+    my $active_tab = $GLOBAL->dbGlobalGetActiveDesignStatTab;
+    if($active_tab eq "netStat"){
+       $GLOBAL->dbGlobalSetActiveCanvas("netStat_view");
+       $netstat_canvas->CanvasFocus if(Exists $netstat_canvas) ;
+    }else{}
+}#sub activate_DesignStatTab
+
+
+sub activate_netStatTab{
+    $GLOBAL->dbGlobalSetActiveDesignStatTab("netStat_view");
+    $GLOBAL->dbGlobalSetActiveCanvas("netStat_view");
+    $netstat_canvas->CanvasFocus  if(Exists $netstat_canvas) ;
+}#sub activate_netStatTab
+
+
+####################################################################
+############# creating GUI to display  histogram byNetLen ##########
+####################################################################
+sub create_gui_to_displayWL_byNetLen{
+  $netStatEntryFrame->destroy if(Exists $netStatEntryFrame);
+  $netStatCanvasFrame->destroy if(Exists $netStatCanvasFrame);
+ 
+  $netStatEntryFrame = $netTab->Frame()->pack(-side=>'top',-expand=>1,-fill=>'x');
+  $netStatCanvasFrame = $netTab->Frame()->pack(-side=>'top',-expand=>1,-fill=>'both');
+  
+  $netstat_canvas = $netStatCanvasFrame->Scrolled(qw/Canvas -bg white -xscrollincrement 50 -yscrollincrement 50 -confine 1 -scrollbars se/, -width => 910, -height => 420,-scrollregion => [0, 0, 910, 420]);
+  $netstat_canvas->Subwidget("xscrollbar")->configure(-width=>15,-troughcolor =>'grey45');
+  $netstat_canvas->Subwidget("yscrollbar")->configure(-width=>15,-troughcolor =>'grey45');
+  $netstat_canvas->pack(qw/-expand 1 -side top/);
+  $netstat_canvas->CanvasFocus;
+  
+  $netStatEntryFrame->Label(-text => "No of bins")->pack(-side =>'left', -anchor => 'w');
+  $netStatEntryFrame->Entry(-textvariable =>\$noOfBins, -width=> 5 )->pack(-side =>'left', );
+  $netStatEntryFrame->Entry(-textvariable =>\$MaxLen, -width=> 10)->pack(-side =>'right', );
+  $netStatEntryFrame->Label(-text => "MaxLength")->pack(-side =>'right', -anchor => 'w');
+  $netStatEntryFrame->Entry(-textvariable =>\$MinLen, -width=> 10 )->pack(-side =>'right', );
+  $netStatEntryFrame->Label(-text => "MinLength")->pack(-side =>'right', -anchor => 'w');
+  
+  my $showTable = $netStatEntryFrame->Button(-text=> "ShowTable",-padx=>0, -pady=>0,-relief=>'groove', -command=> sub{
+     &showTable($MinLen,$MaxLen,$noOfBins);})->pack(-side=>'left');
+  
+  my $displayHistogram = $netStatEntryFrame->Button(-text=> "Display",-padx=>0, -pady=>0,-relief=>'groove',-command=> sub{
+     $netstat_canvas->delete('all');&create_netslen_array;&display_histogram('-bins',$noOfBins,'-minLen',$MinLen,'-maxLen',$MaxLen);})->pack(-side=>'left');
+  
+  my $refreshHistogram = $netStatEntryFrame->Button(-text=> "Refresh",-padx=>0, -pady=>0,-relief=>'groove', -command=> sub{
+     $netstat_canvas->delete('all');&display_histogram('-bins',$noOfBins,'-minLen',$MinLen,'-maxLen',$MaxLen);})->pack(-side=>'left');
+  
+  my $clearHistogram = $netStatEntryFrame->Button(-text=> "Clear",-padx=>0, -pady=>0,-relief=>'groove', -command=> sub{
+   $netstat_canvas->delete('all');&clear_net_length_storage;$binSize = ""; $MinLen = "";$MaxLen = "";$noOfBins = "";})->pack(-side=>'left');
+
+}#sub create_gui_to_displayWL_byNetLen
+
+####################################################################
+############ creating GUI to display  histogram byNetType ##########
+####################################################################
+sub create_gui_to_displayWL_byNetType{
+  print "generating wire report\n";
+  $netStatEntryFrame->destroy if(Exists $netStatEntryFrame);
+  $netStatCanvasFrame->destroy if(Exists $netStatCanvasFrame);
+
+  $netStatEntryFrame = $netTab->Frame()->pack(-side=>'top',-expand=>1,-fill=>'x');
+  $netStatCanvasFrame = $netTab->Frame( )->pack(-side=>'top',-expand=>1,-fill=>'both');
+  
+  $netstat_canvas = $netStatCanvasFrame->Scrolled('WorldCanvas', -scrollbars=>'se',-bg =>'white',-width =>540, -height =>540)->pack(qw/-side top -expand 1 -fill both/);
+  $netstat_canvas->Subwidget('xscrollbar')->configure(-takefocus => 0);
+  $netstat_canvas->Subwidget('yscrollbar')->configure(-takefocus => 0);
+  $netstat_canvas->configure(-confine => 1);
+  $netstat_canvas->CanvasFocus;
+  
+  print "generating wire report\n";
+  my $displayHistogram = $netStatEntryFrame->Button(-text=> "Display",-padx=>0, -pady=>0,-relief=>'groove',-command=> sub{
+     $netstat_canvas->delete('all');my ($wl,$nc) = &report_net;&display_histogram_byNetType($wl,$nc);})->pack(-side=>'left');
+  print "generating wire report\n";
+}#sub create_gui_to_displayWL_byNetType
+
+####################################################################
+############# subroutine to display  histogram byNetType ###########
+####################################################################
+sub clear_net_length_storage {
+    @NETS_LENGTH = ();
+    $net_length_var = 0;
+}#sub clear_net_length_storage
+
+sub create_netslen_array {
+
+#****f* / create_netslen_array
+# NAME
+#   create_netslen_array
+# FUNCTION
+#  to create an array of net's length
+# SYNOPSIS
+#   create_netslen_array 
+#
+# INPUTS
+#   options:
+#   
+# OUTPUTS
+#    Array "NETS_LENGTH" created
+#****
+
+@NETS_LENGTH = &get_nets_lengtharray;
+$net_length_var = 1;
+}#sub create_netslen_array
+
+sub display_histogram {
+
+#****f* / display_histogram
+# NAME
+#   display_histogram
+# FUNCTION
+#  plot histogram for length of nets
+# Assumptions
+#   works if length array is found
+# SYNOPSIS
+#   display_histogram -bins <no of bins(default is 40)>
+#                     -minLen <minimum length>
+#                     -maxLen <maximum length>
+# INPUTS
+#   options:
+#   -bins <no of bins>, -minLen <minimum length>,-maxLen <maximum length>
+# OUTPUTS
+#    display histogram
+#****
+
+use Benchmark;
+my $t0 = new Benchmark;
+
+my $noOfArg = @_;
+if($net_length_var != 1){print "\nWARN: length array is not found\n";
+                         print "first you should run command create_netslen_array or push display button\n";
+                         return;}
+for(my $i=0; $i<$noOfArg; $i++){
+    if ($_[$i] eq "-bins")  { $noOfBins = $_[$i+1];}
+    if ($_[$i] eq "-minLen"){ $MinLen   = $_[$i+1];}
+    if ($_[$i] eq "-maxLen"){ $MaxLen   = $_[$i+1];}
+    if ($_[$i] eq "-h" || $_[$i] eq "-help" || $_[$i] eq "-HELP"){
+                        print "\nusage: display_histogram -bins <no of bins>\n";
+                        print "                         -minLen <min length>\n";
+                        print "                         -maxLen <max length>\n";
+                        print "by default no of bins are 40\n";
+                        return;}
+}#for no of Arguments
+
+my @nets_length = @NETS_LENGTH;
+my $canvas = $netstat_canvas;
+my $canvasWidth = 910;
+my $canvasHeight = 420;
+my @color = ("orange", "yellow", "pink", "purple", "magenta");
+#-------------------- making array of noOfNets in each slots -------------------#
+my @nets_length = sort{$a<=>$b}@nets_length;
+if($MinLen eq ""){
+   $MinLen = $nets_length[0];
+}else {
+   $MinLen = $MinLen;
+}
+if($MaxLen eq ""){
+   $MaxLen = $nets_length[-1]+ 1;
+}else {
+   $MaxLen = $MaxLen;
+}
+if($noOfBins eq ""){
+   $noOfBins = 40;
+}else {
+   $noOfBins = $noOfBins;
+}
+my $binSize = ($MaxLen - $MinLen)/$noOfBins;
+ #  if($binSize > int $binSize){$binSize = (int $binSize + 1);}
+#-------------------------------------------------------------------------------#
+   @netCount = ();
+my @netLength = ();
+foreach(@nets_length){
+     if($_ < $MinLen){
+     }else {    
+        my $index = int (($_ - $MinLen)/$binSize) ;
+           $netCount[$index] += 1 ;
+           $netLength[$index] += $_ ;
+     }
+}#foreach length
+#-------------------------------------------------------------------------------#
+
+my @sortedNetCounts = sort{$a<=>$b}@netCount; ## to calculate max no of nets in a bin ##
+my $NoOfNets = @sortedNetCounts[-1];
+my $xdis = 50;
+my $ydis = 50;
+my $llx = $xdis;
+my $lly = $canvasHeight - $xdis;
+my $urx = $canvasWidth - $ydis;
+my $ury = $ydis; 
+my $width = $urx - $llx;
+my $height = $lly - $ury;
+#----------- Horizontal and Vertical Axis --------------#
+$canvas->createLine($llx,$lly,$urx,$lly, -stipple=> 'gray75', -fill=> 'red');
+$canvas->createLine($llx,$lly,$llx,$ury, -fill=> 'red');
+#-------------------- Marks with Text on Y-axis --------------------#   
+
+my $yStep = $NoOfNets/10;
+my $intYstep = int($NoOfNets/10);
+if ($yStep > $intYstep){$yStep = $intYstep + 1;}
+
+for(my $i=0; $i <= 10; $i++) {
+my $llx1 = $llx - 4;
+my $lly1 = $lly - (($height*$i)/10);
+my $urx1 = $llx;                               
+my $ury1 = $lly1;
+my $yText = $yStep*$i;
+
+$canvas->createLine($llx1,$lly1,$urx1,$ury1, -fill,"black");
+$canvas->createText($llx1-14,$lly1, -text=>$yText,-fill,"black");
+                              }#for y axis
+#-------------------- Marks with Text on X-axis --------------------#   
+my $j= 0;
+for(my $i=0; $i <= $noOfBins; $i++){
+my $llx1 = $llx + ($width/$noOfBins)*$i; 
+my $lly1 = $lly;
+my $urx1 = $llx1;
+my $ury1 = $lly + 4;
+my $xText = $MinLen + $binSize*$i;
+
+$canvas->createLine($llx1,$lly1,$urx1,$ury1, -fill,"black");
+$canvas->createText($llx1,$lly1 + 14, -text=>$xText,-fill,"black");
+
+#----------------------- draw rectangles for each length slot ---------------------------#
+if($i < $noOfBins){
+   my $numNets = $netCount[$i];
+   if ($numNets eq ""){
+   }else {
+       my $llx2 = $llx1;
+       my $lly2 = $lly1;
+       my $urx2 = $llx + ($width/$noOfBins)*($i + 1);
+       my $ury2 = $lly - $numNets*($height/(10*$yStep)); 
+       my $colord;
+       if ($j <= 4){
+           $colord = $color[$j];
+           $j++;
+       }else {
+           $j = 0;
+           $colord = $color[$j];
+           $j++;
+       }
+$canvas->createRectangle($llx2, $lly2, $urx2, $ury2, -outline => "black", -fill=> $colord);
+        }#if no of not zero
+     }#if i != noOfBins
+}#for x axis
+
+my $lenYaxis = $yStep*10;
+&histogram_print_xy($canvas, $llx, $lly, $width, $height, $MinLen, $MaxLen, $binSize, $lenYaxis, \@netCount, \@netLength);
+&histogram_graph_zoomIn_zoomOut($canvas, $canvasWidth, $canvasHeight);
+
+$t1 = new Benchmark;
+my $td = timediff($t1, $t0);
+print "display histogram took:",timestr($td),"\n";
+}#sub display_histogram
+
+
+sub showTable {
+use Tk::Table;
+my $MinLen = $_[0];
+my $MaxLen = $_[1];
+my $noOfBins = $_[2];
+my $binSize = ($MaxLen - $MinLen)/$noOfBins;
+
+my $popupgui = MainWindow->new;
+   $popupgui->resizable(0,0);
+   $popupgui->title("Length Table");
+
+my $table_frame = $popupgui->Frame()->pack();
+my $table = $table_frame->Table(#-columns => 8,
+                                #-rows => 12,
+                                #-fixedrows => 1,
+                                -scrollbars => 'oe',
+                                -relief => 'raised');
+
+my $tmp_label_len = $table->Label(-text => "Length(dbu)", -width => 10, -relief =>'raised');
+   $table->put(0, 0, $tmp_label_len);
+my $tmp_label_no = $table->Label(-text => "Nets", -width => 10, -relief =>'raised');
+   $table->put(0, 1, $tmp_label_no);
+
+######################################################
+for(my $i=0; $i < $noOfBins; $i++){
+my $xText = $MinLen + $binSize*$i;
+my $xText1 = $MinLen + $binSize*($i + 1);
+my $numNets = $netCount[$i];
+if($numNets eq ""){$numNets = 0;}
+
+my $tmp_label = $table->Label(-text => $xText. "-" .$xText1,
+                                  -padx => 2,
+                                  -anchor => 'w',
+                                  -background => 'white',
+                                  -relief => "groove");
+                $table->put($i + 1, 0, $tmp_label);
+
+my $tmp_label1 = $table->Label(-text => $numNets,
+                                  -padx => 2,
+                                  -anchor => 'w',
+                                  -background => 'white',
+                                  -relief => "groove");
+                $table->put($i + 1, 1, $tmp_label1);
+                                                  }
+$table->pack();
+########################################################
+my $button_frame = $popupgui->Frame( -borderwidth => 4 )->pack();
+$button_frame->Button(-text => "Exit", -command => sub {$popupgui->destroy;})->pack();
+
+}#sub showTable
+
+sub histogram_canvasToDisplay {
+my @arg = @_;
+my $plotCanvas = $arg[0];
+my $llx = $arg[1];
+my $lly = $arg[2];
+my $width = $arg[3];
+my $height = $arg[4];
+my $minlength = $arg[5];
+my $maxlength = $arg[6];
+my $binsize = $arg[7];
+my $noOfNets = $arg[8];
+my @nets_count = @{$arg[9]};
+my @nets_length = @{$arg[10]};
+
+my $x = $plotCanvas->canvasx($Tk::event->x);
+my $y = $plotCanvas->canvasy($Tk::event->y);
+
+my $x2 = ($x - $llx)*(($maxlength - $minlength)/$width);
+#my $x2 = $minlength + ($x - $llx)*(($maxlength - $minlength)/$width);
+#my $y2 = ($lly - $y) * ($noOfNets/$height);
+#my $y2 = int $y2;
+my $binNo = int($x2/($binsize)); 
+
+my $cumlNets = 0;
+my $cumlWL = 0; 
+for(my $i=0; $i<=$binNo; $i++){
+       $cumlNets = $cumlNets + $nets_count[$i];  
+       $cumlWL = $cumlWL + $nets_length[$i];  
+}
+
+#my $t= sprintf("Nets = %d\n", $y2);
+my $t1= sprintf("Nets = %d\n",$nets_count[$binNo]);
+my $t2= sprintf("Nets WL = %.2f\n", $nets_length[$binNo]);
+my $t3= sprintf("Cuml Nets = %d\n", $cumlNets);
+my $t4= sprintf("Cuml WL = %.2f\n", $cumlWL);
+
+if ((($x >= $llx) && ($x <= ($llx + $width))) && (($y <= $lly) && ($y >= ($lly - $height)))) {
+$plotCanvas->createRectangle($x-75,$y-85,$x+75,$y-5, -outline=>"green",-fill=>"white",-tags=>"COORDSTEXT");
+$plotCanvas->createText($x,$y-70, -text=>$t1 ,-tags=>"COORDSTEXT");
+$plotCanvas->createText($x,$y-50, -text=>$t2 ,-tags=>"COORDSTEXT");
+$plotCanvas->createText($x,$y-30, -text=>$t3 ,-tags=>"COORDSTEXT");
+$plotCanvas->createText($x,$y-10, -text=>$t4 ,-tags=>"COORDSTEXT");
+#$plotCanvas->createLine($llx,$y,$x,$y, -width=> 0,-fill=>"black",-dash=>[6,4],-tags=>"COORDSTEXT");
+$plotCanvas->createLine($x,$lly,$x,$y, -width=> 0,-fill=>"black",-dash=>[6,4],-tags=>"COORDSTEXT");
+ }
+}#sub histogram_canvasToDisplay
+
+sub histogram_print_xy {
+my @arg = @_;
+my $plotCanvas = $arg[0];
+$plotCanvas->CanvasBind("<Button-1>"=> [sub {&histogram_canvasToDisplay(@arg); }]);
+$plotCanvas->CanvasBind("<B1-ButtonRelease>"=> [sub{$plotCanvas->delete(COORDSTEXT);}]);
+            
+}#sub histogram_print_xy
+
+sub histogram_graph_zoomIn_zoomOut {
+
+my($plotCanvas,$CanvasWidth,$CanvasHeight) = @_;
+my $box = [0,0,$CanvasWidth,$CanvasHeight];
+ my $zoomRect;
+ my @zoomRectCoords;
+        $plotCanvas->CanvasBind('<3>' => sub {
+            my $x = $plotCanvas->canvasx($Tk::event->x);
+            my $y = $plotCanvas->canvasy($Tk::event->y);
+
+            @zoomRectCoords = ($x, $y, $x, $y);
+
+            $zoomRect = $plotCanvas->createRectangle(
+                                            @zoomRectCoords,
+                                            -outline => 'red',
+                                            );
+        });
+                $plotCanvas->CanvasBind('<B3-Motion>' => sub {
+            @zoomRectCoords[2,3] = ($plotCanvas->canvasx($Tk::event->x),
+                                    $plotCanvas->canvasy($Tk::event->y));
+
+            $plotCanvas->coords($zoomRect => @zoomRectCoords);
+        });
+                $plotCanvas->CanvasBind('<B3-ButtonRelease>' => sub {
+            # Delete the rectangle.
+            $plotCanvas->delete($zoomRect);
+
+            # Was the rectangle big enough?
+            return if
+                abs($zoomRectCoords[0] - $zoomRectCoords[2]) < 10 ||
+                    abs($zoomRectCoords[1] - $zoomRectCoords[3]) < 10;
+
+            # Let's find the zooming factor.
+            my $dx = $plotCanvas->width/abs($zoomRectCoords[0] - $zoomRectCoords[2]);
+            my $dy = $plotCanvas->height/abs($zoomRectCoords[1] - $zoomRectCoords[3]);
+
+            my $scale = [$dx => $dy] -> [$dy <= $dx];
+
+            # Let's scale everything up.
+            $plotCanvas->Subwidget('scrolled')->scale('all' => 0, 0, $scale, $scale);
+
+            # Modify the bounding box.
+            $_ *= $scale for @$box;
+
+            # Resize the scrollregion.
+            $plotCanvas->configure(-scrollregion => $box);
+
+            # Now we change the view to center on correct area.
+            $plotCanvas->xviewMoveto($zoomRectCoords[0] * $scale / $box->[2]);
+            $plotCanvas->yviewMoveto($zoomRectCoords[1] * $scale / $box->[3]);
+        });
+
+            $plotCanvas->CanvasBind('<2>' => sub {
+             my $scale = $CanvasWidth/$box->[2];
+             #my $scale = $CanvasHeight/$box->[3];
+
+            $plotCanvas->Subwidget('scrolled')->scale('all' => 0, 0, $scale, $scale);
+            $box = [0, 0, $CanvasWidth, $CanvasHeight];
+            $plotCanvas->configure(-scrollregion => $box);
+        });
+
+}#sub histogram_graph_zoomIn_zoomOut
+
+
+####################################################################
+############# subroutine to display  histogram byNetType ###########
+####################################################################
+sub display_histogram_byNetType{
+my @WL = @{$_[0]};
+my @NC = @{$_[1]};
+
+if(@WL == 0 || @NC == 0){return;}
+
+my $x_origin = 30;
+my $y_origin = 30;
+my $width = 700;
+my $height = 500;
+my $noOfYSteps = 10;
+
+my $maxWL = 0;
+my @pinType = ();
+for(my $i=0; $i<@WL; $i++){
+    if($WL[$i] != ""){
+       push(@pinType,$i);
+       $maxWL = $WL[$i] if($WL[$i] > $maxWL); 
+    }#if wirelength found
+}#foreach element
+
+$netstat_canvas->createRectangle(0,0,$width+40,$height+40, -outline=>"white"); #creating outline to zoomIn
+
+$netstat_canvas->createLine($x_origin,$y_origin,$x_origin,$y_origin+$height, -fill=>"black");#vertical Axis
+my $y_stepSize = $height/$noOfYSteps;
+for(my $j=0; $j<=$noOfYSteps; $j++){
+    #my $llx = $x_origin-5;
+    my $llx = $x_origin;
+    my $lly = $y_origin + $y_stepSize*$j;
+    #my $urx = $x_origin+5;
+    my $urx = $x_origin;
+    my $ury = $lly;
+    my $yText = ($maxWL/2000)/$noOfYSteps*$j;
+  #$netstat_canvas->createLine($llx,$lly,$urx,$ury, -fill=>"red");#vertical text pointers
+  $netstat_canvas->createOval($llx,$lly,$urx,$ury, -fill=>"red",-width=>3);#vertical text pointers
+  $netstat_canvas->createText($llx,$lly,-text=>$yText, -fill=>"blue", -anchor=>"e");#vertical text
+}#for each Y step
+
+my $x_stepSize = $width/(@pinType+1);
+for(my $k=0; $k<=@pinType; $k++){
+   my $current_type = $pinType[$k];
+   my $prev_type = $pinType[$k-1];
+   my $x1 = $x_origin + $x_stepSize*$k;
+   my $y1 = $y_origin;
+   my $x2 = $x1 + $x_stepSize;
+   my $y2 = $y1;
+   if(($current_type != ($prev_type+1)) || ($k == 0)){
+      $netstat_canvas->createLine($x1,$y1,$x2,$y2, -fill=>"black", -dash=>[2,3]);#horizontal axis
+   }else{
+      $netstat_canvas->createLine($x1,$y1,$x2,$y2, -fill=>"black");#horizontal axis
+   }
+   #$netstat_canvas->createLine($x2,$y2-5,$x2,$y2+5,-fill=>"red",);#horizontal pointers
+   #$netstat_canvas->createText($x2,$y2-10,-text=>$current_type,-fill=>"blue",);#horizontal text
+   $netstat_canvas->createOval($x2,$y2,$x2,$y2,-fill=>"red",);#horizontal pointers
+   $netstat_canvas->createText($x2,$y2,-text=>$current_type,-fill=>"blue",-anchor=>"n");#horizontal text
+   my $h_x1 = $x2;
+   my $h_y1 = $y2;
+   my $h_x2 = $h_x1;
+   my $h_y2 = $y_origin + $WL[$current_type]*($height/$maxWL);
+   my $numNets = $NC[$current_type];
+   my $wire_length = $WL[$current_type]/2000;
+   my $bar_line = $netstat_canvas->createLine($h_x1,$h_y1,$h_x2,$h_y2,-fill=>"red",-width=>10,);#bar lines
+   $netstat_canvas->itemconfigure($bar_line, -tag =>'BAR_LINE');
+   $netstat_canvas->addtag($current_type, "withtag", $bar_line);
+   $netstat_canvas->addtag($numNets , "withtag", $bar_line);
+   $netstat_canvas->addtag($wire_length , "withtag", $bar_line);
+}
+$netstat_canvas->viewAll;
+my @view_bbox = $netstat_canvas->getView();
+&histogram_byNetType_ZoomIn_ZoomOut($netstat_canvas,"white",\@view_bbox);
+&create_textBox_forHistogram_byNetType($netstat_canvas);
+}#sub display_histogram_byNetType
+
+###############################################################################
+sub create_textBox_forHistogram_byNetType {
+ my $canvas = $_[0];
+ $canvas->CanvasBind("<Button-1>"=> [sub { my @xy = $canvas->eventLocation();
+                                           my $x = $xy[0];
+                                           my $y = $xy[1];
+                                           my @id      = $canvas->find(qw/withtag current/);
+                                           my @tagList = $canvas->gettags($id[0]);
+                                           my @coords  = $canvas->coords($tagList[1]);
+                                           if ($tagList[0] eq "BAR_LINE") {
+                                              my ($type, $num,$len) = ($tagList[1],$tagList[2],$tagList[3]);
+                                              my $t1= sprintf("NetType: %d\n",$type);
+                                              my $t2= sprintf("Nets: %d\n",$num);
+                                              my $t3= sprintf("Nets WL: %.2f",$len)." (um)";
+                                              $canvas->createText($x,$y, -text=>$t1.$t2.$t3 ,-tags=>"TEMP_TEXT",-anchor=>"sw");
+                                           }
+                                          }]);
+ $canvas->CanvasBind("<B1-ButtonRelease>"=> [sub{$canvas->delete("TEMP_TEXT");}]);
+}#sub create_textBox_forHistogram_byNetType
+
+###############################################################################
+sub histogram_byNetType_ZoomIn_ZoomOut{
+my @arg = @_;
+my $canvas = $arg[0];
+my $color = $arg[1];
+my @view_bbox = @{$arg[2]};
+   #$canvas->createRectangle(@view_bbox, -outline,$color);
+   $canvas->CanvasBind('<3>'               => sub {$canvas->configure(-bandColor => "");
+                                                   $canvas->configure(-bandColor => 'red');
+                                                   $canvas->rubberBand(0)});
+   $canvas->CanvasBind('<B3-Motion>'       => sub {$canvas->rubberBand(1)});
+   $canvas->CanvasBind('<ButtonRelease-3>' => sub {my @box = $canvas->rubberBand(2);
+                                                   $canvas->viewArea(@box, -border => 0)});
+                                                   
+   $canvas->CanvasBind('<2>'               => sub {$canvas->viewArea(@view_bbox, -border => 0)});
+
+   $canvas->CanvasBind('<i>' => sub {$canvas->zoom(1.25)});
+   $canvas->CanvasBind('<o>' => sub {$canvas->zoom(0.80)});
+   $canvas->CanvasBind('<f>' => sub {$canvas->viewArea(@view_bbox, -border => 0);});
+
+   $top->bind('WorldCanvas',    '<Up>' => "");
+   $top->bind('WorldCanvas',  '<Down>' => "");
+   $top->bind('WorldCanvas',  '<Left>' => "");
+   $top->bind('WorldCanvas', '<Right>' => "");
+
+   $canvas->CanvasBind('<KeyPress-Up>'   => sub {$canvas->panWorld(0,  200);});
+   $canvas->CanvasBind('<KeyPress-Down>' => sub {$canvas->panWorld(0, -200);});
+   $canvas->CanvasBind('<KeyPress-Left>' => sub {$canvas->panWorld(-200, 0);});
+   $canvas->CanvasBind('<KeyPress-Right>'=> sub {$canvas->panWorld( 200, 0);});
+
+}#sub histogram_byNetType_ZoomIn_ZoomOut
+
+####################################################################
+
+
+1;

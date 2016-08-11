@@ -1,0 +1,707 @@
+
+sub getFlopPairDist {
+
+    open (WRITE, ">ffDist");
+    foreach my $refInst ( keys %FLOPS_ALREADY ) {
+               #print "$refInst\n";
+               my @refLoc =  $FLOPS_ALREADY{$refInst}->dbPlaceGetLoc;
+               my @connList = $FLOPS_ALREADY{$refInst}->dbPlaceGetEndFlop;
+                  foreach my $leafInst ( @connList ) {
+                          #print " HI $leafInst\n";
+                   my @leafLoc =  $FLOPS_ALREADY{$leafInst}->dbPlaceGetLoc;
+                      my $dist = sqrt( ($refLoc[0] -$leafLoc[0])*($refLoc[0] -$leafLoc[0]) + ($refLoc[1] -$leafLoc[1])*($refLoc[1] -$leafLoc[1]) );
+                      print WRITE "$refInst  to $leafInst \t$dist\n";
+                                                     }
+                                           }# foreach
+    close(WRITE);
+
+
+}#sub getFlopPairDist
+
+sub getInstPairDist {
+my $noOfArguments = @_;
+if($noOfArguments < 2 || $_[0] eq '-h'){ print "Usage : getInstPairDist  <inst1.  inst2>\n";
+                      } else {
+  # print "$_[0] $_[1]\n";
+  if (exists $FLOPS_ALREADY{$_[0]} ) {
+       if (exists $FLOPS_ALREADY{$_[1]} ) {
+            my @refLoc =  $FLOPS_ALREADY{$_[0]}->dbPlaceGetLoc;
+            my @leafLoc = $FLOPS_ALREADY{$_[1]}->dbPlaceGetLoc;
+            my $dist = sqrt( ($refLoc[0] -$leafLoc[0])*($refLoc[0] -$leafLoc[0]) + ($refLoc[1] -$leafLoc[1])*($refLoc[1] -$leafLoc[1]) );
+            print "INFO-PAR-INST_PAIR_DST : 001 : $_[0]  to $_[1] \t$dist\n";
+
+                                          } else { print "WARN-PAR-INST_PAIR_DST : 002 : $_[1] is not in flop database ..\n"; }
+                                     } else { print "WARN-PAR-INST_PAIR_DST : 003 : $_[0] is not in flop database ..\n"; }
+                             }#if correct arguments
+}#getInstPairDist
+
+
+sub do_change_placement_status {
+
+my $noOfArguments = @_;
+
+if($noOfArguments < 2 || $_[0] eq '-h'){ print "Usage : do_change_status  -area < llx lly urx ury>\n";
+                        print "                   -exclude < false / true > \n";
+                        print "                   -include < true / false > \n";
+                        print "                   -FE_chkPlace < file > \n";
+                        print "                   -fromStatus < placed / fixed > \n";
+                        print "                   -toStatus < placed  / fixed > \n";
+                      } else {
+
+######### setting the default #################
+my $use = "true" ;
+my $dont = "false" ;
+
+my $CURR_STATUS = "";
+my $TARGET_STATUS = "";
+
+for(my $i = 0 ; $i < $noOfArguments; $i++) {
+        if ($_[$i] eq "-area"){$llx = $_[$i+1]; $i++;
+                               $lly = $_[$i+1]; $i++;
+                               $urx = $_[$i+1]; $i++;
+                               $ury = $_[$i+1];}
+        if ($_[$i] eq "-include"){$use = $_[$i+1];}
+        if ($_[$i] eq "-exclude"){$dont = $_[$i+1];}
+        if ($_[$i] eq "-FE_chkPlace"){$FILENAME = $_[$i+1];}
+        if ($_[$i] eq "-fromStatus"){$CURR_STATUS = $_[$i+1];}
+        if ($_[$i] eq "-toStatus"){$TARGET_STATUS = $_[$i+1];}
+
+                                           }# for
+
+open (READ, "$FILENAME");
+
+%COMP_TEMP = ();
+
+while (<READ>) {
+chomp();
+
+if( $_ =~ /^\*/ ) { next; }
+elsif( $_ =~ /^\#/ ) { next; }
+elsif( $_ =~ /^$/ ) { next; }
+elsif( $_ =~ /^\(/ ) { next; }
+else { 
+       $_ =~ s/^\s+//;
+       $instance = (split(/\s+/, $_ ))[0];
+
+$COMP_TEMP{$instance} = 1;
+
+     }
+               }#while
+
+if( $use eq "true" ) {
+foreach $instance ( keys %COMP_ALREADY ) { # search all components
+          if ( exists $COMP_TEMP{$instance} ) {
+          if ( $COMP_ATTRIBUTE_ALREADY{$instance}{status} eq $CURR_STATUS ) {
+          $COMP_ATTRIBUTE_ALREADY{$instance}{status} = $TARGET_STATUS ;
+                                                                          }
+
+                                                 } else { }
+                                         }#foreach
+                    }# if using the file instances
+if( $dont eq "true" ) {
+foreach $instance ( keys %COMP_ALREADY ) { # search all components
+          if ( exists $COMP_TEMP{$instance} ) { } else {
+          if ( $COMP_ATTRIBUTE_ALREADY{$instance}{status} eq $CURR_STATUS ) {
+          $COMP_ATTRIBUTE_ALREADY{$instance}{status} = $TARGET_STATUS ;
+                                                                          }
+
+                                                 } 
+                                         }#foreach
+                    }# if excluding the file instances
+
+undef %COMP_TEMP;
+
+close(READ);
+
+
+
+                              }#if correct # arguments
+
+}# sub do_change_placement_status
+
+
+sub do_analyze {
+my $noOfArguments = @_;
+
+if($noOfArguments < 2 || $_[0] eq '-h'){ print "Usage : do_analyze  -area < llx lly urx ury>\n";
+                        print "                   -routability < true / false > \n";
+                        print "                   -congestion < true / false > \n";
+                        print "                   -placement < true / false > \n";
+                        print "                   -output < fileName > \n";
+                        print "                   -escapeBBC < true / false > \n";
+                      } else {
+
+$escapeBusBitCharacter = "true" ;
+my $allLayers = "true";
+
+for(my $i = 0 ; $i < $noOfArguments; $i++) {
+        if ($_[$i] eq "-area"){$llx = $_[$i+1]; $i++;
+                               $lly = $_[$i+1]; $i++;
+                               $urx = $_[$i+1]; $i++;
+                               $ury = $_[$i+1];}
+        if ($_[$i] eq "-routability"){$analyze_routability = $_[$i+1];}
+        if ($_[$i] eq "-output"){$DEBUG_FILENAME = $_[$i+1];}
+        if ($_[$i] eq "-escapeBBC"){$escapeBusBitCharater = $_[$i+1];}
+                                           }# for
+if ( $analyze_routability eq "true" ) {
+print "INFO-PAR-DO_ANLZ : 001 : Analysing area $llx $lly $urx $ury for routability\n";
+
+%NETS_IN_AREA = ();
+
+#&do_analyze_routability($llx,$lly,$urx,$ury);
+
+&dbgetTracksFromDef($llx,$lly,$urx,$ury);
+&dbgetNetsOnTracksInArea($llx,$lly,$urx,$ury);
+&dbWriteNetsInArea($DEBUG_FILENAME);
+                                      }
+                            }# if correct number of arguments
+
+
+}#sub do_analyze
+
+
+
+
+
+
+
+sub do_analyze_routability {
+
+open (WRITE_DEBUG,">xxx.list");
+print "INFO-PAR-DO_ANLZ_ROUT : 001 : $DEF_DATABASE_UNIT\n";
+
+my $llx = $_[0];
+my $lly = $_[1];
+my $urx = $_[2];
+my $ury = $_[3];
+
+my $routing_resource_area = &get_routing_resource($llx,$lly,$urx,$ury,1);
+
+print "INFO-PAR-DO_ANLZ_ROUT : 002 : Total routing resource available in the area is $routing_resource_area\n";
+
+$llx = $llx*$DEF_DATABASE_UNIT;
+$lly = $lly*$DEF_DATABASE_UNIT;
+$urx = $urx*$DEF_DATABASE_UNIT;
+$ury = $ury*$DEF_DATABASE_UNIT;
+
+my $referToNetsAlready = \%NETS_ALREADY;
+my $nets = "";
+my $instance = "";
+
+my $temp = keys %{NETS_ALREADY};
+print "INFO-PAR-DO_ANLZ_ROUT : 003 : There are $temp nets in the design\n";
+
+   $temp = keys %{$COMPONENTS[0]};
+print "INFO-PAR-DO_ANLZ_ROUT : 004 : There are $temp components in the design\n";
+
+print "INFO-PAR-DO_ANLZ_ROUT : 005 : Analysing the Local Wires\n";
+my $wire_len_local = 0;
+foreach $instance ( keys %{$COMPONENTS[0]} ){
+              my $origin_location = $COMPONENTS[0]{$instance}{location};
+              my ( $inst_loc_x , $inst_loc_y ) = (split(/\s+/, $origin_location))[0,1];
+              if ( $inst_loc_x < $urx && $inst_loc_x > $llx && $inst_loc_y < $ury && $inst_loc_y > $lly ) {
+
+#######################################################################
+#  Algorithm to get the local wires                                   #
+#                                                                     #
+#  All wires which have either origin or end inside the box are       #
+#  termed as local wires                                              #
+#######################################################################
+
+            foreach $pinName ( keys %{$COMPONENTS[0]{$instance}} ){
+            if( $pinName eq "cellref" || $pinName eq "location" || $pinName eq "type"){ }else { # it is a pin 
+                       if ( exists $NETS_ALREADY{$COMPONENTS[0]{$instance}{$pinName}} ) {# if net exits in the database
+
+                       my $netName = $COMPONENTS[0]{$instance}{$pinName};
+
+                       foreach my $fan_instance ( keys %{$NETS_ALREADY{$netName}} ) {#foreach component attached to net
+                               if ( $fan_instance eq $instance ) { # repetition
+                                                                 }else {
+           if ( exists $COMPONENTS[0]{$fan_instance} ) {       # is not a port
+           my $fan_location = $COMPONENTS[0]{$fan_instance}{location};
+           my ( $fan_inst_loc_x , $fan_inst_loc_y ) = (split(/\s+/, $fan_location))[0,1];
+if ( $fan_inst_loc_x < $urx && $fan_inst_loc_x > $llx && $fan_inst_loc_y < $ury && $fan_inst_loc_y > $lly ) {# if lies in the bbox
+                       if ( $fan_inst_loc_x >= $inst_loc_x ) {
+                       $fan_local_wireLen_x = $fan_inst_loc_x - $inst_loc_x;
+                                                            }
+                      if ( $fan_inst_loc_x < $inst_loc_x ) {
+                       $fan_local_wireLen_x = $inst_loc_x - $fan_inst_loc_x;
+                                                            }
+                      if ( $fan_inst_loc_y >= $inst_loc_y ) {
+                       $fan_local_wireLen_y = $fan_inst_loc_y - $inst_loc_y;
+                                                            }
+                      if ( $fan_inst_loc_y < $inst_loc_y ) {
+                       $fan_local_wireLen_y = $inst_loc_y - $fan_inst_loc_y;
+                                                            }
+                       $wire_len_local = $wire_len_local + $fan_local_wireLen_x + $fan_local_wireLen_y ;
+                       print WRITE_DEBUG "selectNet $netName\n";
+                                                                       }# if lies in the bbox
+                                                       }# is not a port
+                                                                 } # not repetition
+                                                                             }#foreach component attached to net
+                                                                                          }# if net exits in the database
+                                                                                             } # it is a pin
+
+                                                                 }# foreach pin of the component 
+                                                      } else {
+                                                             }
+              
+                                            }# foreach component in the design
+close(WRITE_DEBUG);
+$wire_len_local_micron = $wire_len_local/$DEF_DATABASE_UNIT;
+
+print "INFO-PAR-DO_ANLZ_ROUT : 006 : Total Local wire length is $wire_len_local_micron\n";
+
+my $percentage_resource_used_local = $wire_len_local_micron*100/$routing_resource_area ;
+print "INFO-PAR-DO_ANLZ_ROUT : 007 : Loacl routing takes up $percentage_resource_used_local \% of routing resource available\n";
+
+print "INFO-PAR-DO_ANLZ_ROUT : 008 : Analysing the Global Wires\n";
+foreach $nets ( keys %{NETS_ALREADY} ) {
+              foreach $instance ( keys %{$NETS_ALREADY{$nets}} ) {
+                                                  }
+
+                                               }#foreach
+#&get_flightLine_distance( "DTMF_INST/RAM_128x16_TEST_INST/i_9" , "DTMF_INST/RAM_128x16_TEST_INST/i_8" );
+
+
+
+}#sub analyze_routability
+
+sub get_flightLine_distance {
+
+my $instance1 = $_[0];
+my $instance2 = $_[1];
+
+if( exists $COMPONENTS[0]{$instance1} ){
+    if ( exists $COMPONENTS[0]{$instance2} ) { print "INFO-PAR : 001 : both source and destinantion components exists\n";
+                                                 } else { print "WARN-PAR : 002 : INSTANCE SINK $instance2 does not exist\n"; }
+                                           }else { print "WARN-PAR : 003 : $instance2 does not exist\n"; } 
+
+
+}#sub get_flightLine_distance
+
+
+
+sub dbgetTracksFromDef {
+
+
+print "INFO-PAR : 001 : Analysing all the nets in the design first.\n";
+
+my $llx = $_[0];
+my $lly = $_[1];
+my $urx = $_[2];
+my $ury = $_[3];
+
+$llx = $llx*$DEF_DATABASE_UNIT;
+$lly = $lly*$DEF_DATABASE_UNIT;
+$urx = $urx*$DEF_DATABASE_UNIT;
+$ury = $ury*$DEF_DATABASE_UNIT;
+
+#################################################################################
+# Algorithm to find the tracks whcih fall in this area of concern               #
+#  For all the routing layers in the design calculate the tracks                #
+#  keep all the tracks which fall in this area of concern                       #
+#  since many tracks may concide we ned not duplicate the effort                #
+################################################################################# 
+
+
+foreach $layer ( keys %TECHNOLOGY_PHYSICAL ) {
+        if( exists $TECHNOLOGY_PHYSICAL{$layer}{TYPE} ){ 
+
+        if ( $TECHNOLOGY_PHYSICAL{$layer}{TYPE} eq "ROUTING" )
+                                            {
+        if ( exists $DEF_TRACKS_ALREADY{$layer} ) {
+$direction = "Horizontal";
+$tracksInArea = TRACKS.$layer.$direction;
+@{$tracksInArea} = ();
+$DEF_TRACKS_ALREADY{$layer}{$direction}{tracks} = \@{$tracksInArea};
+
+$start = $DEF_TRACKS_ALREADY{$layer}{$direction}{start};
+$do = $DEF_TRACKS_ALREADY{$layer}{$direction}{"do"};
+$step = $DEF_TRACKS_ALREADY{$layer}{$direction}{step};
+
+    for ( my $i = 0; $i < $do ; $i++ ){
+       my $track = $start + $step*$i;
+       if ( $track < $ury && $track > $lly ) { $track = "H".$track ; push(@{$tracksInArea}, $track); }
+                                      }#for
+         
+$direction = "Vertical";
+$tracksInArea = TRACKS.$layer.$direction;
+@{$tracksInArea} = ();
+$DEF_TRACKS_ALREADY{$layer}{$direction}{tracks} = \@{$tracksInArea};
+
+$start = $DEF_TRACKS_ALREADY{$layer}{$direction}{start};
+$do = $DEF_TRACKS_ALREADY{$layer}{$direction}{do};
+$step = $DEF_TRACKS_ALREADY{$layer}{$direction}{step};
+
+    for ( my $i = 0; $i < $do ; $i++ ){
+       my $track = $start + $step*$i;
+       if ( $track < $urx && $track > $llx ) { $track = "V".$track ; push(@{$tracksInArea}, $track); }
+                                      }#for
+                     print "INFO-PAR : 002 : Tracks generated for $layer\n";
+                                            }# if the layer is used for routing
+              else { print "WARN-PAR : 003 : $layer is not used for routing\n"; 
+                                            }
+
+                                            }# if the layer is type routing
+
+                                             }# if exists in the technology data
+                                             
+                                             }#foreach layer in the technology data
+
+
+
+} # sub dbgetTracksFromDef
+
+
+sub dbgetNetsOnTracksInArea {
+
+my $llx = $_[0];
+my $lly = $_[1];
+my $urx = $_[2];
+my $ury = $_[3];
+
+$llx = $llx*$DEF_DATABASE_UNIT;
+$lly = $lly*$DEF_DATABASE_UNIT;
+$urx = $urx*$DEF_DATABASE_UNIT;
+$ury = $ury*$DEF_DATABASE_UNIT;
+
+my %TRACKS_X_IN_AREA_ALL_LAYERS = ();
+my %TRACKS_Y_IN_AREA_ALL_LAYERS = ();
+my $tracksXInArea = "";
+my $tracksYInArea = "";
+
+foreach $layer ( keys %DEF_TRACKS_ALREADY ) {
+        foreach $direction ( keys %{$DEF_TRACKS_ALREADY{$layer}} ) {
+
+if( $direction eq "Horizontal" ){
+$tracksXInArea = $DEF_TRACKS_ALREADY{$layer}{$direction}{tracks};
+                                } else {
+$tracksYInArea = $DEF_TRACKS_ALREADY{$layer}{$direction}{tracks};
+                                       }
+
+while ( defined ( $track = shift @{$tracksXInArea} ) ) {
+      $TRACKS_X_IN_AREA_ALL_LAYERS{$track} = 1;
+                                                      }#while
+while ( defined ( $track = shift @{$tracksYInArea} ) ) {
+      $TRACKS_Y_IN_AREA_ALL_LAYERS{$track} = 1;
+                                                      }#while
+
+                                            }# foreach direction
+                                            }# foreach layer
+my $tempX = keys %TRACKS_X_IN_AREA_ALL_LAYERS;
+my $tempY = keys %TRACKS_Y_IN_AREA_ALL_LAYERS;
+my $temp = $tempX + $tempY;
+
+my $resource_in_X = ($urx - $llx)*$tempX ;
+my $resource_in_Y = ($ury - $lly)*$tempY ;
+
+$TOTAL_ROUTING_RESOURCE = $resource_in_X + $resource_in_Y ;
+
+print "INFO-PAR : 001 : Total no of tracks in the given area is $temp and routing resource is $TOTAL_ROUTING_RESOURCE\n";
+
+my %NETS_IN_X_IN_AREA = ();
+
+foreach $track ( keys  %TRACKS_X_IN_AREA_ALL_LAYERS ) {
+
+        foreach $net ( keys %NETS_ROUTING_ALREADY ) {
+        if ( exists $NETS_ROUTING_ALREADY{$net}{$track} ){
+    $WL_data = XWIRELENGTH.$net;
+#    %{$WL_data} = ();
+
+             $routingOnTrack = $NETS_ROUTING_ALREADY{$net}{$track};
+             @routing = split(/\s+/, $routingOnTrack);
+             while ( defined ( $routing_data = shift @routing) ){
+                     $start_x = $routing_data;
+                     $stop_x = shift @routing;
+                     $routing_layer = shift @routing;
+    if    ( $start_x < $llx && $stop_x < $llx ) {  }# case5
+    elsif ( $start_x > $urx && $stop_x > $urx ) {  }# case6
+    else {
+
+    if ( $start_x < $llx && $stop_x > $llx && $stop_x < $urx ) { 
+                       $wirelength = $stop_x - $llx ;
+                       if( exists ${$WL_data}{$routing_layer} ){
+                       ${$WL_data}{$routing_layer} = ${$WL_data}{$routing_layer} + $wirelength; 
+                       } else {
+                       ${$WL_data}{$routing_layer} = $wirelength; 
+                              }
+                                                                  } # if case1
+    elsif ( $start_x > $llx && $stop_x > $llx && $stop_x < $urx ) {
+                       $wirelength = $stop_x - $start_x ;
+                       if( exists ${$WL_data}{$routing_layer} ){
+                       ${$WL_data}{$routing_layer} = ${$WL_data}{$routing_layer} + $wirelength; 
+                       } else {
+                       ${$WL_data}{$routing_layer} = $wirelength; 
+                              }
+                                                                  } # if case2
+    elsif ( $start_x > $llx && $start_x < $urx && $stop_x > $urx ){
+                       $wirelength = $urx -  $start_x ;
+                       if( exists ${$WL_data}{$routing_layer} ){
+                       ${$WL_data}{$routing_layer} = ${$WL_data}{$routing_layer} + $wirelength; 
+                       } else {
+                       ${$WL_data}{$routing_layer} = $wirelength; 
+                              }
+                                                                  } # if case3
+    elsif ( $start_x < $llx && $stop_x > $urx ) { 
+                       $wirelength = $urx - $llx ;
+                       if( exists ${$WL_data}{$routing_layer} ){
+                       ${$WL_data}{$routing_layer} = ${$WL_data}{$routing_layer} + $wirelength; 
+                       } else {
+                       ${$WL_data}{$routing_layer} = $wirelength; 
+                              }
+                                                } # if case4
+  $NETS_IN_X_IN_AREA{$net} = \%{$WL_data};
+          }# if inside the llx and urx
+
+                                                           }#while
+
+
+
+                                                         }# if the track in area exist in the 
+                                                          # net routing data structure
+                                                    }# foreach net in the design
+                                                    }# foreach track in the area
+my %NETS_IN_Y_IN_AREA = ();
+foreach $track ( keys  %TRACKS_Y_IN_AREA_ALL_LAYERS ) {
+
+        foreach $net ( keys %NETS_ROUTING_ALREADY ) {
+        if ( exists $NETS_ROUTING_ALREADY{$net}{$track} ){
+    $WLY_data = YWIRELENGTH.$net;
+#    %{$WLY_data} = ();
+
+             $routingOnTrack = $NETS_ROUTING_ALREADY{$net}{$track};
+             @routing = split(/\s+/, $routingOnTrack);
+             while ( defined ( $routing_data = shift @routing) ){
+                     $start_y = $routing_data;
+                     $stop_y = shift @routing;
+                     $routing_layer = shift @routing;
+
+    if    ( $start_y < $lly && $stop_y < $lly ) {  }# case5
+    elsif ( $start_y > $ury && $stop_y > $ury ) {  }# case6
+    else {
+    if ( $start_y < $lly && $stop_y > $lly && $stop_y < $ury ) {
+                       $wirelength = $stop_y - $lly ;
+                       if( exists ${$WLY_data}{$routing_layer} ){
+                       ${$WLY_data}{$routing_layer} = ${$WLY_data}{$routing_layer} + $wirelength; 
+                       } else {
+                       ${$WLY_data}{$routing_layer} = $wirelength; 
+                              }
+                                                                  } # if case1
+    elsif ( $start_y > $lly && $stop_y > $lly && $stop_y < $ury ) {
+                       $wirelength = $stop_y - $start_y ;
+                       if( exists ${$WLY_data}{$routing_layer} ){
+                       ${$WLY_data}{$routing_layer} = ${$WLY_data}{$routing_layer} + $wirelength; 
+                       } else {
+                       ${$WLY_data}{$routing_layer} = $wirelength; 
+                              }
+                                                                  } # if case2
+    elsif ( $start_y > $lly && $start_y < $ury && $stop_y > $ury ){
+                       $wirelength = $ury -  $start_y ;
+                       if( exists ${$WLY_data}{$routing_layer} ){
+                       ${$WLY_data}{$routing_layer} = ${$WLY_data}{$routing_layer} + $wirelength; 
+                       } else {
+                       ${$WLY_data}{$routing_layer} = $wirelength; 
+                              }
+                                                                  } # if case3
+    elsif ( $start_y < $lly && $stop_y > $ury ) {
+                       $wirelength = $ury - $lly ;
+                       if( exists ${$WLY_data}{$routing_layer} ){
+                       ${$WLY_data}{$routing_layer} = ${$WLY_data}{$routing_layer} + $wirelength; 
+                       } else {
+                       ${$WLY_data}{$routing_layer} = $wirelength; 
+                              }
+                                                } # if case4
+     $NETS_IN_Y_IN_AREA{$net} = \%{$WLY_data};
+          }# if inside the llx and urx
+
+                                                           }#while
+
+
+
+                                                         }# if the track in area exist in the
+                                                          # net routing data structure
+                                                    }# foreach net in the design
+                                                    }# foreach track in the area
+
+foreach $net ( keys %NETS_IN_X_IN_AREA ){
+        $NETS_IN_AREA{$net} = $NETS_IN_X_IN_AREA{$net};
+                                        }
+foreach $net ( keys %NETS_IN_Y_IN_AREA ){
+        if( exists $NETS_IN_AREA{$net} ) {
+        foreach $layer ( keys %{$NETS_IN_Y_IN_AREA{$net}}) {
+          if ( exists $NETS_IN_AREA{$net}{$layer} ) {
+        $NETS_IN_AREA{$net}{$layer} = $NETS_IN_AREA{$net}{$layer} + $NETS_IN_Y_IN_AREA{$net}{$layer};
+                                                    }
+          else {
+        $NETS_IN_AREA{$net}{$layer} = $NETS_IN_Y_IN_AREA{$net}{$layer};
+               }
+                                                           }#foreach
+                                         }
+        else {
+        $NETS_IN_AREA{$net} = $NETS_IN_Y_IN_AREA{$net};
+                                         }
+                                        }# foreach
+undef %NETS_IN_X_IN_AREA ;
+undef %NETS_IN_Y_IN_AREA ;
+
+$temp = keys %NETS_IN_AREA;
+print "INFO-PAR : 002 : $temp nets in the given area\n";
+
+$TOTAL_RESOURCE_UTILIZED = 0;
+
+foreach $net ( keys %NETS_IN_AREA ){
+  foreach $layer ( keys %{$NETS_IN_AREA{$net}} ) {
+$TOTAL_RESOURCE_UTILIZED = $TOTAL_RESOURCE_UTILIZED + $NETS_IN_AREA{$net}{$layer};
+                                                 }
+                                     }#foreach
+
+my $percentage_resource_utilized = $TOTAL_RESOURCE_UTILIZED*100/$TOTAL_ROUTING_RESOURCE;
+print "INFO-PAR : 003 : The nets in this area use $TOTAL_RESOURCE_UTILIZED of routing\n";
+print "INFO-PAR : 004 : The nets in this area use $percentage_resource_utilized \% of avalible routing\n";
+
+################  finding the layer based utilization #################
+
+#######################################################################
+# Algorithm to find LOCAL SEMIGLOBAL GLOBAL wires                     #
+#                                                                     #
+# For each net in the Area find out the components it is connected to #
+# and compare the location of the component with the bounding box of  #
+# the area in concern.  # as a next step find the pin location ,      #
+# If all the component attached to the net lie in this area the net is#
+# LOCAL. If atleast two component lie in this Area then also the net  #
+# is LOCAL. If only one component lies in here then it is SEMIGLOBAL  #
+# if none lie in this area it is a GLOBAL wire                        #
+#######################################################################
+
+my %NO_OF_COMP_OF_NET_IN_AREA = ();
+
+foreach $net ( keys %NETS_IN_AREA ) {
+      $NO_OF_COMP_OF_NET_IN_AREA{$net} = 0;
+      foreach $instance ( keys %{$NETS_ALREADY{$net}} ){
+      $location = $COMP_ALREADY{$instance}{location} ;
+      ($location_x, $location_y) = (split(/\s+/, $location))[0,1];
+      if($location_x > $llx && $location_x < $urx && $location_y > $lly && $location_y < $ury ){
+      $NO_OF_COMP_OF_NET_IN_AREA{$net}++;
+            
+                                                                                               }
+
+                                                       }# foreach all instances connected to the net
+                                                        #  in the area
+                                  }# foreach net in the Area
+
+my %GLOBAL = ();
+my %SEMIGLOBAL = ();
+my %LOCAL = ();
+
+foreach $layer ( keys %TECHNOLOGY_PHYSICAL ){
+   if ( $TECHNOLOGY_PHYSICAL{$layer}{TYPE} eq "ROUTING" ) {
+        $GLOBAL{$layer} = 0;
+        $SEMIGLOBAL{$layer} = 0;
+        $LOCAL{$layer} = 0;
+
+        foreach $net ( keys %NETS_IN_AREA ){
+            if( exists $NETS_IN_AREA{$net}{$layer} ){
+                  if( $NO_OF_COMP_OF_NET_IN_AREA{$net} eq 0 ) {
+                     $GLOBAL{$layer} = $GLOBAL{$layer} + $NETS_IN_AREA{$net}{$layer} ;
+                                                              }# if net is global
+                  if( $NO_OF_COMP_OF_NET_IN_AREA{$net} eq 1 ) {
+                     $SEMIGLOBAL{$layer} = $SEMIGLOBAL{$layer} + $NETS_IN_AREA{$net}{$layer} ;
+                                                              }# if net is global
+                  if( $NO_OF_COMP_OF_NET_IN_AREA{$net} > 1 ) {
+                     $LOCAL{$layer} = $LOCAL{$layer} + $NETS_IN_AREA{$net}{$layer} ;
+                                                              }# if net is global
+
+                                                    }# if routing in the layer exist in the net
+                                           }#foreach net in the Area
+                                                           }# if layer is a routing layer
+                                            }# foreach layer in the LEF technology
+print "INFO-PAR : 005 : GLOBAL wire usage distribution\n";
+foreach $layer ( keys %GLOBAL ){
+$percentage = $GLOBAL{$layer}*100/$TOTAL_ROUTING_RESOURCE;
+print "INFO-PAR : 006 : $layer\t$percentage\n";
+                               }# printing global wire utilization
+print "INFO-PAR : 007 : SEMIGLOBAL wire usage distribution\n";
+foreach $layer ( keys %SEMIGLOBAL ){
+$percentage = $SEMIGLOBAL{$layer}*100/$TOTAL_ROUTING_RESOURCE;
+print "INFO-PAR : 008 : $layer\t$percentage\n";
+                               }# printing semiglobal wire utilization
+print "INFO-PAR : 009 : LOCAL wire usage distribution\n";
+foreach $layer ( keys %LOCAL ){
+$percentage = $LOCAL{$layer}*100/$TOTAL_ROUTING_RESOURCE;
+print "INFO-PAR : 010 : $layer\t$percentage\n";
+                               }# printing local wire utilization
+
+
+foreach $net ( keys %NETS_ROUTING_ALREADY ) {
+# resetting for subsequent runs
+my $WL_data = XWIRELENGTH.$net;
+undef %{$WL_data};
+$WL_data = YWIRELENGTH.$net;
+undef %{$WL_data};
+                                    }
+
+undef %TRACKS_X_IN_AREA_ALL_LAYERS ;
+undef %TRACKS_Y_IN_AREA_ALL_LAYERS ;
+
+}#sub dbgetNetsOnTracksInArea
+
+sub dbWriteNetsInArea {
+
+my $outFile = $_[0];
+open (WRITE, ">$outFile");
+
+if ( $escapeBusBitCharacter eq "false" ) {
+foreach $netNames ( keys %NETS_IN_AREA ) {
+print WRITE "selectNet $netNames\n";
+
+                                         }
+                                         }#if no escape bus bit in net name
+if ( $escapeBusBitCharacter eq "true" ) {
+foreach $netNames ( keys %NETS_IN_AREA ) {
+
+    $netNames_mod = $netNames ;
+    if( $netNames_mod =~ /\w\[/ ) {
+    $netNames_mod =~ s/\[/\\\[/;
+    $netNames_mod =~ s/\]/\\\]/;
+                            }
+print WRITE "selectNet $netNames_mod\n";
+
+                                         }
+                                         }#if escape bus bit in net name
+
+close(WRITE);
+
+undef %NETS_IN_AREA ; 
+
+}# sub dbWriteNetsInArea
+
+
+
+
+
+
+sub dbgNetsNeedNoRouting {
+
+my $nets;
+my $noOfComponentsConnected = 0;
+
+foreach $nets ( keys %{NETS_ALREADY} ){
+        #print "$nets\n";
+        $noOfComponentsConnected = keys %{$NETS_ALREADY{$nets}}; 
+        #print "$noOfComponentsConnected\n";
+        if ( $noOfComponentsConnected eq 2 ) {
+                                    print "INFO-PAR : 001 : $nets\n"; 
+        foreach $instanceName ( keys %{$NETS_ALREADY{$nets}} )
+                {
+        $cellref = $COMP_ALREADY{$instanceName}{cellref};
+        #print "	$instanceName $cellref\n";
+                }
+                                             }
+                                      }
+
+
+
+
+}#sub dbgNetsNeedNoRouting
+1;

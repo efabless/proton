@@ -1,0 +1,77 @@
+#!/usr/bin/perl
+my $noOfArg = @ARGV;
+my $dumpfile;
+my $logfile = "pin.log";
+my $module_start = 0;
+my $topmodule_start = 0;
+my $module_name;
+my $module_fp;
+my @module_boundry = ();
+my $pin_name;
+my @pin_boundry = ();
+if($noOfArg < 2 || $ARGV[0] eq "-h" || $ARGV[0] eq "-help"){
+   print"Usage ./check_pin_location -dump <pin dump file> -log <log file (dd\efault is pin.log)>\n";
+   exit;
+}else{
+   for(my $i=0; $i<$noOfArg; $i++){
+      if($ARGV[$i] eq "-dump"){$dumpfile = $ARGV[$i+1];} 
+      if($ARGV[$i] eq "-log"){$logfile = $ARGV[$i+1];} 
+   }
+   open(WRITE,">$logfile");
+   open(READ, "$dumpfile");
+   print WRITE"//Writing log file\n";
+   print WRITE"//pin cordinates if outside chip boundry written in log file\n";
+   while(<READ>){
+     chomp($_);
+     $_ =~ s/^\s+//;
+     if($_ =~ /^\s*#/) { next; }
+     if($_ =~ /^\s*$/) { next; }
+     if($_ =~ /^\s*\/\//) { next; }
+     if( $_ =~ /^\{1\}/ ){ $topmodule_start = 1;}
+     if($topmodule_start ==1){   
+       if( $_ =~ /^\}$/ ){ 
+         $topmodule_start = 0;  
+       }elsif( $_ =~ /^\{1\}\{(.*)\s*(.*) \[(.*)\]/ ){   
+         ($module_name, $module_fp) = (split(/\s+/,$1));
+         @module_boundry = (split(/\s+/,$3));
+         #print WRITE "$module_name : $module_fp : @module_boundry\n"; 
+         print WRITE "$_\n"; 
+       }elsif( ($topmodule_start == 1) && ($_ =~ /^\s*BD(.*)/) ) {
+         $_ =~ s/\]//;
+         $_ =~ s/\[//;
+         ($pin_name, $pin_llx, $pin_lly, $pin_urx, $pin_ury) = (split(/\s+/,$_))[0,1,2,3,4];
+         if(($pin_llx<$module_boundry[0]) || ($pin_lly<$module_boundry[1]) || ($pin_urx>$module_boundry[2]) || ($pin_ury>$module_boundry[3])){
+           print WRITE "\t$pin_name ($pin_llx $pin_lly $pin_urx $pin_ury)\n";
+         }else{
+         }    
+       }elsif( ($topmodule_start == 1) && ($_ =~ /^\s*PIN(.*)/) ) {
+         $_ =~ s/\)\;//;
+         $_ =~ s/\(//;
+         my ($pin_name, $pin_llx, $pin_lly, $pin_urx, $pin_ury) = (split(/\s+/,$_))[1,5,6,7,8];
+         if(($pin_llx<$module_boundry[0]) || ($pin_lly<$module_boundry[1]) || ($pin_urx>$module_boundry[2]) || ($pin_ury>$module_boundry[3])){
+           print WRITE "\tPIN $pin_name ($pin_llx $pin_lly $pin_urx $pin_ury)\n";
+         }else{
+         }    
+       } 
+     }else{
+       if( $_ =~ /^\}$/ ){ 
+         $module_start = 0;  
+       }elsif( $_ =~ /^\{[0-9]*\}\{(.*)\s*(.*) \[(.*)\]/ ){   
+         $module_start = 1;
+         ($module_name, $module_fp) = (split(/\s+/,$1));
+         @module_boundry = (split(/\s+/,$3));
+         print WRITE "$_\n"; 
+       }elsif( ($module_start == 1) && ($_ =~ /^\s*PIN(.*)/) ) {
+         $_ =~ s/\)\;//;
+         $_ =~ s/\(//;
+         my ($pin_name, $pin_llx, $pin_lly, $pin_urx, $pin_ury) = (split(/\s+/,$_))[1,5,6,7,8];
+         if(($pin_llx<$module_boundry[0]) || ($pin_lly<$module_boundry[1]) || ($pin_urx>$module_boundry[2]) || ($pin_ury>$module_boundry[3])){
+           print WRITE "\tPIN $pin_name ($pin_llx $pin_lly $pin_urx $pin_ury)\n";
+         }else{
+         }    
+       } 
+     }
+   }
+   close(READ);
+   close(WRITE);
+}

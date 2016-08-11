@@ -1,0 +1,613 @@
+sub printSM {
+if ( exists $PLACE{$TOP_MODULE} ) {
+  if ( $DEBUG >= 300 && $DEBUG <= 333 ) {
+    $PLACE{$TOP_MODULE}->dbgPlaceGetTpathBM();
+    &report_memory_usage;
+    return;
+  }
+$PLACE{$TOP_MODULE}->dbgPlaceGetTpath;
+#$PLACE{$TOP_MODULE}->dbgPlaceGetSlacks;
+                                 } else {
+print "WARN-DES-PRTSM : 001 : this database is not created yet ...\n";
+                                        }
+}#sub printSM
+
+sub printSM_new {
+if ( exists $PLACE{$TOP_MODULE} ) {
+  if ( $DEBUG >= 300 && $DEBUG <= 333 ) {
+    $PLACE{$TOP_MODULE}->dbgPlaceGetTpathBM();
+    &report_memory_usage;
+    return;
+  }
+$PLACE{$TOP_MODULE}->dbgPlaceGetTpathWithName;
+#$PLACE{$TOP_MODULE}->dbgPlaceGetSlacks;
+                                 } else {
+print "WARN-DES-PRTSM : 001 : this database is not created yet ...\n";
+                                        }
+}#sub printSM_new
+
+sub report_memory_usage {
+#use Proc::ProcessTable;
+#my $t = new Proc::ProcessTable;
+my $no_of_Arguments = @_;
+my $cmd = $GLOBAL->dbfGlobalGetCurrCommand;
+if($no_of_Arguments < 0 || $_[0] eq '-h'){print "Usage : $cmd\n";
+                                          print "      : --regress <return memory in MB>\n";
+                                         }
+else {
+my $mem_mb;
+my $regress = 0;
+  for (my $i =0; $i < $no_of_Arguments; $i++){
+       if($_[$i] eq "--regress"){$regress = 1;} 
+  }
+  my $mem_size = $GLOBAL->dbfGlobalGetMemory;
+  my $mem_mb = int ($mem_size)/1048576;
+     print "Memory usage: $mb  MB\n" if($DEBUG > 10);
+      if($regress == 1){
+         return($mem_mb);
+      }else {print "Memory usage %mem_mb MB\n";}
+  #foreach my $tbl ( @{$t->table} ) {
+  #  if ( $tbl->pid == $$ ) {
+  #  print 'Memory usage: ' . int($tbl->size / 1048576) . " MB\n" if($DEBUG > 10);
+  #  $mem_mb =  int($tbl->size / 1048576);
+  #    if($regress == 1){
+  #      return($mem_mb);
+  #    } else {print "Memory usage $mem_mb MB\n";}
+  #  }
+  #}
+}
+}#sub report_memory_usage
+
+
+sub report_design_hierarchy {
+my $moduleName = $TOP_MODULE;
+my $level = 0;
+open(WRITE,">$moduleName.design_hier.rpt");
+
+if ( exists $MODULE_ALREADY{$TOP_MODULE} ) {
+   my %hierHash = ();
+   my @hierInsts = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetHierInst;   # immediate children
+   my @conns = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetConn;
+   foreach my $h ( @hierInsts ) { $hierHash{$h} = 1; }
+foreach $connLine ( @conns ) {
+$connLine =~ s/\(/\)\,/;
+$connLine =~ s/\)\s*\;//;
+my ($cell,$inst) = ( split(/\s+/, $connLine ))[0,1];
+if ( exists $hierHash{$inst} ) {
+   print "MSG-DES-RPT_DES_HIER : 001 : finding hierInsts in $inst\n";
+   $level++;
+   print WRITE "$inst $cell $level\n";
+   &dbgReportDesignHierarchy($inst,$cell,$level);
+   $level--;
+                               }
+                             }# for each conn line
+                                            }# if module exists
+close(WRITE);
+}# sub report_design_hierarchy
+
+sub dbgReportDesignHierarchy {
+local $hierInstName = $_[0];
+local $cellName = $_[1];
+local $level = $_[2];
+      if ( exists $MODULE_ALREADY{$cellName} ) {
+   local %hierHash = ();
+   local @hierInsts = $MODULE_ALREADY{$cellName}->dbVNOMGetHierInst;   # immediate children
+   local @conns = $MODULE_ALREADY{$cellName}->dbVNOMGetConn;
+   foreach my $h ( @hierInsts ) { $hierHash{$h} = 1; }
+foreach $connLine ( @conns ) {
+$connLine =~ s/\(/\)\,/;
+$connLine =~ s/\)\s*\;//;
+my ($cell,$inst) = ( split(/\s+/, $connLine ))[0,1];
+if ( exists $hierHash{$inst} ) {
+   print "INFO-DES : 001 : going down finding hierInsts in $inst\n";
+   $level++;
+   print WRITE "$inst $cell $level\n";
+   &dbgReportDesignHierarchy($inst,$cell,$level);
+   $level--;
+   print "INFO-DES : 001 : back up\n";
+                               }
+                             }# for each conn line
+                                            }# if module exists
+}#sub dbgReportDesignHierarchy
+
+
+# =========================================================================
+
+sub testCmd {
+
+my $cmd = $_[0];
+
+if ( $cmd eq "new" ) {
+  # call some new subroutine here
+}
+elsif ( $cmd eq "some_keyword" ) {
+  # add your own $cmd keyword
+  shift;
+  # call another subroutine here
+}
+else {
+  print "Usage : testCmd <keyword> <other arguments...handle on your own>\n";
+}
+
+}# sub testCmd
+
+# =========================================================================
+
+#****f* /verifyBlockHalo
+#  verifyBlockHalo
+# FUNCTION
+#
+#
+#
+#
+# SYNOPSIS
+#  verifyBlockHalo
+#
+#
+#
+#
+# INPUTS
+#
+#
+#
+#
+#       options :
+#               -output <fileName> : name of output file
+#               -halo <delta> : uniform halo delta
+#
+#
+#
+#       switches :
+#               --incr : add halo only to blocks without halo
+#
+#
+#
+#
+# OUTPUTS
+#
+#
+#
+#
+#****
+sub verifyBlockHalo {
+my $noOfArguments = @_;
+#----------------- Defaults --------------------#
+my $outputFile = STDOUT;
+my $halo;
+my $incr = 0;
+
+if ($_[0] eq '-h'|| $_[0] eq '-help') { print "Usage: verify_block_halo\n";
+                           print "                   -output <file name>\n";
+                           print "                   -halo <uniform halo>\n";
+                           print "                   --incr\n";
+}
+else {
+  for ( my $i = 0; $i < $noOfArguments; $i++ ) {
+    if ($_[$i] eq "-output") { $outputFile = $_[$i+1]; }
+    if ($_[$i] eq "-halo") { $halo = $_[$i+1]; }
+    if ($_[$i] eq "--incr") { $incr = 1; }
+  } # for
+
+  &verifyBlockHalo65nmRule($outputFile, $halo, $incr);
+}
+}#sub verifyBlockHalo
+
+
+sub verifyBlockHalo65nmRule {
+
+my $outputFile = $_[0];
+my $halo = $_[1];
+my $incr = $_[2];
+
+open(WRITE, ">$outputFile");
+
+my $topFlplan = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}};
+my $dbu = $topFlplan->dbFlplanGetDBUnit;
+my $rowHeight = $dbu * $GLOBAL->dbGlobalGetRowHeight;
+my @rows = $topFlplan->dbFlplanGetRows;
+my $rowCount = @rows ;
+my @sortedRows = sort compareRowY @rows;
+my $firstRow = $sortedRows[0];
+my $llyCore = (split(/\s+/, $firstRow))[3];
+
+# check row sanity
+my $rowsNG = 0;
+my $prevRow, $prevRowOrient;
+my @prevRowBox;
+foreach my $row ( @sortedRows ) {
+  my @rbox = &calcDefRowBox($row, $rowHeight);
+  my ($name, $orient) = (split(/\s+/, $row))[0,4];
+  print WRITE "Row: @rbox $orient\n" if ($DEBUG == 328);
+  unless ( $orient eq "N" || $orient eq "FS" ) {
+    print "ERR-DES : 001 : row $name has invalid orientation $orient\n";
+    $rowsNG = 1;
+  }
+  if ( defined $prevRow ) {
+    my $validOrient = ( $prevRowOrient eq "N" ) ? "FS" : "N";
+    if ( $orient ne $validOrient ) {
+      print "ERR-DES : 002 : row $name orientation $orient is inconsistent\n";
+      $rowsNG = 1;
+    }
+    if ( $prevRowBox[3] != $rbox[1] ) {
+      print "ERR-DES : 003 : row $name is not abutted to lower row\n";
+      $rowsNG = 1;
+    }
+  }
+  $prevRow = $row;
+  $prevRowOrient = $orient;
+  @prevRowBox = @rbox;
+}
+if ( $rowsNG) {
+  print "ERR-DES : 004 : rows need to be corrected, no halo is processed\n";
+  return;
+}
+
+# collect all block instances
+my @macros = ();
+foreach my $inst ( keys %{COMP_ALREADY} ) {
+  my $cellref = $CADB{$inst}->dbCadbGetCellref;
+  unless ( exists $PLDB{$cellref} ) {
+    print "DBG-DES : 005 : instance $inst cell $cellref has no physical library\n" if ($DEBUG == 328);
+    next;
+  }
+  my $type = $PLDB{$cellref}->dbMdbGetClass;
+  unless ( $type eq "BLOCK" ) {
+    next;
+  }
+  my @loc = $CADB{$inst}->dbCadbGetLoc;
+  my $orient = $CADB{$inst}->dbCadbGetOrient;
+  my @size = $PLDB{$cellref}->dbMdbGetSize;
+  my $width = $size[0] * $dbu;
+  my $height = $size[1] * $dbu;
+  my @bbox = &utilLocToBbox($loc[0], $loc[1], $orient, $width, $height);
+  $CADB{$inst}->dbCadbSetbBox(@bbox);
+  print WRITE "Block: $inst @bbox\n" if ($DEBUG == 328);
+  push(@macros, $inst);
+}
+
+# create block halos if specified by user
+if ( defined $halo && $halo > 0 ) {
+  $halo *= $dbu;
+  foreach my $inst ( @macros ) {
+    if ( $incr && $topFlplan->dbFlplanHasHalo($inst) ) {
+      next;
+    }
+    my $delta = "$halo $halo $halo $halo";
+    $topFlplan->dbFlplanAddHalo($inst, $delta);
+  }
+}
+
+# expand blockage on each macro to comply with 65nm rule
+foreach my $inst ( @macros ) {
+  unless ( $topFlplan->dbFlplanHasHalo($inst) ) {
+    print WRITE "Halo: $inst 0 0 0 0 None\n";
+    next;
+  }
+  my @bbox = $CADB{$inst}->dbCadbGetbBox;
+  my $delta = $topFlplan->dbFlplanGetHaloDelta($inst);
+  my @bloat = split(/\s+/, $delta);
+  &utilBloatRect(\@bbox, \@bloat);
+  print WRITE "Blockage: $inst @bbox\n" if ($DEBUG == 328);
+
+  my ($loRow, $hiRow);
+  my $rowBegin = int(($bbox[1] - $llyCore) / $rowHeight) - 2;
+  if ( $rowBegin < 0 ) {
+    $rowBegin = 0;
+  }
+  for ( my $i = $rowBegin; $i < $rowCount; $i++ ) {
+    my $row = $sortedRows[$i];
+    my @rbox = &calcDefRowBox($row, $rowHeight);
+    if ( &utilRectOverlap(\@rbox, \@bbox) ) {
+      $loRow = $i;
+      last;
+    }
+  }
+
+  my $rowEnd = int(($bbox[3] - $llyCore) / $rowHeight) + 3;
+  if ( $rowEnd >= $rowCount ) {
+    $rowEnd = $rowCount - 1;
+  }
+  for ( my $i = $rowEnd; $i >= 0; $i-- ) {
+    my $row = $sortedRows[$i];
+    my @rbox = &calcDefRowBox($row, $rowHeight);
+    if ( &utilRectOverlap(\@rbox, \@bbox) ) {
+      $hiRow = $i;
+      last;
+    }
+  }
+  unless ( defined $loRow && defined $hiRow && $loRow <= $hiRow ) {
+    print "WARN-DES : 006 : macro $inst is out of core boundary\n";
+    print WRITE "Halo: $inst 0 0 0 0 Error\n";
+    next;
+  }
+
+  my $row = $sortedRows[$loRow];
+  my $orient = (split(/\s+/, $row))[4];
+  if ( $orient ne "FS" ) {
+    if ( $loRow == 0 ) {
+      print "ERR-DES : 007 : unable to expand halo below macro $inst\n";
+      print WRITE "Halo: $inst 0 0 0 0 Error\n";
+      next;
+    }
+    $loRow--;
+    $row = $sortedRows[$loRow];
+  }
+  my @loRBox = &calcDefRowBox($row, $rowHeight);
+
+  $row = $sortedRows[$hiRow];
+  my $orient = (split(/\s+/, $row))[4];
+  if ( $orient ne "N" ) {
+    if ( $hiRow >= ($rowCount - 1) ) {
+      print "ERR-DES : 008 : unable to expand halo above macro $inst\n";
+      print WRITE "Halo: $inst 0 0 0 0 Error\n";
+      next;
+    }
+    $hiRow++;
+    $row = $sortedRows[$hiRow];
+  }
+  my @hiRBox = &calcDefRowBox($row, $rowHeight);
+
+  my ($llx, $lly, $urx, $ury) = @bbox;
+  $lly = $loRBox[1];
+  $ury = $hiRBox[3];
+  my ($rowX, $siteWidth) = (split(/\s+/, $row))[2,7];
+  my $rem = ($llx - $rowX) % $siteWidth;
+  $llx -= $rem;
+  $rem = ($urx - $rowX) % $siteWidth;
+  if ( $rem > 0 ) {
+    $urx += ($siteWidth - $rem);
+  }
+  my @hbox = ($llx, $lly, $urx, $ury);
+  print WRITE "HaloBox: $inst @hbox\n" if ($DEBUG == 328);
+  my @mbox = $CADB{$inst}->dbCadbGetbBox;
+  $llx = $mbox[0] - $hbox[0];
+  $lly = $mbox[1] - $hbox[1];
+  $urx = $hbox[2] - $mbox[2];
+  $ury = $hbox[3] - $mbox[3];
+  $llx /= $dbu; $lly /= $dbu; $urx /= $dbu; $ury /= $dbu;
+  my $status = ( $bbox[0] == $hbox[0] && $bbox[1] == $hbox[1] &&
+                 $bbox[2] == $hbox[2] && $bbox[3] == $hbox[3] ) ?
+               "OK" : "Expanded";
+  print WRITE "Halo: $inst $llx $lly $urx $ury $status\n";
+}#foreach macro
+
+}#sub verifyBlockHalo65nmRule
+
+
+sub compareRowY {
+  my $y1 = (split(/\s+/, $a))[3];
+  my $y2 = (split(/\s+/, $b))[3];
+  $y1 <=> $y2;
+}#sub compareRows
+
+
+sub calcDefRowBox {
+
+my $rowData = $_[0];
+my $rowHeight = $_[1];
+
+my @rowFields = split(/\s+/, $rowData);
+my $llx = $rowFields[2];
+my $lly = $rowFields[3];
+my $siteCntX = $rowFields[5];
+my $siteCntY = $rowFields[6];
+my $siteWidth = $rowFields[7];
+
+my $urx = $llx + $siteCntX * $siteWidth;
+my $ury = $lly + $siteCntY * $rowHeight;
+
+return ($llx, $lly, $urx, $ury);
+
+}# sub calcDefRowBox
+#----------------------------------------------------------------------------------------------------------------------------------------------#
+sub report_net_wl {
+my $no_of_Arguments = @_;
+if(my $no_of_Arguments < 0 || $_[0] eq  '-h') {print "Usage: report_net_wl\n";
+                                              }
+else {
+  my $TotalNet_WL = 0;
+  foreach my $netName (keys %NETS_ALREADY){
+    my $WL = &report_net_wl_given_net($netName);
+    $TotalNet_WL = $TotalNet_WL + $WL;
+  }
+  print "INFO-DES-RPT_NET_WL_NEW : 003 : Total Wire Length in microns $TotalNet_WL\n";
+  }#else
+}#sub report_net_wl
+#-------------------------------------------------------------------------------------------------------------------------------------------------------#
+sub report_net_wl_given_net {
+my $nets = $_[0];
+my $new_wl_in_microns = 0;
+if(exists $NETS_ALREADY{$nets}){
+my @new_inst_data = ();
+my @nodex = ();
+my @nodey = ();
+my @driverInst = &getNetDriver($nets);
+my @sinkInst = &getNetSink($nets);
+if($#driverInst >=1) {
+  push(@new_inst_data,@driverInst);
+}
+if($#sinkInst >=1) {
+  push (@new_inst_data,@sinkInst);
+}
+  for (my $i=0;$i<=$#new_inst_data;$i= $i+2){
+    my $inst_tmp = $new_inst_data[$i];
+    my $pinName = $new_inst_data[$i+1];
+    if($inst_tmp eq "\*"){
+    }elsif(exists $PORTS_ALREADY{$TOP_MODULE}{$inst_tmp} ) {
+       my $status = $PORTS_ALREADY{$TOP_MODULE}{$inst_tmp}->dbPortGetStatus;
+         if($status >1){
+           my @portLoc = $PORTS_ALREADY{$TOP_MODULE}{$inst_tmp}->dbPortGetLoc;
+           push(@nodex,$portLoc[0]);
+           push(@nodey,$portLoc[1]);
+         }#if status 
+    }elsif(exists $COMP_ALREADY{$inst_tmp}){
+        my $status = $CADB{$inst_tmp}->dbCadbGetStatus;
+        if ( $status eq "PLACED" || $status eq "FIXED" ) {
+          my $cellref = $CADB{$inst_tmp}->dbCadbGetCellref;
+          my @instLoc = $CADB{$inst_tmp}->dbCadbGetLoc;
+          my $instOrient = $CADB{$inst_tmp}->dbCadbGetOrient;
+          if (exists $PLDB{$cellref}){
+            my @cellOrigin = $PLDB{$cellref}->dbMdbGetOrigin;
+            my @cellsize = $PLDB{$cellref}->dbMdbGetSize;
+            my @pinRect = $PLDB{$cellref}->dbMdbGetPinRect($pinName);
+            my ($pinllx,$pinlly,$pinurx,$pinury) = (split(/\s+/,$pinRect[0]))[2,3,4,5];
+            my @absolute_pin_rect = &xformCellPinToInstPin($instLoc[0],$instLoc[1],$cellOrigin[0], $cellOrigin[1],$instOrient,$cellsize[0],$cellsize[1],$pinllx,$pinlly,$pinurx,$pinury);
+                my $xmiddle_pin_rect = ($absolute_pin_rect[0]+$absolute_pin_rect[2])/2;
+                my $ymiddle_pin_rect = ($absolute_pin_rect[1]+$absolute_pin_rect[3])/2; 
+                push(@nodex,$xmiddle_pin_rect);
+                push(@nodey,$ymiddle_pin_rect); 
+          }# if exists cellref
+        }
+    }else {print "WARN-DES-RPT_NET_WL_NEW : 001 : $inst_tmp not exists in PORTS_ALREADY and COMP_ALREADY\n";}
+  }
+if($#nodex >= 0){
+@nodex = sort{$a<=>$b}@nodex;
+@nodey = sort{$a<=>$b}@nodey;
+my $xmin = $nodex[0];
+my $ymin = $nodey[0];
+my $xmax = $nodex[-1];
+my $ymax = $nodey[-1];
+my $Ylength_of_bbox = $ymax - $ymin;
+my $Xlength_of_bbox = $xmax - $xmin;
+my $wire_length = $Xlength_of_bbox + $Ylength_of_bbox;
+my $dbu = $GLOBAL->dbfGlobalGetDBU;
+my $wl_in_microns = $wire_length/$dbu;           
+$new_wl_in_microns = sprintf("%.2f",$wl_in_microns);
+  } else {print "WARN-DES-RPT_NET_WL_NEW : 002 : Not getting the wire length of this net $nets\n";} 
+}
+return($new_wl_in_microns);
+}#sub report_net_wl_given_net
+#-------------------------------------------------------------------------------------------------------------------------------------------------------#
+sub report_lef_data {
+my $total_layer =0;
+my $total_macro =0;
+my $macro_core =0;
+my $macro_block=0;
+my $macro_pad=0;
+foreach my $layerName(keys %PTDB){
+  $total_layer++;
+}
+  foreach my $macroName(keys %PLDB){
+    $total_macro++;
+    my $class = $PLDB{$macroName}->dbMdbGetClass;
+    if(($class eq "core") || ($class eq "CORE")){$macro_core++;}
+    elsif(($class eq "block") || ($class eq "BLOCK")){$macro_block++;}
+    elsif(($class eq "pad")||($class eq "PAD")){$macro_pad++;}
+  }
+if((%PTDB != "") && (%PLDB == "")){
+  print "LayerName $total_layer\n";
+}elsif ((%PTDB == "") && (%PLDB !~ "")){
+  print "$total_macro $class core = $macro_core block = $macro_block pad = $macro_pad\n";
+}else {
+  print "LayerName $total_layer\n";
+  print "$total_macro $class core = $macro_core block = $macro_block pad = $macro_pad\n";
+}
+  
+}#sub report_lef_data
+#--------------------------------------------------------------------------------------------------------------------------------------------------------#
+sub report_def_data {
+my $total_instance=0;
+my $total_net=0;
+my $total_port=0;
+foreach my $instance (keys %COMP_ALREADY){
+  $total_instance++;
+}
+foreach my $netName (keys %NETS_ALREADY){
+  $total_net++;
+}
+foreach my $portName (keys %PORTS_ALREADY){
+  $total_port++;
+}
+print "$total_instance $total_port $total_net\n";
+}#sub report_def_data
+#--------------------------------------------------------------------------------------------------------------------------------------------------------#
+sub report_verilog_data {
+my $total_module=0;
+foreach my $moduleName (keys %MODULE_ALREADY){
+  $total_module++;
+}
+my $top_module = $TOP_MODULE;
+print "$total_module $top_module\n";
+}#sub report_verilog_data
+#--------------------------------------------------------------------------------------------------------------------------------------------------------#
+sub report_net_wl_old_1 {
+my $no_of_Arguments = @_;
+if(my $no_of_Arguments < 0 || $_[0] eq  '-h') {print "Usage: report_net_wl\n";
+                                               print "     : --regress <return wire length in micron>\n";
+                                              }
+else {
+my $TotalNet_WL = 0;
+my $regress = 0;
+my $new_wl_in_microns;
+  for (my $i =0; $i < $no_of_Arguments; $i++){
+    if($_[$i] eq "--regress"){$regress = 1;}
+  }
+foreach my $nets (keys %NETS_ALREADY){
+my @new_inst_data = ();
+my @nodex = ();
+my @nodey = ();
+my @driverInst = &getNetDriver($nets);
+my @sinkInst = &getNetSink($nets);
+if($#driverInst >=1) {
+  push(@new_inst_data,@driverInst);
+}
+if($#sinkInst >=1) {
+  push (@new_inst_data,@sinkInst);
+}
+  for (my $i=0;$i<=$#new_inst_data;$i= $i+2){
+    my $inst_tmp = $new_inst_data[$i];
+    my $pinName = $new_inst_data[$i+1];
+    if($inst_tmp eq "\*"){
+    }elsif(exists $PORTS_ALREADY{$TOP_MODULE}{$inst_tmp} ) {
+       my $status = $PORTS_ALREADY{$TOP_MODULE}{$inst_tmp}->dbPortGetStatus;
+         if($status >1){
+           my @portLoc = $PORTS_ALREADY{$TOP_MODULE}{$inst_tmp}->dbPortGetLoc;
+           push(@nodex,$portLoc[0]);
+           push(@nodey,$portLoc[1]);
+         }#if status 
+    }elsif(exists $COMP_ALREADY{$inst_tmp}){
+        my $status = $CADB{$inst_tmp}->dbCadbGetStatus;
+        if ( $status eq "PLACED" || $status eq "FIXED" ) {
+          my $cellref = $CADB{$inst_tmp}->dbCadbGetCellref;
+          my @instLoc = $CADB{$inst_tmp}->dbCadbGetLoc;
+          my $instOrient = $CADB{$inst_tmp}->dbCadbGetOrient;
+          if (exists $PLDB{$cellref}){
+            my @cellOrigin = $PLDB{$cellref}->dbMdbGetOrigin;
+            my @cellsize = $PLDB{$cellref}->dbMdbGetSize;
+            my @pinRect = $PLDB{$cellref}->dbMdbGetPinRect($pinName);
+            my ($pinllx,$pinlly,$pinurx,$pinury) = (split(/\s+/,$pinRect[0]))[2,3,4,5];
+            my @absolute_pin_rect = &xformCellPinToInstPin($instLoc[0],$instLoc[1],$cellOrigin[0], $cellOrigin[1],$instOrient,$cellsize[0],$cellsize[1],$pinllx,$pinlly,$pinurx,$pinury);
+                my $xmiddle_pin_rect = ($absolute_pin_rect[0]+$absolute_pin_rect[2])/2;
+                my $ymiddle_pin_rect = ($absolute_pin_rect[1]+$absolute_pin_rect[3])/2; 
+                push(@nodex,$xmiddle_pin_rect);
+                push(@nodey,$ymiddle_pin_rect); 
+          }# if exists cellref
+        }
+    }else {print "WARN-DES-RPT_NET_WL_NEW : 001 : $inst_tmp not exists in PORTS_ALREADY and COMP_ALREADY\n";}
+  }
+if($#nodex >= 0){
+@nodex = sort{$a<=>$b}@nodex;
+@nodey = sort{$a<=>$b}@nodey;
+my $xmin = $nodex[0];
+my $ymin = $nodey[0];
+my $xmax = $nodex[-1];
+my $ymax = $nodey[-1];
+my $Ylength_of_bbox = $ymax - $ymin;
+my $Xlength_of_bbox = $xmax - $xmin;
+my $WL = $Xlength_of_bbox + $Ylength_of_bbox;
+$TotalNet_WL = $TotalNet_WL + $WL;
+  } else {print "WARN-DES-RPT_NET_WL_NEW : 002 : Not getting the wire length of this net $nets\n";} 
+}
+my $dbu = $GLOBAL->dbfGlobalGetDBU;
+my $wl_in_microns = $TotalNet_WL/$dbu;           
+$new_wl_in_microns = sprintf("%.2f",$wl_in_microns);
+if($regress == 1){
+return($new_wl_in_microns);
+}else {
+    print "INFO-DES-RPT_NET_WL_NEW : 003 : Total Wire Length in DBU $TotalNet_WL and in microns $new_wl_in_microns\n";
+}
+}
+}#sub report_net_wl_old_1
+
+
+1;

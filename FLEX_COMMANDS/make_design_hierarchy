@@ -1,0 +1,179 @@
+sub report_design_hierarchy_bd {
+my $noOfArg = @_;
+my ($topModule, $return_xml_data) = ($TOP_MODULE, 0);
+my ($select_all, $select_std_cell, $select_hard_macro, $summary, $no_print_area,$print_xml) = (0, 0, 0, 0, 0, 0);
+$xml_out = "";
+my $space = "  ";
+if($_[0] eq "-h" || $_[0] eq "-help" || $_[0] eq "-HELP"){
+   print"Usage: report_design_hierarchy\n"; 
+   print"                         -top <top module name>\n";
+   print"                         --all <for each instances>\n";
+   print"                         --std_cell <to select std cells>\n";
+   print"                         --hard_macro <to select hard macro>\n";
+   print"                         --summary <to print/return xml summary>\n";
+   print"                         --xml <to return data in xml format>\n";
+   print"                         --no_print_area>\n";
+   print"                         --print_xml <to print data in xml form>\n";
+   print" default value <top:current top module>\n";
+   return;
+}else{
+   for(my $xx=0; $xx<$noOfArg; $xx++){
+       if($_[$xx] eq "-top"){$topModule = $_[$xx+1];}
+       if($_[$xx] eq "--xml"){$return_xml_data = 1;}
+       if($_[$xx] eq "--all"){$select_all = 1;}
+       if($_[$xx] eq "--std_cell"){$select_std_cell = 1;}
+       if($_[$xx] eq "--hard_macro"){$select_hard_macro = 1;}
+       if($_[$xx] eq "--summary"){$summary = 1;}
+       if($_[$xx] eq "--no_print_area"){$no_print_area = 1;}
+       if($_[$xx] eq "--print_xml"){$print_xml = 1;}
+   }
+   if(exists $MODULE_ALREADY{$topModule}){
+      my $topArea = sprintf("%.2f",$MODULE_ALREADY{$topModule}->dbVNOMGetArea);
+      if($return_xml_data == 1){
+         my $xml = new XML::Writer(OUTPUT => \$xml_out);
+         $xml->startTag("root");
+         $xml_out .= "\n";
+         $xml->startTag('inst', 'name'=>$topModule, 'cell'=>$topModule, 'area'=>$topArea) if($no_print_area == 0);
+         $xml->startTag('inst', 'name'=>$topModule, 'cell'=>$topModule) if($no_print_area == 1);
+         &call_report_design_hierarchy($topModule,$xml,$return_xml_data,$select_all,$select_std_cell,$select_hard_macro,$summary,$no_print_area);
+         $xml_out .= "\n";
+         $xml->endTag();
+         $xml_out .= "\n"; 
+         $xml->endTag();
+         $xml->end();
+         print "\n$xml_out\n" if($print_xml==1);
+         return $xml_out;
+      }else{
+          print "TopModule: $topModule  Area:$topArea\n" if($no_print_area == 0);
+          print "TopModule: $topModule\n" if($no_print_area == 1);
+          &call_report_design_hierarchy($topModule,$xml,$return_xml_data,$select_all,$select_std_cell,$select_hard_macro,$summary,$no_print_area,$space);
+      }
+   }else {
+          if($return_xml_data == 1){
+            my $xml = new XML::Writer(OUTPUT => \$xml_out);
+            $xml->startTag("root");
+            $xml->endTag();
+            $xml->end();
+            print "\n$xml_out\n" if($print_xml==1);
+            return $xml_out;
+          }
+   }
+}
+}#sub report_design_hierarchy_bd
+
+sub call_report_design_hierarchy{
+my $moduleName = $_[0];
+my $xml = $_[1];
+my $return_xml_data = $_[2];
+my $select_all = $_[3];
+my $select_std_cell = $_[4];
+my $select_hard_macro = $_[5];
+my $summary = $_[6];
+my $no_print_area = $_[7];
+my $space = $_[8];
+$space = $space."  ";
+
+if(exists $MODULE_ALREADY{$moduleName}){
+   my @hierInsts = $MODULE_ALREADY{$moduleName}->dbVNOMGetHierInst;
+   my @leafInsts = $MODULE_ALREADY{$moduleName}->dbVNOMGetLeafInst;
+   my $std_cell_cnt = 0;
+   my $hard_macro_cnt = 0;
+   my $stdCellArea = 0;
+   my $hardMacroArea = 0;
+   foreach my $hInst (sort @hierInsts){
+           my $cellref = $MODULE_ALREADY{$moduleName}->dbVNOMGetHierInstCell($hInst);
+           if(exists $MODULE_ALREADY{$cellref}){
+              my $hInstArea = sprintf("%.2f",$MODULE_ALREADY{$cellref}->dbVNOMGetArea);
+              if($return_xml_data == 1){
+                 $xml_out .= "\n";
+                 $xml->startTag("inst", 'name'=>$hInst, 'cell'=>$cellref, 'area'=>$hInstArea) if($no_print_area == 0);  
+                 $xml->startTag("inst", 'name'=>$hInst, 'cell'=>$cellref) if($no_print_area == 1);  
+                 &call_report_design_hierarchy($cellref,$xml,$return_xml_data,$select_all,$select_std_cell,$select_hard_macro,$summary,$no_print_area);
+                 $xml->endTag();
+              }else{
+                 print "$space HierInst:$hInst  CellRef:$cellref  Area:$hInstArea\n" if($no_print_area == 0);
+                 print "$space HierInst:$hInst  CellRef:$cellref\n" if($no_print_area == 1);
+                 &call_report_design_hierarchy($cellref,$xml,$return_xml_data,$select_all,$select_std_cell,$select_hard_macro,$summary,$no_print_area,$space);
+              }
+           }else{
+              if($return_xml_data == 1){
+                 $xml_out .= "\n";
+                 $xml->startTag("inst", 'name'=>$hInst."(Black-box)", 'cell'=>$cellref, 'area'=>"---") if($no_print_area == 0);  
+                 $xml->startTag("inst", 'name'=>$hInst."(Black-box)", 'cell'=>$cellref) if($no_print_area == 1);  
+                 $xml->endTag();
+              }else{
+                 print "$space BlackBox:$hInst  CellRef:$cellref  Area:---\n" if($no_print_area == 0);
+                 print "$space BlackBox:$hInst  CellRef:$cellref\n" if($no_print_area == 1);
+              }
+           }#if cellref does not exist 
+   }#foreach hinst
+   foreach my $lInst (sort @leafInsts){
+           my $cellref = $MODULE_ALREADY{$moduleName}->dbVNOMGetLeafInstCell($lInst);
+           my @size = $PLDB{$cellref}->dbMdbGetSize;
+           my $linstArea = sprintf("%.2f",$size[0]*$size[1]);
+           if(exists $PLDB{$cellref} && exists $MODULE_ALREADY{$cellref}){
+              if($return_xml_data == 1){
+                 $xml->startTag("inst", 'name'=>$lInst."(Multi-def)", 'cell'=>$cellref, 'area'=>$linstArea) if($no_print_area == 0);  
+                 $xml->startTag("inst", 'name'=>$lInst."(Multi-def)", 'cell'=>$cellref) if($no_print_area == 1);  
+                 $xml->endTag();
+              }else{
+                 print "$space MultiDef:$lInst CellRef:$cellref Area:$linstArea\n" if($no_print_area == 0);
+                 print "$space MultiDef:$lInst CellRef:$cellref\n" if($no_print_area == 1);
+              }
+           }else{
+              my $class = $PLDB{$cellref}->dbMdbGetClass;
+              if($class eq "BLOCK"){
+                 if($summary == 0 && ($select_hard_macro == 1 || $select_all == 1)){
+                    if($return_xml_data == 1){
+                       $xml->startTag("inst", 'name'=>$lInst, 'cell'=>$cellref, 'area'=>$linstArea) if($no_print_area == 0);  
+                       $xml->startTag("inst", 'name'=>$lInst, 'cell'=>$cellref) if($no_print_area == 1);  
+                       $xml->endTag();
+                    }else{
+                       print"$space HardMacro:$lInst  CellRef:$cellref  Area:$linstArea\n" if($no_print_area == 0);
+                       print"$space HardMacro:$lInst  CellRef:$cellref\n" if($no_print_area == 1);
+                    }
+                 }else{
+                    $hard_macro_cnt++;  
+                    $hardMacroArea = $hardMacroArea+ $linstArea;
+                 }#if needs summary 
+              }else{
+                 if($summary == 0 && ($select_hard_macro == 1 || $select_all == 1)){
+                    if($return_xml_data == 1){
+                       $xml->startTag("inst", 'name'=>$lInst, 'cell'=>$cellref, 'area'=>$linstArea) if($no_print_area == 0);  
+                       $xml->startTag("inst", 'name'=>$lInst, 'cell'=>$cellref) if($no_print_area == 1);  
+                       $xml->endTag();
+                    }else{
+                       print"$space StdCell:$lInst  CellRef:$cellref  Area:$linstArea\n" if($no_print_area == 0);
+                       print"$space StdCell:$lInst  CellRef:$cellref\n" if($no_print_area == 1);
+                    }
+                 }else{
+                    $std_cell_cnt++;
+                    $stdCellArea = $stdCellArea+ $linstArea;
+                 }#if needs summary 
+              }#if std cell
+           }#if not exists in PLDB 
+   }#foreach linst
+   if($hard_macro_cnt > 0 && $summary == 1 && ($select_all == 1 || $select_hard_macro == 1)){
+      if($return_xml_data == 1){
+         $xml->startTag("inst", 'name'=>"hardMacro(".$hard_macro_cnt.")", 'cell'=>"UND", 'area'=>$hardMacroArea) if($no_print_area == 0);  
+         $xml->startTag("inst", 'name'=>"hardMacro(".$hard_macro_cnt.")", 'cell'=>"UND") if($no_print_area == 1);  
+         $xml->endTag();
+      }else{
+         print "$space Total Count of HardMacro:$hard_macro_cnt Total Area:$hardMacroArea\n" if($no_print_area == 0);
+         print "$space Total Count of HardMacro:$hard_macro_cnt\n" if($no_print_area == 1);
+      }
+   }
+   if($std_cell_cnt > 0 && $summary == 1 && ($select_all == 1 || $select_std_cell == 1)){
+      if($return_xml_data == 1){
+         $xml->startTag("inst", 'name'=>"stdCell(".$std_cell_cnt.")", 'cell'=>"UND", 'area'=>$stdCellArea) if($no_print_area == 0);  
+         $xml->startTag("inst", 'name'=>"stdCell(".$std_cell_cnt.")", 'cell'=>"UND") if($no_print_area == 1);  
+         $xml->endTag();
+      }else{
+         print "$space Total Count of StdCell:$std_cell_cnt Total Area:$stdCellArea\n" if($no_print_area == 0);
+         print "$space Total Count of StdCell:$std_cell_cnt\n" if($no_print_area == 1);
+      }
+   }
+}#if parent module exists
+}#sub call_report_design_hierarchy
+
+1;

@@ -1,0 +1,197 @@
+###############################################################################################################
+################################### Load Block xls data from command Line #####################################
+###############################################################################################################
+
+#************************** Note **********************#
+#   $oWkC->Value => returns formatted value            #
+#   $oWkC->{Val} => returns Original value             #
+#******************************************************#
+
+sub loadBlockXls {
+use Spreadsheet::ParseExcel;
+my $noOfArguments = @_;
+my $fileName = $_[0];
+
+if ($noOfArguments < 1 || $_[0] eq '-h' || $_[0] eq '-help' || $_[0] eq '-HELP') { 
+    print "Usage : loadBlockXls <xls file>\n";
+    return;
+}
+if (!-e $fileName){
+    print"WARN: file $fileName does not exists\n";
+    return;
+}
+my $top_module = "";
+my $current_top = "";
+my %MODULE = ();
+
+my $oExcel = new Spreadsheet::ParseExcel;
+my $oBook = $oExcel->Parse($fileName);
+my $oWkS = $oBook->{Worksheet}[0];
+ for(my $iR = 1 ;defined $oWkS->{MaxRow} && $iR <= $oWkS->{MaxRow} ;$iR++){
+   my ($mod_width,$mod_height,$llx,$lly) = (0,0,0,0);
+   my ($parent_module,$modName,$instName) = ("","",""); 
+   for(my $iC = $oWkS->{MinCol} ; defined $oWkS->{MaxCol} && $iC <= $oWkS->{MaxCol} ;$iC++) {
+       my $header = $oWkS->{Cells}[0][$iC];
+       my $oWkC = $oWkS->{Cells}[$iR][$iC];
+       my $cell_value = $oWkC->{Val} if(defined $oWkC);
+       if($header->{Val} eq "cell"){
+          $modName = $cell_value;
+          $MODULE{$modName} = 1;
+       }elsif($header->{Val} eq "parent"){
+          $parent_module = $cell_value;
+       }elsif($header->{Val} eq "inst"){
+          $instName = $cell_value;
+       }elsif($header->{Val} eq "size"){
+          ($mod_width, $mod_height) = (split(/\,/,$cell_value))[0,1];
+       }elsif($header->{Val} eq "loc"){
+          ($llx, $lly) = (split(/\,/,$cell_value))[0,1] if($cell_value ne "");
+       }else{}
+   }#foreach column
+   my $urx = $llx+$mod_width; 
+   my $ury = $lly+$mod_height; 
+   if($iR == 1){
+      $top_module = $modName;
+      &createPseudoTopModule("-top", $modName, "-H", $mod_height, "-W", $mod_width);  
+      $current_top = $top_module;
+   }else{
+      if(exists $MODULE{$parent_module}){
+         if($parent_module ne $current_top){
+            &commitModule("-module", $current_top);
+            &editModule("-module", $parent_module);
+         }                                         
+         if(exists $PLDB{$modName}){                     
+           &createPseudoInstance("-parent", $parent_module, "-cell", $modName, "-inst", $instName, "-loc", "{$llx,$lly}", "-orient", "N");
+         }else {
+           &createPseudoModule("-top", "$parent_module", "-module", $modName, "-bbox", "{$llx,$lly,$urx,$ury}");
+           &createPseudoHierModuleInst("-parent", $parent_module, "-bbox", "{$llx,$lly,$urx,$ury}","-cellref", "$modName", "-inst", "$instName");
+         }
+      }else{print "WARN: Parent module $parent_module for instance $instName of cell $modName does not exists\n";}
+   }#if not top row
+   $current_top = $parent_module if($iR != 1);
+ }#foreach row
+ &commitModule("-module", $current_top);
+ &editModule("-module", $top_module);
+}#sub loadBlockXls
+
+###############################################################################################################
+#################################### Load Net xls data from command Line ######################################
+###############################################################################################################
+sub loadNetXls {
+use Spreadsheet::ParseExcel;
+my $noOfArguments = @_;
+my $fileName = $_[0];
+
+if ($noOfArguments < 1 || $_[0] eq '-h' || $_[0] eq '-help' || $_[0] eq '-HELP') { 
+    print "Usage : loadNetXls <xls file>\n";
+    return;
+}
+if (!-e $fileName){
+    print"WARN: file $fileName does not exists\n";
+    return;
+}
+my $top_module = $GLOBAL->dbfGlobalGetTOP;
+my $current_top = $GLOBAL->dbfGlobalGetTOP;
+
+my $oExcel = new Spreadsheet::ParseExcel;
+my $oBook = $oExcel->Parse($fileName);
+my $oWkS = $oBook->{Worksheet}[0];
+ for(my $iR = 1 ;defined $oWkS->{MaxRow} && $iR <= $oWkS->{MaxRow} ;$iR++){
+   my ($netName,$parent_module,$srcInst, $sinkInst,$srcPin, $sinkPin) = ("","","","","","");
+   my ($net_width,$net_type,$net_class,$srcOpt, $sinkOpt) = (1,"wire","digital","-pin","-pin");
+   for(my $iC = $oWkS->{MinCol} ; defined $oWkS->{MaxCol} && $iC <= $oWkS->{MaxCol} ;$iC++) {
+       my $header = $oWkS->{Cells}[0][$iC];
+       my $oWkC = $oWkS->{Cells}[$iR][$iC];
+       my $cell_value = $oWkC->{Val} if(defined $oWkC);
+       if($header->{Val} eq "name"){
+          $netName = $cell_value;
+       }elsif($header->{Val} eq "parent"){
+          $parent_module = $cell_value;
+          if($parent_module eq ""){$parent_module = $top_module;}
+       }elsif($header->{Val} eq "source"){
+          $cell_value =~ s/\(//;
+          $cell_value =~ s/\)//;
+          ($srcInst, $srcPin) = (split(/\:/,$cell_value))[0,1];
+          if($srcPin eq ""){$srcOpt = "";
+          }else{$srcOpt = "-pin";}
+       }elsif($header->{Val} eq "sink"){
+          $cell_value =~ s/\(//;
+          $cell_value =~ s/\)//;
+          ($sinkInst, $sinkPin) = (split(/\:/,$cell_value))[0,1];
+          if($sinkPin eq ""){$sinkOpt = "";   
+          }else{$sinkOpt = "-pin";}
+       }elsif($header->{Val} eq "width"){
+          $net_width = $cell_value;
+       }elsif($header->{Val} eq "type"){
+          $net_type = $cell_value;
+       }elsif($header->{Val} eq "class"){
+          $net_class = $cell_value;
+       }else{}
+   }#foreach column
+   if($parent_module ne $current_top){
+      &commitModule("-module", $current_top);
+      &editModule("-module", $parent_module);
+   }
+   &createPseudoNet("-parentModule","$parent_module","-type",$net_type,"-class",$net_class,"-source","$srcInst",$srcOpt,$srcPin ,"-sink","$sinkInst",$sinkOpt, "{$sinkPin}","-prefix", $netName, "-wireWidth", $net_width);
+   $current_top = $parent_module;
+ }#foreach row
+ &commitModule("-module", $current_top);
+ &editModule("-module", $top_module);
+}#sub loadNetXls
+
+################################### running xls commands #############################################
+sub run_xls_cmd {
+  my $xlsFile = $_[0];
+   if(-e $xlsFile){ 
+      #print "reading xls file.....\n";
+      my $oExcel = new Spreadsheet::ParseExcel;
+      my $oBook = $oExcel->Parse($xlsFile);
+
+      die $oExcel->error(), ".\n" if ( !defined $oBook );
+
+      #print "parsing of xls file is ok.....\n";
+      for(my $iSheet=0; $iSheet < $oBook->{SheetCount} ; $iSheet++) {
+          my %HEADER = ();
+          my $oWkS = $oBook->{Worksheet}[$iSheet];
+          
+          for(my $iC = $oWkS->{MinCol} ; defined $oWkS->{MaxCol} && $iC <= $oWkS->{MaxCol} ;$iC++) {
+              #print "ic: $iC\n";
+              my $oWkC = $oWkS->{Cells}[0][$iC];
+              if(defined $oWkC && $oWkC->{Val} ne ""){
+                 $HEADER{$iC} = $oWkC->{Val};
+                 #print "value ".$oWkC->{Val}."\n";
+              }
+          }#foreach column
+
+          for(my $iR = $oWkS->{MinRow}+1 ;defined $oWkS->{MaxRow} && $iR <= $oWkS->{MaxRow} ;$iR++){
+            my $cmd = "";
+            my @arg = ();
+            for(my $iC = $oWkS->{MinCol} ; defined $oWkS->{MaxCol} && $iC <= $oWkS->{MaxCol} ;$iC++) {
+                my $oWkC = $oWkS->{Cells}[$iR][$iC];
+                if($iC == 0 && defined $oWkC && $oWkC->{Val} ne ""){
+                   $cmd = $oWkC->{Val};
+                }elsif(defined $oWkC && $oWkC->{Val} ne ""){
+                   my $option = $HEADER{$iC};
+                   #my $value =~ s/^\s+$//g;
+                 
+                   push(@arg, "-".$option,$oWkC->{Val});
+                }
+            }#foreach column
+            if(($cmd !~ /^#/) && $cmd ne ""){
+               if(!exists $cmds{$cmd}){
+                 print "ERR : PAR-RUN_XLS_CMD : 001 : $cmd command is not exists in proton\n";
+               }else {
+                 &{$cmd}(@arg);
+                 print "#<CMD> $cmd @arg\n";
+               }     
+            }
+          }#foreach row
+      }#foreach sheet
+   }else{
+      print "WARN: $xlsFile file not found !\n";
+   }
+}#sub run_xls_cmd
+######################################################################################################
+
+
+
+1;

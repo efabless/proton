@@ -1,0 +1,487 @@
+
+################################################################################
+# The hierarchical placement begins here.It will place the TOP_MODULE
+# and then store the location in the TOP_MODULE floorplan. After that
+# it will store the pin location of the instances in a floorplan for
+# instance. Name of the floor plan will be full hierarchical name of the
+# instance. After that it will run placement for the reference module of 
+# the instances in background and store the names of the instances in an array.
+# Now an infinite process will run in background which will process the array
+# after a fix time and check if a placement is completed.
+# If the placement is completed it will store the location in a floorplan
+# of name equal to full hierarchical name of the instances.
+# And fire the placement for all the instances in the reference of the instance.
+################################################################################
+
+sub new_place_design_hierarchy_from_earlyProto_DB 
+{
+  use Cwd;
+  $toolCurrentDir = getcwd();
+  print "\nINFO-UTS-NEW_PL_DES_HR_EP_DB : 001 : Current working dir is $toolCurrentDir\n" ;
+  mkdir ("benaras", 0755) ;
+  @list_instance_being_placed = ();
+  %hash_of_modules_already_in_pseudoDB = ();
+  %hier_path_name_versus_child_pid = ();
+  %child_pid_status = ();
+  my $start_module =  $GLOBAL->dbfGlobalGetTOP();
+  &new_place_and_commit_given_module_with_floorplan($start_module,$start_module);
+  print "\n" ;
+  while ($#list_instance_being_placed >= 0) {
+    for(my $temp_cnt = 0 ; $temp_cnt <= $#list_instance_being_placed;$temp_cnt++) {
+      my $hier_inst_name = $list_instance_being_placed[$temp_cnt];
+      my $placement_status = &new_check_placement_status($hier_inst_name);
+      if($placement_status ==1) {
+        splice(@list_instance_being_placed,$temp_cnt,1);
+        my $instance_placement_remaining = $#list_instance_being_placed + 1 ;
+        print "\nINFO-UTS-NEW_PL_DES_HR_EP_DB : 002 : no of placement running is $instance_placement_remaining" ;
+        &new_read_placement_curr_instance($hier_inst_name);
+        my $instance_in_process = $hier_inst_name ;
+        if($hier_inst_name =~ /.*\/.*/) {
+          my @inst_names = split(/\//, $hier_inst_name);
+          $instance_in_process = $inst_names[$#inst_names];
+        }
+        my $parent_module_inprocess = &new_get_parent_module($hier_inst_name);
+        my $cellref_instance = $MODULE_ALREADY{$parent_module_inprocess}->dbVNOMGetHierInstCell($instance_in_process);
+        print "\nINFO-UTS-NEW_PL_DES_HR_EP_DB : 003 : Placing sub instances of instance $instance_in_process and module $cellref_instance and path $hier_inst_name" ;
+        my @insts0 =  $MODULE_ALREADY{$cellref_instance}->dbVNOMGetHierInst;
+        my @insts =  sort {$a cmp $b} @insts0 ;
+        foreach my $inst ( @insts) {
+          my $cellref = $MODULE_ALREADY{$start_module}->dbVNOMGetHierInstCell($inst);
+          &new_fire_placement_curr_instance($hier_inst_name."/".$inst);
+        }
+      } elsif($placement_status ==2) {
+        splice(@list_instance_being_placed,$temp_cnt,1);
+        my $instance_placement_remaining = $#list_instance_being_placed + 1 ;
+        print "\nINFO-UTS-NEW_PL_DES_HR_EP_DB : 004 : no of placement running is $instance_placement_remaining" ;
+      } elsif($placement_status ==0) {
+        next ;
+      } elsif($placement_status == 3) {
+        &new_run_placer_again_input_already($hier_inst_name);
+      }
+    }
+  }
+  $toolCurrentDir = getcwd();
+  print "\nINFO-UTS-NEW_PL_DES_HR_EP_DB : 005 : Current working dir is $toolCurrentDir\n" ;
+}#sub new_place_design_hierarchy_from_earlyProto_DB
+
+sub new_check_placement_status
+{
+  return 1 ;
+  my $full_path_name = $_[0];
+  my $original_full_path_name = $full_path_name ;
+  $full_path_name =~ s/\//_/g;
+  #print "\nChecking placement status of Hierarchical instance : $original_full_path_name" ;
+  #print "\nChecking directory  : benaras/$full_path_name" ;
+  if(-e "benaras/$full_path_name/mp_xy.out"){
+    return 1 ;#Passed and run complete
+  }elsif(-e "benaras/$full_path_name/mpl.log"){
+    use File::ReadBackwards ;
+    my $bw_mpl_log = File::ReadBackwards->new( "benaras/$full_path_name/mpl.log" ) or die "can't read 'log_file' $!" ;
+    my $log_line = "";
+    if (defined( $log_line = $bw_mpl_log->readline )){
+      if ( $log_line =~ m/.*FAILURE.*/ ) {
+        print "\nmpl failed in dir benaras/$full_path_name" ;
+        return 2 ;#Failed and run complete
+      }elsif ( $log_line =~ m/.*problem.*nan/ ) {
+        print "\nmpl failed in dir benaras/$full_path_name" ;
+        return 2 ;#Failed and run complete
+      }elsif ( $log_line =~ m/.*ERROR.*/ ) {
+        print "\nmpl failed in dir benaras/$full_path_name" ;
+        return 2 ;#Failed and run complete
+      }elsif ( $log_line =~ m/.*Segmentation fault.*/ ) {
+        print "\nmpl failed in dir benaras/$full_path_name" ;
+        return 2 ;#Failed and run complete
+      }elsif ( $log_line =~ m/.*SUCCESS.*/ ) {
+        return 1 ;#PASSED and run complete
+      }else{
+        return 0 ;#still running
+      }
+    }else{
+      my $child_process_id = $hier_path_name_versus_child_pid{$original_full_path_name."_"."mpl"};
+      if($child_pid_status{$child_process_id} == 0){
+        print "\nchild process $child_process_id has completed" ;
+        return 2 ;#Failed and run complete
+      }else {
+        return 0 ;#still running
+      }
+    }
+  }else {
+    print "\nmpl.log was not found in dir benaras/$full_path_name, running mpl again " ;
+    return 3 ;#mpl did not run and run it again
+  }
+}#sub new_check_placement_status
+
+
+sub new_place_and_commit_given_module_with_floorplan
+{
+  my $start_module =  $_[0];
+  my $start_fplan =  $_[1];
+  my $hierarchy_value = 1;
+
+  &report_verilog_area ("-module", $start_module) ;
+
+  #&editModule("-module",$start_module);
+
+  &editModule("-module",$start_module,"-floorplan",$start_fplan);
+
+
+  #if (!exists $hash_of_modules_already_in_pseudoDB{$start_module}){
+  #  &editModule("-module",$start_module,"-floorplan",$start_fplan);
+  #  $hash_of_modules_already_in_pseudoDB{$start_module} = 1;
+  #}elsif (exists $PSEUDO_MODULE_ALREADY{$start_module}){
+  #  $PSEUDO_MODULE_ALREADY{$start_module}->dbaTstgenSetFloorplan($start_fplan);
+  #}
+
+  print "\nINFO-UTS : 001 : Placing TOP module $start_module" ;
+  $PSEUDO_MODULE_ALREADY{$start_module}->dbaTstgenSetPhysicalDirty(1);
+  #################################################################################
+  #Code for running mpl                                                           #
+  #Starts here.                                                                   #
+  #################################################################################
+  print "\nINFO-UTS : 002 : Placing TOP module $start_module using mpl" ;
+  my @size = $PSEUDO_MODULE_ALREADY{$start_module}->dbaTstgenGetSize;
+  if(($size[2] - $size[0])<=0){
+    print "\nERR-UTS : 003 : size of the module is not set properly" ;
+    print "\n        It's size is "; 
+    print join ",",@size;
+    print "\n" ;
+    exit ;
+  }
+  if(($size[3] - $size[1])<=0){
+    print "\nERR-UTS : 004 : size of the module is not set properly" ;
+    print "\n        It's size is "; 
+    print join ",",@size;
+    print "\n" ;
+    exit ;
+  }
+  my @output_pins = $PSEUDO_MODULE_ALREADY{$start_module}->dbaTstgenGetOutput;
+  my @input_pins = $PSEUDO_MODULE_ALREADY{$start_module}->dbaTstgenGetInput;
+  my @bidi_pins = $PSEUDO_MODULE_ALREADY{$start_module}->dbaTstgenGetBidi;
+  my @total_pins = (); 
+  push(@total_pins, @output_pins, @input_pins, @bidi_pins);
+  foreach my $pin (@total_pins){
+    $PSEUDO_MODULE_ALREADY{$start_module}->dbaTstgenWipePinRect($pin);
+    $PSEUDO_MODULE_ALREADY{$start_module}->dbaTstgenSetPinStatus($pin, "PLACED");
+    my $pin_layer = "NONE";
+    my @bbox = (0, 0, $hierarchy_value, $hierarchy_value);
+    my $shape = join(" ", $pin_layer, @bbox);
+    $PSEUDO_MODULE_ALREADY{$start_module}->dbaTstgenAddPinRect($pin, $shape);
+  }
+  my @insts0 =  $MODULE_ALREADY{$start_module}->dbVNOMGetHierInst;
+  my @insts =  sort {$a cmp $b} @insts0 ;
+  foreach my $inst ( @insts) {
+    my @cur_bbox = ();
+    $cur_bbox[0] = 0; 
+    $cur_bbox[1] = 0; 
+    $cur_bbox[2] = $hierarchy_value; 
+    $cur_bbox[3] = $hierarchy_value; 
+    $PSEUDO_VINST_ALREADY{$start_module}{$inst}->dbPimDBSetInstRelBbox(@cur_bbox);
+    $PSEUDO_VINST_ALREADY{$start_module}{$inst}->dbPimDBSetInstStatus(PLACED);
+    $PSEUDO_VINST_ALREADY{$start_module}{$inst}->dbPimDBSetInstOrient(N);
+  }
+  foreach my $inst ( @insts) {
+    my $curr_module = $MODULE_ALREADY{$start_module}->dbVNOMGetHierInstCell($inst);
+    my $curr_module_floor_plan = $start_module."\/".$inst;
+    $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenSetFloorplan($curr_module_floor_plan);
+    $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenSetPhysicalDirty(1);
+  }
+  foreach my $inst ( @insts) {
+    my $curr_module = $MODULE_ALREADY{$start_module}->dbVNOMGetHierInstCell($inst);
+    my @output_pins = $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenGetOutput;
+    my @input_pins = $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenGetInput;
+    my @bidi_pins = $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenGetBidi;
+    my @total_pins = (); 
+    push(@total_pins, @output_pins, @input_pins, @bidi_pins);
+    foreach my $pin (@total_pins){
+      $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenWipePinRect($pin);
+      $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenSetPinStatus($pin, "PLACED");
+      my $pin_layer = "NONE";
+      my @bbox = (0, 0, $hierarchy_value, $hierarchy_value);
+      my $shape = join(" ", $pin_layer, @bbox);
+      $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenAddPinRect($pin, $shape);
+    }
+  }
+  foreach my $inst ( @insts) {
+    my $curr_module = $MODULE_ALREADY{$start_module}->dbVNOMGetHierInstCell($inst);
+    my $curr_module_floor_plan = $start_module."\/".$inst;
+    #&dbfTstgenUpdateFlplanFromPseudo($curr_module,$curr_module_floor_plan);
+  }
+  print "\nINFO-UTS : 005 : Done Placing TOP module $start_module using mpl" ;
+  #################################################################################
+  #Code for running mpl                                                           #
+  #Ends here.                                                                     #
+  #################################################################################
+
+
+  #&commitModule("-module",$start_module);
+
+#  &commitModule("-module",$start_module,"-floorplan",$start_fplan);
+  &commitModuleLocOnly("-module",$start_module,"-floorplan",$start_fplan);
+
+  #&dbfTstgenUpdateFlplanFromPseudo($start_module,$start_fplan);
+
+  print "\nINFO-UTS : 006 : Committed  TOP module " ;
+
+  my $full_path_name = "";
+  foreach my $inst ( @insts) {
+    &new_fire_placement_curr_instance($inst);
+  }
+}#sub new_place_and_commit_given_module_with_floorplan
+
+sub new_fire_placement_curr_instance
+{
+  my $full_path_name = $_[0] ;
+  my $instance_in_process = $full_path_name ;
+  if($full_path_name =~ /.*\/.*/) {
+    my @inst_names = split(/\//, $full_path_name);
+    $instance_in_process = $inst_names[$#inst_names];
+  }
+  print "\nINFO-UTS : 001 : Placing Hierachical instance : $full_path_name" ;
+  print "\nINFO-UTS : 002 : current instance is : $instance_in_process" ;
+
+  my $parent_module_inprocess = &new_get_parent_module($full_path_name);
+  print "\n INFO-UTS : 003 : parent_module_inprocess is $parent_module_inprocess";
+
+  my $cellref = $MODULE_ALREADY{$parent_module_inprocess}->dbVNOMGetHierInstCell($instance_in_process);
+  print "\nINFO-UTS : 004 : cell refence is $cellref";
+  my @hierInsts =  $MODULE_ALREADY{$cellref}->dbVNOMGetHierInst;
+  my @leafInsts = $MODULE_ALREADY{$cellref}->dbVNOMGetLeafInst;
+  if(($#hierInsts + $#leafInsts) < 0){
+    print "\nWARN-UTS : 005 : No instance found " ;
+    print "\nINFO-UTS : 006 : Placing Hierarchical instance not Fired : $full_path_name" ;
+    print "\nINFO-UTS : 007 : returning" ;
+    return ;
+  }
+
+  push(@list_instance_being_placed,$full_path_name);
+
+  my $global_top_module = $GLOBAL->dbfGlobalGetTOP();
+  my $curr_floor_plan_name = $global_top_module."\/".$full_path_name ; 
+  print "\nINFO-UTS : 008 : Current floorplan in new_fire_placement_curr_instance is $curr_floor_plan_name" ; 
+
+  #&editModule("-module",$cellref);
+
+  &editModule("-module",$cellref,"-floorplan",$curr_floor_plan_name);
+
+  #if (!exists $hash_of_modules_already_in_pseudoDB{$cellref}){
+  #  &editModule("-module",$cellref,"-floorplan",$curr_floor_plan_name);
+  #  $hash_of_modules_already_in_pseudoDB{$cellref} = 1;
+  #}elsif (exists $PSEUDO_MODULE_ALREADY{$cellref}){
+  #  $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenSetFloorplan($curr_floor_plan_name);
+  #}
+
+  #$PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenSetFloorplan($curr_floor_plan_name);
+
+  my @size = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetSize;
+  if(($size[2] - $size[0])<=0){
+    print "\nERR-UTS : 009 : size of the module is not set properly" ;
+    print "\n        It's size is "; 
+    print join ",",@size;
+    print "\n" ;
+    exit ;
+  }
+  if(($size[3] - $size[1])<=0){
+    print "\nERR-UTS : 010 : size of the module is not set properly" ;
+    print "\n        It's size is "; 
+    print join ",",@size;
+    print "\n" ;
+    exit ;
+  }
+
+  #&commitModule("-module",$cellref);
+#  &commitModule("-module",$cellref,"-floorplan",$curr_floor_plan_name);
+  &commitModuleLocOnly("-module",$cellref,"-floorplan",$curr_floor_plan_name);
+  #&dbfTstgenUpdateFlplanFromPseudo($cellref,$curr_floor_plan_name);
+
+  print "\nINFO-UTS : 011 : Placing Hierarchical instance Fired : \"$full_path_name\"" ;
+}#sub new_fire_placement_curr_instance
+
+sub new_read_placement_curr_instance
+{
+  my $full_path_name = $_[0] ;
+  my $instance_in_process = $full_path_name ;
+  if($full_path_name =~ /.*\/.*/) {
+    my @inst_names = split(/\//, $full_path_name);
+    $instance_in_process = $inst_names[$#inst_names];
+  }
+  my $hierarchy_value = 1;
+  print "\nINFO-UTS : 001 : Reading Hierachical instance placement : $full_path_name" ;
+  print "\nINFO-UTS : 002 : current instance is : $instance_in_process" ;
+
+  my $parent_module_inprocess = &new_get_parent_module($full_path_name);
+  print "\nINFO-UTS : 003 : parent_module_inprocess is $parent_module_inprocess";
+
+  my $cellref = $MODULE_ALREADY{$parent_module_inprocess}->dbVNOMGetHierInstCell($instance_in_process);
+  print "\nINFO-UTS : 004 : cell refence is $cellref";
+
+  my $global_top_module = $GLOBAL->dbfGlobalGetTOP();
+
+  my $curr_floor_plan_name = $global_top_module."\/".$full_path_name ; 
+  print "\nINFO-UTS : 005 : Current floorplan in new_read_placement_curr_instance is $curr_floor_plan_name" ; 
+
+  #&editModule("-module",$cellref);
+
+  &editModule("-module",$cellref,"-floorplan",$curr_floor_plan_name);
+  $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenSetPhysicalDirty(1);
+
+  #if (!exists $hash_of_modules_already_in_pseudoDB{$cellref}){
+  #  &editModule("-module",$cellref,"-floorplan",$curr_floor_plan_name);
+  #  #$hash_of_modules_already_in_pseudoDB{$cellref} = 1;
+  #}elsif (exists $PSEUDO_MODULE_ALREADY{$cellref}){
+  #  $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenSetFloorplan($curr_floor_plan_name);
+  #}
+
+  #$PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenSetFloorplan($curr_floor_plan_name);
+
+  $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenSetPhysicalDirty(1);
+  my @output_pins = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetOutput;
+  my @input_pins = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetInput;
+  my @bidi_pins = $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenGetBidi;
+  my @total_pins = (); 
+  push(@total_pins, @output_pins, @input_pins, @bidi_pins);
+  foreach my $pin (@total_pins){
+    $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenWipePinRect($pin);
+    $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenSetPinStatus($pin, "PLACED");
+    my $pin_layer = "NONE";
+    my @bbox = (0, 0, $hierarchy_value, $hierarchy_value);
+    my $shape = join(" ", $pin_layer, @bbox);
+    $PSEUDO_MODULE_ALREADY{$cellref}->dbaTstgenAddPinRect($pin, $shape);
+  }
+  my @insts0 =  $MODULE_ALREADY{$cellref}->dbVNOMGetHierInst;
+  my @insts =  sort {$a cmp $b} @insts0 ;
+  foreach my $inst ( @insts) {
+    my @cur_bbox = ();
+    $cur_bbox[0] = 0; 
+    $cur_bbox[1] = 0; 
+    $cur_bbox[2] = $hierarchy_value; 
+    $cur_bbox[3] = $hierarchy_value; 
+    $PSEUDO_VINST_ALREADY{$cellref}{$inst}->dbPimDBSetInstRelBbox(@cur_bbox);
+    $PSEUDO_VINST_ALREADY{$cellref}{$inst}->dbPimDBSetInstStatus(PLACED);
+    $PSEUDO_VINST_ALREADY{$cellref}{$inst}->dbPimDBSetInstOrient(N);
+
+  }
+  foreach my $inst ( @insts) {
+    my $curr_module = $MODULE_ALREADY{$cellref}->dbVNOMGetHierInstCell($inst);
+    my $curr_module_floor_plan = $curr_floor_plan_name."\/".$inst;
+    $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenSetFloorplan($curr_module_floor_plan);
+    $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenSetPhysicalDirty(1);
+  }
+  foreach my $inst ( @insts) {
+    my $curr_module = $MODULE_ALREADY{$cellref}->dbVNOMGetHierInstCell($inst);
+    my @output_pins = $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenGetOutput;
+    my @input_pins = $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenGetInput;
+    my @bidi_pins = $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenGetBidi;
+    my @total_pins ; 
+    push(@total_pins, @output_pins, @input_pins, @bidi_pins);
+    foreach my $pin (@total_pins){
+      $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenWipePinRect($pin);
+      $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenSetPinStatus($pin, "PLACED");
+      my $pin_layer = "NONE";
+      my @bbox = (0, 0, $hierarchy_value, $hierarchy_value);
+      my $shape = join(" ", $pin_layer, @bbox);
+      $PSEUDO_MODULE_ALREADY{$curr_module}->dbaTstgenAddPinRect($pin, $shape);
+    }
+  }
+  foreach my $inst ( @insts) {
+    my $curr_module = $MODULE_ALREADY{$cellref}->dbVNOMGetHierInstCell($inst);
+    my $curr_module_floor_plan = $curr_floor_plan_name."\/".$inst;
+    #&dbfTstgenUpdateFlplanFromPseudo($curr_module,$curr_module_floor_plan);
+  }
+
+#  &commitModule("-module",$cellref,"-floorplan",$curr_floor_plan_name);
+  &commitModuleLocOnly("-module",$cellref,"-floorplan",$curr_floor_plan_name);
+  #&dbfTstgenUpdateFlplanFromPseudo($cellref,$curr_floor_plan_name);
+  #&commitModule("-module",$cellref);
+
+  print "\nINFO-UTS : 006 : Done reading placement of Hierarchical instance  : \"$full_path_name\"" ;
+}#sub new_read_placement_curr_instance
+
+sub new_get_parent_module
+{
+  my $hier_inst_name = $_[0];
+  my @inst_names = ($hier_inst_name);
+  if($hier_inst_name =~ /.*\/.*/) {
+    @inst_names = split(/\//, $hier_inst_name);
+  }
+  my $parent_cell_ref =  $GLOBAL->dbfGlobalGetTOP();
+  for(my $i = 0 ; $i < $#inst_names ; $i++){
+    my $curr_inst = $inst_names[$i];  
+    $parent_cell_ref = $MODULE_ALREADY{$parent_cell_ref}->dbVNOMGetHierInstCell($curr_inst);
+  }
+  return $parent_cell_ref;
+}#sub new_get_parent_module
+
+sub new_run_placer_again_input_already
+{
+  my $full_path_name = $_[0] ;
+  my $instance_in_process = $full_path_name ;
+  if($full_path_name =~ /.*\/.*/) {
+    my @inst_names = split(/\//, $full_path_name);
+    $instance_in_process = $inst_names[$#inst_names];
+  }
+  my $parent_module_inprocess = &get_parent_module($full_path_name);
+  my $placeLogFileName = "mpl.log";
+  print "\nINFO-UTS : 001 : instance_in_process is $instance_in_process";
+  print "\nINFO-UTS : 002 : parent_module_inprocess is $parent_module_inprocess";
+  my $cellref = $MODULE_ALREADY{$parent_module_inprocess}->dbVNOMGetHierInstCell($instance_in_process);
+  $full_path_name =~ s/\//_/g;
+  my $INPUT_NET_FILE = "$cellref.txt";
+  my $NODE_FILE = "nodefile";
+  my $env_proton_home = $GLOBAL->dbfGlobalGetProtonHome;
+  chdir( "benaras/$full_path_name");
+  my $second_indicator_file_name = "second_indicator_${cellref}_${instance_in_process}";
+  open(WRITE,">$second_indicator_file_name");
+  print WRITE "Second time changed directory to run mpl on module $cellref and instance $instance_in_process \n";
+  close(WRITE);
+  #while(!(-e "$placeLogFileName")){ 
+  #  if (fork() == 0) {exec("$env_eqator_home/3RDBIN/mpl $INPUT_NET_FILE $NODE_FILE > $placeLogFileName&");}
+  #  if (fork() == 0) {exec("$env_proton_home/3RDBIN/mpl $INPUT_NET_FILE $NODE_FILE > $placeLogFileName&");}
+  #  sleep(5);
+  #}
+  #my $forked_pid_mpl ;
+  #undef $forked_pid_mpl ;
+  #if(!(-e "$placeLogFileName")){ 
+  #  while (!defined ($forked_pid_mpl = fork())){
+  #    print "\nCould not fork a new process for mpl" ;
+  #    sleep(5) ;
+  #  }
+  #  if ($forked_pid_mpl == 0)  {
+  #    exec("$env_eqator_home/3RDBIN/mpl $INPUT_NET_FILE $NODE_FILE > $placeLogFileName");
+  #    exec("$env_proton_home/3RDBIN/mpl $INPUT_NET_FILE $NODE_FILE > $placeLogFileName");
+  #  }else {
+  #    print "\nforked a new process for mpl\n" ;
+  #  }
+  #}
+  my $forked_pid_mpl ;
+  undef $forked_pid_mpl ;
+  if(!(-e "$placeLogFileName")){ 
+    while (!defined ($forked_pid_mpl = fork())){
+      print "\nWARN-UTS : 003 : Could not fork a new parent process for mpl" ;
+      sleep(5) ;
+    }
+    if ($forked_pid_mpl == 0)  {
+      #exec("$env_eqator_home/3RDBIN/mpl $INPUT_NET_FILE $NODE_FILE > $placeLogFileName");
+      exec("$env_proton_home/3RDBIN/mpl $INPUT_NET_FILE $NODE_FILE > $placeLogFileName");
+      #my $forked_pid_child_mpl ;
+      #undef $forked_pid_child_mpl ;
+      #while (!defined ($forked_pid_child_mpl = fork())){
+      #  print "\nCould not fork a new child process for mpl" ;
+      #  sleep(5) ;
+      #}
+      #if ($forked_pid_child_mpl == 0)  {
+      #  exec("$env_eqator_home/3RDBIN/mpl $INPUT_NET_FILE $NODE_FILE > $placeLogFileName");
+      #  exec("$env_proton_home/3RDBIN/mpl $INPUT_NET_FILE $NODE_FILE > $placeLogFileName");
+      #}else{
+      #  print "\nforked a new child process for mpl\n" ;
+      #  CORE::exit(0) ;
+      #}
+    }else {
+      #waitpid($forked_pid_mpl,0) ;
+      print "\nINFO-UTS : 004 : forked a new parent process for mpl\n" ;
+    }
+  }
+  chdir( "$toolCurrentDir");
+  print "\nINFO-UTS : 005 : Placing Hierarchical instance Fired : \"$full_path_name\"" ;
+}#sub new_run_placer_again_input_already
+
+1;

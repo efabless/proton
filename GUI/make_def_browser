@@ -1,0 +1,169 @@
+
+sub display_def_in_gui {
+use Tk;
+use Tk::Tree;
+my $property_definitions = "";
+my $rows = "";
+my $tracks = "";
+my $vias = "";
+my $pins = "";
+my $components = "";
+my $nets = "";
+my $blockages = "";
+my $specialnets = "";
+($property_definitions,$rows,$tracks,$vias,$pins,$components,$nets,$blockages,$specialnets) = &read_def_file_for_display($deffile);
+my $main = MainWindow->new(-title => "View Def" );
+$main->geometry("750x750");
+my $tree = $main->ScrlTree(
+    -font       => 'Times 10',
+    -itemtype   => 'text',
+    -separator  => '/',
+    -scrollbars => "se",
+    -selectmode => 'single',
+    -drawbranch => 0,
+);
+
+$tree->pack( -fill => 'both', -expand => 1 );
+
+$tree->add ('root 1', -text => 'PROPERTY DEFINITIONS', -state => 'normal' ) if($property_definitions ne "");
+$tree->add ('root 1/top 1', -text => $property_definitions, -state => 'normal' ) if($property_definitions ne "");
+$tree->add ('root 2', -text => 'ROWS', -state => 'normal' ) if($rows ne "");
+$tree->add ('root 2/top 1', -text => $rows, -state => 'normal' ) if($rows ne "");
+$tree->add ('root 3', -text => 'TRACKS', -state => 'normal' ) if($tracks ne "");
+$tree->add ('root 3/top 1', -text => $tracks, -state => 'normal' ) if($tracks ne "");
+$tree->add ('root 4', -text => 'COMPONENTS', -state => 'normal' ) if($components ne "");
+$tree->add ('root 4/top 1', -text => $components, -state => 'normal' ) if($components ne "");
+$tree->add ('root 5', -text => 'PINS', -state => 'normal' ) if($pins ne "");
+$tree->add ('root 5/top 1', -text => $pins, -state => 'normal' ) if($pins ne "");
+$tree->add ('root 6', -text => 'BLOCKAGES', -state => 'normal' ) if($blockages ne "");
+$tree->add ('root 6/top 1', -text => $blockages, -state => 'normal' ) if($blockages ne "");
+$tree->add ('root 7', -text => 'SPECIALNETS', -state => 'normal' ) if($specialnets ne "");
+$tree->add ('root 7/top 1', -text => $specialnets, -state => 'normal' ) if($specialnets ne "");
+$tree->add ('root 8', -text => 'NETS', -state => 'normal' ) if($nets ne "");
+$tree->add ('root 8/top 1', -text => $nets, -state => 'normal' ) if($nets ne "");
+closeTree ($tree);
+
+}#sub display_def_in_gui
+
+sub openTree {
+    my $tree = shift;
+    my ( $entryPath, $openChildren ) = @_;
+    my @children = $tree->info( children => $entryPath );
+
+    return if !@children;
+
+    for (@children) {
+        openTree( $tree, $_, 1 );
+        $tree->show( 'entry' => $_ ) if $openChildren;
+    }
+    $tree->setmode( $entryPath, 'close' ) if length $entryPath;
+}
+
+sub closeTree {
+    my $tree = shift;
+    my ( $entryPath, $hideChildren ) = @_;
+    my @children = $tree->info( children => $entryPath );
+
+    return if !@children;
+
+    for (@children) {
+        closeTree( $tree, $_, 1 );
+        $tree->hide( 'entry' => $_ ) if $hideChildren;
+    }
+    $tree->setmode( $entryPath, 'open' ) if length $entryPath;
+}
+
+sub read_def_file_for_display {
+
+my $file = $_[0];
+my $property_definitions = "";
+my $rows = "";
+my $tracks = "";
+my $vias = "";
+my $pins = "";
+my $components = "";
+my $nets = "";
+my $blockages = "";
+my $specialnets = "";
+my $start_read_pin_section = 0;
+my $start_read_component_section = 0;
+my $start_read_net_section = 0;
+my $start_read_specialnet_section = 0;
+my $start_read_blockage_section = 0;
+
+open(READ, "$file");
+while(<READ>){
+  if( $_ =~ /^\s*#/ ){
+    next; 
+  }else{
+    if( $_ =~ /^VERSION\b/){ 
+      $property_definitions = $property_definitions.$_;
+    }elsif( $_ =~ /^NAMESCASESENSITIVE\b/){
+        $property_definitions = $property_definitions.$_;
+    }elsif( $_ =~ /^DIVIDERCHAR\b/){
+        $property_definitions = $property_definitions.$_;
+    }elsif( $_ =~ /^BUSBITCHARS\b/){
+        $property_definitions = $property_definitions.$_;
+    }elsif( $_ =~ /^UNITS DISTANCE MICRONS\b/){
+        $property_definitions = $property_definitions.$_;
+    }elsif( $_ =~ /^DESIGN\b/){
+        $property_definitions = $property_definitions.$_;
+    }elsif( $_ =~ /^DIEAREA\b/){
+        $property_definitions = $property_definitions.$_;
+    }elsif( $_ =~ /^ROW\b/){
+        $rows = $rows.$_;
+    }elsif( $_ =~ /^TRACKS\b/){
+        $tracks = $tracks.$_;
+    }elsif( $_ =~ /^PINS\b/){
+        $start_read_pin_section = 1;
+        $pins = $pins.$_;
+    }elsif( $_ =~ /^END PINS\s*$/){
+        $start_read_pin_section = 0;
+    }elsif( $_ =~ /^COMPONENTS\b/){
+        $start_read_component_section = 1;
+        $components = $components.$_;
+    }elsif( $_ =~ /^END COMPONENTS\s*$/){
+        $start_read_component_section = 0;
+    }elsif( $_ =~ /^NETS\b/){
+        $start_read_net_section = 1;
+        $nets = $nets.$_;
+    }elsif( $_ =~ /^END NETS\s*$/){
+        $start_read_net_section = 0;
+    }elsif( $_ =~ /^BLOCKAGES\b/){
+        $start_read_blockage_section = 1;
+        $blockages = $blockages.$_;
+    }elsif( $_ =~ /^END BLOCKAGES\s*$/){
+        $start_read_blockage_section = 0;
+    }elsif( $_ =~ /^SPECIALNETS\b/){
+        $start_read_specialnet_section = 1;
+        $specialnets = $specialnets.$_;
+    }elsif( $_ =~ /^END SPECIALNETS\s*$/){
+        $start_read_specialnet_section = 0;
+    }
+    else{
+        if($start_read_pin_section == 1){
+          $pins = $pins.$_;
+        }elsif($start_read_component_section == 1){
+          $components = $components.$_;
+        }elsif($start_read_net_section == 1){
+          $nets = $nets.$_;
+        }elsif($start_read_specialnet_section == 1){
+          $specialnets = $specialnets.$_;
+        }elsif($start_read_blockage_section == 1){
+          $blockages = $blockages.$_;
+        }
+    } 
+  }
+}#while
+close(READ);
+return($property_definitions,$rows,$tracks,$vias,$pins,$components,$nets,$blockages,$specialnets);
+}#sub
+
+sub popup_display_def_in_gui {
+my @types = (["Config Files", '.def'],
+             ["All Files", "*"]);
+$deffile = $top->getOpenFile(-filetypes =>\@types,
+                              -defaultextension => '.def'); 
+&display_def_in_gui($deffile) if($deffile ne "");
+}#sub popup_display_def_in_gui
+1;

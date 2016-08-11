@@ -1,0 +1,67 @@
+
+
+
+sub write_udn {
+
+my $noOfArguments = @_;
+
+if($noOfArguments < 2 || $_[0] eq '-h'){ print "Usage : write_udn -outLib <out file lib>\n";
+                        print "                  -cellList <cellList  >\n";
+                      }else{
+for(my $x = 0; $x < $noOfArguments; $x++){
+if($_[$x] =~ /-outLib/){$OUTFILE = $_[$x+1];}
+if($_[$x] =~ /-cellList/){$CELLLIST = $_[$x+1];}
+                                         }#for correct no of Arguments
+
+open(WRITE,">$OUTFILE");
+print WRITE "#FILE written from proton verion-$TOOL_VERSION\n";
+open(READ,"$CELLLIST");
+while(<READ>){
+
+chomp;
+$macroName = $_;
+print "INFO-PAR-UDN : 001 : Processing $macroName\n";
+
+if(exists $PLDB{$macroName}){
+              print WRITE "\* $macroName\n";
+              print WRITE "\.bbox $_\n";
+              print WRITE "\+ ";
+              $output_list = "";
+              $input_list  = "";
+
+my @pins = $PLDB{$macroName}->dbMdbGetPins;
+
+      foreach my $pinName (@pins){
+              my $dir = $PLDB{$macroName}->dbMdbGetPinDir($pinName);  
+              if ($dir == 0 ) { $input_list = "$input_list $pinName";
+              print WRITE "$pinName ";
+                              }
+              if ($dir == 1 ) { $output_list = "$output_list $pinName";
+              print WRITE "$pinName ";
+                              }
+                     }#foreach
+              print WRITE "\n";
+              print WRITE "\n";
+              print WRITE "bb_set_output -vddRes 1000 -gndRes 1000 \{ \\\n";
+              print WRITE "$output_list \\\n";
+              print WRITE "\} \;\n";
+              print WRITE "\n";
+
+              print WRITE "bb_set_input -vhtolerance 1.08 -vltolerance 0.12 -cap 0.008190e-12 \{ \\\n";
+              print WRITE "$input_list \\\n";
+              print WRITE "\} \;\n";
+
+              print WRITE "\.endbb\n";
+                         }else {
+              print "ERR-PAR-UDN : 002 : $_ does not exist\n";
+                        }
+
+}#while reading the cellist
+close(READ);
+close(WRITE);
+
+                           }#if correct no of Arguments
+
+}#sub write_udn
+
+1;

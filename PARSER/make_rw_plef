@@ -1,0 +1,123 @@
+#!/usr/local/bin/perl -w
+
+
+################################################################################
+####   perl pgm to read the plef file                                       ####
+################################################################################
+sub read_plef {
+
+my $noOfArguments = @_;
+
+if($noOfArguments > 1 || $_[0] eq '-h') { 
+print "usage : read_plef <plef_file_name>\n";
+return (1);
+}
+if($noOfArguments < 1 || $_[0] eq '-h') { 
+print  "usage : read_plef <plef_file_name>\n";
+return (1);
+}
+
+
+if($noOfArguments == 1) { 
+my $INPUT_PLEF_FILE = $_[0];
+my $noOfInputs = 0;
+my $noOfOutputs = 0;
+
+@MACROS = (\%MACROS_ALREADY, \%MACROS_NEWADDED);
+
+open (READ_INPUT_PLEF, "$INPUT_PLEF_FILE") || print "ERR-PAR-PLEF : 001 : incorrect file name  $INPUT_PLEF_FILE : no such file or directory\n";
+%macroArea = ();
+%macroInputPins = ();
+%macroOutputPins = ();
+
+while(<READ_INPUT_PLEF>){
+chomp($_);
+if($_ =~ /^\#/){ } else {
+($cell, $width, $height, $noOfInputs)=(split(/\s+/, $_))[0,1,2,3];
+$MACROS_ALREADY{$cell}{area} = $width*$height;
+if($noOfInputs > 0){$macroInputPins{$cell} = $noOfInputs;}
+($noOfOutputs) = (split(/\s+/, $_))[4 + $noOfInputs];
+if($noOfOutputs > 0){$macroOutputPins{$cell} = $noOfOutputs;}
+} # if commented
+}# while
+close(READ_INPUT_PLEF);
+return(%macroArea);
+} # if correct arguments
+else { print "usage : read_plef <plef_file_name>\n";}
+} # sub read_plef
+
+sub make_plef {
+############################################################################################
+####   Perl pgm to convert LEF files to plef  files                                     ####
+############################################################################################
+my $noOfArguments = @_;
+
+
+if ($noOfArguments == 0)  {
+    print "Usage: make_plef -lef <input_file> -plef <output_file>\n";
+return (1);
+}
+if ($noOfArguments < 2 || $_[0] eq '-h')  {
+    print "Usage: make_plef -lef <input_file> -plef <output_file>\n";
+return (1);
+}
+if ($noOfArguments > 4 || $_[0] eq '-h')  {
+    print "Usage: make_plef -lef <input_file> -plef <output_file>\n";
+return (1);
+}
+
+my $INPUT_LEF_FILE = "";
+my $OUTPUT_PLEF_FILE = "";
+
+for(my $yy = 0; $yy < $noOfArguments; $yy++){
+if($_[$yy] eq "-lef"){$INPUT_LEF_FILE = $_[$yy + 1];}
+if($_[$yy] eq "-plef"){$OUTPUT_PLEF_FILE = $_[$yy + 1];}
+}
+
+chomp($INPUT_LEF_FILE);
+chomp($OUTPUT_PLEF_FILE);
+
+open(READ_LEF, "$INPUT_LEF_FILE") || print "WARN-PAR-PLEF : 001 : No such file $INPUT_LEF_FILE\n";
+if($OUTPUT_PLEF_FILE =~ /^$/){ $OUTPUT_PLEF_FILE = DefaultPlef;}
+print "INFO-PAR-PLEF : 002 : output plef file is $OUTPUT_PLEF_FILE\n";
+
+open(WRITE_PLEF, ">$OUTPUT_PLEF_FILE");
+##########################################################################################
+####     setting the local variable                                                   ####
+##########################################################################################
+my $InputPins = "";
+my $OutputPins = "";
+my $pinType = "";
+my $pinName = "";
+my $macroName = "";
+my $incount = 0;
+my $outcount = 0;
+
+##########################################################################################
+#### reading LEF file to extract relevent info AREA / PINS /                          ####
+##########################################################################################
+
+while(<READ_LEF>){
+
+$_ =~ s/^\s+//;
+if($_ =~ /^MACRO\b/){($macroName)=(split(/\s+/, $_))[1];}
+if(/^MACRO $macroName/ ... /^END $macroName/){
+if($_ =~ /\bSIZE\b/){ ($width, $height) = (split(/\s+/, $_))[1,3];}
+if($_ =~ /\bPIN\b/){ ($pinName) = (split(/\s+/, $_))[1];}
+if(/PIN $pinName/ ... /END $pinName/){if($_ =~ /\bDIRECTION\b/){ ($pinType)=(split(/\s+/,$_))[1];
+                                      if($pinType eq INPUT){$InputPins = "$InputPins $pinName"; $incount++;}
+                                      if($pinType eq OUTPUT){$OutputPins = "$OutputPins $pinName"; $outcount++;}}
+                                      }
+if($_ =~ /^END $macroName\b/){ print WRITE_PLEF "$macroName $width $height $incount $InputPins $outcount $OutputPins\n";
+$InputPins=""; $OutputPins=""; $pinType=""; $pinName=""; $macroName=""; $width=""; $height=""; $incount=0; $outcount=0;}
+}# macro loop
+}# while lef
+
+close(READ_LEF);
+close(WRITE_PLEF);
+} # sub make_plef
+
+
+
+
+1;

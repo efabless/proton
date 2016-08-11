@@ -1,0 +1,353 @@
+
+sub read_congestion_map {
+#use Benchmark;
+#my $t0 = new Benchmark;
+#****f* /read_congestion_map
+# NAME
+#   read_congestion_map
+# FUNCTION
+#    reads  boxroute graph file and result file and display the boxes in gui with different colours  according to no. of routing nets in boxes.
+#    read_congestion_map has the following command line options .
+# SYNOPSIS
+# read_congestion_map -f <fileName with extension .grf> <fileName with extension .route>
+# INPUTS
+#      options :
+#      	-f <fileName with extension .grf> : graph file by which we calulate grid size.
+#          <fileName with extension .route> : result file by which we get the routing boxes. 
+# OUTPUTS
+#      Routed output will display in gui. 
+#****
+
+#------parsing the files--------------------#  
+
+my $noOfArguments = @_;
+if($noOfArguments < 3 || $_[0] eq '-h') { print "Usage : read_congestion_map -f <fileName with ext.grf> <fileName with ext.route> \n";}
+else {
+  for(my $i = 0; $i < $noOfArguments; $i++){
+      if($_[$i] eq "-f"){$grfFile = $_[$i+1];
+                         $resFile = $_[$i+2];}
+                                             } # for
+
+open(FH_BNC, $grfFile);
+open(FH_RUT, $resFile);
+print "INFO-DES-RED_CONG_MAP : 001 : reading congestion map files $grfFile and $resFile\n";
+while($bnc=<FH_BNC>)
+{
+  if($bnc=~/^grid\s+(\d+)\s+(\d+)/)
+  {
+    $NoOfColoumns = $1;
+    $NoOfRows  = $2;
+  }
+  elsif($bnc=~/^vertical capacity\s+(\d+)/)
+  {
+    my $vc = $1;
+    $GLOBAL->dbGlobalSetVerCapacity($vc); 
+   # print "VC:$vc ";
+  }
+  elsif($bnc=~/^horizontal capacity\s+(\d+)/)
+  {
+    my $hc = $1;
+    $GLOBAL->dbGlobalSetHorCapacity($hc);
+    #print "HC:$hc ";
+  }
+  else{last;}
+}#while reading grf file
+############################################################################################
+#------making Hash of vertical routing boxes & Horizontal routing boxes--------------------#  
+############################################################################################
+
+   @V_array_rut = ();
+   @H_array_rut = ();
+  while($rut=<FH_RUT>)
+    {
+      if($rut=~/^net(\d+)\s+(\d+)\s+(\d+)\s*\w*\s*/){
+         $net_name = $1;
+                                                      }
+
+      if($rut=~/\((\d+),(\d+)\)-\((\d+),(\d+)\)\s*\w*\s*/ ||$rut=~/^o\s+\((\d+),(\d+)\)-\((\d+),(\d+)\)\s+(\d+)/ )
+             {
+              if($1==$3)  #vertical wire
+                  {
+                    if($2<$4){  $min=$2;$max=$4;}
+                    else     {  $min=$4;$max=$2;}
+                
+                    for($i=$min;$i<=$max;$i++)
+                     {
+                    $vbox = $1+$i*$NoOfColoumns;
+                    $V_array_rut[$vbox] +=1;
+                    #$vbox = $1+$i*$NoOfColoumns;
+                    #$j=$V_hash_rut{$vbox};
+                    #$V_hash_rut{$vbox}=$j+1;
+                     }#for
+                   }#if 
+
+             elsif($2==$4) #horizontal wire
+                {
+                    if($1<$3){  $min=$1;$max=$3;}
+                    else     {  $min=$3;$max=$1;}
+
+                    for($i=$min;$i<=$max;$i++)
+                     {
+                     $hbox = $i+$2*$NoOfColoumns;
+                     $H_array_rut[$hbox] +=1;
+                    #$hbox = $i+$2*$NoOfColoumns;
+                    #$j = $H_hash_rut{$hbox};  
+                    #$H_hash_rut{$hbox}=$j+1;
+                     }#for
+                 }#elsif
+
+             }#if 'o' found 
+     }#while
+}#else
+#my $t1 = new Benchmark;
+#my $td = timediff($t1, $t0);
+#print "subroutine read_congestion_map took:",timestr($td),"\n";
+}#sub read_congestion_map
+###############################################################################################################################
+
+
+sub display_congestion_map {
+#use Benchmark;
+#my $t0 = new Benchmark;
+
+#****f* /display_congestion_map
+# NAME
+#   display_congestion_map
+# FUNCTION
+#   display the boxes in gui with different colours  according to no. of routing nets in boxes.
+#   display_congestion_map has the following command line options .
+# SYNOPSIS
+#   display_congestion_map first argument(1/0) second argument(1/0)
+# INPUTS
+#      options :
+#      	 1/0(for vertical congestion display) 1/0(for horizontal congestion display).
+#          
+# OUTPUTS
+#      Routed output will display in gui. 
+#****
+my $noOfArg = @_;
+if ($noOfArg < 2 || $_[0] eq '-h') {print "usage: display_congestion_map <1/0> <1/0>\n";
+                                    print "note:- first argument is for vertical congestion display\n";
+                                    print "       second argument is for horizontal congestion display\n";}
+else {
+my $vcong = $_[0];
+my $hcong = $_[1];
+my $vc = $GLOBAL->dbGlobalGetVerCapacity;
+my $hc = $GLOBAL->dbGlobalGetHorCapacity;
+print "INFO-DES-DIS_CONG_MAP : 001 : horcap $hc and vercap $vc\n";
+#-------------------------Color Hash----------------------------------------------#
+
+my %RColor =(1=>'chartreuse',2=>'violet',3=>'pink', 4=>'HotPink', 5=>'gold',6=>'RosyBrown',7=>'peru',8=>'cyan',9=>'DarkGoldenrod',
+            10=>'aquamarine',11=>'SeaGreen',12=>'Alice Blue',13=>'medium purple',14=>'purple',15=>'light blue',16=>'light steel blue',            17=>'MediumBlue',18=>'CornflowerBlue',19=>'BlueViolet',20=>'CadetBlue',21=>'DodgerBlue',22=>'blue',23=>'RoyalBlue',
+            24=>'GreenYellow',25=>'SeaGreen',26=>'green',27=>'dark olive green',28=>'ForestGreen',29=>'LawnGreen',30=>'yellow',
+            31=>'orange',32=>'dark orange',33=>'dark khaki',34=>'chocolate',35=>'wheat',36=>'magenta',37=>'dark magenta',38=>'maroon',            39=>'IndianRed',40=>'red',41=>'thistle',42=>'turquoise',43=>'wheat',44=>'WhiteSmoke',45=>'PaleVioletRed',46=>'peru',
+            47=>'PowderBlue',48=>'RosyBrown',49=>'SaddleBrown',50=>'medium spring green'
+            );
+
+###################################
+## the canvas area reamain the same : always  500 by 500
+##################################
+
+$box = [0,0,540,540];
+$guiCanvasWidth = 540;
+$guiCanvasHeight = 540;
+
+my $MulFactorX= 500/$NoOfColoumns;
+my $MulFactorY= 500/$NoOfRows;
+if ($MulFactorX >= $MulFactorY) {$MulFactor = $MulFactorY}
+else {$MulFactor = $MulFactorX}
+
+# a margin of 20 units is given on each side ..
+my $llx = 20;
+my $lly = 20;
+my $urx = $llx + $NoOfColoumns*$MulFactor;
+my $ury = $lly + $NoOfRows*$MulFactor;
+
+$design_worldcanvas->createRectangle($llx,$lly,$urx,$ury, -outline,"green");
+#######################################################################################################
+######## display the routing boxes ##########
+#######################################################################################################
+
+ for (my $i=0; $i< $NoOfRows ;$i++){
+         for (my $j=0; $j < $NoOfColoumns ; $j++) {
+                  $key = $j+$i*$NoOfColoumns;
+               my $colour = 'red';
+
+               if ( $vcong == 1 ) {
+                    if (($V_array_rut[$key] ne "") && ($V_array_rut[$key] > $vc)){
+                          my $vlx = $llx + $j*$MulFactor; 
+                          my $vly = $lly + $i*$MulFactor;
+                          my $vux = $vlx + $MulFactor;
+                          my $vuy = $vly + $MulFactor;
+                if (exists $RColor{$V_array_rut[$key]-$vc} ) {$colour = $RColor{$V_array_rut[$key]-$vc}; }
+  $design_worldcanvas->createRectangle($vlx,$vly,$vux,$vuy, -outline,$colour,-tags=>"VCONG",-fill,$colour,-stipple,"gray12");
+     
+                                                                }#if in Vertical routing 
+                                   }#if vcong == 1
+
+              if ( $hcong == 1 ) {
+                   if (($H_array_rut[$key] ne "") && ($H_array_rut[$key] > $hc)){
+                          my $vlx = $llx + $j*$MulFactor; 
+                          my $vly = $lly + $i*$MulFactor;
+                          my $vux = $vlx + $MulFactor;
+                          my $vuy = $vly + $MulFactor;
+               if (exists $RColor{$H_array_rut[$key]-$hc} ) {$colour = $RColor{$H_array_rut[$key]-$hc}; }
+   
+  $design_worldcanvas->createRectangle($vlx,$vly,$vux,$vuy, -outline,$colour,-tags=> "HCONG",-fill,$colour,-stipple,"gray12");
+                                                                  }#if in Horizontal routing 
+                                      }# if hcong == 1
+
+
+
+                                                   }#for rows
+                                     
+                                    }#for columns
+}#else
+#my $t1 = new Benchmark;
+#my $td = timediff($t1, $t0);
+#print "subroutine display_congestion_map took:",timestr($td),"\n";
+$design_worldcanvas->createRectangle(0,0,540,540, -outline,"black");
+$design_worldcanvas->viewAll;
+my @box_org = $design_worldcanvas->getView();
+&design_ZoomIn_ZoomOut_new($design_worldcanvas,\@box_org);
+}#sub display_congestion_map
+
+########################################################################################################
+#-----------------------------------------------------------------------------------------------------------------------------#
+sub hashValue_Ascendingnum {
+      $per{$a} <=> $per{$b};
+}#sub hashValue_Ascendingnum
+
+sub routing_percentage{
+
+#****f* /routing_percentage
+# NAME
+#     routing_percentage
+# FUNCTION
+#     routing percentage of preferdir and nonpreferdir 
+# Assumptions 
+#     working only routed nets   
+# SYNOPSIS
+#     routing_percentage -netsName <{list of nets name}> or
+#     routing_percentage {-allnets} for all nets
+# INPUTS
+#     options:
+#     -netsName <{list of nets name}> :for some nets or
+#     -allnets: for all nets
+# OUTPUTS
+#     print layerName,layerNumber,layerDirection,PreferDirection%,NonPreferDirection%
+#****
+
+my $noOfArguments = @_;
+if ($noOfArguments < 1 || $_[0] eq '-h'){print "Usage : -netsName <{list of netNaame}>\n";
+                                         print "        -allnets <{all nets}> \n";
+                                               }#if
+else {
+my $GROUP_NETS = 0;
+my $ALL_NETS = 0;
+for(my $i = 0; $i < $noOfArguments; $i++){
+    if ($_[$i] eq "-netsName"){$nets = $_[$i+1];
+    $nets =~ s/\{\s*//;
+    $nets =~ s/\s*\}//;
+    @nets = split(/\,/,$nets);
+    $GROUP_NETS = 1;}
+    elsif($_[$i] eq "-allnets"){$ALL_NETS = 1;} 
+                              }#for
+my @Prefdir = ();
+my @Nonprefdir = ();
+my $tmhd = 0 ;
+if ($GROUP_NETS ==1){
+foreach my $nets (@nets) {
+  if (exists $NETS_ROUTING_ALREADY{$nets}){
+      my @routes = $NETS_ROUTING_ALREADY{$nets}->dbNetRoutingDBGetRegularRoute;
+      foreach $rl (@routes){
+          my $routeLayer = (split(/\s+/,$rl))[0];
+          my $routeLn = $PTDB{$routeLayer}->dbTechGetLayerNum;
+          my $routeLayerPrefDir = $PTDB{$routeLayer}->dbTechGetLayerDir;
+          my @routeBox = &xformNetSegToPathSeg($rl);
+          my $routeXLength = ($routeBox[2] - $routeBox[0]);
+          my $routeYLength = ($routeBox[3] - $routeBox[1]);
+             $RouteSegLength = $routeXLength + $routeYLength;
+             $tmhd = $tmhd + $RouteSegLength;
+          if ($routeSegYLength == 0 ){
+            if ( $routeLayerPrefDir eq "HORIZONTAL" ){
+                 $Prefdir[$routeLn] = $Prefdir[$routeLn] + $routeXLength;
+                                                         }#if route dir
+            else { 
+                 $Nonprefdir[$routeLn] = $Nonprefdir[$routeLn] + $routeXLength;
+                                                         }#else
+                                                     }#if route length
+          if ($routeSegXLength == 0 ){
+            if ($routeLayerPrefDir eq "VERTICAL"){
+                $Prefdir[$routeLn] = $Prefdir[$routeLn] + $routeYLength;
+                                                   }#if route dir
+            else {
+                 $Nonprefdir[$routeLn] = $Nonprefdir[$routeLn] + $routeYLength;
+                                               }#else
+                                             }# if route length
+                                           }#foreach route
+                                        }#if exists
+                                    }#foreach   
+                                  }#if group nets
+if ($ALL_NETS == 1){
+foreach my $nets (keys %NETS_ALREADY) {
+  if (exists $NETS_ROUTING_ALREADY{$nets}){
+      my @routes = $NETS_ROUTING_ALREADY{$nets}->dbNetRoutingDBGetRegularRoute;
+      foreach $rl (@routes){
+          my $routeLayer = (split(/\s+/,$rl))[0];
+          my $routeLn = $PTDB{$routeLayer}->dbTechGetLayerNum;
+          my $routeLayerPrefDir = $PTDB{$routeLayer}->dbTechGetLayerDir;
+          my @routeBox = &xformNetSegToPathSeg($rl);
+          my $routeXLength = ($routeBox[2] - $routeBox[0]);
+          my $routeYLength = ($routeBox[3] - $routeBox[1]);
+             $RouteSegLength = $routeXLength + $routeYLength;
+             $tmhd = $tmhd + $RouteSegLength;
+          if ($routeSegYLength == 0 ){
+            if ( $routeLayerPrefDir eq "HORIZONTAL" ){
+                 $Prefdir[$routeLn] = $Prefdir[$routeLn] + $routeXLength;
+                                                      }#if route dir
+            else {
+                 $Nonprefdir[$routeLn] = $Nonprefdir[$routeLn] + $routeXLength;
+                                                         }#else
+                                                   }#if route length
+          if ($routeSegXLength == 0 ){
+             if ($routeLayerPrefDir eq "VERTICAL"){
+                 $Prefdir[$routeLn] = $Prefdir[$routeLn] + $routeYLength;
+                                                   }#if route dir
+             else {
+                 $Nonprefdir[$routeLn] = $Nonprefdir[$routeLn] + $routeYLength;
+                                               }#else
+                                             }#if route length
+                                           }#foreach route
+                                        }#if exists
+                                    }#foreach   
+                                  }#if all nets
+foreach $layer_name (keys %PTDB){
+$LNum = $PTDB{$layer_name}->dbTechGetLayerNum;
+$per{$layer_name} = $LNum;
+                           }#foreach
+write PER_TOP;
+select (STDOUT);
+$~ = "PER";
+$P = @Nonprefdir;
+for ( my $i = 0; $i<$P; $i++){
+      my @Key = sort hashValue_Ascendingnum(keys (%per));
+         $LayerDir = $PTDB{$Key[$i]}->dbTechGetLayerDir;
+      if (( $LayerDir eq "HORIZONTAL")|| ($LayerDir eq "VERTICAL")){ 
+         $perfer = $Prefdir[$i]*100/$tmhd;
+         $nonprefer = $Nonprefdir[$i]*100/$tmhd;
+write();
+format PER =
+@<<<<<<<<          @##           @<<<<<<<<<<          @##.##           @##.##
+$Key[$i],          $i,            $LayerDir,           $perfer,         $nonprefer,
+.
+                                                 }#if direction
+                                           }#for
+format PER_TOP = 
+-------------------------------------------------------------------------------------------------------
+LayerName         LayerNo         Direction            Prefer%           NonPrefer%
+-------------------------------------------------------------------------------------------------------
+.
+}#else
+}#sub routing_percentage 
+1;       

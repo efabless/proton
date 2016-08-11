@@ -1,0 +1,210 @@
+
+sub set_global_vars {
+
+$GLOBAL->dbfGlobalSetDBU($DEF_DATABASE_UNIT);
+
+}# sub set_global_vars
+
+
+sub round {
+my($number) = shift;
+return int($number +0.5 *($number <=> 0 ) );
+}
+
+sub getInfo {
+
+my $PINFO = 0;
+my $TINFO = 0;
+
+my $noOfArguments = @_;
+if( $noOfArguments < 2 || $_[0] eq '-h') { print "Usage : getInfo -physical \n";
+                           print "                -timing\n";
+                           print "                -cell < cellName >\n";
+                         }
+else {
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "-physical"){$PINFO = 1;}
+if($_[$i] eq "-timing"){$TINFO = 1;}
+if($_[$i] eq "-cell"){$cellName = $_[$i+1];}
+                                         } # for
+
+##################################################################################
+
+if ( $PINFO == 1 ) {
+         if( exists $PLDB{$cellName} ) {
+                   #  print "Cell $cellName is found\n";
+                      $PLDB{$cellName}->dbgMdbGetSize; 
+                      $PLDB{$cellName}->dbgMdbGetOrient; 
+                      $PLDB{$cellName}->dbgMdbGetPins; 
+                      $PLDB{$cellName}->dbgMdbGetPinDir(D); 
+                      $PLDB{$cellName}->dbgMdbGetPinRect(D); 
+                                       }
+         else { print "WARN : cell $cellName is not in database\n";
+              }
+
+                        }# if getting physical info
+
+
+
+}# if correct arguments
+
+
+
+
+
+}#sub getInfo
+
+sub findRectOverlap_old {
+#print "Finding overlap between 2 rectangles\n" if ($DEBUG);
+my @overlapRect = ();
+my @rect1 = ();
+for ($x = 0; $x < 4; $x++ ) { push(@rect1,(shift @_));}
+my @rect2 = @_;
+#print join ",", @rect1; print "\n";
+#print join ",", @rect2; print "\n\n";
+   if ( $rect1[0] < $rect2[0] && $rect1[2] < $rect2[0] ) {
+                                                         } # if rect1 is completely left of rect2
+elsif ( $rect1[0] > $rect2[2] && $rect1[2] > $rect2[2] ) {
+                                                         }# if rect1 is completely right of rect2
+elsif ( $rect1[1] < $rect2[1] && $rect1[3] < $rect2[1] ) {
+                                                         }# if rect1 is completely below of rect2
+elsif ( $rect1[1] > $rect2[3] && $rect1[3] > $rect2[3] ) {
+                                                         }# if rect1 is completely top of rect2
+else {
+print "Yes! overlap found\n" if($DEBUG);
+if($DEBUG) {
+print join ",", @rect1; print "\n";
+print join ",", @rect2; print "\n\n";
+           }
+@overlapRect = (1,1,1,1);
+     }# possibly overlap
+return(@overlapRect);
+}#sub findRectOverlap_old
+
+
+sub dbLinePairIntersect {
+my @L1 = ();
+for ($x = 0; $x < 2; $x++ ) { push(@L1,(shift @_));}
+my @L2 = @_;
+
+
+
+
+}#sub dbLinePairIntersect
+
+
+sub findRectOverlap {
+
+#print "Mansi Finding overlap between 2 rectangles\n" if ($DEBUG);
+
+my @overlapRect = ();
+my @rect1 = ();
+
+for ($x = 0; $x < 4; $x++ ) { push(@rect1,(shift @_));}
+my @rect2 = @_;
+#print join ",", @rect1; print "\n";
+#print join ",", @rect2; print "\n\n";
+my $xmax1 ;
+my $xmin1 ;
+my $ymax1 ;
+my $ymin1 ;
+
+my $xmax2 ;
+my $xmin2 ;
+my $ymax2 ;
+my $ymin2 ;
+
+my $ovrlp_x1 ;
+my $ovrlp_y1 ;
+my $ovrlp_x2 ;
+my $ovrlp_y2 ;
+
+if ( $rect1[0] > $rect1[2] ) {
+  $xmax1 = $rect1[0];
+  $xmin1 = $rect1[2];
+} else {
+  $xmax1 = $rect1[2];
+  $xmin1 = $rect1[0];
+}
+
+if ( $rect2[0] > $rect2[2] ) {
+  $xmax2 = $rect2[0];
+  $xmin2 = $rect2[2];
+} else {
+   $xmax2 = $rect2[2];
+   $xmin2 = $rect2[0];
+}
+
+if ( $xmax1 <= $xmin2) {
+   #print "Yes! overlap  in x axis not found\n" if($DEBUG);
+   @overlapRect = ();
+   return(@overlapRect);
+}
+
+if ( $xmax2 <= $xmin1) {
+   #print "Yes! overlap  in x axis not found\n" if($DEBUG);
+   @overlapRect = ();
+   return(@overlapRect);
+}
+
+if ( $rect1[1] > $rect1[3] ) {
+   $ymax1 = $rect1[1];
+   $ymin1 = $rect1[3];
+} else {
+   $ymax1 = $rect1[3];
+   $ymin1 = $rect1[1];
+}
+if ( $rect2[1] > $rect2[3] ) {
+   $ymax2 = $rect2[1];
+   $ymin2 = $rect2[3];
+} else {
+   $ymax2 = $rect2[3];
+   $ymin2 = $rect2[1]; 
+} 
+
+if ( $ymax1 <= $ymin2) {
+   #print "Yes! overlap  in y axis not found\n" if($DEBUG);
+   @overlapRect = ();
+   return(@overlapRect);
+}
+
+if ( $ymax2 <= $ymin1) {
+   #print "Yes! overlap  in y axis not found\n" if($DEBUG);
+   @overlapRect = ();
+   return(@overlapRect);
+}
+
+#print "Yes! overlap found\n" if($DEBUG);
+
+if ( $xmax1 >= $xmax2 ) {
+   $ovrlp_x1 = $xmax2 ;
+} else {
+   $ovrlp_x1 = $xmax1 ;
+}
+
+if ( $xmin1 >= $xmin2 ) {
+   $ovrlp_x2 = $xmin1 ;
+} else {
+   $ovrlp_x2 = $xmin2 ;
+}
+
+if ( $ymax1 >= $ymax2 ) {
+  $ovrlp_y1 = $ymax2 ;
+} else {
+   $ovrlp_y1 = $ymax1 ;
+}
+
+if ( $ymin1 >= $ymin2 ) {
+   $ovrlp_y2 = $ymin1 ;
+} else {
+   $ovrlp_y2 = $ymin2 ;
+}
+
+@overlapRect = ($ovrlp_x1 , $ovrlp_y1 , $ovrlp_x2 , $ovrlp_y2 );
+
+$over_lap =join ",",  @overlapRect; #print "\n\n";
+#print "Overlaprectangle  $over_lap  \n";
+return(@overlapRect);
+
+}#sub findRectOverlap
+1;

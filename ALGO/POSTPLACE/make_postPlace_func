@@ -1,0 +1,163 @@
+
+sub reportScanChains {
+foreach $chainName ( keys %SCAN_CHAINS) {
+my $chainLen = 0;
+my @flopOrder = @{$SCAN_CHAINS{$chainName}};
+my $prevFlop = shift @flopOrder;
+while ( defined ($currFlop = shift @flopOrder) ) {
+#           print "$prevFlop to $currFlop\n";
+                 my ($deltaX ,$deltaY) = &dbGetInstPairDist($prevFlop,$currFlop);
+#           print "$deltaX , $deltaY\n";
+            $chainLen = $chainLen + $deltaX + $deltaY;
+                 $prevFlop = $currFlop
+                                                 }# while flop in chain
+print "INFO-ALGO_PST_PL-RPT_SCN_CH : 001 : chain : $chainName : $chainLen\n";
+                                        }#foreach scan chain
+print "INFO-ALGO_PST_PL-RPT_SCN_CH : 002 : New\n";
+print "INFO-ALGO_PST_PL-RPT_SCN_CH : 003 : symrcm ";
+my @temp = (4,5,1,3,14,6,2,17,18,16);
+&getScanChainLen(@temp);
+print "INFO-ALGO_PST_PL-RPT_SCN_CH : 004 : symrcm ";
+ @temp = (16,15,13,7,8,9,10,11,12);
+&getScanChainLen(@temp);
+
+#print "symmmd ";
+#@temp =    (1,7,8,9,10,11,12,13,2)
+#&getScanChainLen(@temp);
+print "INFO-ALGO_PST_PL-RPT_SCN_CH : 005 : symmmd ";
+@temp =( 2, 35, 68, 71, 75, 79, 99,103,104,138,147 ,148,150,152,162,168,178,  3,  6, 47,175, 20 , 43, 52, 61, 83,117,123,124,136,169,119,154 ,  5, 94, 89,158,122,125, 27, 64,129, 17,109 , 70, 11,118, 51, 95,144, 32, 92, 63, 44, 77 ,176,130, 69,164, 24, 86, 67, 93, 36, 97,120 ,114,165, 98, 82,  4, 40, 54, 41, 50,108,151 , 31, 81,  9, 15, 56, 60, 78, 80, 85,106,132 ,135, 18, 33, 58, 62,107,121,137,139,160, 37 , 88, 42, 38, 45, 53,161,170,134,173,126, 25 , 73, 84,143, 55, 74, 76,177, 22,142, 30, 23 ,110, 39,145,146,157, 57, 90,100,179,111,127 ,167,  1, 13,102,155, 12, 65, 91,131, 46,101 ,141,128, 48,112,149,153, 49, 19,166, 34, 72 ,  8,105,  7,174,172,163,171,159,156,140,133 ,116,115,113, 96, 87, 16, 29, 66, 59, 28, 26 , 21, 14, 10);
+&getScanChainLen(@temp);
+}#sub reportScanChains
+
+
+sub getScanChainLen {
+@ffNumOrder = @_;
+@flopOrder = ();
+my $chainLen = 0;
+foreach my $num ( @ffNumOrder ) {
+          my $ffName = $PLACE{$TOP_MODULE}->dbPlaceGetNameByNumber($num); 
+#         print "$num $ffName\n";
+          push(@flopOrder,$ffName);
+                                }#foreach
+my $prevFlop = shift @flopOrder;
+while ( defined ($currFlop = shift @flopOrder) ) {
+#           print "$prevFlop to $currFlop\n";
+                 my ($deltaX ,$deltaY) = &dbGetInstPairDist($prevFlop,$currFlop);
+#           print "$deltaX , $deltaY\n";
+            $chainLen = $chainLen + $deltaX + $deltaY;
+#print "$chainLen\n";
+                 $prevFlop = $currFlop
+                                                 }# while flop in chain
+print "INFO-ALGO_PST_PL : 001 : chain length : $chainLen\n";
+
+}#sub getScanChainLen
+
+sub dbGetInstPairDist {
+my $inst1 = $_[0];
+my $inst2 = $_[1];
+my $ok1 = ""; 
+my $ok2 = ""; 
+my $OK = 0;
+
+if ( exists $CADB{$inst1} ) { $ok1 = 1;}
+if ( exists $CADB{$inst2} ) { $ok2 = 1;}
+ $OK = $ok1*$ok2;
+if ( $OK == 1 ) {
+     @loc1 = $CADB{$inst1}->dbCadbGetLoc;
+     @loc2 = $CADB{$inst2}->dbCadbGetLoc;
+      $diffX = ""; 
+      $diffY = 0;
+     if ( $loc1[0] >= $loc2[0] ) { $diffX = abs($loc1[0] - $loc2[0]) }
+     elsif ( $loc2[0] > $loc1[0] ) { $diffX = abs($loc2[0] - $loc1[0]) };
+     if ( $loc1[1] >= $loc2[1] ) { $diffY = abs($loc1[1] - $loc2[1]) }
+     elsif ( $loc2[1] > $loc1[1] ) { $diffY = abs($loc2[1] - $loc1[1]) };
+     return($diffX,$diffY);
+                }#if both instances found
+else{print"WARN-ALGO_PST_PL : 001 : instances not found or placed\n";
+     return(0,0);
+    }
+}#sub dbGetInstPairDist
+
+
+#############################################################################################
+
+sub dbgPlaceCorrectOrient {
+foreach $instance (keys %COMP_ALREADY) {
+        print "INFO-ALGO_PST_PL : 001 : $instance\n";
+        if ( exists $CADB{$instance} ) {
+        my $instStatus = $CADB{$instance}->dbCadbGetStatus;
+        my $instOrient = $CADB{$instance}->dbCadbGetOrient;
+           if ( $instOrient eq "FW" ) {
+                print "INFO-ALGO_PST_PL : 002 : changing orientation of $instance from FW to R90\n";
+                                      }# if orientation is FW
+
+                                       }#if component attribute is set
+                                       }# for each component
+}#sub dbgPlaceCorrectOrient
+
+sub fixExternalDef {
+&dbgPlaceCorrectOrient;
+
+}#sub fixExternalDef
+
+
+sub modify_instance {
+#------- Readme --------#
+# The goal of this command is to change the status or other attributes of the instances
+# user should be able to specify a pattern for instance names
+
+# to change status attribute
+# use --changeStatusToFixed switch
+
+use Benchmark;
+my $t0 = new Benchmark;
+my $noOfArguments = @_;
+
+my @cellPatt = ();
+my $instPatt = "";
+my $FIXINST = 0;
+
+if( $noOfArguments < 2 || $_[0] eq '-h' || $_[0] eq '-help') { print "Usage : modify_instance -cell {list or pattern of cells} \n";
+                           print "                  -inst {list or pattern of instance name}n";
+                           print "                  --changeStatusToFixed\n";
+                           print "                  note : by defaul all sections are written out\n";
+                         }
+else { # if correct no. of inputs
+
+my $OUTPUT_NETLIST = 0;
+
+for(my $i = 0; $i < $noOfArguments; $i++){
+if($_[$i] eq "--changeStatusToFixed"){$FIXINST = 1; $DEFAULT = 0;}
+if($_[$i] eq "-inst"){$FIXINST = 1; $DEFAULT = 0;}
+if($_[$i] eq "-cell"){$cellList = $_[$i+1];
+#                      create cell pattern list from the  given pattern
+                    $cellList =~ s/^{//;
+                    $cellList =~ s/}$//;
+                    my @cells = split(/\,/,$cellList);
+                    foreach $pat ( @cells ) {
+                            if ( $pat =~ /^\*/) { $pat =~ s/^\*/\\w\*/; }
+                            foreach $cellref ( keys %PLDB ) {
+                                    if ($cellref =~ /$pat/) { push(@cellPatt,$cellref); }
+                                                            }
+                                            }
+                     print "INFO-ALGO_PST_PL : 001 : matched ${@cellPatt} cells : @cellPatt \n";
+                     }
+                                          } # for argument processing
+
+                     my $cellPattList = join(" ", @cellPatt);
+   foreach my $inst ( keys %CADB ) {
+     my $status = $CADB{$inst}->dbCadbGetStatus;
+     my $cellref = $CADB{$inst}->dbCadbGetCellref;
+        if ( $cellPattList =~ /\b$cellref\b/ ) {
+     if ($status == "PLACED" ) {
+           $CADB{$inst}->dbCadbSetStatus("FIXED");
+                               }
+                                               }
+                                   }
+
+
+
+}# if correct inputs
+}# sub modify_instance
+
+1;

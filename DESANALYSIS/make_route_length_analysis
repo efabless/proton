@@ -1,0 +1,299 @@
+
+sub get_net_wl {
+
+#****f* /get_net_wl
+# NAME
+#   get_net_wl
+# FUNCTION
+#   find wire length of a net if routing exists
+#   find wire length of a net from its pin locations
+# Assumptions
+#   find wire length two ways when routing exists and pins locations  
+# SYNOPSIS
+#   get_net_wl -netName <netName>
+# INPUTS
+#   options :
+#   -netName : <netName>
+# OUTPUTS
+#    if routing exists total wire length of a net
+#    total wire length of a net from its pin locations
+# ****
+
+#my $net = "u_mc_core_top/u_mc_core_64b/u_biu/u_cmd_formatter/u_all_range_checkers/WR_CHKR_14/n_77";
+my $noOfarguments = @_;
+if ($noOfarguments < 1 || $_[0] eq '-h'){ print "Usage : [-netName]  \n";
+                                                       }#if
+else { 
+for (my $i= 0; $i<$noOfarguments; $i++){
+
+if ($_[$i] eq "-netName"){$net = $_[$i+1];}
+                             }# for
+
+#------------------ find wl of a net if routing exists ---------------------#
+if ( exists $NETS_ROUTING_ALREADY{$net} ) {
+#print "$net is found\n";
+my $tmhd = 0 ;
+my @routes = $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBGetRegularRoute;
+foreach $l ( @routes ) {
+#print "$l\n";
+my @routeBox = &xformNetSegToPathSeg($l);
+#print "@routeBox\n";
+$mhd = ($routeBox[2]-$routeBox[0]) + ($routeBox[3]-$routeBox[1]);
+$tmhd = $tmhd + $mhd;
+#print "$mhd\n";
+                          }# foreach
+print "INFO-DES-GET_NET_WL : 001 : Total routed WL is $tmhd\n";
+                      }# if exists in NETS_ROUTING_ALREADY                    
+
+#------------------ find wl of a net from its pin locations -----------------#
+
+if ( exists $NETS_ALREADY{$net} ) {
+$totalmhd =0;
+# find the components connected
+         foreach $inst ( keys %{$NETS_ALREADY{$net}} ) {
+                    my $pinName = $NETS_ALREADY{$net}{$inst};
+                    print "INFO-DES-GET_NET_WL : 002 : pinName $pinName \n";
+                    my $cellref = $CADB{$inst}->dbCadbGetCellref;
+                    my @instLoc = $CADB{$inst}->dbCadbGetLoc;
+                    my $instOrient = $CADB{$inst}->dbCadbGetOrient;
+                        if (exists $PLDB{$cellref}){
+                    my @cellOrigin = $PLDB{$cellref}->dbMdbGetOrigin;
+                    my @cellsize = $PLDB{$cellref}->dbMdbGetSize;
+                    my @pins = $PLDB{$cellref}->dbMdbGetPins;
+                      foreach my $p (@pins){
+                         if ($p eq $pinName){  
+                    my @pinRect = $PLDB{$cellref}->dbMdbGetPinRect($pinName);
+                    #  print "$net : $inst : $instOrient : $cellref: $pinName\n";
+                      foreach $r (@pinRect){
+                    my ($pinllx,$pinlly,$pinurx,$pinury) = (split(/\s+/,$r)) [2,3,4,5];
+           @absolutePinRect = &xformCellPinToInstPin($instLoc[0],$instLoc[1],$cellOrigin[0], $cellOrigin[1],$instOrient,$cellsize[0],$cellsize[1],$pinllx,$pinlly,$pinurx,$pinury);
+            #  print "$absolutePinRect[0],$absolutePinRect[1],$absolutePinRect[2],$absolutePinRect[3]\n";
+      $manhd = abs($absolutePinRect[2]-$absolutePinRect[0])+ abs($absolutePinRect[3] -$absolutePinRect[1]);
+             $totalmhd = $totalmhd + $manhd;
+              #   print "$manhd\n";
+                 } #foreach pinRect
+           } #if pinName
+        }# foreach pins
+      }# if exists cellref 	         
+
+        }#foreach inst 
+          print "INFO-DES-GET_NET_WL : 003 : Total distance is  $totalmhd\n";
+                               }# if net exists in nets database
+    }#else
+}#sub get_net_wl
+#----------------------------------------------------------------------------------------------------------------------------------------#
+sub netwl_routing{
+#****f* /netwl_routing
+# NAME
+#    netwl_routing
+# FUNCTION
+#    find wire length of a nets
+# Assumptions
+#    net wire length of the whole design or some nets when routing exists
+# SYNOPSIS
+#    netwl_routing --netsName <{list of nets Name}>
+# INPUTS
+#    options:
+#    --netsName <{list of nets Name}> : for some nets or whole nets
+# OUTPUTS
+#    Total wire length of nets
+#****                 
+my $noOfArguments = @_;
+if ($noOfArguments < 0 || $_[0] eq '-h'){print "Usage : --netsName <{list of nets Name}> \n";
+                                         print "      : by default all nets \n"; 
+                                                                        }#if
+else{
+     my $nets_name = 0;
+     for (my $i=0;$i<$noOfArguments; $i++){
+          if($_[$i] eq "--netsName"){$Nets = $_[$i+1];
+          $Nets =~ s/\{\s*//;
+          $Nets =~ s/\s*\}//;
+          @NETS = split(/\,/,$Nets);
+          $nets_name = 1;}
+                               }#for
+if($nets_name == 1){
+$tmhd = 0 ;
+foreach $nets(@NETS){
+   if ( exists $NETS_ROUTING_ALREADY{$nets} ) {
+my @routes = $NETS_ROUTING_ALREADY{$nets}->dbNetRoutingDBGetRegularRoute;
+foreach $l ( @routes ) {
+my @routeBox = &xformNetSegToPathSeg($l);
+$mhd = ($routeBox[2]-$routeBox[0]) + ($routeBox[3]-$routeBox[1]);
+$tmhd = $tmhd + $mhd;
+                          }# foreach
+                      }# if exists in NETS_ROUTING_ALREADY     
+                   }#foreach nets
+print "INFO-DES-NETWL_RT : 001 : Total routed  WL is $tmhd\n";
+                        }#if nets name 
+else {
+$tm_hd = 0 ;
+foreach $nets (keys %NETS_ALREADY){
+    if (exists $NETS_ROUTING_ALREADY{$nets}) {
+     if (!exists $NADB{$nets}){print "ERR-DES-NETWL_RT : 002 : not found \n";}
+my @routes = $NETS_ROUTING_ALREADY{$nets}->dbNetRoutingDBGetRegularRoute;
+foreach $l ( @routes ) {
+my @routeBox = &xformNetSegToPathSeg($l);
+$mh_d = ($routeBox[2]-$routeBox[0]) + ($routeBox[3]-$routeBox[1]);
+$tm_hd = $tm_hd + $mh_d;
+                       }# foreach
+                      }# if exists in NETS_ROUTING_ALREADY                
+                    }#foreach nets
+print "INFO-DES-NETWL_RT : 003 : Total all routed WL is $tm_hd\n";
+                  }#else
+}#else
+}#sub netwl_routing
+#-----------------------------------------------------------------------------------------------------------------------------------#
+sub hashValue_AscendingNum {
+     $rn{$a} <=> $rn{$b};
+               }
+
+sub get_net_dir {
+
+#****f* /get_net_dir
+# NAME
+#      get_net_dir
+# FUNCTION
+#      per layer preferdirection and non-preferdirection
+# Assumptions 
+#      working only routed nets       
+# SYNOPSIS
+#      get_net_dir -netsName <{list of nets name}> or 
+#      get_net_dir [-all] for all nets
+# INPUTS
+#      options:
+#      -netsName <{list of nets name}> : for some nets or
+#      -all: for all nets
+# OUTPUTS
+#      print layerName,layerNumber,layerDirection,PreferDirection,NonPreferDirection and total
+#****
+
+    my $noOfArguments = @_;
+    if ($noOfArguments < 1 || $_[0] eq '-h'){print "Usage : -netsName <{list of net Name}> \n";
+                                             print "        -all <{all nets}> \n";
+                                                             }#if
+    else {
+    my $OUTPUT_NETS_PRE = 0;
+    my $DEFAULT = 0;
+    for(my $i = 0;$i < $noOfArguments; $i++){
+      if ($_[$i] eq "-netsName"){$nets = $_[$i+1];
+      $nets =~ s/\{\s*//;
+      $nets =~ s/\s*\}//;
+      @nets = split(/\,/,$nets); 
+      $OUTPUT_NETS_PRE = 1;}
+      elsif($_[$i] eq "-all") {$DEFAULT = 1;}
+                                            }#for
+    my @prefdir = ();
+    my @nonprefdir = ();
+  if ($OUTPUT_NETS_PRE == 1 ){
+     foreach $nets (@nets){
+        if (exists $NETS_ROUTING_ALREADY{$nets}){
+           my @routes = $NETS_ROUTING_ALREADY{$nets}->dbNetRoutingDBGetRegularRoute; 
+          foreach $rl (@routes){
+           my $routeLayer = (split(/\s+/,$rl))[0];
+           my $routeLn = $PTDB{$routeLayer}->dbTechGetLayerNum;
+           my $routeLayerPrefDir = $PTDB{$routeLayer}->dbTechGetLayerDir  ;
+           my @routebbox = &xformNetSegToPathSeg($rl);
+           my $routeSegXLength = ($routebbox[2]-$routebbox[0]);
+           my $routeSegYLength = ($routebbox[3]-$routebbox[1]); 
+           my $routeSegLength = $routeSegXLength + $routeSegYLength;
+           if ( $routeSegYLength == 0 ) {
+                #print "pref $routeLayer $routeLayerPrefDir  $routeLn $routeSegLength\n";
+             if ( $routeLayerPrefDir  eq "HORIZONTAL" ) {
+                #print "pref $routeSegXLength\n";
+                $prefdir[$routeLn] = $prefdir[$routeLn] + $routeSegXLength;
+                                                                         }#if prefdir horizontal
+             else {
+                         #print "nonpref $routeSegXLength\n";
+                $nonprefdir[$routeLn] = $nonprefdir[$routeLn] + $routeSegXLength;
+                                               }#else
+                                            }# if segment is horizontal
+           if ( $routeSegXLength == 0 ) {
+             if ( $routeLayerPrefDir  eq "VERTICAL" ) {
+                  $prefdir[$routeLn] = $prefdir[$routeLn] + $routeSegYLength;
+                                                                 }#if prefdir vertical
+             else {
+                   $nonprefdir[$routeLn] = $nonprefdir[$routeLn] + $routeSegYLength;
+                                                 }#else
+                                               }# if segment is vertical
+                                                               }#foreach routes
+                                                             }# if exists net 
+                                                         }#foreach net
+                                                        }#if OUTPUT_NETS_PRE
+  if ($DEFAULT == 1){
+    foreach $nets (keys %NETS_ALREADY){
+      if (exists $NETS_ROUTING_ALREADY{$nets}){
+        my @routes = $NETS_ROUTING_ALREADY{$nets}->dbNetRoutingDBGetRegularRoute; 
+        foreach $rl (@routes){
+          my $routeLayer = (split(/\s+/,$rl))[0];
+          my $routeLn = $PTDB{$routeLayer}->dbTechGetLayerNum;
+          my $routeLayerPrefDir = $PTDB{$routeLayer}->dbTechGetLayerDir  ;
+          my @routebbox = &xformNetSegToPathSeg($rl);
+          my $routeSegXLength = ($routebbox[2]-$routebbox[0]);
+          my $routeSegYLength = ($routebbox[3]-$routebbox[1]); 
+          my $routeSegLength = $routeSegXLength + $routeSegYLength;
+          if ( $routeSegYLength == 0 ) {
+             #print "pref $routeLayer $routeLayerPrefDir  $routeLn $routeSegLength\n";
+            if ( $routeLayerPrefDir  eq "HORIZONTAL" ) {
+               #print "pref $routeSegXLength\n";
+                $prefdir[$routeLn] = $prefdir[$routeLn] + $routeSegXLength;
+                                                                         }#if prefdir horizontal
+            else {
+            #print "nonpref $routeSegXLength\n";
+                $nonprefdir[$routeLn] = $nonprefdir[$routeLn] + $routeSegXLength;
+                                                  }#else
+                                             }# if segment is horizontal
+          if ( $routeSegXLength == 0 ) {
+            if ( $routeLayerPrefDir  eq "VERTICAL" ) {
+                 $prefdir[$routeLn] = $prefdir[$routeLn] + $routeSegYLength;
+                                                       }#if prefdir vertical
+            else {
+                 $nonprefdir[$routeLn] = $nonprefdir[$routeLn] + $routeSegYLength;
+                                                 }#else
+                                               }# if segment is vertical
+                                                               }#foreach routes
+                                                            }#if exists nets
+                                                         }#foreach net
+                                                     }#if default
+
+#print join ",", @prefdir; print "\n";
+#print join ",", @nonprefdir; print "\n";
+foreach $layer(keys %PTDB){
+$Ln = $PTDB{$layer}->dbTechGetLayerNum;
+$rn{$layer} = $Ln;
+             }#foreach 
+           
+write NETLAYER_TOP;
+select (STDOUT);
+$~ = "NETLAYER";
+$p = @prefdir;
+for (my $i = 0; $i<$p; $i++){
+     my @key = sort hashValue_AscendingNum(keys (%rn));
+        $layerDir = $PTDB{$key[$i]}->dbTechGetLayerDir;
+     if (($layerDir eq "HORIZONTAL")|| ($layerDir eq "VERTICAL")){
+          $pref_dir = $prefdir[$i];
+          $total = $pref_dir + $nonprefdir[$i];
+write();
+format NETLAYER =
+@<<<<<<       	       @##              @<<<<<<<<<<	 @########       @#########           @############       	
+$key[$i],              $i,              $layerDir,      $pref_dir,      $nonprefdir[$i],      $total,
+.
+                                            
+                                              }#if
+                                         }#for
+format NETLAYER_TOP =
+------------------------------------------------------------------------------------------------------------
+LayerName 	         LayerNo	Direction	 PreferDir        NonPreferDir 	            Total
+------------------------------------------------------------------------------------------------------------
+.
+ }# else                  
+}#sub get_net_dir   
+
+#------------------------------------------------------------------------------------------------------------------------#
+
+
+
+
+
+ 
+   
+1;

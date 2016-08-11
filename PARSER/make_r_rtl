@@ -1,0 +1,1953 @@
+
+sub read_hdl {
+
+my $moduleName ;
+my $noOfArguments = @_;
+
+if ($noOfArguments < 2 || $_[0] eq '-h')   {
+  print "Usage: read_hdl -hdl <verilog filename>\n";
+  return (1);
+} else {
+  for ( my $i = 0; $i < $noOfArguments; $i++ ) {
+    if ($_[$i] eq "-hdl") { $hdl_file = $_[$i+1]; }
+  }
+}
+
+
+################################################################################################
+#### global variables                                                                       ####
+################################################################################################
+%moduleArea = ();
+%moduleHierarchyPointer = ();
+@COMPONENTS = (\%COMP_ALREADY, \%COMP_NEW_ADDED, \%COMP_NEW_NO_LOGIC);
+@MODULES = (\%MODULE_ALREADY, \%MODULE_NEW_ADDED, \%MODULE_NEW_NO_LOGIC);
+@NETS = (\%NET_ALREADY, \%NET_NEW_ADDED, \%NET_NEW_NO_LOGIC);
+# do not initiallize the array as user may want to read more than 1 verilog  : Rajeev 02/18/09
+
+################################################################################################
+#### local  variables                                                                       ####
+################################################################################################
+my $noOfArguments = @_;
+my $INPUT_VERILOG_FILE = $_[0];
+my $OUTPUT_VERILOG_FILE = $_[1];
+my $referToPlef = \%MACROS_ALREADY;
+my $referToPlefInputPins = \%macroInputPins;
+my $referToPlefOutputPins = \%macroOutputPins;
+
+if( ( -e $hdl_file ) && ( -r $hdl_file ) ) {
+  print "INFO-PAR-HDL : 001 : $hdl_file FILE EXISTS AND IS READABLE!\n";
+  print "INFO-PAR-HDL : 002 : Start reading verilog file $hdl_file \n";
+  open (READ_INPUT_HDL, "$hdl_file");
+my $count = 0;
+my $scaled_count = 0;
+my $line_count = 0;
+my $verilogModuleCount = 0;
+my $line = "";
+my $i = 0;
+my $list_of_lm_pointers = "";
+my $cellref = "";
+my $remainder = "";
+my @nets = ();
+my $NON_UNIQUE_INSTANCE_NAME = 0;
+my $pinDirection = "";
+my $pinName = "";
+my $pinToFrom = "";
+my $skip_comment = 0;
+
+  while(<READ_INPUT_HDL>) {
+#---------------- printing the line number ----------------#
+$count = $count + 1;
+if ($count =~ /0000$/){ print "INFO-PAR-HDL : 003 : $count ...\n"; }
+
+chomp($_);
+if ( $_ =~ /\/\*.*\*\// ) { $_ =~ s/\/\*.*\*\///g; }
+if ( $_ =~ /^\s*\/\*/ ) { $skip_comment = 1; next; }
+if ( $_ =~ /\*\// ) { $skip_comment = 0; next; }
+if ( $skip_comment == 1 ) { next; }
+                else {
+if($_ =~ /^\s*\/\//){next; }
+elsif($_ =~ /\`define/){next; }
+elsif($_ =~ /\`include/){next; }
+elsif($_ =~ /\`timescale/){next; }
+elsif($_ =~ /\`ifdef/){next; }
+elsif($_ =~ /\`else/){next; }
+elsif($_ =~ /^\s*parameter/){next; }
+elsif($_ =~ /^\s*reg /){next; }
+elsif($_ =~ /^\s*wire /){next; }
+elsif($_ =~ /\/\//){$_ =~ s/\/\/.*$//; }
+#print "$_\n";
+#if($_ =~ /\bendmodule\b *$/){
+#                             $list_of_lm_pointers = "";
+#                            } else {
+#print "$line\n";
+if($_ =~ /\;\s*$/){ $line = $line.$_;
+                        print "INFO-PAR-HDL : 004 : 973 $line\n";
+                
+
+##################################################################################################
+####       make array for geting the top level module                                         ####
+##################################################################################################
+
+if($line =~ /\bmodule\b/){$module_line = $line; $module_line =~ s/^\s*//; $module_line =~ s/\((.*)\)\;//; $module_line =~ s/\(/ \(/;
+                         ($moduleName) = (split(/\s+/,$module_line))[1];
+                         print "DBG-PAR-HDL : 005 : reading module : $moduleName \n" if ($DEBUG == 101);
+                         if ( exists $MODULE_ALREADY{$moduleName} ) { } else {
+                         $MODULE_ALREADY{$moduleName} = VNOM::new();
+                                                                             }
+			} 
+elsif($line =~ /\bassign\b/) { print "DBG-PAR-HDL : 006 : $line\n" if ($DEBUG == 101); } 
+elsif($line =~ /endmodule/){ print "DBG-PAR-HDL : 007 : $line\n" if ($DEBUG == 101); } 
+elsif($line =~ /always\s*@/){ print "DBG-PAR-HDL : 008 : $line\n" if ($DEBUG == 101); } 
+elsif($line =~ /^\s*else\b /){ print "DBG-PAR-HDL : 009 : $line\n" if ($DEBUG == 101); } 
+elsif($line =~ /^\s*integer\b/){ print "DBG-PAR-HDL : 010 : $line\n" if ($DEBUG == 101); } 
+elsif($line =~ /^\s*end\b/){ print "DBG-PAR-HDL : 011 : $line\n" if ($DEBUG == 101); } 
+elsif($line =~ /^\s*if\s*\(\b/){ print "DBG-PAR-HDL : 012 : $line\n" if ($DEBUG == 101); } 
+elsif($line =~ /^\s*if\s*\(/){ print "DBG-PAR-HDL : 013 : $line\n" if ($DEBUG == 101); } 
+elsif($line =~ /^\s*parameter/){ print "DBG-PAR-HDL : 014 : $line\n" if ($DEBUG == 101); } 
+elsif($_ =~ / \<*= /){}
+elsif($_ =~ /\|/){}
+else {
+#### assumption that input and output lines will have only one pin / bus entry
+if($line =~ /\b[i,o][n,u]t*p*o*ut\b/){  $line =~ s/^\s+//;
+                        print "DBG-PAR-HDL : 015 : 1006 $line\n" if ($DEBUG == 101);
+                                  if($line =~ /\[[0-9]+\:[0-9]+\]/){ # if the pin is a BUS
+#-------------------- added extra space after the closing bracket --------------------- OASYS #
+                                     $line =~ s/\]/\] /; $line =~ s/\,/ /; $line =~ s/\;//;
+                                    ($pinDirection,$pinToFrom,$pinName) =(split(/\s+/, $line))[0,1,2];
+     if ($pinDirection eq 'input' ) { $MODULE_ALREADY{$moduleName}->dbVNOMAddInput($pinName); 
+                          $MODULE_ALREADY{$moduleName}->dbVNOMSetInputType($pinName, 1);
+                          $MODULE_ALREADY{$moduleName}->dbVNOMSetInputBits($pinName, $pinToFrom);
+                                     print "DBG-PAR-HDL : 016 : Adding input bus $pinName to $moduleName\n" if ($DEBUG == 300);
+                                    }
+     elsif ($pinDirection eq 'output' ) { $MODULE_ALREADY{$moduleName}->dbVNOMAddOutput($pinName); 
+                          $MODULE_ALREADY{$moduleName}->dbVNOMSetOutputType($pinName, 1);
+                          $MODULE_ALREADY{$moduleName}->dbVNOMSetOutputBits($pinName, $pinToFrom);
+                                     print "DBG-PAR-HDL : 017 : Adding output bus $pinName to $moduleName\n" if ($DEBUG == 300);
+                                        }
+    elsif ($pinDirection eq 'inout' ) { $MODULE_ALREADY{$moduleName}->dbVNOMAddBidi($pinName);
+                          $MODULE_ALREADY{$moduleName}->dbVNOMSetBidiType($pinName, 1);
+                          $MODULE_ALREADY{$moduleName}->dbVNOMSetBidiBits($pinName, $pinToFrom);
+                                     print "DBG-PAR-HDL : 018 : Adding inout bus $pinName to $moduleName\n" if ($DEBUG == 300);
+                                        }
+
+                                    }# if pin is type BUS
+                                  else {
+                                     $line =~ s/\,/ /g; $line =~ s/\;//;
+                                     my @pins = split(/\s+/, $line);
+                                     my $len = @pins;
+                                     if ($len >= 2) { 
+                                            $pinDirection =  shift @pins;
+                                                      }
+                                     else { print "WARN-PAR-HDL : 019 : syntax issue at line $count\n"; } 
+     if ($pinDirection eq 'input' ) { 
+                                      foreach $pinName ( @pins ) {
+                                      $MODULE_ALREADY{$moduleName}->dbVNOMAddInput($pinName); 
+                                      $MODULE_ALREADY{$moduleName}->dbVNOMSetInputType($pinName,0);
+                                      print "DBG-PAR-HDL : 020 : Adding input pin $pinName to $moduleName\n" if ($DEBUG == 300);
+                                                                 }
+                                     }
+     elsif ($pinDirection eq 'output' ) {
+                                      foreach $pinName ( @pins ) {
+                                      $MODULE_ALREADY{$moduleName}->dbVNOMAddOutput($pinName); 
+                                      $MODULE_ALREADY{$moduleName}->dbVNOMSetOutputType($pinName,0);
+                                      print "DBG-PAR-HDL : 021 : Adding output pin $pinName to $moduleName\n" if ($DEBUG == 300);
+                                                                 }
+                                      }
+     elsif ($pinDirection eq 'inout' ) {
+                                      foreach $pinName ( @pins ) {
+                                      $MODULE_ALREADY{$moduleName}->dbVNOMAddBidi($pinName);
+                                      $MODULE_ALREADY{$moduleName}->dbVNOMSetBidiType($pinName,0);
+                                      print "DBG-PAR-HDL : 022 : Adding inout pin $pinName to $moduleName\n" if ($DEBUG == 300);
+                                                                 }
+                                      }
+
+                                     } # if pin is type single
+print "DBG-PAR-HDL : 023 : $line\n" if ($DEBUG == 101);
+                            } else {
+if($line =~ /\bwire\b/){
+print "DBG-PAR-HDL : 024 : $line\n" if ($DEBUG == 101);
+                        } else {
+if($line =~ /^$/){
+print "DBG-PAR-HDL : 025 : $line\n" if ($DEBUG == 101);
+		} else {
+$line =~ s/^\s*//;
+
+$line =~ s/\(/ \(/;
+($cellref, $instance) = (split(/\s+/, $line))[0,1];
+           print "INFO-PAR-HDL : 026 : 1070 $moduleName : $line\n";
+           $MODULE_ALREADY{$moduleName}->dbVNOMAddConn($line);
+
+#print "$cellref $instance \n" if ($DEBUG == 101);
+if( exists $PLDB{$cellref}) {
+          #print "INFO-2 : $instance : $cellref is a leaf instance in $moduleName\n";
+          my $area = $MODULE_ALREADY{$moduleName}->dbVNOMGetArea;
+          my @size = $PLDB{$cellref}->dbMdbGetSize;
+          my $delA = $size[0]*$size[1];
+          $area = $area + $delA;
+          $MODULE_ALREADY{$moduleName}->dbVNOMSetArea($area);
+          $MODULE_ALREADY{$moduleName}->dbVNOMAddLeafInst($instance);
+          $MODULE_ALREADY{$moduleName}->dbVNOMSetLeafInstCell($instance,$cellref);
+                            }
+elsif ( exists $MODULE_ALREADY{$cellref} ) {
+          $MODULE_ALREADY{$cellref}->dbVNOMAddParent($moduleName);
+          $MODULE_ALREADY{$moduleName}->dbVNOMAddHierInst($instance);
+          $MODULE_ALREADY{$moduleName}->dbVNOMSetHierInstCell($instance,$cellref);
+} else { # Black box or a module that is defined later in the file
+          $MODULE_ALREADY{$moduleName}->dbVNOMAddHierInst($instance);
+          $MODULE_ALREADY{$moduleName}->dbVNOMSetHierInstCell($instance,$cellref);
+          $MODULE_ALREADY{$cellref}= VNOM::new();
+          $MODULE_ALREADY{$cellref}->dbVNOMAddParent($moduleName);
+          #print "setting $moduleName as parent of $cellref\n";
+                                            }
+} # empty lines loop
+} # wire loop
+} # input output loop
+} # endmodule loop
+#############################
+## reset the line variable ##
+#############################
+$line = "";
+               } else { $line = $line.$_; 
+                          #print "1095 $line\n" if ($DEBUG == 101);
+                        } # if line does not end loop
+#                        } # endmodule line loop
+			} # commented line loop
+} # while
+
+close(READ_INPUT_VERILOG);
+print "INFO-PAR-HDL : 027 : Finished reading the verilog file \n";
+
+
+
+
+##################################################################################################
+####    finding the top module                                                                ####
+##################################################################################################
+my @TOP = ();
+foreach my $mod (keys %MODULE_ALREADY) { 
+       my @parents =  $MODULE_ALREADY{$mod}->dbVNOMGetParent;
+       my $np = @parents;
+#       print "number of parents of $mod are $np\n";
+       if ( $np == 0 ) { push(@TOP,$mod); }
+       elsif ( $np > 1 ) { print "INFO-PAR-HDL : 028 : $mod is instantiated $np times \n"; }
+                              }
+my $nT = @TOP;
+if ( $nT == 1 ) { print "INFO-PAR-HDL : 029 : Setting top module as $TOP[0]\n"; 
+                  $CURRENT_MODULE = $TOP[0];
+                  $TOP_MODULE = $TOP[0];
+		  $GLOBAL->dbfGlobalSetTOP($TOP_MODULE);
+                }
+elsif ( $nT > 1 ) { print "WARN-PAR-HDL : 030 : there are more than 1 possible top modules, please pick the correct one from the list below\n";
+                    print join ",", @TOP; #print "\n";
+                  }
+else { print "ERR-PAR-HDL : 031 : something is wrong with the verilog file\n"; }
+#---------------------------------------------------------------------------#
+#  debugging ##
+#my @inputs  = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetInput ;
+#print join(", ", @inputs ); #print "\n";
+#my @outputs  = $MODULE_ALREADY{$TOP_MODULE}->dbVNOMGetOutput ;
+
+&dbgSummaryModules;
+                           }# if file exists
+
+}#sub read_hdl
+
+
+sub read_hdl_II {
+my $inputfiletype = "rtl_verilog";
+$GLOBAL->dbfGlobalSetInputType($inputfiletype);
+
+#use Bit::Vector;
+my $moduleName ;
+my $noOfArguments = @_;
+my @hdl_files = ();
+
+if ($noOfArguments < 2 || $_[0] eq '-h')   {
+  print "Usage: read_hdl -hdl <list of rtl files>\n";
+  print "     :          -I <list of rtl file directories>\n";
+  return (1);
+} else {
+  for ( my $i = 0; $i < $noOfArguments; $i++ ) {
+    if ($_[$i] eq "-hdl") { $hdl_file_list = $_[$i+1]; 
+                            $hdl_file_list =~ s/\{//;
+                            $hdl_file_list =~ s/\}//;
+                            $hdl_file_list =~ s/\s+//g;
+                            @hdl_files = split(/\,/,$hdl_file_list);
+                          }
+    if ($_[$i] eq "-I") { $includeList = $_[$i+1]; 
+                            $includeList =~ s/\{//;
+                            $includeList =~ s/\}//;
+                            $includeList =~ s/\s+//g;
+                            @include_files = split(/\,/,$includeList);
+                        }
+  }
+
+    # Setup options so files can be found
+    my $opt = new Verilog::Getopt;
+#   $opt->parameter( "+incdir+$include_files[0]",
+#                    "+incdir+$include_files[1]",
+#		     "-y","$include_files[1] $include_files[2]", "./",
+#                    "-y","@include_files", "./",
+#                  );
+    $opt->parameter( "+incdir+./");
+    $opt->parameter( "-y","./");
+    foreach my $temp_inc_dir (@include_files){
+    $opt->parameter( "+incdir+$temp_inc_dir");
+    $opt->parameter( "-y","$temp_inc_dir");
+             }
+    my $t = $opt->incdir();
+    my @includes = @{$t};
+    print "INFO-PAR-HDL : 001 : includes are : @includes\n";
+    my $t = $opt->module_dir();
+    my @includes = @{$t};
+    print "INFO-PAR-HDL : 002 : module includes are : @includes\n";
+
+    # Prepare netlist
+    $nl = new Verilog::Netlist (options => $opt, link_read_nonfatal=>true);
+    #$nl->new_module(D_LDF0001_H);
+    print "INFO-PAR-HDL : 003 : hdl files are : @hdl_files\n";
+    foreach my $file (@hdl_files) {
+        if( ( -e $file ) && ( -r $file ) ) {
+  print "INFO-PAR-HDL : 004 : $file FILE EXISTS AND IS READABLE!\n";
+  print "INFO-PAR-HDL : 005 : Start reading verilog file $file \n";
+
+	$nl->read_file (filename=>$file);
+                                           }#if the file exists
+    }
+    # Read in any sub-modules
+    $nl->link();
+    $nl->lint();
+#    $nl->link_read_nonfatal();
+#    $nl->exit_if_error();
+#------------------- populate the MODULE_ALREADY database -------------#
+# in case of conflict, ie if there exists a gate level design with the same modulename
+# we will give user an option to either override the gate-level spec , or ignore rtl definition  and in some
+# extreme case allow the port definitions to be updated
+
+    my @all_modules = $nl->modules;
+    foreach $modulePntr ( @all_modules ) {
+            my $moduleName = $modulePntr->name;
+            if ( exists $MODULE_ALREADY{$moduleName} ) {
+                                                       }
+            else {
+                 print "INFO-PAR-HDL : 006 : adding a rtl module $moduleName to the DB\n";
+                 $MODULE_ALREADY{$moduleName} = VNOM::new();
+                 $MODULE_ALREADY{$moduleName}->dbVNOMSetClass(8);
+                 my %PARAMS = ();
+                              my $regs =0;
+                    foreach my $netPntr ( $modulePntr->nets ) {
+                               my $nT = $netPntr->type;
+                               my $nN = $netPntr->name;
+                               my $nA = $netPntr->array;
+                               my $nDec = $netPntr->decl_type;
+                               my $nDecType = $netPntr->net_type;
+                               #if the definition is a register then record its dimension
+                               if( $nDec eq 'var' && $nT =~/reg/ ) {
+                                  my $regWidth = $netPntr->width;  
+                                  $nA =~ s/\[//; $nA =~ s/\]//;
+                                  my ($msb,$lsb)=(split(/\:/,$nA))[0,1];
+                                  my $regSize = (abs($msb-$lsb)+1)*$regWidth;
+                               print "$nN:$nA:$nDec:$nT:$regSize\n";
+                               $MODULE_ALREADY{$moduleName}->dbVNOMAddReg($nN);
+                               $MODULE_ALREADY{$moduleName}->dbVNOMSetRegDimension($nN,$nA);
+                               $MODULE_ALREADY{$moduleName}->dbVNOMSetRegSize($nN,$regSize);
+                               $regs = $regs+$regSize;
+                                                                         }# if contains definition of register
+                               if ($nDec eq 'net' && $nDecType =~/wire/){
+                                   my $netWidth = $netPntr->width;
+                                   if($netWidth != 1){
+                                     my $msb = $netPntr->msb;
+                                     my $lsb = $netPntr->lsb;
+                                     my $netToFrom = "[".$msb.":".$lsb."]" ;
+                                     if ((!exists $MODULE_ALREADY{$moduleName}->{ins}{$nN}) 
+                                      && (!exists $MODULE_ALREADY{$moduleName}->{outs}{$nN})
+                                      && (!exists $MODULE_ALREADY{$moduleName}->{bidis}{$nN})) {
+                                      $MODULE_ALREADY{$moduleName}->dbVNOMAddNet($nN); 
+                                      $MODULE_ALREADY{$moduleName}->dbVNOMSetNetType($nN,1);
+                                      $MODULE_ALREADY{$moduleName}->dbVNOMSetNetBits($nN,$netToFrom);
+#                                      print "NEW netwidth $nN $netWidth $msb $lsb $netToFrom\n";
+                                     }
+                                  }
+                               }
+                               if ( $nT eq 'parameter' ) {
+                               my $nV = $netPntr->value;
+                               print "INFO-PAR-HDL : 007 : $nN $nV\n";
+                               $PARAMS{$nN} = $nV;
+                                                         }#If net is a parameter
+                                                              }# for all nets in the module
+                 my $area = $regs*10;
+                 print "setting $area on $moduleName\n";
+                 $MODULE_ALREADY{$moduleName}->dbVNOMSetLeafArea($area);
+                    foreach my $portPntr ( $modulePntr->ports_sorted ) {
+                               #print "$portPntr \n";
+                               my $portName = $portPntr->name;
+                               #---- fix by rajeevs : if the bus bits a blasted in verilog ---#
+                                  if ( $portName =~ /^\\/ ) { $portName =~ s/^\\//; }
+                               my $portDir = $portPntr->direction;
+                               my $portType = $portPntr->array;
+                               my $pT = $portPntr->type;
+                               my $pN = $portPntr->net->name;
+                               my $pMsb = $portPntr->net->msb;
+                               my $pLsb = $portPntr->net->lsb;
+                               #print "$pT $pN $pMsb $pLsb\n";
+                               if ($pMsb =~ /\w/) {
+                                  #print "$pMsb\n";
+                                  foreach $param ( keys %PARAMS ) { &eval_expression("$param = $PARAMS{$param}"); }
+                                  my $result = &eval_expression("a = $pMsb");
+                                  #print "$result\n";
+                                  $pMsb = $result; 
+                                                  }
+                               if ($pLsb =~ /\w/) {
+                                  #print "$pLsb\n";
+                                  foreach $param ( keys %PARAMS ) { &eval_expression("$param = $PARAMS{$param}"); }
+                                  my $result = &eval_expression("a = $pLsb");
+                                  #print "$result\n";
+                                  $pLsb = $result; 
+                                                  }
+                         if ( $pLsb != 0 || $pMsb !=0 ){
+                            my $pinToFrom = "[".$pMsb.":".$pLsb."]";
+     if ($portDir eq 'in' ) { $MODULE_ALREADY{$moduleName}->dbVNOMAddInput($portName);
+                          $MODULE_ALREADY{$moduleName}->dbVNOMSetInputType($portName, 1);
+                          $MODULE_ALREADY{$moduleName}->dbVNOMSetInputBits($portName, $pinToFrom);
+                                     print "DBG-PAR-HDL : 008 : Adding input bus $portName to $moduleName\n" if ($DEBUG == 300);
+                                    }
+     elsif ($portDir eq 'out' ) { $MODULE_ALREADY{$moduleName}->dbVNOMAddOutput($portName);
+                          $MODULE_ALREADY{$moduleName}->dbVNOMSetOutputType($portName, 1);
+                          $MODULE_ALREADY{$moduleName}->dbVNOMSetOutputBits($portName, $pinToFrom);
+                                     print "DBG-PAR-HDL : 009 : Adding output bus $portName to $moduleName\n" if ($DEBUG == 300);
+                                        }
+    elsif ($portDir eq 'inout' ) { $MODULE_ALREADY{$moduleName}->dbVNOMAddBidi($portName);
+                          $MODULE_ALREADY{$moduleName}->dbVNOMSetBidiType($portName, 1);
+                          $MODULE_ALREADY{$moduleName}->dbVNOMSetBidiBits($portName, $pinToFrom);
+                                     print "DBG-PAR-HDL : 010 : Adding inout bus $portName to $moduleName\n" if ($DEBUG == 300);
+                                        }
+
+                                    }# if pin is type BUS
+                                  else {
+     if ($portDir eq 'in' ) {
+                                      $MODULE_ALREADY{$moduleName}->dbVNOMAddInput($portName);
+                                      $MODULE_ALREADY{$moduleName}->dbVNOMSetInputType($portName,0);
+                                      print "DBG-PAR-HDL : 011 : Adding input pin $portName to $moduleName\n" if ($DEBUG == 300);
+                                     }
+     elsif ($portDir eq 'out' ) {
+                                      $MODULE_ALREADY{$moduleName}->dbVNOMAddOutput($portName);
+                                      $MODULE_ALREADY{$moduleName}->dbVNOMSetOutputType($portName,0);
+                                      print "DBG-PAR-HDL : 012 : Adding output pin $portName to $moduleName\n" if ($DEBUG == 300);
+                                      }
+     elsif ($portDir eq 'inout' ) {
+                                      $MODULE_ALREADY{$moduleName}->dbVNOMAddBidi($portName);
+                                      $MODULE_ALREADY{$moduleName}->dbVNOMSetBidiType($portName,0);
+                                      print "DBG-PAR-HDL : 013 : Adding inout pin $portName to $moduleName\n" if ($DEBUG == 300);
+                                      }
+
+                                     } # if pin is type single
+
+                               print "INFO-PAR-HDL : 014 :\t$portName $portDir $portType $pMsb $pLsb $portWidth\n";
+                                                                 }
+                 }
+                                         }# foreach module
+
+#------------------- print the hierarchy ------------------------------#
+    foreach my $mod ($nl->top_modules_sorted) {
+        printf( "Module %s(%d)\n",$mod->name,$MODULE_ALREADY{$mod->name}->dbVNOMGetLeafArea);
+        $GLOBAL->dbfGlobalSetTOP($mod->name);
+        $TOP_MODULE = $mod->name;
+	show_hier ($mod, "", "", "");
+        
+    }
+&collect_hdl_stat;
+sub show_hier {
+        local $parent;
+	my $mod = shift;
+	my $indent = shift;
+	my $hier = shift;
+	my $cellname = shift;
+        $parent = $mod->name; 
+#        print "$mod : $cellname\n";
+	if (!$cellname) {$hier = $mod->name;} #top modules get the design name
+	else {$hier .= ".$cellname";
+              } #append the cellname
+	foreach my $cell ($mod->cells_sorted) {
+	    printf ($indent."|--%s (%s)\n", $cell->name, $cell->submodname);
+#	    printf ($indent." %s\n", $cell->name);
+#	    printf ($indent." (%s)\n", $cell->submodname);
+
+#-------- below this section adds the hierrachy info in the  MODULE_AREADY database -------#
+            my $hInst = $cell->name;
+            print "INFO : adding $hInst to $parent\n";
+            my $cellref = $cell->submodname ;
+            my $connline = $cellref." ".$hInst." ("; 
+            my $tmpCnt = 0 ;
+            foreach my $pin_conn ($cell->pins){
+              if($tmpCnt != 0){
+                $connline = $connline.",";
+              }
+              $connline = $connline.".".$pin_conn->name."(".$pin_conn->netname.")";
+              $tmpCnt++;
+            }
+            $connline = $connline.");"; 
+            $MODULE_ALREADY{$parent}->dbVNOMAddConn($connline);
+            my $moduleName = $parent ;
+            my $instance = $cell->name ;
+if ( exists $MODULE_ALREADY{$cellref} ) {
+          $MODULE_ALREADY{$cellref}->dbVNOMAddParent($moduleName);
+          $MODULE_ALREADY{$moduleName}->dbVNOMAddHierInst($instance);
+          $MODULE_ALREADY{$moduleName}->dbVNOMSetHierInstCell($instance,$cellref);
+} else { # Black box or a module that is defined later in the file
+          $MODULE_ALREADY{$moduleName}->dbVNOMAddHierInst($instance);
+          $MODULE_ALREADY{$moduleName}->dbVNOMSetHierInstCell($instance,$cellref);
+          $MODULE_ALREADY{$cellref}= VNOM::new();
+          $MODULE_ALREADY{$cellref}->dbVNOMAddParent($moduleName);
+          #print "setting $moduleName as parent of $cellref\n";
+                                            }
+#-------- above this section adds the hierrachy info in the  MODULE_AREADY database -------#
+
+	    show_hier ($cell->submod, $indent."|  ", $hier, $cell->name) if $cell->submod;
+	}
+}#sub show_hier
+
+
+sub collect_hdl_stat {
+    foreach $modulePntr ( @all_modules ) {
+            my $moduleName = $modulePntr->name;
+            if ( exists $MODULE_ALREADY{$moduleName} ) {
+           # my @statements = $modulePntr->statements;
+           # foreach $sm ( @statements ) {
+           #        my $l = $sm->name;
+           # print "SM : $l\n";
+           #                             }
+           my $filename = $modulePntr->filename;
+           my $line = $modulePntr->lineno;
+           print "$moduleName ==> $filename : $line\n";
+           &read_hdl_est("-hdl", "$filename");
+               
+                                                       }#if exists
+                                          }#foreach
+
+
+}#sub collect_hdl_stat
+
+
+}
+
+
+}#sub read_hdl_II
+
+
+sub read_hdl_est {
+
+my $startLine = 1;
+my $moduleName ;
+my $noOfArguments = @_;
+
+if ($noOfArguments < 2 || $_[0] eq '-h')   {
+  print "Usage: read_hdl_est -hdl <verilog filename>\n";
+  return (1);
+} else {
+  for ( my $i = 0; $i < $noOfArguments; $i++ ) {
+    if ($_[$i] eq "-hdl") { $hdl_file = $_[$i+1]; }
+    if ($_[$i] eq "-startline") { $startLine = $_[$i+1]; }
+  }
+}
+
+
+################################################################################################
+#### local  variables                                                                       ####
+################################################################################################
+my $noOfArguments = @_;
+my $INPUT_VERILOG_FILE = $_[0];
+my $OUTPUT_VERILOG_FILE = $_[1];
+
+if( ( -e $hdl_file ) && ( -r $hdl_file ) ) {
+  print "INFO-PAR-HDL-EST : 001 : $hdl_file FILE EXISTS AND IS READABLE!\n";
+  print "INFO-PAR-HDL-EST : 002 : Start reading verilog file $hdl_file \n";
+  open (READ_INPUT_HDL, "$hdl_file");
+
+my $count = 0;
+my $scaled_count = 0;
+my $line_count = 0;
+my $verilogModuleCount = 0;
+my $line = "";
+my $i = 0;
+my $list_of_lm_pointers = "";
+my $cellref = "";
+my $remainder = "";
+my @nets = ();
+my $NON_UNIQUE_INSTANCE_NAME = 0;
+my $pinDirection = "";
+my $pinName = "";
+my $pinToFrom = "";
+my $skip_comment = 0;
+
+my $assignCount = 0;
+my $alwaysCount = 0;
+my $always_begin_found = -1;
+my $operator = 0;
+my $no_of_signal =0;
+my $OPERATOR_SIGNAL = "";
+my $always_end = 0;
+my @arr_lhs = ();
+my %SIGNAL_OPERATOR = ();
+my %TEMP_CHECK = ();
+my $cnt = 1;
+my $no_of_arr = "";
+my %SIGNAL_ASSIGN = ();
+my $no_of_exp = 0;
+my $EXP_SIGNAL = "";
+  while(<READ_INPUT_HDL>) {
+#------------------- skip lines before the start line ---------------------#
+for(my $xx = 0; $xx< $startLine ; $xx++) { next; }
+#------------------- skip lines before the start line ---------------------#
+
+#---------------- printing the line number ----------------#
+$count = $count + 1;
+if ($count =~ /0000$/){ print "INFO-PAR-HDL-EST : 003 : $count ...\n"; }
+
+chomp($_);
+$_ =~ s/\s+$//g;
+if ( $_ =~ /\/\*.*\*\// ) { $_ =~ s/\/\*.*\*\///g; }
+if ( $_ =~ /^\s*\/\*/ ) { $skip_comment = 1; next; }
+if ( $_ =~ /\*\// ) { $skip_comment = 0; next; }
+if ( $skip_comment == 1 ) { next; }
+                else {
+if($_ =~ /^\s*\/\//){next; }
+elsif($_ =~ /\`define/){next; }
+elsif($_ =~ /\`include/){next; }
+elsif($_ =~ /\`timescale/){next; }
+elsif($_ =~ /\`ifdef/){next; }
+elsif($_ =~ /\`else/){next; }
+elsif($_ =~ /^\s*parameter/){next; }
+elsif($_ =~ /^\s*reg /){
+                       next;
+                       }
+elsif($_ =~ /^\s*wire /){next; }
+elsif($_ =~ /\/\//){$_ =~ s/\/\/.*$//; }
+$line = $line.$_;
+                        print "DBG-PAR-HDL-EST:004 : line read is --> $line\n" if ( $DEBUG == 101);
+                
+
+##################################################################################################
+####       make array for geting the top level module                                         ####
+##################################################################################################
+
+if($line =~ /\bmodule\b/){$module_line = $line; $module_line =~ s/^\s*//; $module_line =~ s/\((.*)\)\;//; $module_line =~ s/\(/ \(/;
+                         ($moduleName) = (split(/\s+/,$module_line))[1];
+                         print "DBG-PAR-HDL-EST : 005 : reading module : $moduleName \n" if ($DEBUG == 101);
+                         if ( exists $MODULE_ALREADY{$moduleName} ) { } else {
+                         print "Please use read_hdl to read in the rtl for module $moduleName first\n";
+                                                                             }
+			} 
+elsif($line =~ /\bassign\b/) { print "DBG-PAR-HDL-EST : 006 : $line\n" if ($DEBUG == 101); 
+                               $assignCount++;
+                             } 
+elsif($line =~ /endmodule/){ print "DBG-PAR-HDL-EST : 007 : $line\n" if ($DEBUG == 101); } 
+#-------------------------------------------------------------------------------------------------------------------------------------#
+#elsif($line =~ /always\s*@.*begin$/){ print "DBG-PAR-HDL-EST : 008 : $line\n" if ($DEBUG == 101); 
+elsif($_ =~ m/always\s*@\(.*\)\s*begin\s*$/) {
+  $no_of_signal = 0;
+  $operator = 0;
+  $OPERATOR_SIGNAL = "";
+  @arr_lhs = ();
+  $cnt = 1;
+  $no_of_arr = "";
+  $no_of_exp = 0;
+  $EXP_SIGNAL = "";
+  %TEMP_CHECK = ();
+  $alwaysCount++;
+  $keyword = "always";
+  $always_begin_found++;
+  $always_end = 0;
+             }
+#elsif($line =~ /^(\s*|\s*else\s*)if\s*\(\w+\s*\&\&\s*\!\w+\)\s*begin\s*$/)
+elsif($line =~ /\s*begin\s*$/){
+                                $always_begin_found++;
+                                $always_end = 0; 
+                              }#elsif
+elsif($line =~ /^\s*end\b/){$always_begin_found--;
+                            if($always_begin_found == -1){$always_end = 1;}
+                           }#elsif
+#-------------------------------------------------------------------------------------------------------------------------------------#
+elsif($line =~ /^\s*else\b /){ print "DBG-PAR-HDL-EST : 009 : $line\n" if ($DEBUG == 101); } 
+elsif($line =~ /^\s*integer\b/){ print "DBG-PAR-HDL-EST : 010 : $line\n" if ($DEBUG == 101); } 
+#--------------------------------------------------------------------------------------------------------------------------------#
+#elsif($line =~ /^\s*end\b/){print "DBG-PAR-HDL-EST : 011 : $line\n" if ($DEBUG == 101); } 
+#elsif($line =~ /^\s*if\s*\(\b/){$always_begin_found++; print "DBG-PAR-HDL-EST : 012 : $line\n" if ($DEBUG == 101); } 
+#--------------------------------------------------------------------------------------------------------------------------------#
+elsif($line =~ /^\s*if\s*\(/){ print "DBG-PAR-HDL-EST : 013 : $line\n" if ($DEBUG == 101); } 
+elsif($line =~ /^\s*parameter/){ print "DBG-PAR-HDL-EST : 014 : $line\n" if ($DEBUG == 101); } 
+elsif($line =~ /\<=/){
+             $line =~ s/^\s*//;
+             my ($LHS) = (split(/\s+/,$line))[0]; 
+             #print "contAssign : $RHS\n";
+             #$modulePntr->$RHS->$
+             $line =~ s/^\s*\w*<=//;
+             my ($RHS) = (split(/\s+/,$line))[0]; 
+             }
+elsif($_ =~ /\|/){}
+#-------------------------------------------------Added by Mansi----------------------------------------------------------------------#
+if($always_begin_found >= 0 && $always_end == 0 ){
+  if($line =~ /^\s*if\s*.*\s*&&/){$line =~ s/^\s*//;$operator++;
+                    my($signal_1) = (split(/\s+/,$line))[1];$no_of_signal++;
+                    my($signal_2) = (split(/\s+/,$line))[3];$no_of_signal++;
+  }#if
+  elsif($line =~ /^\s*else\s*if\s*.*\s*&&/){$line =~ s/^\s*//;$operator++;
+                                    my($signal_1) = (split(/\s+/,$line))[2];$no_of_signal++;
+                                    my($signal_2) = (split(/\s+/,$line))[4];$no_of_signal++;
+  }#elsif
+  elsif($line =~ /\<=/){$no_of_exp++;
+        $line =~ s/^\s*//;
+        my ($L_H_S) = (split(/\s+/,$line))[0];
+        if(exists $TEMP_CHECK{$L_H_S}){
+           my $num = $TEMP_CHECK{$L_H_S};
+        }#if 
+        else {
+               $TEMP_CHECK{$L_H_S} = $cnt;
+               my $num = $TEMP_CHECK{$L_H_S};
+               push(@arr_lhs,$cnt);
+               $cnt++;
+             }#else
+  }#elsif
+$OPERATOR_SIGNAL = $operator." : ".$no_of_signal;
+$SIGNAL_OPERATOR{$alwaysCount} = $OPERATOR_SIGNAL;
+$no_of_arr = @arr_lhs;
+$EXP_SIGNAL = $no_of_exp." : ".$no_of_arr;
+$SIGNAL_ASSIGN{$alwaysCount} =  $EXP_SIGNAL;
+  }#if always found
+#---------------------------------------------------------------------------------------------------------------------#
+else {
+#### assumption that input and output lines will have only one pin / bus entry
+if($line =~ /\b[i,o][n,u]t*p*o*ut\b/){  $line =~ s/^\s+//;
+print "DBG-PAR-HDL-EST : 023 : $line\n" if ($DEBUG == 101);
+ 
+                            } else {
+if($line =~ /\bwire\b/){
+print "DBG-PAR-HDL-EST : 024 : $line\n" if ($DEBUG == 101);
+                       } else {
+if($line =~ /^$/){
+print "DBG-PAR-HDL-EST : 025 : $line\n" if ($DEBUG == 101);
+		} else {
+$line =~ s/^\s*//;
+
+$line =~ s/\(/ \(/;
+($cellref, $instance) = (split(/\s+/, $line))[0,1];
+           print "INFO-PAR-HDL-EST:026 : $moduleName : $line\n" if ($DEBUG == 101);
+#           $MODULE_ALREADY{$moduleName}->dbVNOMAddConn($line);
+
+} # empty lines loop
+} # wire loop
+} # input output loop
+} # endmodule loop
+#############################
+## reset the line variable ##
+#############################
+$line = "";
+                          #print "1095 $line\n" if ($DEBUG == 101);
+                        } # if line does not end loop
+} # while
+close(READ_INPUT_VERILOG);
+print "INFO-PAR-HDL-EST : 027 : Finished reading the verilog file \n";
+print "Stats\n";
+print "Always == $alwaysCount\n";
+print "assign == $assignCount\n";
+foreach my $no_of_always (sort{$a <=> $b} keys %SIGNAL_OPERATOR){
+   print "Always Number : $no_of_always\n";
+   print "&&   : $SIGNAL_OPERATOR{$no_of_always}\n";
+   if(exists $SIGNAL_ASSIGN{$no_of_always}){
+   print "<=   : $SIGNAL_ASSIGN{$no_of_always}\n";
+   }#if exists
+   else {print "ERR-PAR-RTL_EST : 027 : Always Number $no_of_always not exists\n";}
+}#foreach
+                           }# if file exists
+}#sub read_hdl_est
+#--------------------------------------------------------------------------------------------------------------------------------------#
+sub get_bitSize {
+  my $moduleName = $_[0];
+  my $portName = $_[1];
+  my $bitSize = "";
+  if(exists $MODULE_ALREADY{$moduleName}){
+    my @inPorts = $MODULE_ALREADY{$moduleName}->dbVNOMGetInput;
+    my @outPorts = $MODULE_ALREADY{$moduleName}->dbVNOMGetOutput;
+    my @bidiPorts = $MODULE_ALREADY{$moduleName}->dbVNOMGetBidi;
+    my @regPorts = $MODULE_ALREADY{$moduleName}->dbVNOMGetReg;
+  foreach  my $inprt ( @inPorts )  {
+    if($inprt =~ /$portName/){
+       my $busWidth = "";
+       my $type = $MODULE_ALREADY{$moduleName}->dbVNOMGetInputType($inprt); 
+       if ( $type == 1 ) {
+       $busWidth = $MODULE_ALREADY{$moduleName}->dbVNOMGetInputBits($inprt); 
+       $busWidth =~ s/\[//; $busWidth =~ s/\]//;
+       my ($Msb,$Lsb) = (split(/\:/,$busWidth))[0,1];
+       $bitSize = (abs($Msb-$Lsb)+1);	
+       }#if type == 1
+       if($type == 0){$bitSize = 1;}
+    }#if inprt 
+  }#foreach inprt 
+  foreach my $outprt (@outPorts){
+    if($outprt =~ /$portName/){
+       my $busWidth = "";
+       my $type = $MODULE_ALREADY{$moduleName}->dbVNOMGetOutputType($outprt);
+       if ( $type == 1) {
+            $busWidth = $MODULE_ALREADY{$moduleName}->dbVNOMGetOutputBits($outprt); 
+            $busWidth =~ s/\[//; $busWidth =~ s/\]//;
+            my ($Msb,$Lsb) = (split(/\:/,$busWidth))[0,1];
+            $bitSize = (abs($Msb-$Lsb)+1);	
+       }#if type == 1
+       if($type == 0){$bitSize = 1;}
+     }#if outprt
+  }#foreach outprt
+  foreach my $bidiprt (@bidiPorts){
+    if($bidiprt =~ /$portName/){
+       my $busWidth = "";
+       my $type = $MODULE_ALREADY{$moduleName}->dbVNOMGetBidiType($bidiprt);
+       if ( $type == 1) {
+            $busWidth = $MODULE_ALREADY{$moduleName}->dbVNOMGetBidiBits($bidiprt); 
+            $busWidth =~ s/\[//; $busWidth =~ s/\]//;
+            my ($Msb,$Lsb) = (split(/\:/,$busWidth))[0,1];
+            $bitSize = (abs($Msb-$Lsb)+1);	
+       }#if type == 1
+       if($type == 0){$bitSize = 1;}
+     }#if bidiprt
+  }#foreach bidiprt
+  foreach my $regprt (@regPorts){
+      if($regprt =~ /$portName/){
+      my $dim = $MODULE_ALREADY{$moduleName}->dbVNOMGetRegDimension($regprt);
+      my $reg_size = $MODULE_ALREADY{$moduleName}->dbVNOMGetRegSize($regprt);
+      $bitSize = $reg_size;
+      }#if regprt
+  }#foreach regprt
+}#if exists
+return($bitSize);     
+}#sub get_bitSize
+#-------------------------------------------------------------------------------------------------------------------------------------------------------------------#
+sub read_hdl_data 
+{
+my $noOfArguments = @_;
+
+if ($noOfArguments > 4 || $_[0] eq '-h')   {
+  print "Usage: read_hdl_data -module_name <module name> -hier_level <top|full>\n";
+  return (1);
+} 
+my $module_name_for_area = $GLOBAL->dbfGlobalGetTOP();
+my $hier_level = "full";
+for ( my $i = 0; $i < $noOfArguments; $i++ ) {
+  if ($_[$i] eq "-module_name") { $module_name_for_area = $_[$i+1]; }
+  if ($_[$i] eq "-hier_level") { $hier_level = $_[$i+1]; }
+}
+%TEMP_MODULE_ALREADY = ();
+if($hier_level eq "full"){
+&populate_list_of_modules_in_hierachy_stop_at_given_level_from_start_module($module_name_for_area,-1);
+}else{
+&populate_list_of_modules_in_hierachy_stop_at_given_level_from_start_module($module_name_for_area,1);
+}
+my $skip_comment = 0;
+my $always_begin = 0;
+my $sensitivity_list = "";
+my $always_cnt = "";
+my $curr_always_name = ""; 
+my $always_start = 0;
+my $always_sensitivity_start = 0;
+my $block_cond_start = 0;
+my @block_list = ();
+my $curr_block = "";
+my $cond = "";
+my $block_type = "";
+my $reg_assignment_start = 0;
+my $reg_assignment = "";
+my $curr_parent_block =  "";
+my $curr_expression = "";
+my $curr_assignment = "";
+my $lhs_curr_expression = "";
+my $rhs_curr_expression = "";
+my $lhs_assign_expr_str = "";
+my $rhs_assign_expr_str = "";
+my $case_stmt_start = 0;
+my $condition_bracket_status = 0;
+my $block_begin_found = 0;
+my $label_block_statment = 0;
+my $label_cond = "";
+my $moduleName = "";
+my $module_start = 0;
+%RTLDB =();
+foreach my $curr_module_name (keys %TEMP_MODULE_ALREADY){
+printf ("\nfor module $curr_module_name");
+#if(exists $nl{$curr_module_name}){
+  my $module_package = $nl->find_module($curr_module_name);
+#}
+if($module_package eq ""){
+  next;
+}
+my $hdl_file = $module_package->filename;
+my $start_line_no = $module_package->lineno;
+printf (" file $hdl_file line $start_line_no\n");
+if( ( -e $hdl_file ) && ( -r $hdl_file ) ) {
+  print "INFO-PAR-HDL-EST : 001 : $hdl_file FILE EXISTS AND IS READABLE!\n";
+  print "INFO-PAR-HDL-EST : 002 : Start reading verilog file $hdl_file \n";
+  open (READ_INPUT_HDL, "$hdl_file");
+  my $temp_line_count = 0;
+  while(<READ_INPUT_HDL>){
+  $temp_line_count++;
+  if($temp_line_count < $start_line_no ){
+    next;
+  }
+  $count = $count + 1;
+  if ($count =~ /0000$/){ print "INFO-PAR-HDL-EST : 003 : $count ...\n"; }
+  chomp();
+  if ( $_ =~ /\/\*[^\*\/]*\*\// ) { $_ =~ s/\/\*[^\*\/]*\*\///g; }
+  if ( $_ =~ /\/\*/ ) { $_ =~ s/\/\*.*$//; $skip_comment = 1;}
+  elsif ( $_ =~ /\*\// ) { $_ =~ s/^.*\*\///; $skip_comment = 0;}
+  elsif ($skip_comment == 1) {next;}
+  if($_ =~ /\/\//){
+     $_ =~ s/\/\/.*$//;
+  }
+  $_ =~ s/^\s*//;
+  $_ =~ s/\s*$//;
+# if ( $skip_comment == 1 ) { next; }
+#                    else {
+#  print "\nNarendra var is $_\n";
+  if($_ =~/\bmodule\b/){
+                        s/\(/ \(/;
+                        ($moduleName) = (split(/\s+/,$_))[1];
+                        $always_cnt = -1;
+                        $module_start = 1;
+                        if(exists $MODULE_ALREADY{$moduleName}){ 
+                        } else {
+                        print "INFO-PAR-RD_HDL_DATA : 001 : Please use read_hdl to read in the rtl for module $moduleName first\n";
+                                                                        }#else
+    $sensitivity_list = "";
+    $always_cnt++;
+    $curr_always_name = "";
+    $always_start = 0;
+    $always_sensitivity_start = 0;
+    @block_list = ();
+    $block_cond_start = 0;
+    $reg_assignment_start = 0;
+    $reg_assignment = "";
+    $condition_bracket_status = 0;
+    $label_block_statment = 0;
+    $label_cond = "";
+    next;
+  }#if
+  if($_ =~ /\bendmodule\b/){$_ = "";print "DBG-PAR-RD_HDL_DATA : 002 : $_\n" if ($DEBUG == 101); last;}
+   
+  while($_ !~ /^\s*$/) {
+#  print "\nNarendra var is $_\n";
+  if($module_start == 1 ){
+    if ($_ =~ /\balways\b/){
+    $sensitivity_list = "";
+    $always_cnt++;
+    $curr_always_name = "always" ."_".$always_cnt;
+    $_ =~ s/.*\balways\b\s*//;
+    $RTLDB{$moduleName}{$curr_always_name} = RTLDB_ALWAYS::new();
+    $always_start = 1;
+    $always_sensitivity_start = 1;
+    $condition_bracket_status = 0;
+    @block_list = ();
+    $block_cond_start = 0;
+    $reg_assignment_start = 0;
+    $reg_assignment = "";
+    $condition_bracket_status = 0;
+    $label_block_statment = 0;
+    $label_cond = "";
+  }
+  if($_ =~ (/\s*\bassign\b\s*/)||(/\s*\bwire\b\s*/)||(/\s*\bparameter\b\s*/) || (/\s*\bdefparam\b\s*/) ||(/\s*\btask\b\s*/)){
+     $always_start = 0;
+     $_ ="";
+  } elsif($always_start == 1){
+  #  if($always_sensitivity_start == 1){
+  #   if($_ =~ /\bbegin\b/){
+  #       $sensitivity_list = $sensitivity_list." ".$_;
+  #       $sensitivity_list =~ s/\s*\bbegin\b.*//;
+  #       $_ =~ s/.*\bbegin\b\s*//;
+  #       $RTLDB{$moduleName}{$curr_always_name}->dbRTLDB_Set_SensitivityList($sensitivity_list);
+  #       $RTLDB{$moduleName}{$curr_always_name}->dbRTLDB_ALWAYS_Set_Begin(1);
+  #       $always_sensitivity_start = 0;
+  #   }elsif($_ =~ (/\bif\b/)||(/\belse\b\s*\bif\b/)||(/\belse\b/)||(/\bfor\b/)||(/\bcase\b/)||(/^[^\[\?]*\:/)){
+  #       $sensitivity_list = $sensitivity_list." ".$_;
+  #       $sensitivity_list =~ s/\)\s*(\belse\b\s*\bif\b|\bif\b|\belse\b|\bfor\b|\bcase\b|^[^\[\?]*\:).*/\)/;
+  #       $_ =~ s/\)\s*(\belse\b\s*\bif\b|\bif\b|\belse\b|\bfor\b|\bcase\b|^[^\[\?]*\:)(.*)/$1$2/;
+  #       $RTLDB{$moduleName}{$curr_always_name}->dbRTLDB_Set_SensitivityList($sensitivity_list);
+  #       $always_sensitivity_start = 0;
+  #   }elsif($_ =~ (/\<=/)|| (/\=/)){
+  #       $sensitivity_list = $sensitivity_list." ".$_;
+  #       $sensitivity_list =~ s/\)\s*([^\s]*)\s*(\<=|\=)(.*)\s*;/\)/;
+  #       $_ =~ s/\)\s*([^\s]*)\s*(\<=|\=)(.*)\s*;/$1 $2$3;/;
+  #       $RTLDB{$moduleName}{$curr_always_name}->dbRTLDB_Set_SensitivityList($sensitivity_list);
+  #       $always_sensitivity_start = 0;
+  #   }else {
+  #       $sensitivity_list = $sensitivity_list." ".$_;
+  #   }
+  #}
+  if($always_sensitivity_start == 1){
+    my $temp_var = $_;
+    foreach my $char (split //, $temp_var) {
+      if($char eq "("){ 
+        $condition_bracket_status++;
+        $sensitivity_list = $sensitivity_list."".$char;
+        s/\Q$char\E//;
+      }elsif($char eq ")"){ 
+        $condition_bracket_status--;
+        $sensitivity_list = $sensitivity_list."".$char;
+        s/\Q$char\E//;
+        if($condition_bracket_status ==0){
+#          printf "\nin module $moduleName always $curr_always_name sensitivity list $sensitivity_list end found\n" ;
+          #s/^\s*\Q$sensitivity_list\E\s*//;
+          $RTLDB{$moduleName}{$curr_always_name}->dbRTLDB_Set_SensitivityList($sensitivity_list);
+          $always_sensitivity_start = 0;
+          last;
+        }
+
+      }else{
+        s/\Q$char\E//;
+        $sensitivity_list = $sensitivity_list."".$char;
+      }    
+    }
+  }elsif($_ =~ (/\bendcase\b/)||(/\bend\b/)){
+    if($_ =~ (/\bendcase\b/)){
+      $case_stmt_start--;
+    }
+    if($#block_list > 0){
+       my $delete_block = pop (@block_list);
+       $curr_block = $block_list[$#block_list];
+    } elsif($#block_list == 0){
+       $curr_block = "";
+       my $delete_block = pop (@block_list);
+       my $temp_block_type = $delete_block->dbRTLDB_BLOCK_Get_BLK_Type;
+       if(($temp_block_type ne "IF") && ($temp_block_type ne "ELSE_IF")){
+       my $alw_beginfound = $RTLDB{$moduleName}{$curr_always_name}->dbRTLDB_ALWAYS_Get_Begin;
+       if($alw_beginfound == 0) {
+         $always_start = 0 ;
+         next;
+       }
+       }
+    } elsif($#block_list < 0){
+       $curr_block = "";
+       $always_start = 0;
+       next;
+    }
+    while ($#block_list >=0) {
+        my $beginfound = $curr_block->dbRTLDB_BLOCK_Get_Begin;
+        if ($beginfound == 0){
+            if($#block_list > 0){
+               my $delete_block = pop (@block_list);
+               $curr_block = $block_list[$#block_list];
+            } elsif($#block_list == 0){
+               $curr_block = "";
+               my $delete_block = pop (@block_list);
+               my $temp_block_type = $delete_block->dbRTLDB_BLOCK_Get_BLK_Type;
+               if(($temp_block_type ne "IF") && ($temp_block_type ne "ELSE_IF")){
+               my $alw_beginfound = $RTLDB{$moduleName}{$curr_always_name}->dbRTLDB_ALWAYS_Get_Begin;
+               if($alw_beginfound == 0) {
+                 $always_start = 0 ;
+                 next;
+               }
+               }
+            }
+        }else{
+          last;
+        }
+    }
+    $_ =~ s/\s*\bendcase\b\s*//;
+    $_ =~ s/\s*\bend\b\s*//;
+   }elsif($_ =~ /^\s*\bbegin\b\s*/){
+    if($curr_block ne "") {
+       $curr_block->dbRTLDB_BLOCK_Set_Begin(1);
+    }else {
+       $RTLDB{$moduleName}{$curr_always_name}->dbRTLDB_ALWAYS_Set_Begin(1);
+    }
+    $_ =~ s/^\s*\bbegin\b\s*//;
+  }elsif($_ =~ /^\s*\:\s*[^\s]+/){
+    s/^\s*\:\s*[^\s]+//;
+  }elsif($_ =~ (/\bif\b/)||(/\belse\b\s*\bif\b/)||(/\belse\b/)||(/\bfor\b/)||(/\bcase\b/)||(/^[^\[\?]*\:/)){
+     $reg_assignment_start = 0;
+     $reg_assignment = "";
+     $cond = "";
+     $curr_block =  RTLDB_BLOCK::new(); 
+    if($#block_list >=0){
+      $curr_parent_block =  $block_list[$#block_list];
+      $curr_parent_block->dbRTLDB_BLOCK_Add_Block($curr_block);
+    }else{
+      $RTLDB{$moduleName}{$curr_always_name}->dbRTLDB_ALWAYS_Add_Block($curr_block);
+    }
+    push(@block_list,$curr_block);
+    if($_ =~ /\belse\b\s*\bif\b/){
+      $block_type = "ELSE_IF";
+      $block_cond_start = 1;
+      $condition_bracket_status = 0;
+      $label_block_statment = 0;
+    }elsif($_ =~ /\bif\b/){
+      $block_type = "IF" ;
+      $block_cond_start = 1;
+      $condition_bracket_status = 0;
+      $label_block_statment = 0;
+    }elsif($_ =~ /\belse\b/){
+      $block_type = "ELSE" ;
+      $block_cond_start = 0;
+      $label_block_statment = 0;
+    }elsif($_ =~ /\bfor\b/){
+      $block_type = "FOR" ;
+      $block_cond_start = 1;
+      $condition_bracket_status = 0;
+      $label_block_statment = 0;
+    }elsif($_ =~ /\bcase\b/){
+      $block_type = "CASE" ;
+      $block_cond_start = 1;
+      $condition_bracket_status = 0;
+      $label_block_statment = 0;
+      $case_stmt_start++;
+      $curr_block->dbRTLDB_BLOCK_Set_Begin(1);
+    }elsif($_ =~ /^[^\[\?]*\:/){
+      #print "\nMansis LABEL found $_\n";
+      $block_type = "LABEL";
+      $label_block_statment = 1;
+      $label_cond = $_;
+      $label_cond =~ s/\:.*//;
+      s/\Q$label_cond\E\s*\:\s*//;
+      $label_cond =~ s/\s*//g;
+      #s/\Q$label_cond\E\s*\:\s*//;
+      $curr_expression = RTLDB_EXPRESSION::new(); 
+      $curr_expression->dbRTLDB_EXPRESSION_Set_Exp_String($label_cond);
+      &calculate_operand_and_operator_list($label_cond);
+      $curr_expression->dbRTLDB_EXPRESSION_Add_Operator_Array(@operator_list);
+      $curr_expression->dbRTLDB_EXPRESSION_Add_Operand_Array(@operand_list);
+      $curr_block->dbRTLDB_BLOCK_Set_BLK_Condition($label_cond);
+      $curr_block->dbRTLDB_BLOCK_Add_condition_expression($curr_expression);
+      $label_block_statment = 0;
+      $label_cond = "";
+      $block_cond_start = 0;
+    }
+    $curr_block->dbRTLDB_BLOCK_Set_BLK_Type($block_type);
+    $_ =~ s/\s*\belse\b\s*\bif\b\s*//;
+    $_ =~ s/\s*\belse\b\s*//;
+    $_ =~ s/\s*\bif\b\s*//;
+    $_ =~ s/\s*\bfor\b\s*//;
+    $_ =~ s/\s*\bcase\b\s*//;
+    #$_ =~ s/^[^\[\?]*\://;
+  }elsif($block_cond_start == 1){
+    my $temp_var = $_;
+    foreach my $char (split //, $temp_var) {
+      if($char eq "("){ 
+        $condition_bracket_status++;
+        $cond = $cond."".$char;
+        s/\Q$char\E//;
+      }elsif($char eq ")"){ 
+        $condition_bracket_status--;
+        $cond = $cond."".$char;
+        s/\Q$char\E//;
+        if($condition_bracket_status ==0){
+          #s/^\s*\Q$cond\E\s*//;
+          $curr_expression = RTLDB_EXPRESSION::new(); 
+          $curr_expression->dbRTLDB_EXPRESSION_Set_Exp_String($cond);
+          &calculate_operand_and_operator_list($cond);
+          $curr_expression->dbRTLDB_EXPRESSION_Add_Operator_Array(@operator_list);
+          $curr_expression->dbRTLDB_EXPRESSION_Add_Operand_Array(@operand_list);
+          $curr_block->dbRTLDB_BLOCK_Set_BLK_Condition($cond);
+          $curr_block->dbRTLDB_BLOCK_Add_condition_expression($curr_expression);
+          $block_cond_start = 0;
+          last;
+        }
+
+      }else{
+        s/\Q$char\E//;
+        $cond = $cond."".$char;
+      }    
+    }
+  }elsif($_ =~ (/\<=/)|| (/\=/)){
+     $reg_assignment_start = 1;
+    if($_ =~ /\;/){
+      $reg_assignment = $reg_assignment." ".$_;
+      $reg_assignment =~ s/\s*\;//;
+      $curr_assignment = RTLDB_REGISTER_ASSIGN::new(); 
+      $curr_assignment->dbRTLDB_REGISTER_ASSIGN_Set_assing_string($reg_assignment);
+      if($reg_assignment =~ /\<=/){
+      ($lhs_assign_expr_str,$rhs_assign_expr_str) = (split((/\<=/),$reg_assignment))[0,1];
+      }elsif($reg_assignment =~ /\=/){
+      ($lhs_assign_expr_str,$rhs_assign_expr_str) = (split((/\=/),$reg_assignment))[0,1];
+      }
+      $lhs_assign_expr_str =~ s/\s*\#\s*(((\d+)\.(\d+))|(\d+))//;
+      $rhs_assign_expr_str =~ s/\s*\#\s*(((\d+)\.(\d+))|(\d+))//;
+      $lhs_curr_expression = RTLDB_EXPRESSION::new(); 
+      $lhs_curr_expression->dbRTLDB_EXPRESSION_Set_Exp_String($lhs_assign_expr_str);
+      &calculate_operand_and_operator_list($lhs_assign_expr_str);
+      $lhs_curr_expression->dbRTLDB_EXPRESSION_Add_Operator_Array(@operator_list);
+      $lhs_curr_expression->dbRTLDB_EXPRESSION_Add_Operand_Array(@operand_list);
+      $curr_assignment->dbRTLDB_REGISTER_ASSIGN_Set_lhs_expression($lhs_curr_expression);
+
+      $rhs_curr_expression = RTLDB_EXPRESSION::new(); 
+      $rhs_curr_expression->dbRTLDB_EXPRESSION_Set_Exp_String($rhs_assign_expr_str);
+      &calculate_operand_and_operator_list($rhs_assign_expr_str);
+      $rhs_curr_expression->dbRTLDB_EXPRESSION_Add_Operator_Array(@operator_list);
+      $rhs_curr_expression->dbRTLDB_EXPRESSION_Add_Operand_Array(@operand_list);
+      $curr_assignment->dbRTLDB_REGISTER_ASSIGN_Set_rhs_expression($rhs_curr_expression);
+      my @rhs_exp_operator = $rhs_curr_expression->dbRTLDB_EXPRESSION_Get_Operator_Array; 
+      my @rhs_exp_operand = $rhs_curr_expression->dbRTLDB_EXPRESSION_Get_Operand_Array;
+      foreach my $oprtr (@rhs_exp_operator){
+        if($oprtr =~ /\?\:/){
+          my $oprnd = shift (@rhs_exp_operand);
+          &calculate_operand_and_operator_list($oprnd);
+          my @rhs_exp_operator_temp = $rhs_curr_expression->dbRTLDB_EXPRESSION_Get_Operator_Array; 
+          my @rhs_exp_operand_temp = $rhs_curr_expression->dbRTLDB_EXPRESSION_Get_Operand_Array;
+          @rhs_exp_operator_temp = (@rhs_exp_operator_temp,@operator_list);
+          @rhs_exp_operand_temp = (@rhs_exp_operand_temp,@operand_list);
+          $rhs_curr_expression->dbRTLDB_EXPRESSION_Add_Operator_Array(@rhs_exp_operator_temp);
+          $rhs_curr_expression->dbRTLDB_EXPRESSION_Add_Operand_Array(@rhs_exp_operand_temp);
+        }
+      }
+
+      $reg_assignment_start = 0;
+      if($#block_list >= 0){
+        $curr_block->dbRTLDB_BLOCK_Add_BLK_Reg_Assign_List($curr_assignment);
+        while ($#block_list >=0) {
+            my $beginfound = $curr_block->dbRTLDB_BLOCK_Get_Begin;
+            if ($beginfound == 0){
+                if($#block_list > 0){
+                   my $delete_block = pop (@block_list);
+                   $curr_block = $block_list[$#block_list];
+                } elsif($#block_list == 0){
+                   $curr_block = "";
+                   my $delete_block = pop (@block_list);
+                   my $temp_block_type = $delete_block->dbRTLDB_BLOCK_Get_BLK_Type;
+                   if(($temp_block_type ne "IF") && ($temp_block_type ne "ELSE_IF")){
+                   my $alw_beginfound = $RTLDB{$moduleName}{$curr_always_name}->dbRTLDB_ALWAYS_Get_Begin;
+                   if($alw_beginfound == 0) {
+                     $always_start = 0 ;
+                     next;
+                   }
+                   }
+                }
+            }else{
+              last;
+            }
+        }
+      }else {
+        $RTLDB{$moduleName}{$curr_always_name}->dbRTLDB_Add_Reg_Assign_List($curr_assignment);
+        #my $delete_block = pop (@block_list);
+        #my $temp_block_type = $delete_block->dbRTLDB_BLOCK_Get_BLK_Type;
+        #if(($temp_block_type ne "IF") && ($temp_block_type ne "ELSE_IF")){
+        my $alw_beginfound = $RTLDB{$moduleName}{$curr_always_name}->dbRTLDB_ALWAYS_Get_Begin;
+        if($alw_beginfound == 0) {
+          $always_start = 0 ;
+          $reg_assignment = "";
+          $_ = "";
+          next;
+        }
+        #}
+      }
+       $reg_assignment = "";
+       $_ = "";
+     }else {
+       $reg_assignment = $reg_assignment." ".$_;
+       $_ = "";
+     }
+   }elsif($reg_assignment_start ==1){
+    if($_ =~ /\;/){
+      $reg_assignment = $reg_assignment." ".$_;
+      $reg_assignment =~ s/\s*\;//;
+      $curr_assignment = RTLDB_REGISTER_ASSIGN::new(); 
+      $curr_assignment->dbRTLDB_REGISTER_ASSIGN_Set_assing_string($reg_assignment);
+      if($reg_assignment =~ /\<=/){
+      ($lhs_assign_expr_str,$rhs_assign_expr_str) = (split((/\<=/),$reg_assignment))[0,1];
+      }elsif($reg_assignment =~ /\=/){
+      ($lhs_assign_expr_str,$rhs_assign_expr_str) = (split((/\=/),$reg_assignment))[0,1];
+      }
+      $lhs_assign_expr_str =~ s/\s*\#\s*(((\d+)\.(\d+))|(\d+))//;
+      $rhs_assign_expr_str =~ s/\s*\#\s*(((\d+)\.(\d+))|(\d+))//;
+      $lhs_curr_expression = RTLDB_EXPRESSION::new(); 
+      $lhs_curr_expression->dbRTLDB_EXPRESSION_Set_Exp_String($lhs_assign_expr_str);
+      &calculate_operand_and_operator_list($lhs_assign_expr_str);
+      $lhs_curr_expression->dbRTLDB_EXPRESSION_Add_Operator_Array(@operator_list);
+      $lhs_curr_expression->dbRTLDB_EXPRESSION_Add_Operand_Array(@operand_list);
+      $curr_assignment->dbRTLDB_REGISTER_ASSIGN_Set_lhs_expression($lhs_curr_expression);
+
+      $rhs_curr_expression = RTLDB_EXPRESSION::new(); 
+      $rhs_curr_expression->dbRTLDB_EXPRESSION_Set_Exp_String($rhs_assign_expr_str);
+      &calculate_operand_and_operator_list($rhs_assign_expr_str);
+      $rhs_curr_expression->dbRTLDB_EXPRESSION_Add_Operator_Array(@operator_list);
+      $rhs_curr_expression->dbRTLDB_EXPRESSION_Add_Operand_Array(@operand_list);
+      $curr_assignment->dbRTLDB_REGISTER_ASSIGN_Set_rhs_expression($rhs_curr_expression);
+      my @rhs_exp_operator = $rhs_curr_expression->dbRTLDB_EXPRESSION_Get_Operator_Array; 
+      my @rhs_exp_operand = $rhs_curr_expression->dbRTLDB_EXPRESSION_Get_Operand_Array;
+      foreach my $oprtr (@rhs_exp_operator){
+        if($oprtr =~ /\?\:/){
+          my $oprnd = shift (@rhs_exp_operand);
+          &calculate_operand_and_operator_list($oprnd);
+          my @rhs_exp_operator_temp = $rhs_curr_expression->dbRTLDB_EXPRESSION_Get_Operator_Array; 
+          my @rhs_exp_operand_temp = $rhs_curr_expression->dbRTLDB_EXPRESSION_Get_Operand_Array;
+          @rhs_exp_operator_temp = (@rhs_exp_operator_temp,@operator_list);
+          @rhs_exp_operand_temp = (@rhs_exp_operand_temp,@operand_list);
+          $rhs_curr_expression->dbRTLDB_EXPRESSION_Add_Operator_Array(@rhs_exp_operator_temp);
+          $rhs_curr_expression->dbRTLDB_EXPRESSION_Add_Operand_Array(@rhs_exp_operand_temp);
+        }
+      }
+
+      $reg_assignment_start = 0;
+      if($#block_list >= 0){
+        $curr_block->dbRTLDB_BLOCK_Add_BLK_Reg_Assign_List($curr_assignment);
+        while ($#block_list >=0) {
+            my $beginfound = $curr_block->dbRTLDB_BLOCK_Get_Begin;
+            if ($beginfound == 0){
+                if($#block_list > 0){
+                   my $delete_block = pop (@block_list);
+                   $curr_block = $block_list[$#block_list];
+                } elsif($#block_list == 0){
+                   $curr_block = "";
+                   my $delete_block = pop (@block_list);
+                   my $temp_block_type = $delete_block->dbRTLDB_BLOCK_Get_BLK_Type;
+                   if(($temp_block_type ne "IF") && ($temp_block_type ne "ELSE_IF")){
+                   my $alw_beginfound = $RTLDB{$moduleName}{$curr_always_name}->dbRTLDB_ALWAYS_Get_Begin;
+                   if($alw_beginfound == 0) {
+                     $always_start = 0 ;
+                     next;
+                   }
+                   }
+                }
+            }else{
+              last;
+            }
+        }
+      }else {
+        $RTLDB{$moduleName}{$curr_always_name}->dbRTLDB_Add_Reg_Assign_List($curr_assignment);
+        #my $delete_block = pop (@block_list);
+        #my $temp_block_type = $delete_block->dbRTLDB_BLOCK_Get_BLK_Type;
+        #if(($temp_block_type ne "IF") && ($temp_block_type ne "ELSE_IF")){
+        my $alw_beginfound = $RTLDB{$moduleName}{$curr_always_name}->dbRTLDB_ALWAYS_Get_Begin;
+        if($alw_beginfound == 0) {
+          $always_start = 0 ;
+          $reg_assignment = "";
+          $_ = "";
+          next;
+        }
+        #}
+      }
+       $reg_assignment = "";
+       $_ = "";
+     }else {
+       $reg_assignment = $reg_assignment." ".$_;
+       $_ = "";
+     }
+   }elsif($_ =~ /^\s*\bbegin\b\s*/){
+    if($curr_block ne "") {
+       $curr_block->dbRTLDB_BLOCK_Set_Begin(1);
+    }else {
+       $RTLDB{$moduleName}{$curr_always_name}->dbRTLDB_ALWAYS_Set_Begin(1);
+    }
+    $_ =~ s/^\s*\bbegin\b\s*//;
+  }else{
+   $_ = "";
+  }
+ }else{
+   $_ = "";
+ }
+}
+#}
+}
+}
+close (READ_INPUT_HDL);
+}
+}
+}#sub read_hdl_data
+#-----------------------------------------------------------------------------------------------------------------------------------------------#
+sub calculate_operand_and_operator_list {
+  my $inputString = $_[0];
+  my $spice_param = $_[1];
+  @operator_list = ();
+  @operand_list = ();
+  my $logical_not = 0;
+  my $opening_parenthesis = 0;
+  my $closing_parenthesis = 0;
+  my $bit_wise_not = 0;
+  my $bitwise_and = 0;
+  my $bit_wise_or = 0; 
+  my $bitwise_nand = 0;
+  my $bitwise_xor = 0;
+  my $bitwise_xnor = 0;
+  my $plus_operator = 0;
+  my $minus_operator = 0;
+  my $opening_concatenation = 0;
+  my $closing_concatenation = 0;
+  my $opening_replication = 0;
+  my $closing_replication = 0;
+  my $multiply = 0 ;
+  my $divide = 0;
+  my $modulus = 0;
+  my $shift_left = 0;
+  my $shift_right = 0;
+  my $less_than = 0;
+  my $less_than_or_eq = 0;
+  my $greater_than = 0;
+  my $greater_than_or_eq = 0;
+  my $logical_equality = 0;
+  my $logical_inequality = 0;
+  my $case_ineuqality = 0;
+  my $logical_and = 0;
+  my $logical_or = 0;
+  my $conditional = 0;
+  my $reduction_xnor = 0;
+  my $reduction_nor =0;
+  my $index_cnt = 0 ;
+  my $current_operand = "";
+  my $currnt_oprtr_lst_indx = 0;
+  my $prv_oprtr_lst_indx = 0;
+  my @operator_operand_list = ();
+   $inputString =~ s/\s+//g;
+   #print "\nmansis inputString is $inputString\n";
+   if($inputString =~ /([^\?]*)\?([^\:]*)\:/){
+     push(@operator_list,"\?\:");
+     push(@operand_list,$1);
+     push(@operand_list,$2);
+     return;
+   }
+   while(substr($inputString,$index_cnt) =~ /(\(|\)|\!|\~|\&|\||\~\&|\~\||\^|\~\^|\^\~|\+\s*(?!:)|\-\s*(?!:)|\*|\/|\%|\<\<|\>\>|\<|\<=|\>|\>=|\=\=|\!\=|\!\=\=|&&|\|\||\?.*\:)/){
+    #my $tempPrintStr = substr($inputString,$index_cnt,1);
+    #print "\nIn second while loop mansis inputString one is \"$inputString\" current char is \"$tempPrintStr\" index_cnt is $index_cnt\n";
+    if(substr($inputString,$index_cnt,1) eq "["){
+      while(substr($inputString,$index_cnt,1) ne "]"){
+        $index_cnt += 1;
+      }
+    }
+    if(substr($inputString,$index_cnt,1) eq "("){
+      $opening_parenthesis++;
+      substr($inputString,$index_cnt,1) = " ";
+      if($spice_param == 1){
+        push(@operator_list,"(");
+      }
+      $index_cnt += 1;
+    }elsif(substr($inputString,$index_cnt,1) eq ")"){
+      $closing_parenthesis++;
+      substr($inputString,$index_cnt,1) = " ";
+      if($spice_param == 1){
+        push(@operator_list,")");
+      }
+      $index_cnt += 1;
+    }elsif(substr($inputString,$index_cnt,3) eq "!=="){
+        $case_ineuqality++;
+        substr($inputString,$index_cnt,3) = "   ";
+        push(@operator_list,"!==");
+        $index_cnt += 3;
+    }elsif(substr($inputString,$index_cnt,2) eq "!="){
+        $logical_inequality++;
+        substr($inputString,$index_cnt,2) = "  ";
+        push(@operator_list,"!=");
+        $index_cnt += 2;
+    }elsif(substr($inputString,$index_cnt,1) eq "!"){
+        $logical_not++;
+        substr($inputString,$index_cnt,1) = " ";
+        push(@operator_list,"!");
+        $index_cnt += 1;
+    }elsif(substr($inputString,$index_cnt,2) eq "&&"){
+        $logical_and++;
+        substr($inputString,$index_cnt,2) = "  ";
+        push(@operator_list,"&&");
+        $index_cnt += 2;
+    }elsif(substr($inputString,$index_cnt,2) eq "~&"){
+      $bitwise_nand++;
+      substr($inputString,$index_cnt,2) = "  ";
+      push(@operator_list,"~&");
+      $index_cnt += 2;
+    }elsif(substr($inputString,$index_cnt,2) eq "^~"){
+      $bitwise_xnor++;
+      substr($inputString,$index_cnt,2) = "  ";
+      push(@operator_list,"^~");
+      $index_cnt += 2;
+    }elsif(substr($inputString,$index_cnt,2) eq "~^"){
+      $reduction_xnor++;
+      substr($inputString,$index_cnt,2) = "  ";
+      push(@operator_list,"~^");
+      $index_cnt += 2;
+    }elsif(substr($inputString,$index_cnt,2) eq "~|"){
+      $reduction_nor++;
+      substr($inputString,$index_cnt,2) = "  ";
+      push(@operator_list,"~|");
+      $index_cnt += 2;
+    }elsif(substr($inputString,$index_cnt,1) eq "\~"){         
+      $bit_wise_not++;
+      substr($inputString,$index_cnt,1) = " ";
+      push(@operator_list,"\~");
+      $index_cnt += 1;
+    }elsif(substr($inputString,$index_cnt,1) eq "&"){
+      $bitwise_and++;
+      substr($inputString,$index_cnt,1) = " ";
+      push(@operator_list,"&");
+      $index_cnt += 1;
+    }elsif(substr($inputString,$index_cnt,2) eq "||"){
+      $logical_or++;
+      substr($inputString,$index_cnt,2) = "  ";
+      push(@operator_list,"||");
+      $index_cnt += 2;
+    }elsif(substr($inputString,$index_cnt,1) eq "|"){
+      $bit_wise_or++;
+      substr($inputString,$index_cnt,1) = " ";
+      push(@operator_list,"|");
+      $index_cnt += 1;
+    }elsif(substr($inputString,$index_cnt,1) eq "-"){                    
+      if(substr($inputString,$index_cnt+1,1) ne "\:"){
+        $minus_operator++;
+        substr($inputString,$index_cnt,1) = " ";
+        push(@operator_list,"-");
+        $index_cnt += 1;
+      }else{
+        $index_cnt += 1;
+      }
+    }elsif(substr($inputString,$index_cnt,1) eq "^"){
+      $bitwise_xor++;
+      substr($inputString,$index_cnt,1) = " ";
+      push(@operator_list,"^");
+      $index_cnt += 1;
+    }elsif(substr($inputString,$index_cnt,2) eq "=="){
+      $logical_equality++;
+      substr($inputString,$index_cnt,2) = "  ";
+      push(@operator_list,"==");
+      $index_cnt += 2;
+    }elsif(substr($inputString,$index_cnt,2) eq "<="){
+      $less_than_or_eq++;
+      substr($inputString,$index_cnt,2) = "  ";
+      push(@operator_list,"<=");
+      $index_cnt += 2;
+    }elsif(substr($inputString,$index_cnt) =~ /^\?.*\:/){
+      $conditional++;
+      substr($inputString,$index_cnt,2) = "  ";
+      push(@operator_list,"?:");
+      $index_cnt += 2;
+    #}elsif(substr($inputString ,$index_cnt,2) eq "{{"){
+    #  $opening_replication++;
+    #  substr($inputString,$index_cnt,2) = "  ";
+    #  push(@operator_list,"{{");
+    #  $index_cnt += 2;
+    #}elsif(substr($inputString,$index_cnt,2) eq "}}"){
+    #  $closing_replication++;
+    #  substr($inputString,$index_cnt,2) = "  ";
+    #  push(@operator_list,"}}");
+    #  $index_cnt += 2;
+    #}elsif(substr($inputString,$index_cnt,1) eq "{"){
+    #  $opening_concatenation++;
+    #  substr($inputString,$index_cnt,1) = " ";
+    #  push(@operator_list,"{");
+    #  $index_cnt += 1;
+    #}elsif(substr($inputString,$index_cnt,1) eq "}"){
+    #  $closing_concatenation++;
+    #  substr($inputString,$index_cnt,1) = " ";
+    #  push(@operator_list,"}");
+    #  $index_cnt += 1;
+    }elsif(substr($inputString,$index_cnt,2) eq ">="){
+      $greater_than_or_eq++;
+      substr($inputString,$index_cnt,2) = "  ";
+      push(@operator_list,">=");
+      $index_cnt += 2;
+    }elsif(substr($inputString,$index_cnt,2) eq "<<"){
+      $shift_left++;
+      substr($inputString,$index_cnt,2) = "  ";
+      push(@operator_list,"<<");
+      $index_cnt += 2;
+    }elsif(substr($inputString,$index_cnt,2) eq ">>"){
+      $shift_right++;
+      substr($inputString,$index_cnt,2) = "  ";
+      push(@operator_list,">>");
+      $index_cnt += 2;
+    }elsif(substr($inputString,$index_cnt,1) eq "<"){
+      $less_than++;
+      substr($inputString,$index_cnt,1) = " ";
+      push(@operator_list,"<");
+      $index_cnt += 1;
+    }elsif(substr($inputString,$index_cnt,1) eq ">"){
+      $greater_than++;
+      substr($inputString,$index_cnt,1) = " ";
+      push(@operator_list,">");
+      $index_cnt += 1;
+    }elsif(substr($inputString,$index_cnt,1) eq "/"){
+      $divide++;
+      substr($inputString,$index_cnt,1) = " ";
+      push(@operator_list,"/");
+      $index_cnt += 1;
+    }elsif(substr($inputString,$index_cnt,1) eq "*"){
+      $multiply++;
+      substr($inputString,$index_cnt,1) = " ";
+      push(@operator_list,"*");
+      $index_cnt += 1;
+    }elsif(substr($inputString,$index_cnt,1) eq "%"){
+      $modulus++;
+      substr($inputString,$index_cnt,1) = " ";
+      push(@operator_list,"%");
+      $index_cnt += 1;
+    }elsif(substr($inputString,$index_cnt,1) eq "\+"){
+      if(substr($inputString,$index_cnt+1,1) ne "\:"){
+        $plus_operator++;
+        substr($inputString,$index_cnt,1) = " ";
+        push(@operator_list,"+");
+        $index_cnt += 1;
+      }else{
+        $index_cnt += 1;
+      }
+    }else {
+      if($spice_param == 1){
+        $currnt_oprtr_lst_indx = $#operator_list;
+        if(($prv_oprtr_lst_indx<=$currnt_oprtr_lst_indx)&& ($current_operand ne "")){
+          push(@operator_operand_list,$current_operand);
+          $current_operand = "";
+        }
+        for(my $oprtr_indx=$prv_oprtr_lst_indx;$oprtr_indx<=$currnt_oprtr_lst_indx;$oprtr_indx++){
+          push(@operator_operand_list,$operator_list[$oprtr_indx]);
+        }
+        $current_operand .= substr($inputString,$index_cnt,1) ;
+        $prv_oprtr_lst_indx = $currnt_oprtr_lst_indx+1;
+        $index_cnt++;
+      }else {
+        $index_cnt++;
+      }
+    }
+  }
+  #print " operator list is @operator_list\n";
+  if($spice_param == 1){
+    $currnt_oprtr_lst_indx = $#operator_list;
+    if(($prv_oprtr_lst_indx<=$currnt_oprtr_lst_indx)&& ($current_operand ne "")){
+      push(@operator_operand_list,$current_operand);
+      $current_operand = "";
+    }
+    for(my $oprtr_indx=$prv_oprtr_lst_indx;$oprtr_indx<=$currnt_oprtr_lst_indx;$oprtr_indx++){
+      push(@operator_operand_list,$operator_list[$oprtr_indx]);
+    }
+    $current_operand .= substr($inputString,$index_cnt) ;
+    if($current_operand ne ""){
+     push (@operator_operand_list,$current_operand);
+    }
+  }
+  $inputString =~ s/^\s+//;
+  $inputString =~ s/\s+$//;
+  #$inputString =~ s/\s*\[\s*/\[/;
+  #$inputString =~ s/\s*\,\s*/\,/g;
+  @operand_list = (split(/\s+/,$inputString));
+  @sorted_operator_list = sort {$a <=> $b;} @operator_list;
+  if($spice_param == 1){
+    return (@operator_operand_list);
+  }
+}#sub calculate_operand_and_operator_list
+#-----------------------------------------------------------------------------------#
+sub rtl_area_estimation {
+my $noOfArguments = @_;
+if($noOfArguments < 0 || $_[0] eq '-h'){print "Usage : rtl_area_estimation\n";
+                                        print "      : -f <filename>\n";
+                                       }
+else {
+my $filename;
+  for (my $i = 0; $i < $noOfArguments; $i++){
+       if($_[$i] eq "-f") { $filename = $_[$i+1];}
+  }
+#$filename = shift;
+#$areafile = "area.out";
+#$area=5;
+if(( -e $filename) && (-r $filename)){
+my $finalarea=0;
+my $category=start;
+my $index;
+my $bitsize;
+my $area;
+my $sum;
+my $buff;
+my $newcategory;
+my $addersub = addersub;   # For subtracting a number when we have an adder
+my $subsub = subsub;
+my %hashsum;
+open(FILE, $filename) or die "Could not open file: $!";
+while(my $line=<FILE>){
+chomp();
+  if($line =~ /(\S+)\s+(\d+)\s+(\d+)/ ) {
+	$sum = 0; #print "sum = $sum\n";
+        $buff=0;
+        $newcategory = ${1};
+        if ($category ne $newcategory) {
+          print "changing category from $category to $newcategory\n" if($DEBUG == 100);
+        }
+        $category = $newcategory; 
+        
+	$index = ${2};
+        $bitsize = ${3}; 
+
+        if ($category eq ">>") {
+           $sum = $index - $bitsize ;
+        }
+        elsif ($category eq "<<") {
+           $sum = $index - $bitsize ; 
+        }
+        elsif ($category eq ">>>") {
+           $sum = $index - $bitsize ; 
+        }
+        elsif ($category eq "<<<") {
+           $sum = $index - $bitsize ; 
+        }
+        elsif ($category eq "CASE") {
+           $sum = $index + $bitsize ; 
+        }
+        elsif ($category eq "?:") {
+           $sum = $index + $bitsize ; 
+        }
+        elsif ($category eq "*") {
+           $sum = ($index > $bitsize) ? $index : $bitsize ; 
+        }
+        elsif ($category eq "+") {
+                              if ($index eq $bitsize){
+                                  $sum = $index; 
+                                  }
+                              elsif ($index > $bitsize) {
+                                  $hashsum{$category} = $hashsum{$category} + $index;
+                                  $sum = $index - $bitsize;
+                                  $category = $addersub; }
+                              elsif ($bitsize > $index) {
+                                  $hashsum{$category} = $hashsum{$category} + $bitsize;
+                                  $sum = $bitsize - $index;
+                                  $category = $addersub; } 
+        }
+        elsif ($category eq "-") {
+                              if ($index eq $bitsize){
+                                  $sum = $index; 
+                                  }
+                              elsif ($index > $bitsize) {
+                                  $hashsum{$category} = $index;
+                                  $sum = $index - $bitsize;
+                                  $category = $subsub; }
+                              elsif ($bitsize > $index) {
+                                  $hashsum{$category} = $bitsize;
+                                  $sum = $bitsize - $index;
+                                  $category = $subsub; } 
+        }
+        elsif ($category eq "==") {
+                               $sum = ($index > $bitsize)? $index : $bitsize;
+                                  }
+        elsif ($category eq "!=") {
+                               $sum = ($index > $bitsize)? $index : $bitsize;
+                                  }
+        elsif ($category eq "===") {
+                               $sum = ($index > $bitsize)? $index : $bitsize;
+                                  }
+        elsif ($category eq "!==") {
+                               $sum = ($index > $bitsize)? $index : $bitsize;
+                                  }
+        elsif ($category eq "&") {
+                               $sum = ($index > $bitsize)? $index : $bitsize;
+                                  }        
+        elsif ($category eq "&&") {
+                               $sum = ($index > $bitsize)? $index : $bitsize;
+                                  }
+        elsif ($category eq "|") {
+                               $sum = ($index > $bitsize)? $index : $bitsize;
+                                  }
+        elsif ($category eq "||") {
+                               $sum = ($index > $bitsize)? $index : $bitsize;
+                                  }
+        elsif ($category eq "or") {
+                               $sum = ($index > $bitsize)? $index : $bitsize;
+                                  }
+        elsif ($category eq "and") {
+                               $sum = ($index > $bitsize)? $index : $bitsize;
+                                  }
+        elsif ($category eq "^") {
+                               $sum = ($index > $bitsize)? $index : $bitsize;
+                                  }
+        elsif ($category eq "IF_ELSE") {
+                               $sum = $index + $bitsize;
+                                  }
+        elsif ($category eq "IF") {
+                               $sum = $index + $bitsize;
+                                  }
+        elsif ($category eq "ELSE") {
+                               $sum = $index + $bitsize;
+                                  }
+        elsif ($category eq "ELSE_IF") {
+                               $sum = $index + $bitsize;
+                                  }
+        
+
+        else {
+        $sum = $sum + $bitsize;
+        }
+        
+        if (exists $hashsum{$category}) {
+          $sum = $sum + $hashsum{$category};
+          $hashsum{$category} = $sum;
+        } else {
+         $hashsum{$category} = $sum;
+        }
+
+        ##print "sum = $sum\n";
+  } # end of if
+
+  elsif ($line =~ /(\d+)\s+(\d+)/ ) {
+     
+    if ($category eq ">>") {
+           $sum = $sum + ${1} - ${2} ;
+           $hashsum{$category} = $sum;
+        }
+        elsif ($category eq "<<") {
+           $sum = $sum + ${1} - ${2} ; 
+           $hashsum{$category} = $sum;
+        }
+        elsif ($category eq ">>>") {
+           $sum = $sum + ${1} - ${2} ; 
+           $hashsum{$category} = $sum;
+        }
+        
+        elsif ($category eq "==") {
+                               $sum = $sum + ((${1} > ${2})? ${1} : ${2}); 
+                               $hashsum{$category} = $sum;
+                                  }
+        elsif ($category eq "!=") {
+                               $sum = $sum + ((${1} > ${2})? ${1} : ${2}); 
+                               $hashsum{$category} = $sum;
+                                  }
+        elsif ($category eq "===") {
+                               $sum = $sum + ((${1} > ${2})? ${1} : ${2}); 
+                               $hashsum{$category} = $sum;
+                                  }
+        elsif ($category eq "!==") {
+                               $sum = $sum + ((${1} > ${2})? ${1} : ${2}); 
+                               $hashsum{$category} = $sum;
+                                  }
+        elsif ($category eq "&") {
+                               $sum = $sum + ((${1} > ${2})? ${1} : ${2}); 
+                               $hashsum{$category} = $sum;
+                                  }        
+        elsif ($category eq "&&") {
+                               $sum = $sum + ((${1} > ${2})? ${1} : ${2}); 
+                               $hashsum{$category} = $sum;
+                                  }
+        elsif ($category eq "|") {
+                               $sum = $sum + ((${1} > ${2})? ${1} : ${2});  
+                               $hashsum{$category} = $sum;
+                                  }
+        elsif ($category eq "||") {
+                               $sum = $sum + ((${1} > ${2})? ${1} : ${2}); 
+                               $hashsum{$category} = $sum;
+                                  }
+        elsif ($category eq "or") {
+                               $sum = $sum + ((${1} > ${2})? ${1} : ${2}); 
+                               $hashsum{$category} = $sum;
+                                  }
+        elsif ($category eq "and") {
+                               $sum = $sum + ((${1} > ${2})? ${1} : ${2}); 
+                               $hashsum{$category} = $sum;
+                                  }
+        elsif ($category eq "^") {
+                               $sum = $sum + ((${1} > ${2})? ${1} : ${2}); 
+                               $hashsum{$category} = $sum;
+                                  }
+        elsif ($category eq "IF_ELSE") {
+                               $sum = $sum + ${1} + ${2}; 
+                               $hashsum{$category} = $sum;
+                                  }
+        elsif ($category eq "IF") {
+                               $sum = $sum + ${1} + ${2}; 
+                               $hashsum{$category} = $sum;
+                                  }
+        elsif ($category eq "ELSE") {
+                               $sum = $sum + ${1} + ${2}; 
+                               $hashsum{$category} = $sum;
+                                  }
+        elsif ($category eq "ELSE_IF") {
+                               $sum = $sum + ${1} + ${2}; 
+                               $hashsum{$category} = $sum;
+                                  }    
+
+    
+        elsif ($category eq "*") {
+           $sum = $sum + ((${1} > ${2})? ${1} : ${2}) ; 
+           $hashsum{$category} = $sum;
+        }
+        
+        elsif ($category eq "<<<") {
+           $sum = $sum + ${1} - ${2} ; 
+           $hashsum{$category} = $sum;
+        }
+        elsif ($category eq "CASE") {
+           $sum = $sum + ${1} + ${2} ; 
+           $hashsum{$category} = $sum;
+        } 
+        elsif ($category eq "?:") {
+           $sum = $sum + ${1} + ${2} ; 
+           $hashsum{$category} = $sum;
+        } 
+        
+        else {
+           $sum = $sum + ${2}; ##print "category = $category, sum = $sum\n";
+           $hashsum{$category} = $sum;
+        }
+
+  }  ## end of elsif
+
+ elsif ($line =~ /(\S+)\s+(\d+)/ ){                         ## for ~ 1
+        $sum = 0; #print "sum = $sum\n";
+        $newcategory = ${1};
+        if ($category ne $newcategory) {
+          print "changing category from $category to $newcategory\n"if($DEBUG == 100);
+        }
+        $category = $newcategory; 
+
+	$index = 1;
+        $bitsize = ${2};
+        
+        $sum = $sum + $bitsize;      
+        
+        if (exists $hashsum{$category}) {
+          $sum = $sum + $hashsum{$category};
+          $hashsum{$category} = $sum;
+        } else {
+         $hashsum{$category} = $sum;
+        }
+       
+} 
+  
+} #end of while
+
+print "\n" if($DEBUG == 100);
+while (($key, $value) = each(%hashsum)){
+     print $key.": ".$value."\n" if($DEBUG == 100);
+}
+
+
+#while (($key, $value) = each(%hashsum)){
+#         if ($key eq alwayspos) { $mytotalarea = ($mytotalarea + ($value*5)); }
+#	}
+
+$totalarea = (($hashsum{'always@pos'})*5) + 
+             (($hashsum{'always@neg'})*5) +
+             (($hashsum{'&&'})*1) +             
+	     (($hashsum{'||'})*1) +             
+             (($hashsum{'IF'})*1) +
+             (($hashsum{'IF_ELSE'})*1) +             
+             (($hashsum{'ELSE'})*1) +             
+             (($hashsum{'ELSE_IF'})*1) +
+             (($hashsum{'!'})*1) +
+             (($hashsum{'~'})*1) +
+             (($hashsum{'+'})*4) -  (($hashsum{"addersub"})*1) +
+             (($hashsum{'-'})*5.5) -  (($hashsum{"subsub"})*3) +
+             (($hashsum{'^'})*2) +
+             (((log(($hashsum{'for'})+1))/log(2))*12) +       # 'for' loop adder
+             (((log(($hashsum{'for'})+1))/log(2))*2.5) +      # 'for' loop comparator
+             (($hashsum{'&'})*1) +
+             (($hashsum{'|'})*1) +
+             (($hashsum{'or'})*1) +
+             (($hashsum{'and'})*1) +
+             (($hashsum{'CASE'})*1) +
+             (($hashsum{'?:'})*1) +
+             (($hashsum{'=='})*2) + 
+             (($hashsum{'==='})*2) +         # === not synthesizable, but still check incase wrongly coded
+             (($hashsum{'!='})*2) +
+             (($hashsum{'!=='})*2) +         # !== not synthesizable, but still check incase wrongly coded
+             (($hashsum{'>'})*2.5) +
+             (($hashsum{'<'})*2.5) +
+             (($hashsum{'>>'})*5) +
+             (($hashsum{'<<'})*5) +  
+             (($hashsum{'>>>'})*5) +
+             (($hashsum{'<<<'})*5) + 
+             (  (($hashsum{'*'})/2)*  ((($hashsum{"*"})/2)-1)  *5) ;       
+
+print "\nTotal area of the design is $totalarea\n\n";
+return($totalarea);
+#open(AREA, "+>", $areafile) or die "Could not open file: $!";
+#print AREA $totalarea;
+
+#close AREA;
+close(FILE);
+    }
+}
+}#sub rtl_area_estimation
+
+#-----------------------------------------------------------------------------------#
+1;
+

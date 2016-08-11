@@ -1,0 +1,106 @@
+
+
+%HIER_COMPONENTS =();
+
+sub do_build_generic {
+
+print "INFO-PAR-DO_BLD_GEN : 001 : \: \tBuilding Component Database\n";
+
+foreach $instance (keys %COMP_ALREADY){
+$CADB{$instance} = CompAttDB::new();
+
+$moduleName = $instance;
+
+$moduleName =~ s/\/.*//;
+
+$remainder = $COMP_ALREADY{$instance}{connections};
+$remainder =~ s/\(/\,/;
+$remainder =~ s/\)\;//;
+@nets = split(/\s*\,\s*/, $remainder);
+$noOfPins = @nets;
+for(my $i = 1 ; $i < $noOfPins ; $i++){
+                               $nets[$i] =~ s/\s*\(\s*/\|/;
+                               $nets[$i] =~ s/\s*\)\s*//;
+                               my ($pin,$net)=(split(/\s*\|\s*/, $nets[$i]))[0,1];
+                               $pin =~ s/\.//;
+                               $netName = $moduleName."/".$net;
+                                if(defined $netName ){ 
+                                                ${$instance}{$pin} = $netName; 
+                                              }
+                                              else {
+                                                ${$instance}{$pin} = SHIVA_PIN_UNCONNECTED;
+                                              }
+                                      } # for          
+delete $COMP_ALREADY{$instance}{connections};
+$CADB{$instance}->dbCadbSetCellref($COMP_ALREADY{$instance}{cellref});
+delete $COMP_ALREADY{$instance}{cellref};
+
+}# foreach instance
+
+##################################################################################################
+####    building database for components                                                      ####
+##################################################################################################
+#$referToLef =\%{$MACROS[0]};
+#print "INFO \: \tBuilding CDFG\n";
+#do_build_cdfg($CURRENT_MODULE,$CURRENT_MODULE);
+
+
+##################################################################################################
+####    building database for nets                                                            ####
+##################################################################################################
+print "INFO-PAR-DO_BLD_GEN : 002 : \: \tBuilding Net Database\n";
+foreach $instance (keys %COMP_ALREADY){
+    foreach $pinName (keys %{$instance}){
+    if($pinName eq "connections" || $pinName eq "cellref" || $pinName eq "master") { }
+    else {
+          $netName = $COMP_ALREADY{$instance}{$pinName};
+
+          if(exists $NETS_ALREADY{$netName}) {
+                        $NETS_ALREADY{$netName}{$instance} = $pinName ;
+                                      }
+          else                                {
+                        $NETS_ALREADY{$netName} = \%{$netName}; 
+                        $NETS_ALREADY{$netName}{$instance} = $pinName ;
+                                              }
+         }
+                       } # foreach instance
+                           } # foreach
+print "INFO-PAR-DO_BLD_GEN : 003 : \: \tAdding port connection to net database\n";
+foreach $portName ( keys %{$PORTS_ALREADY{$TOP_MODULE}} ) {
+        my @conn = $PORTS_ALREADY{$TOP_MODULE}{$portName}->dbPortGetConn;
+        $netName = $conn[0];
+        if ( exists $NETS_ALREADY{$netName}) {
+             $NETS_ALREADY{$netName}{$portName} = $portName ;
+                                             }
+        else { print "WARN-PAR-DO_BLD_GEN : 004 : net $netName does not exist\n"; }
+                                                          }#foreach ports
+
+##################################################################################################
+####    do_build_generic                                                                      ####
+##################################################################################################
+###  generating the net name map
+&dbgBuildNetNameMap;
+&dbgBuildInstNameMap;
+
+}# sub do_build_generic
+
+sub do_build_cdfg {
+local $current_module = $_[0];
+local $hier = $_[1];
+     print "INFO-PAR : 001 :\t\tprocessing $current_module\n";
+
+foreach $instance (keys %{$MODULE_ALREADY{$current_module}}){
+                 if( $instance eq 'area' || $instance eq 'location' || $instance eq 'ports') {  } else {
+     if( exists $PLDB{$MODULE_ALREADY{$current_module}{$instance}{cellref}}){
+                              $instanceName = $hier."/".$instance; 
+                              $HIER_COMPONENTS{$instanceName} = \%{$MODULE_ALREADY{$current_module}{$instance}};
+                              #print "$instanceName\n";
+                                                                      } else {
+                         local $hier = $hier."/".$instance;
+             do_build_cdfg($MODULE_ALREADY{$current_module}{$instance}{'cellref'}, $hier);
+                                       }
+                                 }
+                       }
+} # sub do_build_cdfg
+
+1;
