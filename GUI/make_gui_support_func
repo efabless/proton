@@ -1361,7 +1361,7 @@ sub clone_from_git_popup {
 ################################################## Display all foundry tech popup #############################################
 ###############################################################################################################################
 sub import_foundry_lef_popup {
-  my $filename = '/home/ubuntu/library_new.config';
+  my $filename = '/home/ubuntu/potato/CONFIG/library.config';
   my $data;
   if (open (my $json_str, $filename))
   {
@@ -1551,9 +1551,20 @@ sub import_sel_library{
   my $libertyFile = $libPathEntry->cget('-text'); 
   #print "tech:$$techLef | stdcell:$$stdCellsLef | liberty:$$libertyFile\n";
 
+  my @lefFiles = (split(/\,/,$$stdCellsLef));
+  my @libFiles = (split(/\,/,$$libertyFile));
+
+  $GLOBAL->dbGlobalSetTechLef($$techLef);
+  $GLOBAL->dbGlobalSetLefFiles(@lefFiles);
+  $GLOBAL->dbGlobalSetLibFiles(@libFiles);
+
   &read_lef ("-lef", "$$techLef", "-tech","only");
-  &read_lef ("-lef","$$stdCellsLef");
-  &read_lib ("-lib","$$libertyFile");
+  foreach my $lef (@lefFiles){
+     &read_lef ("-lef","$lef");
+  }
+  foreach my $lib (@libFiles){
+     #&read_lib ("-lib","$lib");
+  }
 
   &call_read_lef;
 }#sub import_sel_library
@@ -1567,8 +1578,8 @@ sub import_verilog_popup{
      $subWin->title ("Import Verilog");
   my ($verilogfile, $topModuleName) = ("", "");
   
-  my $fileFrame= $subWin->Frame()->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
-  my $moduleFrame= $subWin->Frame()->pack(-side => 'top',-anchor=>'e', -expand=>1, -fill=>'x');
+  my $fileFrame= $subWin->Frame()->pack(-side => 'top',-anchor=>'n',-fill=>'x');
+  my $moduleFrame= $subWin->Frame()->pack(-side => 'top',-anchor=>'n', -fill=>'x');
   my $buttonFrame= $subWin->Frame()->pack(-side => 'bottom');
 
   $fileFrame->Label(-text => "Verilog File")->pack(-side =>'left', -anchor => 'w');
@@ -1578,7 +1589,7 @@ sub import_verilog_popup{
   $moduleFrame->Label(-text => "Top Module")->pack(-side =>'left', -anchor => 'w');
   $moduleFrame->Entry(-textvariable =>\$topModuleName,-width=>30)->pack(-side =>'left', -expand=>1, -fill=>'x');
 
-  $buttonFrame->Button(-text=>'Import',-command =>sub {if($verilogfile ne ""){&read_verilog("-v","$verilogfile"); $TOP_MODULE = $topModuleName; &elaborate;$subWin->destroy;}})->pack(-side=>"left");
+  $buttonFrame->Button(-text=>'Import',-command =>sub {if($verilogfile ne ""){&read_verilog("-v","$verilogfile"); $TOP_MODULE = $topModuleName; &elaborate};$subWin->destroy;})->pack(-side=>"left");
   $buttonFrame->Button(-text=>'Cancel',-command =>sub {$subWin->destroy;})->pack(-side=>"left");
 }#sub import_verilog_popup
 
@@ -1589,10 +1600,11 @@ sub import_hdl_popup{
   my $subWin = MainWindow->new();
   my $image = $subWin->Getimage('folder');
      $subWin->title ("Import HDL");
-  my ($rtlfile, $includeDir) = ("", "");
+  my ($rtlfile, $includeDir, $topModuleName) = ("", "",  "");
   
-  my $fileFrame= $subWin->Frame()->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'x');
-  my $dirFrame= $subWin->Frame()->pack(-side => 'top',-anchor=>'e', -expand=>1, -fill=>'x');
+  my $fileFrame= $subWin->Frame()->pack(-side => 'top',-anchor=>'n', -fill=>'x');
+  my $dirFrame= $subWin->Frame()->pack(-side => 'top',-anchor=>'n', -fill=>'x');
+  my $moduleFrame= $subWin->Frame()->pack(-side => 'top',-anchor=>'n', -fill=>'x');
   my $buttonFrame= $subWin->Frame()->pack(-side => 'bottom');
 
   $fileFrame->Label(-text => "RTL Files")->pack(-side =>'left', -anchor => 'w');
@@ -1603,7 +1615,10 @@ sub import_hdl_popup{
   $dirFrame->Button(-text=>'BrowseFile',-image=> $image,-command =>sub {$includeDir = &popup_include_dir;})->pack(-side => 'right');
   $dirEntry = $dirFrame->Entry(-textvariable =>\$includeDir, -width=>30)->pack(-side =>'right', -expand=>1, -fill=>'x');
 
-  $buttonFrame->Button(-text=>'Import',-command =>sub {my @rtlfiles = (split(/\,/,$rtlEntry->get()));$GLOBAL->dbGlobalSetRtlFiles(@rtlfiles); $GLOBAL->dbGlobalSetRtlDir($dirEntry->get());})->pack(-side=>"left");
+  $moduleFrame->Label(-text => "Top Module")->pack(-side =>'left', -anchor => 'w');
+  $moduleFrame->Entry(-textvariable =>\$topModuleName,-width=>30)->pack(-side =>'left', -expand=>1, -fill=>'x');
+
+  $buttonFrame->Button(-text=>'Import',-command =>sub {my @rtlfiles = (split(/\,/,$rtlEntry->get()));$GLOBAL->dbGlobalSetRtlFiles(@rtlfiles); $GLOBAL->dbGlobalSetRtlDir($dirEntry->get());$TOP_MODULE = $topModuleName;$subWin->destroy;})->pack(-side=>"left");
   $buttonFrame->Button(-text=>'Cancel',-command =>sub {$subWin->destroy;})->pack(-side=>"left");
 }#sub import_hdl_popup
 
@@ -1647,6 +1662,39 @@ sub popup_include_dir {
                                   -title => 'Choose a directory');
   return $dir; 
 }#sub popup_include_dir
+
+##############################################################################################################
+################################################# Run Synthesis ##############################################
+##############################################################################################################
+sub run_yosys_tool{
+  my $outputFile = 'efsynthesis.vg';
+  open (WRITE, ">synthesis.tcl");
+    print WRITE "#TCL written from proton verion-$TOOL_VERSION\n";
+    my @rtlFiles = $GLOBAL->dbGlobalGetRtlFiles;
+    foreach my $rtl (@rtlFiles){
+       print WRITE "read_verilog $rtl\n";
+    }
+    print WRITE "\nhierarchy -check -top $TOP_MODULE\n";
+    print WRITE "\nproc; opt; fsm; opt; memory; opt\n";
+    print WRITE "\n# mapping to internal cell library\n";
+    print WRITE "techmap; opt\n\n";
+    my @libFiles = $GLOBAL->dbGlobalGetLibFiles;
+    foreach my $lib (@libFiles){
+       print WRITE "# mapping flip-flops to mycells.lib\n";
+       print WRITE "dfflibmap -liberty $lib\n";
+       print WRITE "# mapping logic to mycells.lib\n";
+       print WRITE "abc -liberty $lib\n";
+    }
+    print WRITE "\n# cleanup\n";
+    print WRITE "clean\n";
+    print WRITE "\n# write synthesized design\n";
+    print WRITE "write_verilog $outputFile\n";
+    print WRITE "\n";
+  close(WRITE);
+
+  system("yosys -s synthesis.tcl");
+  #system("rm -rf synthesis.tcl");
+}#sub run_yosys_tool
 
 
 1;
