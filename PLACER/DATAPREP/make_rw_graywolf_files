@@ -1,0 +1,46 @@
+
+sub write_graywolf_cel_file {
+my $dbu = $GLOBAL->dbfGlobalGetDBU;
+open(WRITE,">placement.cel");
+foreach my $inst (keys %COMP_ALREADY){
+  my $cellref = $CADB{$inst}->dbCadbGetCellref;
+  print WRITE "cell $inst $cellref\n";
+  if(exists $PLDB{$cellref}){
+    my @size = $PLDB{$cellref}->dbMdbGetSize;
+    my $half_width = ($size[0]/2)*$dbu;
+    my $half_height = ($size[1]/2)*$dbu;
+    print WRITE "left-$half_width right-$half_width top-$half_height bottom-$half_height\n";
+    my @pins = $PLDB{$cellref}->dbMdbGetPins;
+    foreach my $pinName (@pins){
+      my $netName = $COMP_ALREADY{$inst}{$pinName};
+#---------------------------------------------------------------------------------------------------------------#
+      my @rects = $PLDB{$cellref}->dbMdbGetPinRect($pinName);
+      foreach $l ( @rects ) {
+        $l =~ s/ RECT//;
+        my @L  = split(/\s+/,$l);
+        my $layerName = $L[0];
+        my $layerNum = $PTDB{$layerName}->dbTechGetLayerNum;
+        my $llx = $L[1]*$dbu;
+        my $llx = $L[2]*$dbu;
+        print WRITE "pin name $pinName signal $netName layer $layerNum $llx $lly\n";
+      }
+#---------------------------------------------------------------------------------------------------------------#
+      my @polygon = $PLDB{$cellref}->dbMdbGetPinPolygon($pinName);
+      foreach my $plgn ( @polygon ) {
+        my @pl_data = split(/\s+/,$plgn);
+        my $pl_layer_Name = shift (@pl_data);
+        my $poly_co_ords = join" ",@pl_data;
+        my $layerNum = $PTDB{$pl_layer_Name}->dbTechGetLayerNum;
+        my $llx = $pl_data[1] * $dbu  - $half_width ;
+        my $lly = $pl_data[2] * $dbu  - $half_height ;
+        print WRITE "pin name $pinName signal $netName layer $layerNum $llx $lly\n";
+      }#foreach
+#---------------------------------------------------------------------------------------------------------------#
+    }#foreach
+  }
+print WRITE"\n";
+}#foreach
+close(WRITE);
+}#sub write_graywolf_cel_file
+
+1;
