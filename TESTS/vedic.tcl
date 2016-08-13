@@ -1,6 +1,7 @@
-read_lef -lef /home/ubuntu/proton/TESTS/library/NangateOpenCellLibrary_PDKv1_2_v2008_10.lef  -tech also
+read_lef -lef /home/ubuntu/ef-xfab-xh035/EFXH035A/libs.ref/techLEF/v6_0_1/xh035_xx2x_METAL4.lef -tech only 
+read_lef -lef /home/ubuntu/ef-xfab-xh035/EFXH035A/libs.ref/lef/D_CELLS/xh035_D_CELLS_qrouter.lef
 
-read_verilog -v /home/ubuntu/proton/TESTS/rtls/vedic/vedic.gv
+read_verilog -v /home/ubuntu/workarea/efsynthesis.vg
 set TOP_MODULE vedic_16x16
 elaborate
 
