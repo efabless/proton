@@ -4,7 +4,7 @@ my $dbu = $GLOBAL->dbfGlobalGetDBU;
 open(WRITE,">placement.cel");
 foreach my $inst (keys %COMP_ALREADY){
   my $cellref = $CADB{$inst}->dbCadbGetCellref;
-  print WRITE "cell $inst $cellref\n";
+  print WRITE "cell $cellref $inst\n";
   if(exists $PLDB{$cellref}){
     my @size = $PLDB{$cellref}->dbMdbGetSize;
     my $half_width = ($size[0]/2)*$dbu;
@@ -16,7 +16,8 @@ foreach my $inst (keys %COMP_ALREADY){
       my $netName = $COMP_ALREADY{$inst}{$pinName};
 #---------------------------------------------------------------------------------------------------------------#
       my @rects = $PLDB{$cellref}->dbMdbGetPinRect($pinName);
-      foreach $l ( @rects ) {
+#      foreach $l ( @rects ) {
+      my $l =shift  @rects ;
         print "$l\n";
         $l =~ s/ RECT//;
         my @L  = split(/\s+/,$l);
@@ -26,7 +27,7 @@ foreach my $inst (keys %COMP_ALREADY){
         my $lly = ($L[2]*$dbu) -$half_height;
         print WRITE "pin name $pinName signal $netName layer $layerNum $llx $lly\n";
 
-      }
+#      }
 #---------------------------------------------------------------------------------------------------------------#
 #      my @polygon = $PLDB{$cellref}->dbMdbGetPinPolygon($pinName);
 #      foreach my $plgn ( @polygon ) {
@@ -47,4 +48,28 @@ print WRITE"\n";
 close(WRITE);
 }#sub write_graywolf_cel_file
 
+
+sub read_graywolf_placement_result {
+open (READ,"placement.pl1");
+while(<READ>) {
+chomp();
+my @pl = split(/\s+/,$_);
+my $instance = $pl[0];
+my $x = $pl[1];
+my $y = $pl[2];
+           if ( exists $CADB{$instance} ) {
+     if($CADB{$instance}->dbCadbGetStatus() eq "FIXED"){next;};
+print "PLA : setting placement of $instance to $x $y in Database\n";
+     $CADB{$instance}->dbCadbSetLoc($x,$y);
+     $CADB{$instance}->dbCadbSetStatus(PLACED);
+     $CADB{$instance}->dbCadbSetOrient(N);
+                                               }
+
+}#while
+close(READ);
+&set_inst_box;
+}# sub read_graywolf_placement_output
+
 1;
+
+
