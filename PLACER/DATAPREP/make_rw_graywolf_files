@@ -48,6 +48,106 @@ print WRITE"\n";
 close(WRITE);
 }#sub write_graywolf_cel_file
 
+sub write_placement_par_file {
+open (WRITE,">placement.par");
+print WRITE "RULES\n";
+my %layer_order = ();
+foreach my $layer (keys %PTDB){
+  my $LN = $PTDB{$layer}->dbTechGetLayerName;
+  my $Ln = $PTDB{$layer}->dbTechGetLayerNum;
+  $layer_order{$LN}=$Ln;
+}#foreach
+  my @key = sort hash_Value_AscendingNum (keys(%layer_order));
+  for (my $i=0;$i<=$#key;$i++){
+    my $layer = $key[$i];
+    my $routing_layer = $PTDB{$layer}->dbTechGetLayerType;
+    if ($routing_layer =~/^ROUTING$/i){
+      my $direction = lc $PTDB{$layer}->dbTechGetLayerDir ;
+      my $resistance = $PTDB{$layer}->dbTechGetLayerResistance;
+      my $capaciatence = ${$layer}{'CAPACITANCE'};
+      my $capaciatence_fF = $capaciatence*1000;
+      print WRITE "layer $layer $resistance $capaciatence_fF $direction\n";
+    }
+  }#for
+  for (my $i=0;$i<=$#key;$i++){
+    my $layer = $key[$i];
+    my $routing_layer = $PTDB{$layer}->dbTechGetLayerType;
+    if ($routing_layer =~/^ROUTING$/i){
+      my $via_name = &return_via_between_two_given_layers ($key[$i],$key[$i+2]);
+      if ($via_name ne "NONE"){
+        print WRITE "via $via_name $key[$i] $key[$i+2]\n";
+      }
+    }
+  }#for
+
+  for(my $i=0;$i<=$#key;$i++){
+    my $layer = $key[$i];
+    my $routing_layer = $PTDB{$layer}->dbTechGetLayerType;
+    if($routing_layer =~/^ROUTING$/i){
+      my $metal_width = $PTDB{$layer}->dbTechGetLayerWidth;
+      my $new_metal_width = $metal_width*100;
+      print WRITE "width $layer $new_metal_width\n";
+    }
+  }#for
+  for(my $i=0;$i<=$#key;$i++){
+    my $layer = $key[$i];
+    my $routing_layer = $PTDB{$layer}->dbTechGetLayerType;
+    if($routing_layer =~/^ROUTING$/i){
+      my $metal_width = $PTDB{$layer}->dbTechGetLayerWidth;
+      my $pitch = $PTDB{$layer}->dbTechGetLayerPitch;
+      my $spacing = $pitch - $metal_width;
+      print WRITE "spacing $layer $layer $spacing\n";
+    }
+  }#for
+  foreach my $viaruleName(keys%VRDB){
+    my $VRN = $VRDB{$viaruleName}->dbGetViaRuleName;
+    my $VRn = $VRDB{$viaruleName}->dbGetViaRuleNum;
+    $vdr{$VRN}=$VRn;
+  }#foreach
+  my @vr = sort hash_AscendingNumber(keys(%vdr));
+  for(my $i=0;$i<=$#vr;$i++){
+    my $viaruleName = $vr[$i];
+    my @via_rule_layer = $VRDB{$viaruleName}->dbGetViaRuleLayer;
+    foreach $layerInstance (@via_rule_layer){
+      my $layerName = $layerInstance->dbGetViaRuleLayerName;
+      my $routing_layer = $PTDB{$layerName}->dbTechGetLayerType;
+      if($routing_layer =~/^ROUTING$/i){
+        my @enclosure = $layerInstance->dbGetViaRuleEnclosure;
+      }
+    }
+    print WRITE "overhang $viaruleName  $layerName @enclosure\n";
+  }
+
+print WRITE "ENDRULES\n";
+print WRITE "*vertical_wire_weight : 1.0\n";
+print WRITE "*vertical_path_weight : 1.0\n";
+print WRITE "*padspacing           : variable\n";
+print WRITE "*rowSep               : 0.0   0\n";
+print WRITE "*track.pitch          : 160\n";
+print WRITE "*graphics.wait        : off\n";
+print WRITE "*last_chance.wait     : off\n";
+print WRITE "*random.seed          : 12345\n";
+print WRITE "# TODO: proper track.pitch number above, plus feedThruWidth below\n";
+
+print WRITE "TWMC*chip.aspect.ratio : 0.50\n";
+
+print WRITE "TWSC*feedThruWidth    : 160 layer 1\n";
+print WRITE "TWSC*do.global.route  : on\n";
+print WRITE "TWSC*ignore_feeds     : true\n";
+print WRITE "TWSC*call_row_evener    : true\n";
+print WRITE "TWSC*even_rows_maximally : true\n";
+print WRITE "# TWSC*no.graphics    : on\n";
+
+print WRITE "GENR*row_to_tile_spacing: 1\n";
+my @rows = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetRows;
+my $numberOfRows = @rows ;
+print WRITE "GENR*numrows          : $numberOfRows\n";
+print WRITE "GENR*flip_alternate_rows : 1 \n";
+
+close(WRITE);
+}#sub write_placement_par_file
+
+
 
 sub read_graywolf_placement_result {
 open (READ,"placement.pl1");
