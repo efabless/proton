@@ -5,6 +5,7 @@ read_verilog -v rtls/vedic/vedic.gv
 set TOP_MODULE vedic_16x16
 elaborate
 
+set_floorplan_parameters -HEIGHT 1000 -WIDTH 500
 set_floorplan 
 
 #write_graywolf_cel_file
