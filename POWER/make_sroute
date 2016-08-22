@@ -2394,5 +2394,173 @@ elsif ( $cellOrient eq 'FE'){
 return(@cellPinRect);
 }#sub xformInstPinToCellPin
 
+########################################################################################
+############################### Add power ring #########################################
+########################################################################################
+sub addPowerRing {
+  my $noOfArguments = @_;
+  if($noOfArguments <0 || $_[0] eq "-h"){
+     print "Usage : addPowerRing\n";
+     print "      : -offset <{x, y}>\n";
+     print "      : -spacing <spacing>\n";
+     print "      : -width <width>\n";
+     print "      : -layerH <horizontal layer name>\n";
+     print "      : -layerV <vertical layer name>\n";
+     print "      : -nets <{list of net}>\n";
+  }else {
+    my @offset_arr = (0);
+    my @nets_arr = ();
+    my ($spacing, $width, $layerH, $layerV) = (5, 0, "", "");
+  
+    for(my $i =0;$i < $noOfArguments;$i++){
+        if($_[$i] eq "-offset"){
+           my $offset_str = $_[$i+1];
+           $offset_str =~ s/\{\s*//;
+           $offset_str =~ s/\s*\}//;
+           @offset_arr = split(/\,/,$offset_str);
+        } 
+        if($_[$i] eq "-spacing"){
+           $spacing = $_[$i+1];
+        } 
+        if($_[$i] eq "-width"){
+           $width = $_[$i+1]; 
+        } 
+        if($_[$i] eq "-layerH"){
+           $layerH = $_[$i+1]; 
+        } 
+        if($_[$i] eq "-layerV"){
+           $layerV = $_[$i+1]; 
+        } 
+        if($_[$i] eq "-nets"){
+           my $nets_str = $_[$i+1]; 
+           $nets_str =~ s/\{\s*//;
+           $nets_str =~ s/\s*\}//;
+           @nets_arr = split(/\,/,$nets_str);
+       } 
+    }#for
+    my $dbu = $GLOBAL->dbfGlobalGetDBU;
+
+    my $offsetX = $offset_arr[0]*$dbu;
+    my $offsetY = $offset_arr[1]*$dbu;
+    $spacing = $spacing*$dbu;
+    $width = $width*$dbu;
+
+    my $diellx = $DIE_ALREADY{dieArea}[0];
+    my $dielly = $DIE_ALREADY{dieArea}[1];
+    my $dieurx = $DIE_ALREADY{dieArea}[2];
+    my $dieury = $DIE_ALREADY{dieArea}[3];
+    #print "die:$diellx, $dielly, $dieurx, $dieury\n"; 
+   
+    for(my $i=0; $i<=$#nets_arr;$i++){
+        #if(exists $NETS_ROUTING_ALREADY{$nets_arr[$i]}){
+           # left stripes
+           my $xl1 = $diellx + $offsetX + $spacing*$i + $width*($i+1/2);
+           my $yl1 = $dielly + $offsetY + $spacing*$i + $width*($i);
+           my $xl2 = $xl1;
+           my $yl2 = $dieury- ($offsetY + $spacing*$i + $width*($i));
+           #print "left:$nets_arr[$i] $xl1 $yl1 $xl2 $yl2\n";
+           my $line = $layerV." ".$width." + "."SHAPE STRIPE" . " ( $xl1 $yl1 )" ." ( * $yl2 )";
+           $NETS_ROUTING_ALREADY{$nets_arr[$i]}->dbNetRoutingDBSetFixedRoute($line);
+
+           # right stripes
+           my $xr1 = $dieurx - ($offsetX + $spacing*$i + $width*($i+1/2));
+           my $yr1 = $dielly + $offsetY + $spacing*$i + $width*($i);
+           my $xr2 = $xr1;
+           my $yr2 = $dieury- ($offsetY + $spacing*$i + $width*($i));
+           #print "right:$nets_arr[$i] $xr1 $yr1 $xr2 $yr2\n";
+           my $line = $layerV." ".$width." + "."SHAPE STRIPE" . " ( $xr1 $yr1 )" ." ( * $yr2 )";
+           $NETS_ROUTING_ALREADY{$nets_arr[$i]}->dbNetRoutingDBSetFixedRoute($line);
+
+           # bottom stripes
+           my $xb1 = $diellx + $offsetX + $spacing*$i + $width*($i);
+           my $yb1 = $dielly + $offsetY + $spacing*$i + $width*($i+1/2);
+           my $xb2 = $dieurx- ($offsetX + $spacing*$i + $width*($i));
+           my $yb2 = $yb1;
+           #print "bottom:$nets_arr[$i] $xb1 $yb1 $xb2 $yb2\n";
+           my $line = $layerH." ".$width." + "."SHAPE STRIPE" . " ( $xb1 $yb1 )" ." ( $xb2 * )";
+           $NETS_ROUTING_ALREADY{$nets_arr[$i]}->dbNetRoutingDBSetFixedRoute($line);
+
+           # top stripes
+           my $xt1 = $diellx + $offsetX + $spacing*$i + $width*($i);
+           my $yt1 = $dieury - ($offsetY + $spacing*$i + $width*($i+1/2));
+           my $xt2 = $dieurx- ($offsetX + $spacing*$i + $width*($i));
+           my $yt2 = $yt1;
+           #print "right:$nets_arr[$i] $xt1 $yt1 $xt2 $yt2\n";
+           my $line = $layerH." ".$width." + "."SHAPE STRIPE" . " ( $xt1 $yt1 )" ." ( $xt2 * )";
+           $NETS_ROUTING_ALREADY{$nets_arr[$i]}->dbNetRoutingDBSetFixedRoute($line);
+        #}#if exists in NETS_ROUTING_ALREADY
+    }#f#oreach net
+  }#else
+}#sub addPowerRing
+
+########################################################################################
+############################### Add Power Rows #########################################
+########################################################################################
+sub addPowerRows {
+  my $noOfArguments = @_;
+  if($noOfArguments <0 || $_[0] eq "-h"){
+     print "Usage : addPowerRows\n";
+     print "      : -width <width (default value is 5 micron)>\n";
+     print "      : -nets <{net1,net2,...}>\n";
+  }else {
+    my @nets_arr = ();
+    my ($width, $layer, $routeW) = (5, "", 0);
+    my ($powerNet, $gndNet) = ("", "");
+    my ($px1, $px2, $gx1, $gx2) = (0, 0, 0, 0);
+  
+    for(my $i =0;$i < $noOfArguments;$i++){
+        if($_[$i] eq "-width"){
+           $width = $_[$i+1]; 
+        } 
+        if($_[$i] eq "-layer"){
+           $layer = $_[$i+1]; 
+        } 
+        if($_[$i] eq "-nets"){
+           my $nets_str = $_[$i+1]; 
+           $nets_str =~ s/\{\s*//;
+           $nets_str =~ s/\s*\}//;
+           @nets_arr = split(/\,/,$nets_str);
+       } 
+    }#for
+    my $dbu = $GLOBAL->dbfGlobalGetDBU;
+
+    $width = $width*$dbu;
+
+    foreach my $netName (@nets_arr){
+       my @data = $NETS_ROUTING_ALREADY{$netName}->dbNetRoutingDBGetFixedRoute;
+       my @xx = ();
+       foreach my $segment ( @data ) {
+          $routeW = (split(/\s+/,$segment))[1];
+          my @routeBox = get_stripe_layer_coords($segment); # first element is width of stripe
+          if($routeBox[1] == $routeBox[3]){
+             push(@xx,$routeBox[1]); 
+          }
+       }
+       @xx = sort { $a <=> $b } @xx; 
+       if($netName =~ m/.*VDD.*/i){
+          $powerNet = $netName;
+          $px1 = $xx[0]-$routeW/2;
+          $px2 = $xx[1]+$routeW/2;
+       }elsif(($netName =~ m/.*VSS.*/i) || ($netName =~ m/.*GND.*/i)){ 
+          $gndNet = $netName;
+          $gx1 = $xx[0]-$routeW/2;
+          $gx2 = $xx[1]+$routeW/2;
+       }
+    }
+    if(exists $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}){
+       my @rows = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetRows;
+       foreach my $tag ( @rows ) {
+          my ($x,$y,$orient) = (split(/\s+/, $tag))[2,3,4];
+          if($orient eq "N"){
+             $line = $layer." ".$width." + "."SHAPE STRIPE" . " ( $gx1 $y )" ." ( $gx2 * )";
+             $NETS_ROUTING_ALREADY{$gndNet}->dbNetRoutingDBSetFixedRoute($line);
+          }else{
+             $line = $layer." ".$width." + "."SHAPE STRIPE" . " ( $px1 $y )" ." ( $px2 * )";
+             $NETS_ROUTING_ALREADY{$powerNet}->dbNetRoutingDBSetFixedRoute($line);
+          }
+       }
+    }
+  }#else
+}#sub addPowerRows
 
 1;

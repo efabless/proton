@@ -411,10 +411,10 @@ return($deffile);
 
 #-----------------------------------------------------------#
 sub popup_read_verilog {
-  my @types = (["Config Files", '.gv'],
+  my @types = (["Config Files", '.vg'],
                ["All Files", "*"]);
   my $verilogfile = $top->getOpenFile(-filetypes =>\@types,
-                                -defaultextension => '.gv'); 
+                                -defaultextension => '.vg'); 
   return($verilogfile);          
   #if($verilogfile ne ""){
   #   &read_verilog("-v","$verilogfile");
@@ -1377,6 +1377,7 @@ sub import_foundry_lef_popup {
   my $techFrame= $subWin->Frame()->pack(-side => 'top',-anchor=>'n',-fill=>'x');
   my $stdCellFrame= $subWin->Frame()->pack(-side => 'top',-anchor=>'n', -fill=>'x');
   my $libFrame= $subWin->Frame()->pack(-side => 'top',-anchor=>'n', -fill=>'x');
+  my $vmodelsFrame= $subWin->Frame()->pack(-side => 'top',-anchor=>'n', -fill=>'x');
   my $MainFrame= $subWin->Frame()->pack(-side => 'top',-anchor=>'n', -expand=>1, -fill=>'both');
   my $buttonFrame= $subWin->Frame()->pack(-side => 'bottom');
   
@@ -1386,14 +1387,18 @@ sub import_foundry_lef_popup {
   $stdCellEntry = $stdCellFrame->Entry(-textvariable => \$stdCellPath )->pack(-expand=>1, -fill=>'x',-side=>'left');
   my $libLabel = $libFrame->Label(-text=>"Liberty File :")->pack(-side=>'left');
   $libEntry = $libFrame->Entry(-textvariable => \$libPath )->pack(-expand=>1, -fill=>'x',-side=>'left');
+  my $vmodelsLabel = $vmodelsFrame->Label(-text=>"Verilog Models :")->pack(-side=>'left');
+  $vmodelsEntry = $vmodelsFrame->Entry(-textvariable => \$vmodelsPath )->pack(-expand=>1, -fill=>'x',-side=>'left');
   
   $techPathEntry = $techFrame->Entry(-textvariable => \$techFullPath )->pack(-expand=>1, -fill=>'x',-side=>'left');
   $stdCellPathEntry = $stdCellFrame->Entry(-textvariable => \$stdCellFullPath )->pack(-expand=>1, -fill=>'x',-side=>'left');
   $libPathEntry = $libFrame->Entry(-textvariable => \$libFullPath )->pack(-expand=>1, -fill=>'x',-side=>'left');
+  $vmodelsPathEntry = $libFrame->Entry(-textvariable => \$vmodelsFullPath )->pack(-expand=>1, -fill=>'x',-side=>'left');
 
   $techPathEntry->packForget(); 
   $stdCellPathEntry->packForget();
   $libPathEntry->packForget(); 
+  $vmodelsPathEntry->packForget(); 
   
   
   my $top_pane = $MainFrame->Scrolled(qw/Pane -width 400 -height 400 -scrollbars se -sticky nsew/);
@@ -1457,6 +1462,7 @@ sub displayLibrary {
                my $layer = $file->{layer};
                my $techFile = $file->{tech};
                my $stdCellFile = $file->{'std-cells'};
+               my $vmodelsFile = $file->{'verilog-models'};
                my $libFile = $file->{'lib'};
                ${"button".$lib.$nodeType.$layer} = $frame->Button(-text=>$layer,-relief=>"flat", -foreground=>"orange2",-background=>"light gray", 
                                                               -command=>sub{ 
@@ -1464,9 +1470,11 @@ sub displayLibrary {
                                                                             $techPath = (split(/\//, $techFile))[-1];      
                                                                             $stdCellPath = (split(/\//, $stdCellFile))[-1];      
                                                                             $libPath = (split(/\//, $libFile))[-1];      
+                                                                            $vmodelsPath = (split(/\//, $vmodelsFile))[-1];      
                                                                             $techFullPath = $techFile;
                                                                             $stdCellFullPath = $stdCellFile;
                                                                             $libFullPath = $libFile;
+                                                                            $vmodelsFullPath = $vmodelsFile;
                                                               })->pack(-side=>'top',-fill=>'x');
            }#foreach file
         }#if nodeType
@@ -1549,14 +1557,17 @@ sub import_sel_library{
   my $techLef = $techPathEntry->cget('-text'); 
   my $stdCellsLef = $stdCellPathEntry->cget('-text');
   my $libertyFile = $libPathEntry->cget('-text'); 
-  #print "tech:$$techLef | stdcell:$$stdCellsLef | liberty:$$libertyFile\n";
+  my $vmodelsFile = $vmodelsPathEntry->cget('-text'); 
+  #print "tech:$$techLef | stdcell:$$stdCellsLef | liberty:$$libertyFile | vmodels:$$vmodelsFile\n";
 
   my @lefFiles = (split(/\,/,$$stdCellsLef));
   my @libFiles = (split(/\,/,$$libertyFile));
+  my @vmodelsFiles = (split(/\,/,$$vmodelsFile));
 
   $GLOBAL->dbGlobalSetTechLef($$techLef);
   $GLOBAL->dbGlobalSetLefFiles(@lefFiles);
   $GLOBAL->dbGlobalSetLibFiles(@libFiles);
+  $GLOBAL->dbGlobalSetVerilogModels(@vmodelsFiles);
 
   &read_lef ("-lef", "$$techLef", "-tech","only");
   foreach my $lef (@lefFiles){
@@ -1666,8 +1677,19 @@ sub popup_include_dir {
 ##############################################################################################################
 ################################################# Run Synthesis ##############################################
 ##############################################################################################################
-sub run_yosys_tool{
-  my $outputFile = 'efsynthesis.vg';
+sub run_yosys_popup {
+  my $fileName =$_;
+  my @types = (["Config Files", '.vg'],
+               ["All Files", "*"]);
+  
+  $fileName = $top->getSaveFile(-filetypes =>\@types,
+                                -defaultextension => '.vg'); 
+            
+  &call_run_yosys_tool("$fileName");
+}#sub run_yosys_popup
+
+sub call_run_yosys_tool{
+  my $outputFile = $_[0];
   open (WRITE, ">synthesis.tcl");
     print WRITE "#TCL written from proton verion-$TOOL_VERSION\n";
     my @rtlFiles = $GLOBAL->dbGlobalGetRtlFiles;
@@ -1693,8 +1715,143 @@ sub run_yosys_tool{
   close(WRITE);
 
   system("yosys -s synthesis.tcl");
+  system("cat '$outputFile' | grep -v 'src =' | grep -v 'top ='  > t ;  mv t '$outputFile'");
   #system("rm -rf synthesis.tcl");
-}#sub run_yosys_tool
+}#sub call_run_yosys_tool
 
+##############################################################################################################
+################################################ Post Synthesis ##############################################
+##############################################################################################################
+sub run_iverilog_popup {
+  my $subWin = MainWindow->new();
+  my $image = $subWin->Getimage('folder');
+     $subWin->title ("Run iverilog");
+  my ($tbFile, $vFile) = ("", "");
+  
+  my $tbFileFrame= $subWin->Frame()->pack(-side => 'top',-anchor=>'n',-fill=>'x');
+  my $vFileFrame= $subWin->Frame()->pack(-side => 'top',-anchor=>'n', -fill=>'x');
+  my $buttonFrame= $subWin->Frame()->pack(-side => 'bottom');
+
+  $tbFileFrame->Label(-text => "Testbench :")->pack(-side =>'left', -anchor => 'w');
+  $tbFileFrame->Button(-text=>'BrowseFile',-image=> $image,-command =>sub {$tbFile = &popup_read_verilog;})->pack(-side => 'right');
+  $tbEntry = $tbFileFrame->Entry(-textvariable =>\$tbFile, -width=>30)->pack(-side =>'right', -expand=>1, -fill=>'x');
+
+  $vFileFrame->Label(-text => "DUT   :")->pack(-side =>'left', -anchor => 'w');
+  $vFileFrame->Button(-text=>'BrowseFile',-image=> $image,-command =>sub {$vFile = &popup_read_verilog;})->pack(-side => 'right');
+  $vEntry = $vFileFrame->Entry(-textvariable =>\$vFile, -width=>30)->pack(-side =>'right', -expand=>1, -fill=>'x');
+
+  $buttonFrame->Button(-text=>'Run',-command =>sub {
+                                                     my @vmodelFiles = $GLOBAL->dbGlobalGetVerilogModels; 
+                                                     print "iverilog -o @vmodelFiles $tbFile $vFile; vvp output\n";
+                                                     system("iverilog -o @vmodelFiles $tbFile $vFile; vvp output"); 
+                                                     $subWin->destroy;
+                                                    })->pack(-side=>"left");
+  $buttonFrame->Button(-text=>'Cancel',-command =>sub {$subWin->destroy;})->pack(-side=>"left");
+}#sub run_iverilog_popup
+
+##############################################################################################################
+################################################ Add Power Ring ##############################################
+##############################################################################################################
+sub add_power_ring_popup {
+  my $subWin = MainWindow->new();
+  my $image = $subWin->Getimage('folder');
+     $subWin->title ("Power Ring");
+  my ($offsetX, $offsetY, $layerH, $layerV, $width, $spacing, $nets) = ("", "", "", "", 5, 3, "");
+  
+  my $offsetFrame= $subWin->Frame()->pack(-side => 'top',-anchor=>'n',-fill=>'x');
+  my $layerFrame= $subWin->Frame()->pack(-side => 'top',-anchor=>'n', -fill=>'x');
+  my $widthSpacingFrame= $subWin->Frame()->pack(-side => 'top',-anchor=>'n', -fill=>'x');
+  my $netsFrame= $subWin->Frame()->pack(-side => 'top',-anchor=>'n', -fill=>'x');
+  my $buttonFrame= $subWin->Frame()->pack(-side => 'bottom');
+
+  $offsetFrame->Label(-text => "Offset X :")->pack(-side =>'left', -anchor => 'w');
+  $xoffsetEntry = $offsetFrame->Entry(-textvariable =>\$offsetX, -width=>30)->pack(-side =>'left', -expand=>1, -fill=>'x');
+  $offsetFrame->Label(-text => "Y :")->pack(-side =>'left', -anchor => 'w');
+  $yoffsetEntry = $offsetFrame->Entry(-textvariable =>\$offsetY, -width=>30)->pack(-side =>'left', -expand=>1, -fill=>'x');
+
+  $layerFrame->Label(-text => "Layer H :")->pack(-side =>'left', -anchor => 'w');
+  $hLayerEntry = $layerFrame->Entry(-textvariable =>\$layerH, -width=>30)->pack(-side =>'left', -expand=>1, -fill=>'x');
+  $layerFrame->Label(-text => "V :")->pack(-side =>'left', -anchor => 'w');
+  $vLayerEntry = $layerFrame->Entry(-textvariable =>\$layerV, -width=>30)->pack(-side =>'left', -expand=>1, -fill=>'x');
+
+  $widthSpacingFrame->Label(-text => "Width :")->pack(-side =>'left', -anchor => 'w');
+  $widthEntry = $widthSpacingFrame->Entry(-textvariable =>\$width, -width=>30)->pack(-side =>'left', -expand=>1, -fill=>'x');
+  $widthSpacingFrame->Label(-text => "Spacing :")->pack(-side =>'left', -anchor => 'w');
+  $spacingEntry = $widthSpacingFrame->Entry(-textvariable =>\$spacing, -width=>30)->pack(-side =>'left', -expand=>1, -fill=>'x');
+
+  $netsFrame->Label(-text => "NETS :")->pack(-side =>'left', -anchor => 'w');
+  $netsEntry = $netsFrame->Entry(-textvariable =>\$nets, -width=>30)->pack(-side =>'right', -expand=>1, -fill=>'x');
+
+  $buttonFrame->Button(-text=>'Run',-command =>sub {
+                                                     &addPowerRing("-offset", "{$offsetX, $offsetY}", "-spacing", $spacing, "-width", $width, "-layerH", $layerH, "-layerV", $layerV, "-nets", "{$nets}"); 
+                                                     $subWin->destroy;
+                                                    })->pack(-side=>"left");
+  $buttonFrame->Button(-text=>'Cancel',-command =>sub {$subWin->destroy;})->pack(-side=>"left");
+}#sub add_power_ring_popup
+
+##############################################################################################################
+################################################## Power Rows ################################################
+##############################################################################################################
+sub power_rows_popup {
+  my $subWin = MainWindow->new();
+     $subWin->title ("Power Ring");
+  my ($width, $nets) = (5, "");
+  
+  my $widthFrame= $subWin->Frame()->pack(-side => 'top',-anchor=>'n', -fill=>'x');
+  my $netsFrame= $subWin->Frame()->pack(-side => 'top',-anchor=>'n', -fill=>'x');
+  my $buttonFrame= $subWin->Frame()->pack(-side => 'bottom');
+
+  $widthFrame->Label(-text => "WIDTH :")->pack(-side =>'left', -anchor => 'w');
+  $widthEntry = $widthFrame->Entry(-textvariable =>\$width, -width=>30)->pack(-side =>'left', -expand=>1, -fill=>'x');
+
+  $netsFrame->Label(-text => "NETS    :")->pack(-side =>'left', -anchor => 'w');
+  $netsEntry = $netsFrame->Entry(-textvariable =>\$nets, -width=>30)->pack(-side =>'right', -expand=>1, -fill=>'x');
+
+  $buttonFrame->Button(-text=>'Run',-command =>sub {
+                                                     &addPowerRows("-width", $width, "-nets", "{$nets}"); 
+                                                     $subWin->destroy;
+                                                    })->pack(-side=>"left");
+  $buttonFrame->Button(-text=>'Cancel',-command =>sub {$subWin->destroy;})->pack(-side=>"left");
+}#sub power_rows_popup
+
+##############################################################################################################
+################################################ Escape Routing ##############################################
+##############################################################################################################
+sub escape_router_popup {
+  my $subWin = MainWindow->new();
+  my $image = $subWin->Getimage('folder');
+     $subWin->title ("Power Escape Routing");
+  my ($instName, $pinName, $rlayers, $rsides, $extended, $overlap) = ("", "", "", "", "", "");
+  
+  my $instPinFrame= $subWin->Frame()->pack(-side => 'top',-anchor=>'n',-fill=>'x');
+  my $layerFrame= $subWin->Frame()->pack(-side => 'top',-anchor=>'n', -fill=>'x');
+  my $rsideFrame= $subWin->Frame()->pack(-side => 'top',-anchor=>'n', -fill=>'x');
+  my $extFrame= $subWin->Frame()->pack(-side => 'top',-anchor=>'n', -fill=>'x');
+  my $buttonFrame= $subWin->Frame()->pack(-side => 'bottom');
+
+  $instPinFrame->Label(-text => "Instance :")->pack(-side =>'left', -anchor => 'w');
+  $xoffsetEntry = $instPinFrame->Entry(-textvariable =>\$instName, -width=>30)->pack(-side =>'left', -expand=>1, -fill=>'x');
+  $instPinFrame->Label(-text => "Pin :")->pack(-side =>'left', -anchor => 'w');
+  $yoffsetEntry = $instPinFrame->Entry(-textvariable =>\$pinName, -width=>30)->pack(-side =>'left', -expand=>1, -fill=>'x');
+
+  $layerFrame->Label(-text => "Routing Layers :")->pack(-side =>'left', -anchor => 'w');
+  $rLayerEntry = $layerFrame->Entry(-textvariable =>\$rlayers, -width=>30)->pack(-side =>'left', -expand=>1, -fill=>'x');
+
+  $rsideFrame->Label(-text => "Routing Sides :")->pack(-side =>'left', -anchor => 'w');
+  $rsideEntry = $rsideFrame->Entry(-textvariable =>\$rsides, -width=>30)->pack(-side =>'left', -expand=>1, -fill=>'x');
+
+  $extFrame->Label(-text => "Extended :")->pack(-side =>'left', -anchor => 'w');
+  $extEntry = $extFrame->Entry(-textvariable =>\$extended, -width=>30)->pack(-side =>'left', -expand=>1, -fill=>'x');
+  $extFrame->Checkbutton(-text=>'no overlap',-variable =>\$overlap, -onvalue=>"--no_overlap", -offvalue => "")->pack(-side=>"left");
+
+
+  $buttonFrame->Button(-text=>'Run',-command =>sub {
+                                                     &power_escape_router("-inst", $instName, "-pin", $pinName, "-routing_layer", "{$rlayers}", "-routing_side", "{$rsides}", "-extended", "{$extended}", "$overlap"); 
+                                                     $subWin->destroy;
+                                                    })->pack(-side=>"left");
+  $buttonFrame->Button(-text=>'Cancel',-command =>sub {$subWin->destroy;})->pack(-side=>"left");
+}#sub escape_router_popup
+
+##############################################################################################################
 
 1;
