@@ -1,13 +1,23 @@
 
 sub write_graywolf_cel_file {
 my $dbu = $GLOBAL->dbfGlobalGetDBU;
+#-------------------- try to guess the cell pitch --------#
+my $cellPitch = 100.0 ;
+foreach $layer(keys %PTDB){
+    if ( $PTDB{$layer}->dbTechGetLayerType eq "ROUTING" ) {
+        if ( $PTDB{$layer}->dbTechGetLayerDir eq "VERTICAL") {
+            if ( $PTDB{$layer}->dbTechGetLayerPitch < $cellPitch ) { $cellPitch = $PTDB{$layer}->dbTechGetLayerPitch }
+                                                             }
+                                                          }
+                          }
+print "min cell pitch is $cellPitch\n";
 open(WRITE,">placement.cel");
 foreach my $inst (keys %COMP_ALREADY){
   my $cellref = $CADB{$inst}->dbCadbGetCellref;
   print WRITE "cell $cellref $inst\n";
   if(exists $PLDB{$cellref}){
     my @size = $PLDB{$cellref}->dbMdbGetSize;
-    my $half_width = ($size[0]/2)*$dbu;
+    my $half_width = ($size[0]/2)*$dbu + (4*$cellPitch*$dbu);
     my $half_height = ($size[1]/2)*$dbu;
     print WRITE "left -$half_width right $half_width bottom -$half_height top $half_height\n";
     my @pins = $PLDB{$cellref}->dbMdbGetPins;
@@ -123,15 +133,15 @@ print WRITE "*vertical_wire_weight : 1.0\n";
 print WRITE "*vertical_path_weight : 1.0\n";
 print WRITE "*padspacing           : variable\n";
 print WRITE "*rowSep               : 0.0   0\n";
-print WRITE "*track.pitch          : 160\n";
+print WRITE "*track.pitch          : 140\n";
 print WRITE "*graphics.wait        : off\n";
 print WRITE "*last_chance.wait     : off\n";
 print WRITE "*random.seed          : 12345\n";
 print WRITE "# TODO: proper track.pitch number above, plus feedThruWidth below\n";
 
-print WRITE "TWMC*chip.aspect.ratio : 0.50\n";
+print WRITE "TWMC*chip.aspect.ratio : 1.0\n";
 
-print WRITE "TWSC*feedThruWidth    : 160 layer 1\n";
+print WRITE "TWSC*feedThruWidth    : 140 layer 1\n";
 print WRITE "TWSC*do.global.route  : on\n";
 print WRITE "TWSC*ignore_feeds     : true\n";
 print WRITE "TWSC*call_row_evener    : true\n";
@@ -150,6 +160,9 @@ close(WRITE);
 
 
 sub read_graywolf_placement_result {
+#--------------- find minX and minY -----------------#
+my $minX = 10000000000;
+my $minY = 10000000000;
 open (READ,"placement.pl1");
 while(<READ>) {
 chomp();
@@ -157,6 +170,24 @@ my @pl = split(/\s+/,$_);
 my $instance = $pl[0];
 my $x = $pl[1];
 my $y = $pl[2];
+if ( $x < $minX ) { $minX = $x }
+if ( $y < $minY ) { $minY = $y }
+
+}
+close(READ);
+
+
+my $dbu = $GLOBAL->dbfGlobalGetDBU;
+open (READ,"placement.pl1");
+while(<READ>) {
+chomp();
+my @pl = split(/\s+/,$_);
+my $instance = $pl[0];
+my $x = $pl[1];
+my $y = $pl[2];
+# Add the Graywolfoffset of 0.03 0.03
+ $x = $x - $minX  ;
+ $y = $y - $minY  ;
            if ( exists $CADB{$instance} ) {
      if($CADB{$instance}->dbCadbGetStatus() eq "FIXED"){next;};
 print "PLA : setting placement of $instance to $x $y in Database\n";
