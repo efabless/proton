@@ -5,7 +5,8 @@ read_verilog -v rtls/vedic/vedic.gv
 set TOP_MODULE vedic_16x16
 elaborate
 
-set_floorplan_parameters -HEIGHT 1000 -WIDTH 500
+set_floorplan_parameters -HEIGHT 1000 -WIDTH 1500
+#set_floorplan_parameters -ASPECT_RATIO 1
 set_floorplan 
 
 #write_graywolf_cel_file
@@ -13,6 +14,11 @@ set_floorplan
 
 place_graywolf
 
-#write_def -output vedic.def
+win
+
+#write_lef -tech also -output all.lef
+#write_def -output vedic.def --overwrite
+
+qroute
 
 #defIn -def vedic.def
