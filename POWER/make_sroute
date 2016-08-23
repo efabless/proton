@@ -2488,6 +2488,16 @@ sub addPowerRing {
            #print "right:$nets_arr[$i] $xt1 $yt1 $xt2 $yt2\n";
            my $line = $layerH." ".$width." + "."SHAPE STRIPE" . " ( $xt1 $yt1 )" ." ( $xt2 * )";
            $NETS_ROUTING_ALREADY{$nets_arr[$i]}->dbNetRoutingDBSetFixedRoute($line);
+
+           #-----------Storing Core Box ---------------#
+           if($i==$#nets_arr){
+              my $cbox_llx = $xl1 + $width/2;
+              my $cbox_lly = $yb1 + $width/2;
+              my $cbox_urx = $xr1 - $width/2;
+              my $cbox_ury = $yt1 - $width/2;
+              #print "core_bbox:$cbox_llx $cbox_lly $cbox_urx $cbox_ury\n";
+              $GLOBAL->dbGlobalSetCoreBBox($cbox_llx, $cbox_lly, $cbox_urx, $cbox_ury); 
+           }
         #}#if exists in NETS_ROUTING_ALREADY
     }#f#oreach net
   }#else
@@ -2549,8 +2559,10 @@ sub addPowerRows {
     }
     if(exists $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}){
        my @rows = $FLOORPLAN_ALREADY{$FLOORPLAN_LOOKUP{"$TOP_MODULE/_self_"}}->dbFlplanGetRows;
+       my @core_bbox = $GLOBAL->dbGlobalGetCoreBBox; 
        foreach my $tag ( @rows ) {
           my ($x,$y,$orient) = (split(/\s+/, $tag))[2,3,4];
+          if($y <= $core_bbox[1] || $y >= $core_bbox[3]){next;}
           if($orient eq "N"){
              $line = $layer." ".$width." + "."SHAPE STRIPE" . " ( $gx1 $y )" ." ( $gx2 * )";
              $NETS_ROUTING_ALREADY{$gndNet}->dbNetRoutingDBSetFixedRoute($line);
