@@ -23,6 +23,7 @@ else { # if correct no. of inputs
 sub dbgStaBuildTimingGraph {
 # Right now only doing for reg 2 reg
 	&dbgStaReg2RegTrace;
+        &dbgStaIn2OutTrace;
 }# sub dbgStaBuildTimingGraph
 
 sub dbgStaReg2RegTrace {
@@ -75,7 +76,7 @@ foreach $pinName ( @pins ) {
 				###############################################
 				# timing report being generated ...
 				###############################################
-				&dbgStaReport1PathTiming(@TEMP_PATH);
+				&dbgStaReport1PathTimingR2R(@TEMP_PATH);
                                 $pathNum++;
                                 $presentNoOfComponents = @TEMP_PATH;
                                 $removeNoOfComponents = $presentNoOfComponents - $noOfComponentsBeforeBranch;
@@ -106,8 +107,127 @@ foreach $pinName ( @pins ) {
 }# foreach pin of instance
 }# sub dbgStaTraceReg2Reg
 
+#-----------------------------------------------#
+# BEGIN trace timing paths from input to output #
+#-----------------------------------------------#
 
-sub dbgStaReport1PathTiming {
+sub dbgStaIn2OutTrace {
+$count2 = 0;
+$pathNum = 1;
+$PRINTVAR = 0;
+foreach my $pinName ( keys %{$PORTS_ALREADY{$TOP_MODULE}} ) {
+  my $dir = $PORTS_ALREADY{$TOP_MODULE}{$pinName}->dbPortGetDir;
+             print "TE-STA-I2O MSG : 001 : trace timing from $pinName $dir\n";
+  if ( $dir ne "input" ) {
+    next;
+  }# if input port
+  my @connList = $PORTS_ALREADY{$TOP_MODULE}{$pinName}->dbPortGetConn;
+  if ( @connList != 1 ) {
+    print "TE-STA-I2O WARN: 001 : pin $pinName has more than one net connected\n";
+    next;
+  }
+  $netName = $connList[0];
+  my $bfsRootInstance = $pinName;
+
+  @driverQueue = ();
+  %driverLevel = ();
+  #%driverVisited = ();
+
+  my @sinkInsts = &dbPlaceTraceGetNetSinks($netName);
+  foreach my $tag ( @sinkInsts ) { # print "driver is $tag\n"; 
+  &dbgStaTraceIn2Out($tag,$count2);
+  }
+
+
+}# for all ports
+
+}# sub dbgStaIn2OutTrace
+
+sub dbgStaTraceIn2Out  {
+local $instanceName = $_[0];
+local $noOfComponentsBeforeBranch = $_[1];
+local $cellref = $CADB{$instanceName}->dbCadbGetCellref;
+local $fwdNetName;
+
+print "INFO-TE : 001 : tracing forward through $instanceName $cellref\n";
+local @pins = $PLDB{$cellref}->dbMdbGetPins;
+
+foreach $pinName ( @pins ) {
+	if ( $PLDB{$cellref}->dbMdbGetPinDir($pinName) == 1 ) {
+        if( exists $COMP_ALREADY{$instanceName}{$pinName} ) {
+        $fwdNetName = $COMP_ALREADY{$instanceName}{$pinName};
+        $noOfComponentsOnNet = keys %{$NETS_ALREADY{$fwdNetName}};
+        if($noOfComponentsOnNet > 2) {
+        	print "INFO-TE : 002 : possible branching of path \n"; 
+                $noOfComponentsBeforeBranch = @TEMP_PATH;
+                print "INFO-TE : 003 : $noOfComponentsBeforeBranch to be saved before branching\n";
+        } else { $noOfComponentsBeforeBranch  = $noOfComponentsBeforeBranch; }
+        foreach $newInstanceName ( keys %{$NETS_ALREADY{$fwdNetName}} ) {
+                print "INFO-TE : 005 : what is $newInstanceName\n";
+         	if( $newInstanceName eq "PIN" ) { 
+                print "INFO-TE : 006 : timing trace ending on DEF port $newInstanceName\n";
+                     
+                }#if its a DEF port 
+                elsif ( exists $PORTS_ALREADY{$TOP_MODULE}{$newInstanceName} ) {
+                print "INFO-TE : 006 : timing trace ending on netlist port $newInstanceName\n";
+                        	push(@TEMP_PATH,"$newInstanceName $fwdNetName");
+				###############################################
+				# timing report being generated ...
+				###############################################
+				&dbgStaReport1PathTimingI2O(@TEMP_PATH);
+                                $pathNum++;
+                                $presentNoOfComponents = @TEMP_PATH;
+                                $removeNoOfComponents = $presentNoOfComponents - $noOfComponentsBeforeBranch;
+#                               print "removing $removeNoOfComponents components At reg \n";
+                                for(my $xx = 0; $xx <= $removeNoOfComponents;$xx++) {
+                                	my $yy = $presentNoOfComponents - $xx;
+                                        delete $TEMP_PATH[$yy];
+                                }#for
+                }# if its a verilog port
+                else {
+                	$newCellref = $CADB{$newInstanceName}->dbCadbGetCellref;
+                   	if ( $newInstanceName eq $instanceName ) { }
+                   	elsif($PLDB{$newCellref}->dbMdbGetFunction eq "flop" ) {
+                        	push(@TEMP_PATH,"$newInstanceName $fwdNetName");
+				###############################################
+				# timing report being generated ...
+				###############################################
+				&dbgStaReport1PathTimingI2R(@TEMP_PATH);
+                                $pathNum++;
+                                $presentNoOfComponents = @TEMP_PATH;
+                                $removeNoOfComponents = $presentNoOfComponents - $noOfComponentsBeforeBranch;
+#                               print "removing $removeNoOfComponents components At reg \n";
+                                for(my $xx = 0; $xx <= $removeNoOfComponents;$xx++) {
+                                	my $yy = $presentNoOfComponents - $xx;
+                                        delete $TEMP_PATH[$yy];
+                                }#for
+
+                    	}
+                   	else {
+                          	push(@TEMP_PATH,"$newInstanceName $fwdNetName");
+                          	&dbgStaTraceIn2Out($newInstanceName,$noOfComponentsBeforeBranch);
+                          	print "INFO-TE : 004 : $noOfComponentsBeforeBranch after split\n";
+                                $presentNoOfComponents = @TEMP_PATH;
+                                $removeNoOfComponents = $presentNoOfComponents - $noOfComponentsBeforeBranch;
+#                               print "removing $removeNoOfComponents components At somewhere \n";
+                                for(my $xx = 0; $xx <= $removeNoOfComponents;$xx++) {
+                                	my $yy = $presentNoOfComponents - $xx;
+                                        delete $TEMP_PATH[$yy];
+                                }#for
+                        }
+
+          	}#if instance is not a block PIN
+     	}#foreach
+ 	}# if pin has some connectivity
+        }#if pin is an output pin
+}# foreach pin of instance
+}# sub dbgStaTraceIn2Out
+#-----------------------------------------------#
+#   END trace timing paths from input to output #
+#-----------------------------------------------#
+
+
+sub dbgStaReport1PathTimingR2R {
 my @PATHLIST = @_;
    #print join ",", @PATHLIST ;
    my $slew = 0.550;
@@ -165,7 +285,58 @@ print WRITE "slack : $slack\n";
                                  print WRITE "-----------------------------------------------------------\n";
                                        print WRITE "\n\n";
 
-}# sub dbgStaReport1PathTiming
+}# sub dbgStaReport1PathTimingR2R
+
+sub dbgStaReport1PathTimingI2O {
+my @PATHLIST = @_;
+   #print join ",", @PATHLIST ;
+   my $slew = 0.550;
+   my $load = 0.025;
+   my $cumlativeDelay = 0;
+   my $clock_period = 20000;
+   my $uncertanity = 100;
+   my $setup_time = 200;
+   my $startInst = shift @PATHLIST;
+   my $noOfInstOnPath = @PATHLIST;
+   my $stopInst = (split(/\s+/,$PATHLIST[$noOfInstOnPath-1]))[0];
+
+                                 print WRITE "Path # $pathNum\n";
+                                 print WRITE "StartPoint : $startInst\n";
+                                 print WRITE "EndPoint : $stopInst\n";
+                                 print WRITE "-----------------------------------------------------------\n";
+                                 print WRITE "inst     macro   arc    delay   tdelay  tran\n";
+                                 print WRITE "-----------------------------------------------------------\n";
+                                 my $cellref = "PIN";
+                                 print WRITE "$startInst $cellref ";
+                                 my $previousInst = $startInst;
+                                 foreach $inst ( @PATHLIST ) {
+                                         my ($i,$n) = (split(/\s+/,$inst))[0,1];
+                                         my $previousInstOutPin = $NETS_ALREADY{$n}{$previousInst};
+                                         my $arc = "$previousInstInPin $previousInstOutPin";
+                                         #my @instDelayTran = $TADB{$previousInst}->dbTimingInstGetArcDly($previousInstInPin,$previousInstOutPin);
+                                         my @instDelayTran = dbaGetInstRiseDly($previousInst,$previousInstInPin,$previousInstOutPin,$slew,$load);
+                                            $cumlativeDelay = $cumlativeDelay + $instDelayTran[0];
+                                         printf WRITE " $previousInstInPin->$previousInstOutPin $instDelayTran[0] $cumlativeDelay $instDelayTran[1]\n";
+                                         printf WRITE "%s->%s %.2f %.2f %.2f\n", $previousInstInPin, $previousInstOutPin, $instDelayTran[0], $cumlativeDelay, $instDelayTran[1];
+print WRITE "\n";
+                                         my $c = $CADB{$i}->dbCadbGetCellref;
+                                         print WRITE "$i $c ";
+                                         $previousInst = $i;
+                                         $previousInstInPin = $NETS_ALREADY{$n}{$i};
+                                                              }#foreach
+
+                                       print WRITE "\n";
+                                 print WRITE "-----------------------------------------------------------\n";
+print WRITE "clock period : $clock_period\n";
+my $reqTime = $clock_period - $uncertanity - $setup_time;
+print WRITE "required time : $reqTime\n";
+print WRITE "arrival time : $cumlativeDelay\n";
+my $slack = $reqTime - $cumlativeDelay;
+print WRITE "slack : $slack\n";
+                                 print WRITE "-----------------------------------------------------------\n";
+                                       print WRITE "\n\n";
+
+}# sub dbgStaReport1PathTimingI2O
 
 sub dbaStaReg2RegTiming {
 my $startInst = $_[0];
