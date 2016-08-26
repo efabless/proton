@@ -101,15 +101,24 @@ sub array_of_blasted_expr
 {
    my $curr_expr = $_[0] ;
    my $curr_module = $_[1] ;
+   my @connList = ();
    $curr_expr =~ s/\s+//g;
-   my @temp_array_bits = () ;
+   #----- handle  multi wire/bit conection in verilog ------#
    if ( $curr_expr =~ /\{/ ) { 
        $curr_expr =~ s/\{//; 
        $curr_expr =~ s/\}//;
-       @temp_array_bits = split(/\s*\,\s*/, $curr_expr);
-   }elsif ( $curr_expr =~ /\[\s*[0-9]+\s*\:\s*[0-9]+\s*\]/ ) {
-     $curr_expr =~ s/\[/ /; $curr_expr =~ s/\]//; $curr_expr =~ s/\:/ /;
-     my ($name,$from,$to) = (split(/\s+/,$curr_expr))[0,1,2];
+       @connList = split(/\s*\,\s*/, $curr_expr);
+                             } else { push(@connList,$curr_expr); }
+   print "PAR-VERI : assign : expression conn list @connList\n";
+
+
+   my @temp_array_bits = () ;
+   while ( defined ( $conn = shift @connList ) ) {  
+      print "processing $conn\n";
+
+   if ( $conn =~ /\[\s*[0-9]+\s*\:\s*[0-9]+\s*\]/ ) {
+     $conn =~ s/\[/ /; $conn =~ s/\]//; $conn =~ s/\:/ /;
+     my ($name,$from,$to) = (split(/\s+/,$conn))[0,1,2];
      if ( $from <= $to ) {
        for ( my $xx = $from ; $xx <= $to ; $xx++ ){
          my $newNetName = $name."[".$xx."]";
@@ -121,57 +130,87 @@ sub array_of_blasted_expr
          push(@temp_array_bits,$newNetName);
        }
      } 
-   }elsif (( exists $MODULE_ALREADY{$curr_module}->{ins}{$curr_expr})
-       && ($MODULE_ALREADY{$curr_module}->dbVNOMGetInputType($curr_expr) == 1)){
-       my $width = $MODULE_ALREADY{$curr_module}->dbVNOMGetInputBits($curr_expr);
+   }elsif (( exists $MODULE_ALREADY{$curr_module}->{wire}{$conn}) 
+       && ($MODULE_ALREADY{$curr_module}->dbVNOMGetWireType($conn) == 1)) {
+       print "I AM A WIRE\n";
+       my $width = $MODULE_ALREADY{$curr_module}->dbVNOMGetWireBits($conn);
        $width =~ s/\[//; $width =~ s/\]//;
        my @W = split(/\s*\:\s*/,$width);
        if ( $W[0] <= $W[1] ) {
          for (my $xx = $W[0] ; $xx <=$W[1]; $xx++ ) {
-           my $pinName = $curr_expr."[".$xx."]";
+           my $pinName = $conn."[".$xx."]";
            push(@temp_array_bits,$pinName);
          }
        } elsif ( $W[0] > $W[1] ) {
          for (my $xx = $W[0] ; $xx >=$W[1]; $xx-- ) {
-           my $pinName = $curr_expr."[".$xx."]";
+           my $pinName = $conn."[".$xx."]";
            push(@temp_array_bits,$pinName);
          }
        }
-   }elsif (( exists $MODULE_ALREADY{$curr_module}->{outs}{$curr_expr})
-       && ($MODULE_ALREADY{$curr_module}->dbVNOMGetOutputType($curr_expr) == 1)){
-       my $width = $MODULE_ALREADY{$curr_module}->dbVNOMGetOutputBits($curr_expr);
+   }elsif (( exists $MODULE_ALREADY{$curr_module}->{ins}{$conn})
+       && ($MODULE_ALREADY{$curr_module}->dbVNOMGetInputType($conn) == 1)){
+       print "I AM A INS\n";
+       my $width = $MODULE_ALREADY{$curr_module}->dbVNOMGetInputBits($conn);
        $width =~ s/\[//; $width =~ s/\]//;
        my @W = split(/\s*\:\s*/,$width);
        if ( $W[0] <= $W[1] ) {
          for (my $xx = $W[0] ; $xx <=$W[1]; $xx++ ) {
-           my $pinName = $curr_expr."[".$xx."]";
+           my $pinName = $conn."[".$xx."]";
            push(@temp_array_bits,$pinName);
          }
        } elsif ( $W[0] > $W[1] ) {
          for (my $xx = $W[0] ; $xx >=$W[1]; $xx-- ) {
-           my $pinName = $curr_expr."[".$xx."]";
+           my $pinName = $conn."[".$xx."]";
            push(@temp_array_bits,$pinName);
          }
        }
-   }elsif (( exists $MODULE_ALREADY{$curr_module}->{bidis}{$curr_expr})
-       && ($MODULE_ALREADY{$curr_module}->dbVNOMGetBidiType($curr_expr) == 1)){
-       my $width = $MODULE_ALREADY{$curr_module}->dbVNOMGetBidiBits($curr_expr);
+   }elsif (( exists $MODULE_ALREADY{$curr_module}->{outs}{$conn})
+       && ($MODULE_ALREADY{$curr_module}->dbVNOMGetOutputType($conn) == 1)){
+       print "I AM A OUTS\n";
+       my $width = $MODULE_ALREADY{$curr_module}->dbVNOMGetOutputBits($conn);
        $width =~ s/\[//; $width =~ s/\]//;
        my @W = split(/\s*\:\s*/,$width);
        if ( $W[0] <= $W[1] ) {
          for (my $xx = $W[0] ; $xx <=$W[1]; $xx++ ) {
-           my $pinName = $curr_expr."[".$xx."]";
+           my $pinName = $conn."[".$xx."]";
            push(@temp_array_bits,$pinName);
          }
        } elsif ( $W[0] > $W[1] ) {
          for (my $xx = $W[0] ; $xx >=$W[1]; $xx-- ) {
-           my $pinName = $curr_expr."[".$xx."]";
+           my $pinName = $conn."[".$xx."]";
            push(@temp_array_bits,$pinName);
          }
        }
+   }elsif (( exists $MODULE_ALREADY{$curr_module}->{bidis}{$conn})
+       && ($MODULE_ALREADY{$curr_module}->dbVNOMGetBidiType($conn) == 1)){
+       print "I AM A BIDI\n";
+       my $width = $MODULE_ALREADY{$curr_module}->dbVNOMGetBidiBits($conn);
+       $width =~ s/\[//; $width =~ s/\]//;
+       my @W = split(/\s*\:\s*/,$width);
+       if ( $W[0] <= $W[1] ) {
+         for (my $xx = $W[0] ; $xx <=$W[1]; $xx++ ) {
+           my $pinName = $conn."[".$xx."]";
+           push(@temp_array_bits,$pinName);
+         }
+       } elsif ( $W[0] > $W[1] ) {
+         for (my $xx = $W[0] ; $xx >=$W[1]; $xx-- ) {
+           my $pinName = $conn."[".$xx."]";
+           push(@temp_array_bits,$pinName);
+         }
+       }
+   }elsif ( $conn =~ /[1-9]+\'b/) {
+        print "add TIE cell or connect to power and ground\n";
+        $conn =~ s/[1-9]+\'b//;
+        @bits = split(/\s*/,$conn);
+        while ( defined ( $bit = shift @bits ) ) {
+              if ( $bit == 0 ) { push(@temp_array_bits,"gnd");}
+              if ( $bit == 1 ) { push(@temp_array_bits,"vdd");}
+                                                 } 
    }else{
-     push(@temp_array_bits,$curr_expr);
+     push(@temp_array_bits,$conn);
    }
+                                      } #while connList has data
+   print "PAR-VERI : assign : expression expanded conn list @temp_array_bits\n";
    return @temp_array_bits;
 }
 #-----------------------------------------------------------------------------------------------------------------------------#
