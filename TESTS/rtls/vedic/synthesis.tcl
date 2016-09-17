@@ -19,15 +19,15 @@ proc; opt; fsm; opt; memory; opt
 techmap; opt
 
 # mapping flip-flops to mycells.lib
-dfflibmap -liberty /home/ubuntu/proton/TESTS/library/NangateOpenCellLibrary_PDKv1_2_v2008_10_slow_conditional_ecsm.lib
+dfflibmap -liberty /ef/tech/ef-xfab-xh035/EFXH035A/libs.ref/liberty-yosys-abc/D_CELLS/PVT_3_30V_range/D_CELLS_MOS_fast_3_60V_25C_abc.lib
 
 
 # mapping logic to mycells.lib
-abc -liberty /home/ubuntu/proton/TESTS/library/NangateOpenCellLibrary_PDKv1_2_v2008_10_slow_conditional_ecsm.lib
+abc -liberty /ef/tech/ef-xfab-xh035/EFXH035A/libs.ref/liberty-yosys-abc/D_CELLS/PVT_3_30V_range/D_CELLS_MOS_fast_3_60V_25C_abc.lib
 
 
 # cleanup
 clean
 
 # write synthesized design
-write_verilog vedic.vg
+write_verilog vedic.v

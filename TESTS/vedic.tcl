@@ -9,20 +9,20 @@ set_floorplan_parameters -HEIGHT 1000 -WIDTH 1500
 set_floorplan_parameters -ASPECT_RATIO 1 -UTILIZATION 30
 set_floorplan 
 
-create_net -type power -name VDD
-create_net -type ground -name GND
-
-addPowerRing -offset {0.2,0.2} -spacing 0.5 -width 1 -layerH MET3 -layerV MET4 -nets {VDD,GND}
-addPowerRows -width 0.5 -layer MET2 -nets {VDD,GND}
-
-#write_graywolf_cel_file
-#read_graywolf_placement_result
-
+#create_net -type power -name VDD
+#create_net -type ground -name GND
+#
+#addPowerRing -offset {0.2,0.2} -spacing 0.5 -width 1 -layerH MET3 -layerV MET4 -nets {VDD,GND}
+#addPowerRows -width 0.5 -layer MET2 -nets {VDD,GND}
+#
+##write_graywolf_cel_file
+##read_graywolf_placement_result
+#
 #place_graywolf
-
-#write_lef -tech also -output all.lef
-#write_def -output vedic.def --overwrite
-
+#
+##write_lef -tech also -output all.lef
+##write_def -output vedic.def --overwrite
+#
 #qroute
-
-#defIn -def vedic.def
+#
+##defIn -def vedic.def
