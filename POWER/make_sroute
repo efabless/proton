@@ -2575,4 +2575,175 @@ sub addPowerRows {
   }#else
 }#sub addPowerRows
 
+########################################################################################
+############################### Add Power Vias #########################################
+########################################################################################
+#sub addPowerVias {
+#  my $noOfArguments = @_;
+#  if($noOfArguments <0 || $_[0] eq "-h"){
+#     print "Usage : addPowerVias\n";
+#  }else {
+#    foreach my $layerName ( keys %PTDB){
+#      my $type = $PTDB{$layerName}->dbTechGetLayerType;
+#      if($type eq "ROUTING" || $type eq "CUT") {
+#         my $num = $PTDB{$layerName}->dbTechGetLayerNum;
+#         $LAYERS_HASH{"$layerName"} = $num;  ## making hash for Routing,Cut & Masterslice Metal Layers ##
+#      }#if routing or cut or masterslice type
+#    }#for layerName
+#
+#    my @Layers = sort {$LAYERS_HASH{$a}<=>$LAYERS_HASH{$b}}(keys(%LAYERS_HASH));
+#    my %ROUTING_VS_VIA = ();
+#    for (my $i=0; $i<$#Layers; $i+=2){
+#         $ROUTING_VS_VIA{$Layers[$i]} = $Layers[$i+1]; 
+#    }
+#    #foreach my $l(keys %ROUTING_VS_VIA){
+#    #   print "$l=>$ROUTING_VS_VIA{$l}\n";
+#    #}
+#  
+#    my %SPECIAL_ROUTE_HASH = ();
+#    foreach my $net ( keys %NETS_ALREADY ) {
+#       my $netType = $NADB{$net}->dbNadbGetNetType;
+#       if(($netType == 1) || ($netType == 2)){
+#          if(exists $NETS_ROUTING_ALREADY{$net}){ 
+#             my @data = $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBGetSpecialRoute;
+#             my @fixed_route_data = $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBGetFixedRoute;
+#   
+#             foreach my $segment ( @fixed_route_data ) {
+#                my @seg = split(/\s+/,$segment);
+#                #print "seg:$seg[0]\n";
+#                my @routeBox = xformNetSegToSpecialRouteBox($segment);
+#                if(exists $SPECIAL_ROUTE_HASH{$seg[0]}){
+#                   push (@{$SPECIAL_ROUTE_HASH{$seg[0]}}, [@routeBox]);
+#                }else{
+#                   @{$SPECIAL_ROUTE_HASH{$seg[0]}} = ([@routeBox]);
+#                } 
+#                #print "routeBox:@routeBox\n";
+#             }
+#             #for(my $i=0; $i<$#Layers; $i+=2){
+#             #    print "routing layer:$Layers[$i]\n";
+#             #    print "via layer:$Layers[$i+1]\n";
+#             #    print "routing uplayer:$Layers[$i+2]\n";
+#             #    my @dwnLayerRoutes = @{$SPECIAL_ROUTE_HASH{$Layers[$i]}};
+#             #    my @upLayerRoutes = @{$SPECIAL_ROUTE_HASH{$Layers[$i+2]}};
+#             #    foreach my $dRoutes(@dwnLayerRoutes){
+#             #       print "dnLayerBox:@$dRoutes\n";
+#             #       my @p = (@{$dRoutes[0]}, @{$dRoutes[1]},@{$dRoutes[2]}, @{$dRoutes[1]},@{$dRoutes[2]}, @{$dRoutes[3]},);
+#             #       foreach my $upRoutes(@upLayerRoutes){
+#             #          print "upLayerBox:@$upRoutes\n";
+#             #       }
+#             #    }
+#             #}
+#          }
+#       }
+#    }
+#
+#
+#    #foreach my $layerName ( keys %SPECIAL_ROUTE_HASH){
+#    #    #print "layer:$layerName\n";
+#    #    my @mulArr = @{$SPECIAL_ROUTE_HASH{$layerName}};
+#    #    #foreach my $a(@mulArr){
+#    #    #   print "@$a\n";
+#    #    #}  
+#    #}
+#  }#else
+#}#sub addPowerVias
+########################################################################################
+############################### Add Power Vias #########################################
+########################################################################################
+sub addPowerVias {
+  use Math::Clipper ':all';
+  use Math::Polygon;
+
+  my $noOfArguments = @_;
+  if($noOfArguments <0 || $_[0] eq "-h"){
+     print "Usage : addPowerVias\n";
+  }else {
+    #------------ Making layers hash ------------------#
+    my %LAYERS_HASH = ();
+    foreach my $layerName ( keys %PTDB){
+      my $type = $PTDB{$layerName}->dbTechGetLayerType;
+      if($type eq "ROUTING" || $type eq "CUT") {
+         my $num = $PTDB{$layerName}->dbTechGetLayerNum;
+         $LAYERS_HASH{"$layerName"} = $num;  ## making hash for Routing,Cut & Masterslice Metal Layers ##
+      }#if routing or cut or masterslice type
+    }#for layerName
+    my @Layers = sort {$LAYERS_HASH{$a}<=>$LAYERS_HASH{$b}}(keys(%LAYERS_HASH));
+
+    my $MICRONFACTOR = $GLOBAL->dbGlobalGetMicronFactor;
+    my $MulFactor = $MICRONFACTOR/$DEF_DATABASE_UNIT;
+
+    foreach my $net ( keys %NETS_ALREADY ) {
+       my %SPECIAL_ROUTE_HASH = ();
+       my $netType = $NADB{$net}->dbNadbGetNetType;
+       if(($netType == 1) || ($netType == 2)){
+          if(exists $NETS_ROUTING_ALREADY{$net}){ 
+             my @data = $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBGetSpecialRoute;
+             my @fixed_route_data = $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBGetFixedRoute;
+   
+             foreach my $segment ( @fixed_route_data ) {
+                my @seg = split(/\s+/,$segment);
+                #print "seg:$seg[0]\n";
+                my @routeBox = xformNetSegToSpecialRouteBox($segment);
+                #print "routeBox:@routeBox\n";
+                if(exists $SPECIAL_ROUTE_HASH{$seg[0]}){
+                   push (@{$SPECIAL_ROUTE_HASH{$seg[0]}}, [[$routeBox[0],$routeBox[1]], [$routeBox[2],$routeBox[1]], [$routeBox[2],$routeBox[3]], [$routeBox[0],$routeBox[3]]]);
+                }else{
+                   @{$SPECIAL_ROUTE_HASH{$seg[0]}} = ([[$routeBox[0],$routeBox[1]], [$routeBox[2],$routeBox[1]], [$routeBox[2],$routeBox[3]], [$routeBox[0],$routeBox[3]]]);
+                } 
+             }
+             print "net is $net\n";
+             for(my $i=0; $i<$#Layers; $i+=2){
+                 #print "routing layer:$Layers[$i]\n";
+                 #print "via layer:$Layers[$i+1]\n";
+                 #print "routing uplayer:$Layers[$i+2]\n";
+                 my @dwnLayerRoutes = @{$SPECIAL_ROUTE_HASH{$Layers[$i]}};
+                 my @upLayerRoutes = @{$SPECIAL_ROUTE_HASH{$Layers[$i+2]}};
+                 my $clipper = Math::Clipper->new;
+                 $clipper->add_subject_polygons([@dwnLayerRoutes]);
+                 $clipper->add_clip_polygons([@upLayerRoutes]);
+                 my $result = $clipper->execute(CT_INTERSECTION);
+                 my @result_arr = @$result;
+                 my $result_arr_len = @result_arr;
+                 #print "numOfIntersection:$result_arr_len\n";
+                 foreach my $p(@result_arr){
+                    my @closedPoly = (@$p, [$p->[0]->[0],$p->[0]->[1]]);
+                    my $overlapPoly = Math::Polygon->new(points=>\@closedPoly);
+                    my $center = $overlapPoly->centroid;
+                    print "center:@$center\n";
+                    #my $line = "NEW $Layers[$i] 0 ( $center->[0] $center->[1] ) $Layers[$i+1] DO 1 BY 1 STEP 0 0";  
+                    #if(exists $NETS_ROUTING_ALREADY{$net}){
+                    #   $NETS_ROUTING_ALREADY{$net}->dbNetRoutingDBSetFixedRoute($line);
+                    #}
+   
+                    #my @viaBbox = ($p->[3]->[0],$p->[3]->[1],$p->[2]->[0],$p->[2]->[1]);
+                    #print "viaBbox:@viaBbox\n";
+                    my @xx = ();
+                    my @yy = ();
+                    foreach my $p1(@$p){
+                       push(@xx, $p1->[0]); 
+                       push(@yy, $p1->[1]); 
+                    }
+                    @xx = sort{$a<=>$b}@xx;
+                    @yy = sort{$a<=>$b}@yy;
+                    my @viaBbox = ($xx[0], $yy[0], $xx[-1], $yy[-1]);
+                    #print "viaBbox:@viaBbox\n";
+                    my $llx = 20 + $viaBbox[0]*$MulFactor;
+                    my $lly = 20 + $viaBbox[1]*$MulFactor;
+                    my $urx = 20 + $viaBbox[2]*$MulFactor;
+                    my $ury = 20 + $viaBbox[3]*$MulFactor;
+                    my $color = "green";
+                    $design_worldcanvas->createRectangle($llx,$lly,$urx,$ury, -outline=>$color, -tags=>"SPNETTAG", -state =>"normal", -fill =>$color, -stipple => "gray12");
+                    #my $tx = 20 + $center->[0]*$MulFactor; 
+                    #my $ty = 20 + $center->[1]*$MulFactor; 
+                    #print "tx:ty=>$tx $ty\n";
+                    #$design_worldcanvas->createText($tx,$ty, -text=>"via", -anchor=>"sw",-tags=>"INSTTEMP",-fill=>"white",-font=>"Times 12");
+
+                 }
+             }
+          }
+       }
+    }
+  }#else
+}#sub addPowerVias
+
 1;
