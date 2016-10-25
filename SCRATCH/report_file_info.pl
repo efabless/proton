@@ -1418,7 +1418,7 @@ if($line =~ /endmodule/){
 #### assumption that input and output lines will have only one pin / bus entry
 if($line =~ /\b[i,o][n,u]t*p*o*ut\b/){  $line =~ s/^\s+//;
                                   if($line =~ /\[\s*\-*\s*[0-9]+\s*\:\s*\-*\s*[0-9]+\s*\]/){ # if the pin is a BUS
-#-------------------- added extra space after the closing bracket --------------------- OASYS #
+#-------------------- added extra space after the closing bracket --------------------- CLIENT #
                                     $line =~ s/\]/ /; $line =~ s/\[/ /; $line =~ s/\:/ /; $line =~ s/\,/ /g; $line =~ s/\;//;
                                     my @tempStringList =(split(/\s+/, $line));
                                     ($pinDirection,$pinFrom,$pinTo) = @tempStringList[0,1,2];
