@@ -82,12 +82,16 @@ export/write  LEF, DEF, gate level verilog, GDS2
 Use Model
 ===========================
 Proton can be used in following modes
+
 	digital block implementation
 	Hierarchical partitining
 	digital block modelling for use in mixed signal designs 
 
 Limitations
 ===========================
+Proton has been used on many designs in tapeout mode but requires some understanding of the steps of the flow. It is not a push button tool yet. It offers complete flexibility to manage the design data and in some cases can allow users to delete objects/ instances and nets that can cause design logic to change. It also has limitation on the size of design it can handle , mostly limited by the placement and routing engines used inside the tool. It can be worked around by using proton in a hierarchical flow.
+
+Pure Digital and Mixed Signal designs are handled well in proton. It is not geared to handle Multi Billion transistor SOCs flat. But with some ingenuity, a large design can be pushed through proton system using hierarchical implementation flow.
 
 
 
