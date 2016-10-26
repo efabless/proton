@@ -86,10 +86,12 @@ export/write  LEF, DEF, gate level verilog, GDS2
 Use Model
 ===========================
 Proton can be used in following modes
-digital block implementation
-Hierarchical partitining
-digital block modelling for use in mixed signal designs 
+	digital block implementation
+	Hierarchical partitining
+	digital block modelling for use in mixed signal designs 
 
+Limitations
+===========================
 
 
 
