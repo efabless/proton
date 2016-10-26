@@ -53,17 +53,44 @@ export PATH=$PROTON_HOME:$PATH
 
 : proton --help             ===> prints the launch help message
 
+: proton -f run.tcl         ===> executes the commands in run.tcl and returns to shell prompt
+
 
 By default, proton open in non-gui mode. To open GUI from shell mode type "win" or "gui" 
 
 
 
-Unsupported Verilog-2005 Features
+Supported formats
 =================================
+Most of the popular backend ASIC file formats are supported. LEF, DEF, RTL ( Verilog 2005) , gate-level verilog, Spef etc are supported. 
 
 
-Building the documentation
+Features
 ==========================
+Proton has the many of the features of commercial Place and Route tools. We are developing many more actively and ask for community help in giving us feedback and also pitchin to help develop new features
+Currently following features have been tested to work
+
+import/read LEF(5.7) , DEF, gate level verilog ( hierarchical and flat), GDS2
+export/write  LEF, DEF, gate level verilog, GDS2
+
+RTL Simulation
+Gate level simulation
+Synthesis
+Interactive Floorplan
+Hierarchical Floorplan and Partition Pin Assignment
+Power Plan
+Placement
+Signal Routing
+
+Use Model
+===========================
+Proton can be used in following modes
+digital block implementation
+Hierarchical partitining
+digital block modelling for use in mixed signal designs 
+
+
+
 
 Contact GitHub API Training Shop Blog About
 © 2016 GitHub, Inc. Terms Privacy Security Status Help
