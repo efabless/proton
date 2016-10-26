@@ -74,14 +74,14 @@ Currently following features have been tested to work
 import/read LEF(5.7) , DEF, gate level verilog ( hierarchical and flat), GDS2
 export/write  LEF, DEF, gate level verilog, GDS2
 
-RTL Simulation
-Gate level simulation
-Synthesis
-Interactive Floorplan
-Hierarchical Floorplan and Partition Pin Assignment
-Power Plan
-Placement
-Signal Routing
+	RTL Simulation
+	Gate level simulation
+	Synthesis
+	Interactive Floorplan
+	Hierarchical Floorplan and Partition Pin Assignment
+	Power Plan
+	Placement
+	Signal Routing
 
 Use Model
 ===========================
