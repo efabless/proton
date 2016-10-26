@@ -42,6 +42,7 @@ export $PROTON_HOME=/<your-install-dir>/proton
 
 cd $PROTON_HOME
 
+
 ./UTILS/make_tool
 
 Proton can be invoked using the following commands
