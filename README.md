@@ -44,9 +44,9 @@ cd $PROTON_HOME
 
 Proton can be invoked using the following commands
 export PATH=$PROTON_HOME:$PATH
-$: proton                    ===> launches proton in shell mode
-$: proton --nolog --win      ===> launches proton in GUI mode
-$: proton --help             ===> prints the launch help message
+: proton                    ===> launches proton in shell mode
+: proton --nolog --win      ===> launches proton in GUI mode
+: proton --help             ===> prints the launch help message
 
 By default, proton open in non-gui mode. To open GUI from shell mode type "win" or "gui" 
 
