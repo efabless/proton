@@ -29,7 +29,7 @@ Proton is written in perl and uses many of the packages available on CPAN. The G
 Web Site
 ========
 
-More information and documentation can be found on the Yosys web site:
+More information can be found on the efabless web site:
 
 	http://www.efabless.com/opensource/proton
 
