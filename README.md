@@ -39,14 +39,20 @@ Getting Started
 clone the latest code from this git repository. You will need to install Iverilog, Yosys, Graywolf and Qrouter separately on your system. Install the perl packages needed by proton from CPAN.
 set the following environment variables 
 export $PROTON_HOME=/<your-install-dir>/proton
+
 cd $PROTON_HOME
+
 ./UTILS/make_tool
 
 Proton can be invoked using the following commands
 export PATH=$PROTON_HOME:$PATH
+
 : proton                    ===> launches proton in shell mode
+
 : proton --nolog --win      ===> launches proton in GUI mode
+
 : proton --help             ===> prints the launch help message
+
 
 By default, proton open in non-gui mode. To open GUI from shell mode type "win" or "gui" 
 
