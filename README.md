@@ -38,12 +38,9 @@ Getting Started
 ===============
 clone the latest code from this git repository. You will need to install Iverilog, Yosys, Graywolf and Qrouter separately on your system. Install the perl packages needed by proton from CPAN.
 set the following environment variables 
-export $PROTON_HOME=/<your-install-dir>/proton
-
-cd $PROTON_HOME
-
-
-./UTILS/make_tool
+	export $PROTON_HOME=/<your-install-dir>/proton
+	cd $PROTON_HOME
+	./UTILS/make_tool
 
 Proton can be invoked using the following commands
 export PATH=$PROTON_HOME:$PATH
