@@ -1,0 +1,152 @@
+#!/usr/bin/perl -w
+#swap line 1 and 3 to use the perl debugger
+#!/usr/bin/perl -w -d:ptkdb
+#REV='@(#)$RCSfile$ $Revision$ $Date$'
+use strict;
+require 5.008;
+use warnings;
+our $VERSION = sprintf("%d.%02d", q$Revision: 0.1 $ =~ m/(\d+)\.(\d+)/);
+my $gds2gdt = "gds2gdt"; #path to gds2gdt program
+
+BEGIN
+{
+    use constant TRUE    => 1;
+    use constant FALSE   => 0;
+    use constant DEBUG   => 'DEBUG:   ';
+    use constant ERROR   => 'ERROR:   ';
+    use constant WARNING => 'WARNING: ';
+    use constant INFO    => 'INFO:    ';
+    use constant NOTE    => 'NOTE:    ';
+}
+use FileHandle;
+use IPC::Open3;
+use File::Basename;
+use Getopt::Long qw(GetOptions);
+use Pod::Usage;
+use Term::ANSIColor;
+use GDS2;
+use Time::HiRes;
+
+# declare subroutines
+sub printUsage;
+sub printUsageInXterm;
+sub printVersion;
+
+$|=1;    ## serve stdout hot
+$\="\n"; ## default print() ending
+
+my $REVERSE_YELLOW  = color('bold reverse yellow on_black');
+my $REVERSE_RED     = color('bold reverse red on_black');
+my $REVERSE_CYAN    = color('bold reverse cyan on_black');
+my $REVERSE_GREEN   = color('bold reverse green on_black');
+my $REVERSE_MAGENTA = color('bold reverse magenta on_black');
+my $REVERSE_BLUE    = color('bold reverse blue on_white');
+my $REVERSE         = color('bold reverse');
+my $COLOR_RESET     = color('reset');
+
+GetOptions(
+    'help'                     => \&printUsage,
+    'version'                  => \&printVersion,
+    'xhelp|xtermhelp'          => \&printUsageInXterm,
+) || printUsage();
+my $fileNameIn = $ARGV[0];
+printUsage("Missing gds2 filename on command line") if (! defined $fileNameIn);
+
+my $time_a = Time::HiRes::time;
+my $fhGdt = new FileHandle;
+my $fhJunk = new FileHandle; # not using write
+my $cellName = '';
+open3($fhJunk,$fhGdt,$fhGdt,$gds2gdt,$fileNameIn,'-out','-') or die $REVERSE_RED.ERROR."$COLOR_RESET unable to run gds2gdt on file $fileNameIn $!";
+my $time_b = Time::HiRes::time;
+printf "Elapsed time for GDT setup: %0.7f seconds\n",abs($time_a - $time_b);
+my $recordCnt = 0;
+$time_a = Time::HiRes::time;
+while (<$fhGdt>)
+{
+    chomp;
+    s/^\s+//;
+    s/^#.*//;
+    next unless($_);
+    $time_b = Time::HiRes::time;
+    printf "Elapsed time to read record #%d: %0.7f seconds\n",++$recordCnt,abs($time_a - $time_b);
+    $time_a = Time::HiRes::time;
+    last if ($recordCnt >= 9);
+}
+$time_a = Time::HiRes::time;
+while (<$fhGdt>)
+{
+    $recordCnt++;
+    last if ($recordCnt == (1e6 + 9));
+}
+$time_b = Time::HiRes::time;
+printf "Elapsed time for GDS2 readGds2Record to read next %d records: %0.7f seconds\n",($recordCnt - 9),abs($time_a - $time_b);
+
+#######
+sub printUsage
+{
+    my $extraMessage = shift;
+    if (defined($extraMessage))
+    {
+        print "$extraMessage\n";
+        pod2usage(-message => "$extraMessage\n", -exitval => 0,-verbose => 2);
+    }
+    else
+    {
+        pod2usage(-exitval => 0,-verbose => 2);
+    }
+}
+################################################################################
+
+#######
+sub printVersion()
+{
+    my(%arg) = @_;
+    my $exit = $arg{'-exit'};
+    $exit = TRUE unless(defined($exit));
+
+    my $versionInfo = basename($0).": $VERSION";
+    print $versionInfo;
+    CORE::exit(0) if($exit);
+    $versionInfo;
+}
+################################################################################
+
+#######
+sub printUsageInXterm
+{
+    system("xterm -e '$0 -help' &");
+    exit 0;
+}
+################################################################################
+
+
+__END__
+
+=pod
+
+=head1 NAME
+
+testgdt - perform some simple tests using GDT format
+
+  Compare speeds to that of testgds2
+
+=head1 SYNOPSIS
+
+testgdt [options] anExistingGds2File
+
+=head1 OPTIONS
+
+ Note: options can be shortened as long they remain unique.
+
+  -help
+    print this and exit
+
+  -version
+    print version and exit
+
+  -xhelp  or  -xtermHelp
+    open help in temporary xterm window
+
+=cut
+
+

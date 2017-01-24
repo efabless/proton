@@ -1,0 +1,171 @@
+#!/usr/local/bin/perl -w
+$VERSION = 1.0;
+use strict;
+require 5.006;
+use strict;
+use File::Basename;
+use Getopt::Long qw(GetOptions);
+use GDS2;
+$|++;
+$\="\n";
+## subs used
+sub printUsage();
+sub printVersion();
+BEGIN
+{
+    use constant TRUE  => 1; 
+    use constant FALSE => 0; 
+}
+
+## process command line...
+my $convertType4Paths=1; ## TODO 
+GetOptions(
+    'help|?'   => \&printUsage,
+    'version'  => \&printVersion,
+) || printUsage();
+      
+my $fileNameIn  = '';
+my $fileNameOut = '';
+$fileNameIn = shift if ($#ARGV >= 0);
+$fileNameOut = shift if ($#ARGV >= 0);
+printUsage() if ($#ARGV >= 0);
+
+## take care of things we need from user that were not 
+## supplied on command line
+if ($fileNameIn eq '')
+{
+    my $notDone = 9; #limit for how many times we will ask
+    while ($notDone)
+    {
+        printf("GDS2 file to read: ");
+        $fileNameIn = <STDIN>;
+        chomp $fileNameIn;
+        $notDone = 0 if ($fileNameIn ne '');
+    }
+    printUsage() if ($fileNameIn eq '');
+}
+
+if ($fileNameOut eq '')
+{
+    my $notDone = 9; #limit for how many times we will ask
+    while ($notDone)
+    {
+        printf("GDS2 file to create: ");
+        $fileNameOut = <STDIN>;
+        chomp $fileNameOut;
+        $notDone = 0 if ($fileNameOut ne '');
+    }
+    printUsage() if ($fileNameOut eq '');
+}
+
+if ($fileNameIn eq $fileNameOut)
+{
+    print "ERROR: *** input and output files can not be the same."; 
+    print "       For safety this program does not support edit-in-place.";
+    printUsage();
+}
+
+###############################################################################
+######## OK we are finally ready to go to work... :-)
+my $gds2FileIn = new GDS2(-fileName => $fileNameIn);
+my $gds2FileOut = new GDS2(-fileName => ">$fileNameOut");
+my $fileSize = (stat $fileNameIn)[7];
+my $G_percentDone = 0;
+printf STDERR "  0%% done-",$G_percentDone;
+my $cnt=0;
+my @spinner=('-','\\','|','/');
+my $spinCnt=0;
+my $numConverted=0;
+while (my $record = $gds2FileIn -> readGds2Record()) 
+{
+    if ($gds2FileIn -> isPath)
+    {
+        #  <path>::=          PATH [ELFLAGS] [PLEX] LAYER DATATYPE [PATHTYPE]          #
+        #                     [WIDTH] [BGNEXTN] [ENDEXTN] [XY]                         #
+        my @records=();
+        my $layer    = 0;
+        my $dataType = 0;
+        my $pathType = 0;
+        my $width    = 0;
+        my $bgnExtn = 0; ## type 4 PATHS
+        my $endExtn = 0; ## type 4 PATHS
+        my @xyArray=();
+        until ($gds2FileIn -> isEndel)
+        {
+            $layer    = $gds2FileIn -> returnLayer    if ($gds2FileIn -> isLayer);
+            $dataType = $gds2FileIn -> returnDatatype if ($gds2FileIn -> isDatatype);
+            $pathType = $gds2FileIn -> returnPathtype if ($gds2FileIn -> isPathtype);
+            $width    = $gds2FileIn -> returnWidth    if ($gds2FileIn -> isWidth);
+            @xyArray  = $gds2FileIn -> returnXyAsArray(-asInteger => 1) if ($gds2FileIn -> isXy);
+            if ($convertType4Paths)
+            {
+                $bgnExtn = $gds2FileIn -> returnBgnextn if ($gds2FileIn -> isBgnextn);
+                $endExtn = $gds2FileIn -> returnEndextn if ($gds2FileIn -> isEndextn);
+            }
+            $record = $gds2FileIn -> readGds2Record();
+        }
+        $numConverted++ if ($bgnExtn || $endExtn);
+        $gds2FileOut -> printPath(
+                            -layer    => $layer,
+                            -dataType => $dataType,
+                            -pathType => 0,#TODO
+                            -width    => $width,
+                            -bgnExtn  => $bgnExtn,
+                            -endExtn  => $endExtn,
+                            -xyInt    => \@xyArray,
+                         );
+    }
+    else
+    {
+        $gds2FileOut -> printGds2Record(-type=>'record',-data=>$record);
+    }
+    if ((++$cnt % 150) == 0)
+    {
+        $spinCnt++;
+        $G_percentDone = int($gds2FileIn -> tellSize * 100 / $fileSize);
+        printf STDERR "\b\b\b\b\b\b\b\b\b\b%3s%% done%s",$G_percentDone,$spinner[$spinCnt % 4];
+    }
+}
+printf STDERR "\b\b\b\b\b\b\b\b\b\bDONE. Converted $numConverted path%s.\n",$numConverted==1?'':'s';
+
+## subroutines...
+ 
+################################################################################ 
+sub printVersion()
+{
+    print $main::VERSION;
+    exit 1;
+}
+
+################################################################################ 
+sub printUsage()
+{
+    print <<EOHELP;
+  gdspath4topath0 rev $main::VERSION
+    
+Usage:
+  gdspath4topath0 [options] gds_file_to_read gds_file_to_write
+      
+Synopsis:
+  Many programs can not handle the rare use of type 4 paths.
+  Creates a new modified GDS2 file that has path type 4s converted to path type 0s.
+  
+Options:
+
+  -help
+    print help and exit
+    
+  -version
+    print version and exit
+  
+Example:
+  gdspath4topath0  test.gds  test_xyz.gds
+
+EOHELP
+
+    exit 1;
+}
+################################################################################
+
+__END__
+

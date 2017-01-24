@@ -1,0 +1,41 @@
+#!/usr/bin/perl
+
+eval 'exec /usr/bin/perl  -S $0 ${1+"$@"}'
+    if 0; # not running under some shell
+
+# xls2csv: Convert Microsoft Excel spreadsheet to CSV
+#	   (m)'13 [24-10-2013] Copyright H.M.Brand 2008-2015
+
+use strict;
+use warnings;
+
+sub usage
+{
+    my $err = shift and select STDERR;
+    print "usage: $0 [ -o file.csv ] file.xls\n";
+    @_ and print join "\n", @_, "";
+    exit $err;
+    } # usage
+
+use Getopt::Long qw( :config bundling nopermute passthrough );
+my $csv;
+my $opt_f;
+GetOptions (
+    "help|?"	=> sub { usage 0; },
+    "o|c=s"	=> \$csv,
+    "f"		=> \$opt_f,
+    ) or usage 1;
+
+my $xls = shift or usage 1, "No input file";
+-r $xls         or usage 1, "Input file unreadable";
+-s $xls         or usage 1, "Input file empty";
+
+$csv or ($csv = $xls) =~ s/\.xls$/.csv/i;
+if (-f $csv) {
+    $opt_f or die "$csv already exists\n";
+    unlink $csv;
+    }
+
+print STDERR "Converting $xls to $csv ...\n";
+open STDOUT, ">", $csv;
+exec "xlscat", "-c", $xls;

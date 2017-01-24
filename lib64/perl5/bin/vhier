@@ -1,0 +1,536 @@
+#!/usr/bin/perl -w
+
+eval 'exec /usr/bin/perl -w -S $0 ${1+"$@"}'
+    if 0; # not running under some shell
+# See copyright, etc in below POD section.
+######################################################################
+
+require 5.005;
+use FindBin qw($RealBin);
+use lib "$RealBin/blib/arch";
+use lib "$RealBin/blib/lib";
+use lib "$RealBin";
+
+use Getopt::Long;
+use IO::File;
+use Pod::Usage;
+
+use Verilog::Netlist;
+use Verilog::Getopt;
+use strict;
+use vars qw ($Debug $VERSION);
+
+$VERSION = '3.412';
+
+######################################################################
+# main
+
+$Debug = 0;
+my $opt_output_filename = undef;
+my @opt_files;
+
+autoflush STDOUT 1;
+autoflush STDERR 1;
+
+# Option parsing
+my $Opt = new Verilog::Getopt(filename_expansion=>1);
+my $Opt_Cells;
+my $Opt_Modules;
+my $Opt_ModFiles;
+my $Opt_InFiles;
+my $Opt_Missing = 1;
+my $Opt_Missing_Modules;
+my $Opt_TopModule;
+my $Opt_ResolveFiles;
+my $Opt_Synthesis;
+my $Opt_Instance;
+my $Opt_Forest;
+my $Opt_Xml;
+
+Getopt::Long::config ("no_auto_abbrev","pass_through");
+GetOptions ("debug" => \&debug);  # Snarf --debug ASAP, before parse -f files
+
+@ARGV = $Opt->parameter(@ARGV);
+Getopt::Long::config ("no_auto_abbrev","no_pass_through");
+if (! GetOptions (
+		  "help"	=> \&usage,
+		  "debug"	=> \&debug,
+		  "o=s"		=> \$opt_output_filename,
+		  "cells!"	=> \$Opt_Cells,
+		  "module-files!"	=> \$Opt_ModFiles,
+		  "modules!"		=> \$Opt_Modules,
+		  "input-files!"	=> \$Opt_InFiles,
+		  "resolve-files!"	=> \$Opt_ResolveFiles,
+		  "sv!"			=> sub { shift; Verilog::Language::language_standard("1800-2012"); },
+		  "language=s"		=> sub { shift; Verilog::Language::language_standard(shift); },
+		  "missing!"		=> \$Opt_Missing,
+		  "missing-modules!"	=> \$Opt_Missing_Modules,
+		  "synthesis!"		=> \$Opt_Synthesis,
+		  "top-module=s"	=> \$Opt_TopModule,
+		  "version"	=> sub { print "Version $VERSION\n"; exit(0); },
+		  "forest"	=> \$Opt_Forest,
+		  "instance"	=> \$Opt_Instance,
+		  "xml!"	=> \$Opt_Xml,
+		  "<>"		=> \&parameter,
+		  )) {
+    die "%Error: Bad usage, try 'vhier --help'\n";
+}
+
+if (!@opt_files) {
+    die "%Error: vhier: No input filenames specified.\n";
+}
+
+my $fh = IO::File->new;
+if ($opt_output_filename) {
+    $fh->open(">$opt_output_filename") or die "%Error: $! $opt_output_filename\n";
+} else {
+    $fh->open(">-") or die;
+}
+
+vhier($fh, @opt_files);
+
+exit (0);
+
+######################################################################
+
+sub usage {
+    print "Version $VERSION\n";
+    pod2usage(-verbose=>2, -exitval=>2, -output=>\*STDOUT, -noperldoc=>1);
+    exit (1);
+}
+
+sub debug {
+    $Debug = 1;
+}
+
+sub parameter {
+    my $param = shift;
+    if ($param =~ /^--?/) {
+	die "%Error: vhier: Unknown parameter: $param\n";
+    } else {
+	push @opt_files, "$param"; # Must quote to convert Getopt to string, bug298
+    }
+}
+
+######################################################################
+#### Creation
+
+sub vhier {
+    my $fh = shift;
+    my @files = @_;
+
+    my $nl = new Verilog::Netlist (options => $Opt,
+				   keep_comments => 0,
+				   use_vars => 0,
+				   link_read_nonfatal => !$Opt_Missing,
+				   synthesis => $Opt_Synthesis,
+				   );
+
+    $fh->print("<vhier>\n") if $Opt_Xml;
+
+    if ($Opt_ResolveFiles) {
+	$nl->read_libraries();
+	$fh->print(" <resolve_files>\n") if $Opt_Xml;
+	foreach my $file (@files) {
+	    if (my $resolved = $nl->resolve_filename ($file, "all")) {
+		$fh->print( "$resolved\n") if !$Opt_Xml;
+		$fh->print( "  <file>$resolved</file>\n") if $Opt_Xml;
+	    }
+	}
+	$fh->print(" </resolve_files>\n") if $Opt_Xml;
+	return;
+    }
+    foreach my $file (@files) {
+	print "   Reading $file\n" if $Debug;
+	$nl->read_file (filename=>$file);
+    }
+    # Read in any sub-modules
+    $nl->link();
+    $nl->lint();  # Simplified as use_vars => 0
+    $nl->exit_if_error();
+
+    if ($Opt_TopModule) {
+	my $topmod = $nl->find_module($Opt_TopModule)
+	    or die "%Error: --top-module '$Opt_TopModule' was not found.\n";
+	$topmod->is_top(1);
+
+	# We could just pass this to all of the following routines,
+	# but each would need a different edit.  Instead, just edit the netlist
+	# to contain only the specified tree.
+	my %marked_modules;
+	_mod_mark_recurse($nl, $topmod, \%marked_modules);
+
+	foreach my $mod ($nl->modules_sorted) {
+	    if (!$marked_modules{$mod->name}) {
+		$mod->delete;
+	    }
+	}
+    }
+
+    if ($Opt_Cells || $Opt_Forest) {
+	$fh->print(" <cells>\n") if $Opt_Xml;
+	foreach my $mod ($nl->modules_sorted) {
+	    if ($mod->is_top) {
+		show_hier ($fh, $mod, undef, "  ", $mod->name);
+	    }
+	}
+	$fh->print(" </cells>\n") if $Opt_Xml;
+    }
+
+    if ($Opt_Modules) {
+	show_module_names($nl, $fh);
+    }
+
+    if ($Opt_ModFiles) {
+	show_mod_files($nl, $fh);
+    }
+
+    if ($Opt_InFiles) {
+	$fh->print(" <input_files>\n") if $Opt_Xml;
+	foreach my $filename ($Opt->depend_files) {
+	    $fh->print("  $filename\n") if !$Opt_Xml;
+	    $fh->print("  <file>$filename</file>\n") if $Opt_Xml;
+	}
+	$fh->print(" </input_files>\n") if $Opt_Xml;
+    }
+
+    if ($Opt_Missing_Modules) {
+	show_missing_module_names($nl,$fh);
+    }
+
+    $fh->print("</vhier>\n") if $Opt_Xml;
+}
+
+sub show_module_names {
+    my $nl = shift;
+    my $fh = shift;
+    $fh->print(" <modules>\n") if $Opt_Xml;
+    foreach my $mod ($nl->modules_sorted) {
+	$fh->printf("  %s\n", $mod->name) if !$Opt_Xml;
+	$fh->printf("  <module name=\"%s\" />\n", $mod->name) if $Opt_Xml;
+    }
+    $fh->print(" </modules>\n") if $Opt_Xml;
+}
+
+sub show_missing_module_names {
+    my $nl = shift;
+    my $fh = shift;
+
+    my %miss_names;
+    foreach my $mod ($nl->modules) {
+	foreach my $cell ($mod->cells_sorted) {
+	    if (!$cell->submod && !$cell->gateprim) {
+		$miss_names{$cell->submodname} = 1;
+	    }
+	}
+    }
+
+    $fh->print(" <missing_modules>\n") if $Opt_Xml;
+    foreach my $key (sort (keys %miss_names)) {
+	$fh->printf("  %s\n",$key) if !$Opt_Xml;
+	$fh->printf("  <module name=\"%s\" />\n",$key) if $Opt_Xml;
+    }
+    $fh->print(" </missing_modules>\n") if $Opt_Xml;
+}
+
+sub show_mod_files {
+    my $nl = shift;
+    my $fh = shift;
+    # We'll attach a level attribute to each module indicating its maximum depth
+    foreach my $mod ($nl->modules, $nl->interfaces) {
+	$mod->attributes("_vhier_level", 0);
+    }
+    # Recurse the tree and determine level
+    foreach my $mod ($nl->modules, $nl->interfaces) {
+	if ($mod->is_top) {
+	    _mod_files_recurse($mod, 1);
+	}
+    }
+    # Make sort key based on numeric level
+    my %keys;
+    foreach my $mod ($nl->modules) { # No interfaces, it's --module-files implying modules only
+	my $key = sprintf("%03d_%s", $mod->attributes("_vhier_level"), $mod->name);
+	$keys{$key} = $mod;
+    }
+    my @files;
+    my %files;  # Uniquify the array
+    foreach my $key (sort {$b cmp $a} (keys %keys)) {
+	my $mod = $keys{$key};
+	my $filename = $mod->filename;
+	if (!$files{$filename}) {
+	    $files{$filename} = 1;
+	    push @files, [" "x($mod->attributes("_vhier_level")), $filename];
+	}
+    }
+    $fh->print(" <module_files>\n") if $Opt_Xml;
+    foreach my $filespace (reverse @files) {
+	$fh->printf("  %s%s\n",$filespace->[0],$filespace->[1]) if !$Opt_Xml;
+	$fh->printf("  %s<file>%s</file>\n",$filespace->[0],$filespace->[1]) if $Opt_Xml;
+    }
+    $fh->print(" </module_files>\n") if $Opt_Xml;
+}
+
+sub _mod_mark_recurse {
+    my $nl = shift;
+    my $mod = shift;
+    my $marked = shift;
+
+    $marked->{$mod->name} = 1;
+    foreach my $cell ($mod->cells_sorted) {
+	if ($cell->submod) {
+	    _mod_mark_recurse ($nl, $cell->submod, $marked);
+	}
+    }
+}
+
+sub _mod_files_recurse {
+    my $mod = shift;
+    my $level = shift;
+    if (($mod->attributes("_vhier_level")||0) < $level) {
+	$mod->attributes("_vhier_level", $level);
+    }
+    foreach my $cell ($mod->cells_sorted) {
+	if ($cell->submod) {
+	    _mod_files_recurse ($cell->submod, $level+1);
+	}
+    }
+}
+
+sub show_hier {
+    my $fh = shift;
+    my $mod = shift;
+    my $parcell = shift;
+    my $indent = shift;
+    my $hier = shift;
+    my $submodname = shift;
+    # print the design hierarchy starting at mod (recursive)
+
+    printf "%-38s %s\n", $indent."Module ".$mod->name,$hier if $Debug;
+    my $instance = $parcell ? $parcell->name : $mod->name;
+
+    # print the mod instance
+    $Opt_Xml ?
+        $fh->printf("%s<cell name=\"%s\" submodname=\"%s\" hier=\"%s\">\n",
+            $indent, $parcell ? $parcell->name : $mod->name, $mod->name, $hier) :
+            $Opt_Instance ?
+                $fh->printf("%s%s %s\n", $indent, $instance, $mod->name) :
+                $fh->printf("%s%s\n",    $indent,            $mod->name);
+
+    # print the design hierarchy of each cell in mod
+    my $i = 0;
+    my $suffix;
+
+    my @cellCount = $mod->cells_sorted; # Returns list of name sorted references to Verilog::Netlist::Cell in the module
+    $fh->printf("\t\t%d cells_sorted for %s\n", $#cellCount+1, $mod->name) if $Debug;
+
+    my @subMods = grep($_->submod, $mod->cells_sorted); # list of submods of the current mod
+
+    $fh->printf("\t\t%d submods in cells_sorted.\t", $#subMods+1) if $Debug;
+    $fh->printf("\t\tsubmods=%s\n", join(',',map($_->name, @subMods))) if $Debug;
+
+    foreach my $cell ($mod->cells_sorted) {
+        if ($cell->submod) {    # Reference to the Verilog::Netlist::Module the cell instantiates
+	    # true if the cell refers to a defined module
+
+            # set the suffix characters used to indent lower level of hierarchy
+            if ($Opt_Forest) {
+                if ($i < $#subMods) {
+                    $suffix = "|--";    # indent chars for not last cell in the module
+                } else {
+                    $suffix = "\\--";    # tweak indent chars for last cell in the module
+                }
+                $indent =~ tr/-\\/  /;   # clear out higher-level indent chars
+            } else {
+                $suffix = "  "; # simple indenting with spaces
+            }
+            show_hier ($fh, $cell->submod, $cell, $indent.$suffix, $hier.".".$cell->name);
+            $i++;
+        }
+    }
+    $fh->printf("%s</cell>\n", $indent) if $Opt_Xml;
+}
+
+######################################################################
+######################################################################
+######################################################################
+
+__END__
+
+=pod
+
+=head1 NAME
+
+vhier - Return all files in a verilog hierarchy using Verilog::Netlist
+
+=head1 SYNOPSIS
+
+  vhier --help
+  vhier [verilog_options] [-o filename] [verilog_files.v...]
+
+=head1 DESCRIPTION
+
+Vhier reads the Verilog files passed on the command line and outputs a tree
+of all of the filenames, modules, and cells referenced by that file.
+
+=head1 VERILOG ARGUMENTS
+
+The following arguments are compatible with GCC, VCS and most Verilog
+programs.
+
+=over 4
+
+=item +define+I<var>+I<value>
+=item -DI<var>=I<value>
+
+Defines the given preprocessor symbol.
+
+=item -F I<file>
+
+Read the specified file, and act as if all text inside it was specified as
+command line parameters.  Any relative paths are relative to the directory
+containing the specified file.
+
+=item -f I<file>
+
+Read the specified file, and act as if all text inside it was specified as
+command line parameters.  Any relative paths are relative to the current
+directory.
+
+=item +incdir+I<dir>
+=item -II<dir>
+
+Add the directory to the list of directories that should be searched
+for include directories or libraries.
+
+=item +libext+I<ext>+I<ext>...
+
+Specify the extensions that should be used for finding modules.  If for
+example module I<x> is referenced, look in I<x>.I<ext>.
+
+=item -sv
+
+Specifies SystemVerilog language features should be enabled; equivalent to
+"--language 1800-2012".  This option is selected by default, it exists for
+compatibility with other simulators.
+
+=item -y I<dir>
+
+Add the directory to the list of directories that should be searched
+for include directories or libraries.
+
+=back
+
+=head1 VHIER ARGUMENTS
+
+=over 4
+
+=item --help
+
+Displays this message and program version and exits.
+
+=item --o I<file>
+
+Use the given filename for output instead of stdout.
+
+=item --cells
+
+Show the module name of all cells in top-down order.
+
+=item --forest
+
+Show "ASCII-art" hierarchy tree of all cells (like ps --forest)
+
+=item --input-files
+
+Show all input filenames.  Copying all of these files should result in only
+those files needed to represent the entire design.
+
+=item --instance
+
+With --cells or --forest, show module instance names.
+
+=item --language <1364-1995|1364-2001|1364-2005|1800-2005|1800-2009|1800-2012>
+
+Set the language standard for the files.  This determines which tokens are
+signals versus keywords, such as the ever-common "do" (data-out signal,
+versus a do-while loop keyword).
+
+=item --resolve-files
+
+Show resolved filenames passed on the command line.  This will convert raw
+module and filenames without paths to include the library search path
+directory.  Output filenames will be in the same order as passed on the
+command line.  Unlike --input-files or --module-files, hierarchy is not
+traversed.
+
+=item --module-files
+
+Show all module filenames in top-down order.  Child modules will always
+appear as low as possible, so that reversing the list will allow bottom-up
+processing of modules.  Unlike input-files, header files are not included.
+
+=item --modules
+
+Show all module names.
+
+=item --nomissing
+
+Do not complain about references to missing modules.
+
+=item --missing-modules
+
+With --nomissing, show all modules that are not found.
+
+=item --synthesis
+
+Define SYNTHESIS, and ignore text bewteen "ambit", "pragma", "synopsys" or
+"synthesis" translate_off and translate_on meta comments.  Note using
+metacomments is discouraged as they have led to silicon bugs (versus ifdef
+SYNTHESIS); see
+L<http://www.veripool.org/papers/TenIPEdits_SNUGBos07_paper.pdf>.
+
+=item --top-module I<module>
+
+Start the report at the specified module name, ignoring all modules that
+are not the one specified with --top-module or below, and report an error
+if the --top-module specified does not exist.  Without this option vhier
+will report all modules, starting at the module(s) that have no children
+below them.
+
+Note this option will not change the result of the --input-files list,
+as the files needed to parse any design are independent of which modules
+are used.
+
+=item --version
+
+Displays program version and exits.
+
+=item --xml
+
+Create output in XML format.
+
+=back
+
+=head1 DISTRIBUTION
+
+Verilog-Perl is part of the L<http://www.veripool.org/> free Verilog EDA
+software tool suite.  The latest version is available from CPAN and from
+L<http://www.veripool.org/verilog-perl>.
+
+Copyright 2005-2015 by Wilson Snyder.  This package is free software; you
+can redistribute it and/or modify it under the terms of either the GNU
+Lesser General Public License Version 3 or the Perl Artistic License Version 2.0.
+
+=head1 AUTHORS
+
+Wilson Snyder <wsnyder@wsnyder.org>
+
+=head1 SEE ALSO
+
+L<Verilog-Perl>,
+L<Verilog::Getopt>,
+L<Verilog::Preproc>,
+L<Verilog::Netlist>
+
+=cut
+######################################################################

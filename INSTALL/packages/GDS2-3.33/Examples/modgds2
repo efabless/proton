@@ -1,0 +1,339 @@
+#!/usr/local/bin/perl -w
+require 5;
+use strict;
+my $VERSION = '1.0';
+use File::Basename;
+use Getopt::Long qw(GetOptions);
+use GDS2;
+
+$\="\n";
+sub printUsage();
+sub printVersion();
+sub getHomeDir($);
+
+## process command line...
+my $prefix='';
+my $suffix='';
+my $restrictNames='';
+my @restrictNames=();
+my $ignoreNames='';
+my @ignoreNames=();
+my $upperCase=0;
+my $lowerCase=0;
+my $forceCase=0;
+my @delLayers=();
+my @oldLayers=();
+my @newLayers=();
+GetOptions(
+           'help|?'           => \&printUsage,
+           'version'          => \&printVersion,
+           'suffix=s'         => \$suffix,
+           'uc|uppercase!'    => \$upperCase,
+           'lc|lowercase!'    => \$lowerCase,
+           'forcecase!'       => \$forceCase,
+           'prefix=s'         => \$prefix,
+           'editnames=s'      => \@restrictNames,
+           'ignorenames=s'    => \$ignoreNames,
+           'dl|deletelayer=i' => \@delLayers,
+           'ol|oldlayer=i'    => \@oldLayers,
+           'nl|newlayer=i'    => \@newLayers,
+          ) || printUsage();
+          
+my $fileNameIn = '';
+my $fileNameOut = '';
+$fileNameIn = shift if ($#ARGV >= 0);
+$fileNameOut = shift if ($#ARGV >= 0);
+printUsage() if ($#ARGV >= 0);
+foreach my $name (@restrictNames)
+{
+    $restrictNames.=" $name"; ## build up this way so a painless m/\b\b/ can be done later
+}
+foreach my $name (@ignoreNames)
+{
+    $ignoreNames.=" $name"; ## build up this way so a painless m/\b\b/ can be done later
+}
+
+## some error checking....
+if ($upperCase && $lowerCase)
+{
+    print "ERROR: *** It doesn't make sense to specify -uppercase AND -lowercase";
+    exit 1;
+}
+if ($#oldLayers != $#newLayers)
+{
+    my $tmp1=$#oldLayers+1;
+    my $tmp2=$#newLayers+1;
+    print "ERROR: *** You gave $tmp1 old layers and $tmp2 new layers.";
+    print "       You must give the same number of each in order to map correctly.";
+    exit 1;
+}
+
+## take care of things we need from user that were not 
+## supplied on command line
+if ($fileNameIn eq '')
+{
+    my $notDone = 9; #limit for how many times we will ask
+    while ($notDone)
+    {
+        printf("GDS2 file to read: ");
+        $fileNameIn = <STDIN>;
+        chomp $fileNameIn;
+        $notDone = 0 if ($fileNameIn ne '');
+    }
+    printUsage() if ($fileNameIn eq '');
+}
+
+if ($fileNameOut eq '')
+{
+    my $notDone = 9; #limit for how many times we will ask
+    while ($notDone)
+    {
+        printf("GDS2 file to create: ");
+        $fileNameOut = <STDIN>;
+        chomp $fileNameOut;
+        $notDone = 0 if ($fileNameOut ne '');
+    }
+    printUsage() if ($fileNameOut eq '');
+}
+
+if ($fileNameIn eq $fileNameOut)
+{
+    print "ERROR: *** input and output files can not be the same."; 
+    print "       For safety modgds2 does not support edit-in-place.";
+    printUsage();
+}
+
+###############################################################################
+######## OK we are finally ready to go to work... :-)
+my $gds2FileIn = new GDS2(-fileName => $fileNameIn);
+my $gds2FileOut = new GDS2(-fileName => ">$fileNameOut");
+my @data;
+my $string;
+my $type;
+my $layerNum;
+my $printIt = 1;
+while (my $record = $gds2FileIn -> readGds2Record()) 
+{
+    if (($gds2FileIn -> isSname)||($gds2FileIn -> isStrname))
+    {
+        $type = $gds2FileIn -> returnRecordTypeString;
+        $string = $gds2FileIn -> getRecordData;
+        if (
+          (($restrictNames eq '') || ($restrictNames =~ m/\b$string\b/i)) && 
+          ($ignoreNames !~ m/\b$string\b/i)
+        )
+        {
+            $string = "$prefix$string$suffix";
+            $string = uc($string) if ($upperCase); ## uppercase??
+            $string = lc($string) if ($lowerCase); ## lowercase??
+            if (length($string) > 32)
+            {
+                print "WARNING: *** $string length is > 32 characters. Many systems will not accept this.";
+            }
+            $gds2FileOut -> printGds2Record(-type=>$type,-data=>$string);
+        }
+        else
+        {
+            if ($forceCase)
+            {
+                $string = uc($string) if ($upperCase); ## uppercase??
+                $string = lc($string) if ($lowerCase); ## lowercase??
+            }
+            $gds2FileOut -> printGds2Record(-type=>$type,-data=>$string);
+        }
+    }
+    elsif ($gds2FileIn -> isBoundary || $gds2FileIn -> isPath || $gds2FileIn -> isText)
+    {
+        my @records=();
+        until ($gds2FileIn -> isEndel)
+        {
+            if (($#delLayers>=0) && $gds2FileIn -> isLayer)
+            {
+                $layerNum = $gds2FileIn -> returnLayer;
+                my $done=0;
+                for(my $i=0; $i<=$#delLayers && (! $done); $i++)
+                {
+                    if ($layerNum == $delLayers[$i])
+                    {
+                        $printIt = 0;
+                        $done=1;
+                    }
+                }
+            }
+            elsif (($#oldLayers>=0) && $gds2FileIn -> isLayer)
+            {
+                $layerNum = $gds2FileIn -> returnLayer;
+                my $done=0;
+                for(my $i=0; $i<=$#oldLayers && (! $done); $i++)
+                {
+                    if ($layerNum == $oldLayers[$i])
+                    {
+                        $layerNum = $newLayers[$i];
+                        $done=1;
+                    }
+                }
+                $record = $gds2FileOut -> saveGds2Record(-type => 'LAYER',-data => $layerNum);
+            }
+            push @records,$record;
+            $record = $gds2FileIn -> readGds2Record();
+        }
+        if ($printIt)
+        {
+            foreach $record (@records)
+            {
+                $gds2FileOut -> printGds2Record(-type=>'record',-data=>$record);
+            }
+            $gds2FileOut -> printEndel;
+        }
+        $printIt = 1; ## reset
+    }
+    else
+    {
+        $gds2FileOut -> printGds2Record(-type=>'record',-data=>$record);
+    }
+}
+
+## subroutines...
+ 
+################################################################################ 
+sub printVersion()
+{
+    print $main::VERSION;
+    exit 1;
+}
+
+################################################################################ 
+sub printUsage()
+{
+    print <<EOHELP;
+  modgds2 rev $main::VERSION
+    
+Usage:
+  modgds2 [options] gds_file_to_read gds_file_to_write
+      
+Synopsis:
+  Creates a new modified GDS2 file.
+  
+Options:
+
+  -prefix string
+    prepend string to cell names
+
+  -suffix string
+    append string to cell names
+
+  -editnames "names to edit"
+    default is all names
+    May use this option multiple times or enclose 2 or more names in quotes with 
+    space between names.
+    This has to do with whether or not a cell name or reference name is changed,
+    not whether items in a cell structure with this name are edited.
+
+  -ignorenames "names to ignore"
+    May use this option multiple times or enclose 2 or more names in quotes with 
+    space between names.
+    This has to do with whether or not a cell name or reference name is changed,
+    not whether items in a cell structure with this name are edited.
+  
+  -lc or -lowercase
+    change name to lower case just before writing it
+
+  -uc or -uppercase 
+    change name to upper case just before writing it
+  
+  -forcecase
+    force case change even if name is in ignorenames list
+    
+  -dl or -deletelayer #
+    Delete boundary, path, or text on specified layer.
+    May use this option multiple times.
+    Takes precedence over -ol -nl options.
+    
+  -ol or -oldlayer #
+  -nl or -newlayer #
+    -ol 4 -nl 54 -ol 6 -nl 96 changes layer 4 to layer 54 and 6 to 96
+    May use these options multiple times but there must be an equal number of 
+    old and new layers specified.
+
+  -help
+    print help and exit
+    
+  -version
+    print version and exit
+  
+Example:
+  modgds2  -s xyz -lc -f -ignore test test.gds  test_xyz.gds
+
+EOHELP
+
+    exit 1;
+}
+
+################################################################################
+
+__END__
+
+### use pod2html on this file to create web page
+
+=pod
+
+=head1 NAME
+
+modgds2 - create a new GDS2 stream file that is a modified copy of another GDS2 file 
+
+
+=head1 USAGE
+
+modgds2 [ options ] [gds_file_to_read] [gds_file_to_write]
+
+
+=head1 OPTIONS
+
+  -prefix string
+    prepend string to cell names
+
+  -suffix string
+    append string to cell names
+
+  -editnames "names to edit"
+    default is all names
+    May use this option multiple times or enclose 2 or more names in quotes with 
+    space between names.
+    This has to do with whether or not a cell name or reference name is changed,
+    not whether items in a cell structure with this name are edited.
+
+  -ignorenames "names to ignore"
+    May use this option multiple times or enclose 2 or more names in quotes with 
+    space between names.
+    This has to do with whether or not a cell name or reference name is changed,
+    not whether items in a cell structure with this name are edited.
+  
+  -lc or -lowercase
+    change name to lower case just before writing it
+
+  -uc or -uppercase 
+    change name to upper case just before writing it
+  
+  -forcecase
+    force case change even if name is in ignorenames list
+
+  -dl or -deletelayer #
+    Delete boundary, path, or text on specified layer.
+    May use this option multiple times.
+    Takes precedence over -ol -nl options.
+
+  -ol or -oldlayer #
+  -nl or -newlayer #
+    -ol 4 -nl 54 -ol 6 -nl 96 changes layer 4 to layer 54 and 6 to 96
+    May use these options multiple times but there must be an equal number of 
+    old and new layers specified.
+
+  -help
+    print help and exit
+    
+  -version
+    print version and exit
+  
+
+=cut
+

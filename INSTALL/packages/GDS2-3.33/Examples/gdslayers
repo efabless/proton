@@ -1,0 +1,86 @@
+#!/usr/bin/perl -w
+use strict;
+require 5.006;
+use GDS2;
+$|++;
+my $fileNameIn = $ARGV[0];
+if (! defined $fileNameIn)
+{
+    print "Usage: $0 gds2FileName\n";
+    exit 1;
+}
+my $gds2FileIn = new GDS2(-fileName => $fileNameIn);
+my %polygonLayers;
+my %textLayers;
+while ($gds2FileIn -> readGds2Record())
+{
+    if ($gds2FileIn -> isBoundary || $gds2FileIn -> isPath)
+    {
+        my $layerNum = 0;
+        my $dataType = 0; #default if not given
+        until ($gds2FileIn -> isEndel)
+        {
+            if ($gds2FileIn -> isLayer)
+            {
+                $layerNum = $gds2FileIn -> returnLayer;
+            }
+            elsif ($gds2FileIn -> isDatatype)
+            {
+                $dataType = $gds2FileIn -> returnDatatype;
+            }
+            $gds2FileIn -> readGds2Record();
+        }
+        $polygonLayers{$layerNum} = '' if (! defined $polygonLayers{$layerNum});
+        $polygonLayers{$layerNum} .= "$dataType " if ($polygonLayers{$layerNum} !~ m/\b$dataType /);
+    }
+    elsif ($gds2FileIn -> isText)
+    {
+        my $layerNum = 0;
+        my $textType = 0; #default if not given
+        until ($gds2FileIn -> isEndel)
+        {
+            if ($gds2FileIn -> isLayer)
+            {
+                $layerNum = $gds2FileIn -> returnLayer;
+            }
+            elsif ($gds2FileIn -> isTexttype)
+            {
+                $textType = $gds2FileIn -> returnTexttype;
+            }
+            $gds2FileIn -> readGds2Record();
+        }
+        $textLayers{$layerNum} = '' if (! defined $textLayers{$layerNum});
+        $textLayers{$layerNum} .= "$textType " if ($textLayers{$layerNum} !~ m/\b$textType /);
+    }
+}
+
+print <<"EOHEADER";
+GDS2 file: $fileNameIn
+ polygon layer   data types
+ -------------   -----------
+EOHEADER
+
+foreach my $layer (sort { $a <=> $b } keys %polygonLayers)
+{
+    printf("           %3d   ", $layer);
+    my @dataTypes = split(/\s+/,$polygonLayers{$layer});
+    foreach my $dataType (sort { $a <=> $b } @dataTypes)
+    {
+        print " $dataType";
+    }
+    print "\n";
+}
+
+print "\n    text layer   text types\n";
+print " -------------   -----------\n";
+foreach my $layer (sort { $a <=> $b } keys %textLayers)
+{
+    printf("           %3d   ", $layer);
+    my @textTypes = split(/\s+/,$textLayers{$layer});
+    foreach my $textType (sort { $a <=> $b } @textTypes)
+    {
+        print " $textType";
+    }
+    print "\n";
+}
+

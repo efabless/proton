@@ -1,0 +1,492 @@
+#!/usr/bin/perl
+
+eval 'exec /usr/bin/perl  -S $0 ${1+"$@"}'
+    if 0; # not running under some shell
+
+# xlscat:  show XLS/SXC file as Text
+# xlsgrep: grep pattern
+#	   (m)'15 [18-03-2015] Copyright H.M.Brand 2005-2015
+
+use strict;
+use warnings;
+
+our $VERSION = "3.1";
+
+my $is_grep = $0 =~ m/grep$/;
+
+sub usage
+{
+    my $err = shift and select STDERR;
+    (my $scrpt = $0) =~ s{.*[\/]}{};
+    my $p = $is_grep ? " pattern" : "";
+    print
+	"usage: $scrpt\t[-s <sep>] [-L] [-n] [-A] [-u] [Selection]$p file.xls\n",
+	"             \t[-c | -m]                 [-u] [Selection]$p file.xls\n",
+	"             \t -i                            [-S sheets]$p file.xls\n",
+	"    Generic options:\n",
+	"       -v[#]       Set verbose level (xlscat/xlsgrep)\n",
+	"       -d[#]       Set debug   level (Spreadsheet::Read)\n",
+	"       -u          Use unformatted values\n",
+	"       --noclip    Do not strip empty sheets and\n",
+	"                   trailing empty rows and columns\n",
+	"       -e <enc>    Set encoding for input and output\n",
+	"       -b <enc>    Set encoding for input\n",
+	"       -a <enc>    Set encoding for output\n",
+	"    Input CSV:\n",
+	"       --in-sep=c  Set input sep_char for CSV\n",
+	"    Input XLS:\n",
+	"       --dtfmt=fmt Specify the default date format to replace 'm-d-yy'\n",
+	"                   the default replacement is 'yyyy-mm-dd'\n",
+	"    Output Text (default):\n",
+	"       -s <sep>    Use separator <sep>. Default '|', \\n allowed\n",
+	"       -L          Line up the columns\n",
+	"       -n [skip]   Number lines (prefix with column number)\n",
+	"                   optionally skip <skip> (header) lines\n",
+	"       -A          Show field attributes in ANSI escapes\n",
+	"       -h[#]       Show # header lines\n",
+	$is_grep ? (
+	"    Grep options:\n",
+	"       -i          Ignore case\n",
+	"       -w          Match whole words only\n") : (
+	"    Output Index only:\n",
+	"       -i          Show sheet names and size only\n"),
+	"    Output CSV:\n",
+	"       -c          Output CSV, separator = ','\n",
+	"       -m          Output CSV, separator = ';'\n",
+	"    Output HTML:\n",
+	"       -H          Output HTML\n",
+	"    Selection:\n",
+	"       -S <sheets> Only print sheets <sheets>. 'all' is a valid set\n",
+	"                   Default only prints the first sheet\n",
+	"       -R <rows>   Only print rows    <rows>. Default is 'all'\n",
+	"       -C <cols>   Only print columns <cols>. Default is 'all'\n",
+	"       -F <flds>   Only fields <flds> e.g. -FA3,B16\n",
+	"    Ordering (column numbers in result set *after* selection):\n",
+	"       --sort=spec Sort output (e.g. --sort=3,2r,5n,1rn+2)\n",
+	"                   +#   - first # lines do not sort (header)\n",
+	"                   #    - order on column # lexical ascending\n",
+	"                   #n   - order on column # numeric ascending\n",
+	"                   #r   - order on column # lexical descending\n",
+	"                   #rn  - order on column # numeric descending\n";
+    @_ and print join "\n", @_, "";
+    exit $err;
+    } # usage
+
+use Getopt::Long qw(:config bundling noignorecase);
+my $opt_c;		# Generate CSV
+my $opt_s;		# Text separator
+my $opt_S;		# Sheets to print
+my $opt_R;		# Rows to print
+my $opt_C;		# Columns to print
+my $dtfmt;		# Default date-format for Excel
+my $opt_F = "";		# Fields to print
+my $opt_i = 0;		# Index (cat) | ignore_case (grep)
+my $opt_L = 0;		# Auto-size/align columns
+my $opt_n;		# Prefix lines with column number
+my $opt_u = 0;		# Show unformatted values
+my $opt_v = 0;		# Verbosity for xlscat
+my $opt_d = 0;		# Debug level for Spreadsheet::Read
+my $opt_A = 0;		# Show field colors in ANSI escapes
+my $opt_H = 0;		# Output in HTML
+my $opt_h = 0;		# Number of header lines for grep or -L
+my $opt_w = 0;		# Grep words
+my $clip  = 1;
+my $enc_i;		# Input  encoding
+my $enc_o;		# Output encoding
+my $sep;		# Input field sep for CSV
+GetOptions (
+    "help|?"		=> sub { usage (0); },
+
+    # Input CSV
+    "c|csv"		=> sub { $opt_c = "," },
+    "m|ms"		=> sub { $opt_c = ";" },
+    "insepchar".
+     "|in-sep".
+     "|in-sep-char=s"	=> \$sep,
+
+    # Input XLS
+    "dtfmt".
+     "|date-format=s"	=> \$dtfmt,
+
+    # Output
+    "i|index".
+     "|ignore-case"	=> \$opt_i,
+    "s|separator".
+     "|outsepchar".
+     "|out-sep".
+     "|out-sep-char=s"	=> \$opt_s,
+    "S|sheets=s"	=> \$opt_S,
+    "R|rows=s"		=> \$opt_R,
+    "C|columns=s"	=> \$opt_C,
+    "F|fields=s"	=> \$opt_F,
+    "L|fit|align!"	=> \$opt_L,
+    "n|number:0"	=> \$opt_n,
+    "A|ansi|color!"	=> \$opt_A,
+    "u|unformatted!"	=> \$opt_u,
+    "v|verbose:1"	=> \$opt_v,
+    "d|debug:1"		=> \$opt_d,
+    "H|html:1"		=> \$opt_H,
+      "noclip"		=> sub { $clip = 0 },
+      "sort=s"		=> \my $sort_order,
+
+    # Encoding
+    "e|encoding=s"	=> sub { $enc_i = $enc_o = $_[1] },
+    "b|encoding-in=s"	=> \$enc_i,
+    "a|encoding-out=s"	=> \$enc_o,
+
+    # Grep
+    "w|word!"		=> \$opt_w,
+    "h|header:1"	=> \$opt_h,
+    ) or usage 1, "GetOpt: $@";
+
+unless ($is_grep) {
+$opt_i && $opt_L and usage 1, "Options i and L are mutually exclusive";
+$opt_i && $opt_s and usage 1, "Options i and s are mutually exclusive";
+$opt_i && $opt_c and usage 1, "Options i and c are mutually exclusive";
+$opt_i && $opt_u and usage 1, "Options i and u are mutually exclusive";
+$opt_i && $opt_S and usage 1, "Options i and S are mutually exclusive";
+$opt_i && $opt_R and usage 1, "Options i and R are mutually exclusive";
+$opt_i && $opt_C and usage 1, "Options i and C are mutually exclusive";
+$opt_i && $opt_F and usage 1, "Options i and F are mutually exclusive";
+$opt_i && $opt_H and usage 1, "Options i and H are mutually exclusive";
+}
+$opt_c && $opt_s and usage 1, "Options c and s are mutually exclusive";
+$opt_c && $opt_H and usage 1, "Options c and H are mutually exclusive";
+$opt_s && $opt_H and usage 1, "Options s and H are mutually exclusive";
+
+defined $opt_s or $opt_s = "|"; eval "\$opt_s = qq{$opt_s}";
+defined $opt_S or $opt_S = $opt_i || $is_grep ? "all" : "1";
+$opt_i && !$is_grep && $opt_v < 1 and $opt_v = 1;
+
+if ($opt_c) {
+    $opt_L = 0;	# Cannot align CSV
+    $opt_c =~ m/^1?$/ and $opt_c = ",";
+    $opt_c = Text::CSV_XS->new ({
+	binary   => 1,
+	sep_char => $opt_c,
+	eol      => "\r\n",
+	});
+    }
+
+# Debugging. Prefer Data::Peek over Data::Dumper if available
+{   use Data::Dumper;
+    my $dp = 0;
+    eval q{
+	use Data::Peek;
+	$dp = 1;
+	};
+    sub ddumper
+    {
+	$dp ? DDumper (@_)
+	    : print STDERR Dumper (@_);
+	} # ddumper
+    }
+
+my $pattern;
+if ($is_grep) {
+    $pattern = shift or usage 1;
+    $opt_w and $pattern = "\\b$pattern\\b";
+    $opt_i and $pattern = "(?i:$pattern)";
+    $pattern = qr{$pattern};
+    $opt_v > 1 and warn "Matching on $pattern\n";
+    }
+
+@ARGV or usage 1;
+my $file = shift;
+-f $file or usage 1, "the file argument is not a regular file";
+-s $file or usage 1, "the file is empty";
+
+use Encode qw( encode decode );
+use Spreadsheet::Read;
+
+if ($opt_c) {
+    Spreadsheet::Read::parses ("csv") or die "No CSV module found\n";
+    eval q{use Text::CSV_XS};
+    }
+if ($opt_H) {
+    $enc_o = "utf-8";
+    $opt_H = sub { $_[0]; };
+    eval q{
+	use HTML::Entities;
+	$opt_H = sub {
+	    encode_entities (Encode::is_utf8 ($_[0]) ? $_[0] :
+		decode ("utf-8", $_[0]));
+	    };
+	};
+    }
+
+my @RDarg = (debug => $opt_d, clip => $clip);
+$opt_A         and push @RDarg, "attr"  => 1;
+defined $sep   and push @RDarg, "sep"   => $sep, parser => "csv";
+defined $dtfmt and push @RDarg, "dtfmt" => $dtfmt;
+$opt_v > 4 and warn "ReadData ($file, @RDarg);\n";
+my $xls = ReadData ($file, @RDarg) or die "cannot read $file\n";
+$opt_v > 7 and ddumper ($xls);
+my $sc  = $xls->[0]{sheets}	or die "No sheets in $file\n";
+$opt_v > 1 and warn "Opened $file with $sc sheets\n";
+
+$opt_S eq "all" and $opt_S = "1..$sc";	# all
+$opt_S =~ s/-$/-$sc/;			# 3,6-
+$opt_S =~ s/-/../g;
+my %print;
+eval "%{\$print{sheet}} = map { \$_ => 1 } $opt_S";
+
+my $v_fmt = $opt_C || $opt_R || $opt_F ? "" : "%6d x %6d%s";
+
+# New style xterm (based on ANSI colors):
+# 30 Black
+# 31 Red
+# 32 Green
+# 33 Yellow
+# 34 Blue
+# 35 Magenta
+# 36 Cyan
+# 37 White
+sub color_reduce
+{
+    my ($rgb, $base) = @_;
+    defined $rgb or return "";
+    my ($r, $g, $b) = map { hex >> 7 }
+	($rgb =~ m/^\s*#?([\da-f]{2})([\da-f]{2})([\da-f]{2})/);
+    $base + 4 * $b + 2 * $g + $r;
+    } # color_reduce
+
+sub ansi_color
+{
+    my ($fg, $bg, $bold, $ul) = @_;
+
+    # warn "$fg on $bg $bold $ul\n";
+    my $attr = join ";", 0, grep { /\S/ }
+	$bold ? 1 : "",
+	$ul   ? 4 : "",
+	color_reduce ($fg, 30),
+	color_reduce ($bg, 40);
+
+    "\e[${attr}m";
+    } # ansi_color
+
+sub css_color
+{
+    my ($fg, $bg, $bold, $ul, $ha) = @_;
+
+    my @css;
+    $bold and push @css, "font-weight: bold";
+    $ul   and push @css, "text-decoration: underline";
+    $fg   and push @css, "color: $fg";
+    $bg   and push @css, "background: $bg";
+    $ha   and push @css, "text-align: $ha";
+
+    local $" = "; ";
+    @css ? qq{ style="@css"} : "";
+    } # css_color
+
+	    binmode STDERR, ":utf8";
+$enc_o and  binmode STDOUT, ":encoding($enc_o)";
+
+if ($opt_H) {
+    print <<EOH;
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en">
+<head>
+  <title>$file</title>
+  <meta name="Author" content="xlscat $VERSION" />
+  <style type="text/css">
+    body, h2,
+    td, th { font-family:     "Nimbus Sans L", "DejaVu Sans",
+                              Helvetica, Arial, sans; }
+    table  { border-spacing:  2px;
+             border-collapse: collapse;               }
+    td, th { vertical-align:  top;
+             padding:         4px;                    }
+    table  > tbody > tr > th,
+    table  > tr > th {
+             background:      #e0e0e0;                }
+    table  > tbody > tr > td:not([class]),
+    table  > tr > td:not([class]) {
+             background:      #f0f0f0;                }
+    .odd   { background:      #e0e0e0;                }
+    </style>
+  </head>
+<body>
+EOH
+    }
+
+my $name_len = 30;
+if ($opt_i) {
+    my $nl = 0;
+    foreach my $sn (keys %{$xls->[0]{sheet}}) {
+	length ($sn) > $nl and $nl = length $sn;
+	}
+    $nl and $name_len = $nl;
+    }
+my @opt_F = split m/[^A-Z\d]+/ => $opt_F;
+foreach my $si (1 .. $sc) {
+    my @data;
+    exists $print{sheet}{$si} or next;
+    $opt_v > 1 and warn "Opening sheet $si ...\n";
+    my $s = $xls->[$si] or next;
+    $opt_v > 5 and ddumper ($s);
+    my @r = (1, $s->{maxrow});
+    my @c = (1, $s->{maxcol});
+    my ($sn, $nr, $nc) = ($s->{label}, $r[-1], $c[-1]);
+    $opt_v and printf STDERR "%s - %02d: [ %-*s ] %3d Cols, %5d Rows\n",
+	$file, $si, $name_len, $sn, $nc, $nr;
+    $opt_i && !$is_grep and next;
+
+    if (@opt_F) {
+	foreach my $fld (@opt_F) {
+	    $is_grep && defined $s->{$fld} && $s->{$fld} !~ $pattern and next;
+	    print "$fld:",$s->{$fld},"\n";
+	    }
+	next;
+	}
+
+    if (my $rows = $opt_R) {
+	$rows eq "all" and $rows = "1..$nr";	# all
+	$rows =~ s/-$/-$nr/;			# 3,6-
+	$rows =~ s/-/../g;
+	eval "%{\$print{row}} = map { \$_ => 1 } $rows";
+	}
+    if (my $cols = $opt_C) {
+	$cols eq "all" and $cols = "1..$nc";	# all
+	if ($cols =~ m/[A-Za-z]/) {		# -C B,D => -C 2,4
+	    my %ct = map {
+		my ($cc, $rr) = cell2cr (uc "$_".1);
+		($_ => $cc)
+		} ($cols =~ m/([a-zA-Z]+)/g);
+	    $cols =~ s/([A-Za-z]+)/$ct{$1}/g;
+	    }
+	$cols =~ s/-$/-$nc/;			# 3,6-
+	$cols =~ s/-/../g;
+	eval "\$print{col} = [ map { \$_ - 1  } $cols ]";
+	$nc = @{$print{col}};
+	}
+    $opt_v >= 8 and ddumper (\%print);
+
+    $opt_H and print qq{<h2>$sn</h2>\n\n<table border="1">\n};
+    my $undef = $opt_v > 2 ? "-- undef --" : "";
+    my ($h, @w) = (0, (0) x $nc); # data height, -width, and default column widths
+    my @align = ("") x $nc;
+    foreach my $r ($r[0] .. $r[1]) {
+	exists $print{row} && !exists $print{row}{$r} and next;
+	my @att;
+	my @row = map {
+	    my $cell = cr2cell ($_, $r);
+	    my ($uval, $fval) = map {
+		defined $_ ? $enc_i ? decode ($enc_i, $_) : $_ : $undef
+		} $s->{cell}[$_][$r], $s->{$cell};
+	    $opt_v > 2 and warn "$_:$r '$uval' / '$fval'\n";
+	    $opt_A and 
+		push @att, [ @{$s->{attr}[$_][$r]}{qw( fgcolor bgcolor bold uline halign )} ];
+	    defined $s->{cell}[$_][$r] ? $opt_u ? $uval : $fval : "";
+	    } $c[0] .. $c[1];
+	exists $print{col} and @row = @row[grep{$_<@row}@{$print{col}}];
+	$is_grep && $r > $opt_h &&
+	    ! grep { defined $_ && $_ =~ $pattern } @row and next;
+	if ($opt_L) {
+	    foreach my $c (0 .. $#row) {
+		my $l = length $row[$c];
+		$l > $w[$c] and $w[$c] = $l;
+		$row[$c] =~ m/\D/ and $align[$c] = "-";
+		}
+	    }
+	if ($opt_H) {	# HTML
+	    print "  <tr>";
+	    if (defined $opt_n) {
+		my $x = $r - $opt_n;
+		$x <= 0 and $x = "";
+		my $c = $r % 2 ? qq{ class="odd"} : "";
+		print qq{<td style="text-align: right" $c>$x</td>};
+		}
+	    foreach my $c (0 .. $#row) {
+		my $css = css_color (@{$att[$c]});
+		$r % 2 and $css .= qq{ class="odd"};
+		my $td  = $opt_H->($row[$c]);
+		print "<td$css>$td</td>";
+		}
+	    print "</tr>\n";
+	    next;
+	    }
+	if ($opt_c) {	# CSV
+	    $opt_c->print (*STDOUT, \@row) or die $opt_c->error_diag;
+	    next;
+	    }
+	if (defined $opt_n) {
+	    unshift @row, $r;
+	    unshift @att, [ "#ffffff", "#000000", 0, 0 ];
+	    }
+	if ($opt_L || $sort_order) {	# Autofit / Align / order
+	    push @data, [ [ @row ], [ @att ] ];
+	    next;
+	    }
+	if ($opt_A) {
+	    foreach my $c (0 .. $#row) {
+		$row[$c] =
+		    ansi_color (@{$att[$c]}).
+		    $row[$c] .
+		    "\e[0m";
+		}
+	    }
+	line ($opt_s => @row);
+	} continue {
+	    ++$h % 100 == 0 && $opt_v and printf STDERR $v_fmt, $nc, $h, "\r";
+	    }
+    $opt_H and print "  </table>\n\n";
+    printf STDERR $v_fmt, $nc, $h, "\n";
+    if ($sort_order) {
+	my @o;
+	my @h;
+	$sort_order =~ s/\+([0-9]+)\b// and @h = splice @data, 0, $1;
+	for ($sort_order =~ m/([0-9]+[rn]*)/g) {
+	    m/^([0-9]+)(.*)/;
+	    push @o, { col => $1 - 1, map { $_ => 1 } split m// => $2 };
+	    }
+	my $sort = sub {
+	    my $d = 0;
+	    foreach my $o (@o) {
+		my ($A, $B) = map { $_->[0][$o->{col}] || 0 } $a, $b;
+		$d = $o->{n}
+		    ? $o->{r} ? $B <=> $A : $A <=> $B
+		    : $o->{r} ? $B cmp $A : $A cmp $B
+			and return $d;
+		}
+	    return $d;
+	    };
+	@data = (@h, sort $sort @data);
+	}
+    $opt_L || $sort_order or next;
+    if (defined $opt_n) {
+	unshift @w, length $data[-1][0][0];
+	unshift @align, "";
+	}
+    $opt_n = 0;
+    for (@data) {
+	my ($row, $att) = @$_;
+	my @row = @$row;
+	for (0 .. $#row) {
+	    my $w = " " x ($w[$_] - length $row[$_]);
+	    if ($align[$_]) {
+		$row[$_] .= $w;
+		}
+	    else {
+		substr $row[$_], 0, 0, $w;
+		}
+	    if ($opt_A) {
+		substr $row[$_], 0, 0, ansi_color (@{$att->[$_]});
+		$row[$_] .= "\e[0m";
+		}
+	    }
+	line ("|" => @row);
+	++$opt_n == $opt_h and line ("+", map {"-"x$w[$_]} 0..$#row);
+	}
+    }
+$opt_H and print "</body>\n</html>\n";
+
+sub line
+{
+    my $sep  = shift;
+    my $line = join $sep => @_;
+    !$enc_o && Encode::is_utf8 ($line) and $line = encode ("utf-8", $line);
+    print "$line\n";
+    } # show_line

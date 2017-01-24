@@ -1,0 +1,728 @@
+#!/usr/bin/perl -w
+#swap line 1 and 3 to use the perl debugger
+#!/usr/bin/perl -w -d:ptkdb
+
+use strict;
+use warnings;
+#use diagnostics;
+$|++;
+require 5.006;
+our $VERSION = '2.0';
+use Getopt::Long qw(GetOptions);
+use Cwd;
+use File::Basename; 
+use Tk;
+use Tk::WaitBox; 
+use Tk::HList; 
+use Tk::ProgressBar;
+use Tk::Scale;
+use GDS2;
+BEGIN
+{
+    use constant TRUE  => 1;
+    use constant FALSE => 0;
+}
+
+$\="\n";
+## subs used
+sub printUsage(;$);
+sub printVersion();
+sub getHomeDir($);
+sub dumpGds($$;$);
+
+our $BGCOLOR='#99ccff';
+our $BGCOLOR2='#ffff00';
+our $BGCOLOR3='#ffffcc';
+our $FGCOLOR='#000000';
+our $FileImg;
+our $TextFileImg;
+our $FoldImg;
+our $G_percentDone=0;
+our $G_ECHO=1,
+our $ActFoldImg;
+my $compact = FALSE;
+our $MW;
+
+my $gui=FALSE;
+my $DEBUG=FALSE;
+my $G_outputBufferSize=10000;
+my $G_useStatusBar=FALSE;
+## process command line...
+GetOptions(
+           'compact!'               => \$compact,
+           'debug!'                 => \$DEBUG,
+           'gdt!'                   => \$compact,
+           'gui!'                   => \$gui,
+           'help!'                  => \&printUsage,
+           'obs|outputbuffersize:i' => \$G_outputBufferSize,
+           'pb|progressbar'         => \$G_useStatusBar,
+           'version'                => \&printVersion,
+          ) || printUsage();
+
+my $G_statusBar;
+if ($G_useStatusBar)
+{
+    require Term::StatusBar;
+}
+my $fileNameIn = '';
+$fileNameIn = shift if ($#ARGV >= 0);
+printUsage() if ($#ARGV >= 0);
+
+my $G_header = '';
+if ($compact)
+{
+    $G_header = <<'EOH';
+# first line needs to stay as is (read by other tools)
+# Key: <required> [optional]
+# File format:
+# gds2{<ver>
+# m=<modificationTimeStamp> a=<acessTimeStamp>
+# lib '<libName>' <userUnits> <dataUnits>
+# <cellDefine>
+# }
+# - - - - -
+# cellDefine is one of more of:
+# cell { c=<creationTimeStamp> m=<modificationTimeStamp> '<cellName>'
+# <cellStuff>
+# }
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+## <cellStuff>
+# cellStuff is one or more of:
+# boundary:
+# b{<layer> [dt<dataType>] xy(<xyList>)}
+#
+# path:
+# p{<layer> [dt<dataType>] [pt<pathType>] [w<real>] [bx<real>] [ex<real>] xy(<xyList>)}
+#
+# text:
+# t{<layer> [tt<textType>] [f<fontType>] [<textJust>] [pt<pathType>] [fx] [w<real>] [m<magification>] [a<angle>] xy(<xyList>) <'text'> }
+#
+# sref:
+# s{<'cellName'> [fx] [a<angle>] xy(<xyList>)}
+#
+# aref:
+# a{<'cellName'> [fx] [a<angle>] cr(<columns> <rows>) xy(<xyList>)}
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# <textJust> two letter combination of bmt (bottom,middle,top) and rcl (right,center,left) e.g. bl (default is tl)
+#
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# # as first character on a line is a comment
+EOH
+
+}
+
+if (! $gui)
+{
+    ## take care of things we need from user that were not 
+    ## supplied on command line
+    if ($fileNameIn eq '')
+    {
+        my $notDone = 9; #limit for how many times we will ask
+        while ($notDone)
+        {
+            printf("GDS2 file to read: ");
+            $fileNameIn = <STDIN>;
+            chomp $fileNameIn;
+            $notDone = 0 if ($fileNameIn ne '');
+        }
+        printUsage() if ($fileNameIn eq '');
+    }
+    dumpGds($fileNameIn,$compact); 
+}
+else
+{
+    my @packList1 = (-side => 'left',  -padx => 0, -pady => 3, -fill => 'x');
+    my @packList2 = (-side => 'left',  -padx => 3, -pady => 2, -fill => 'x');
+    my @packList3 = (-side => 'top',   -padx => 0, -pady => 3, -fill => 'x');
+    my @packList4 = (-side => 'right', -padx => 3, -pady => 3, -fill => 'x');
+    my @packList5 = (-side => 'top',   -padx => 3, -pady => 3, -fill => 'x');
+
+    #### create the MainWindow (MW)
+    $MW = MainWindow -> new(
+        -background => $BGCOLOR,
+        -foreground => $FGCOLOR, 
+    );
+    $MW -> title('dumpgds'); 
+    $MW -> iconname('dumpgds'); 
+    $MW -> minsize(1, 1); 
+
+    ###### start top menu bar #####
+    my $wMenu = $MW -> Frame(
+        -relief => 'raised', 
+        -background => $BGCOLOR,
+        -borderwidth => 2,
+    );
+    $wMenu -> pack(-fill => 'x');
+
+    ##### options menu #####
+    my $optionsMenu = $wMenu -> Menubutton(
+        -activebackground => $BGCOLOR2,
+        -background       => $BGCOLOR,
+        -text             => 'Options', 
+        -underline        => FALSE,
+    );
+
+    $optionsMenu -> separator(
+        -background       => $BGCOLOR,
+    );
+
+    $optionsMenu -> radiobutton(
+        -activebackground => $BGCOLOR, 
+        -variable         => \$G_ECHO,
+        -label            => 'Echo to terminal',
+        -value            => TRUE,
+    );
+
+    $optionsMenu -> radiobutton(
+        -activebackground => $BGCOLOR, 
+        -variable         => \$G_ECHO,
+        -label            => 'do not echo to terminal',
+        -value            => FALSE,
+    );
+
+    ### quit
+    $optionsMenu -> command(
+        -activebackground => 'Red',
+        -background       => $BGCOLOR,
+        -label            => 'Exit',
+        -command          => sub { $MW -> destroy; exit(1); },
+    );
+    $optionsMenu -> pack(-side=>'left');
+
+    ##### Help menu #####
+    my $textArea;
+    my $helpMenu = $wMenu -> Menubutton(
+        -text             => 'Help', 
+        -activebackground => $BGCOLOR2,
+        -background       => $BGCOLOR,
+        -underline        => 0
+    );
+    $helpMenu -> command(
+        -activebackground => $BGCOLOR2,
+        -background       => $BGCOLOR,
+        -label            => 'Program Version',
+        -command          => sub {
+            $textArea -> delete('0.0', 'end');
+            $textArea -> insert('end', "dumpgds $VERSION\n");
+            $textArea -> insert('end', "Using Perl $]\n");
+        },
+    );
+    $helpMenu -> separator(
+        -background       => $BGCOLOR,
+    );
+    $helpMenu -> command(
+        -activebackground => $BGCOLOR2,
+        -background       => $BGCOLOR,
+        -label            => 'Print help in text window',
+        -command          => sub { \&printUsage($textArea); },
+        -activebackground => 'purple',
+    );
+    $helpMenu -> pack(-side=>'right');
+    #### end top menu bar #####################################
+
+    my $progress = $MW -> ProgressBar(
+        -anchor => 'w',
+        -width  => 20,
+        -length => 400,
+        -from   => 0,
+        -to     => 98,
+        -troughcolor => '#000000',
+        -blocks => 20,
+        -colors => [0 => 'red',14 => 'orange',28 => 'yellow',42 => 'green',56 => 'blue',70 => 'purple',84 => 'violet'],
+        -resolution => 5,
+        -variable => \$G_percentDone,
+    );
+    $progress -> pack();
+    #$progress -> pack(@packList5);
+
+
+    ##### Create file selection areas #### 
+    ## Create Frame for left side 
+    my $mwLeft = $MW -> Frame(
+        -relief      => 'raised', 
+        -background  => $BGCOLOR,
+        -borderwidth => 2,
+    );
+    $mwLeft -> pack(@packList1); 
+
+    $FileImg     = $mwLeft -> Pixmap(-file => Tk->findINC('file.xpm'));
+    $TextFileImg = $mwLeft -> Pixmap(-file => Tk->findINC('textfile.xpm'));
+    $FoldImg     = $mwLeft -> Pixmap(-file => Tk->findINC('folder.xpm'));
+    $ActFoldImg  = $mwLeft -> Pixmap(-file => Tk->findINC('act_folder.xpm'));
+
+    #### directory entry
+    my $directoryLabel = $mwLeft -> Label( 
+        -background  => $BGCOLOR,
+        -text        => 'PWD:', 
+        -font        => "-*-times-bold-r-normal--*-140-*-*-*-*-*-*", 
+        -anchor      => 'w', 
+    ); 
+    $directoryLabel -> pack(@packList3); 
+
+    my $G_DIRECTORY = ''; 
+    my $entryDirectory = $mwLeft -> Entry( 
+        -background     => '#cccccc', 
+        -font           => "-*-courier-medium-r-normal--*-140-*-*-*-*-*-*", 
+        -foreground     => $FGCOLOR, 
+        -relief         => 'sunken', 
+        -state          => 'disabled', 
+        -textvariable   => \$G_DIRECTORY, 
+        -width          => 20, 
+    ); 
+    $entryDirectory -> pack(@packList3); 
+    my $localDir = cwd(); 
+    $G_DIRECTORY=basename($localDir); 
+
+    #### spacer label 
+    my $spacerLabel_1 = $mwLeft -> Label( 
+        -background => $BGCOLOR,
+        -text       => '    ', 
+        -font       => "-*-times-bold-r-normal--*-140-*-*-*-*-*-*", 
+        -anchor     => 'w', 
+    ); 
+    $spacerLabel_1 -> pack(@packList3);; 
+
+    #### graphics file entry 
+    my $graphicsFileLabel = $mwLeft -> Label( 
+        -text       => 'Gds2 File: ', 
+        -font       => "-*-times-bold-r-normal--*-140-*-*-*-*-*-*", 
+        -background => $BGCOLOR, 
+        -anchor     => 'w', 
+    ); 
+    $graphicsFileLabel -> pack(@packList3); 
+
+    ##### Create graphics text display area  ##### 
+    my $G_GDS2FILE = $fileNameIn;
+    my $entryGraphicsFile = $mwLeft -> Entry( 
+        -background     => '#cccccc', 
+        -font           => "-*-courier-medium-r-normal--*-140-*-*-*-*-*-*", 
+        -foreground     => $FGCOLOR, 
+        -relief         => 'sunken', 
+        -state          => 'disabled', 
+        -textvariable   => \$G_GDS2FILE, 
+        -width          => 22, 
+    ); 
+    $entryGraphicsFile -> pack(@packList3); 
+    ##$entryGraphicsFile -> focus; 
+
+    #### spacer label 
+    my $spacerLabel_2 = $mwLeft -> Label( 
+        -background => $BGCOLOR,
+        -text       => '    ', 
+        -font       => "-*-times-bold-r-normal--*-140-*-*-*-*-*-*", 
+        -anchor     => 'w', 
+    ); 
+    $spacerLabel_2 -> pack(@packList3);; 
+
+    #### gds2 label 
+    my $graphicsFileLabel_1 = $mwLeft -> Label( 
+        -text       => " Select Gds2 File:  'double click'", 
+        -font       => "-*-times-bold-r-normal--*-140-*-*-*-*-*-*", 
+        -background => $BGCOLOR, 
+        -anchor     => 'w', 
+    ); 
+    $graphicsFileLabel_1 -> pack(@packList3);; 
+
+    ### -- graphics file listing -- ##
+    my $graphicsFileList;
+    $graphicsFileList = $mwLeft -> Scrolled(
+        'HList',
+        -scrollbars   => 'sw',
+        -itemtype     => 'imagetext',
+        -separator    => '/',
+        -selectmode   => 'single',
+        -indent       => 25,
+
+        -background     => $BGCOLOR, 
+        -bd             => '2', 
+        -font           => "-*-courier-medium-r-normal--*-140-*-*-*-*-*-*", 
+        -foreground     => $FGCOLOR, 
+        -height         => 16, 
+        -relief         => 'sunken', 
+        -width          => 25, 
+
+        -command      => sub {
+            my $localDir = cwd(); 
+            my $name=setFileName($_[0]); 
+            $G_GDS2FILE=$name; 
+            $G_DIRECTORY=basename($localDir); 
+            chomp $G_GDS2FILE; 
+            my $rootName = $G_GDS2FILE;
+            $rootName =~ s|\.\w*||;
+            if ($_[0] eq '.')
+            {
+                my $waitBox = $graphicsFileList -> WaitBox; 
+                $waitBox -> configure( 
+                    -txt1       => "Please wait while I list items", 
+                    -txt2       => "Thank you", 
+                    -font       => "-*-times-bold-r-normal--*-120-*-*-*-*-*-*", 
+                    -foreground => $FGCOLOR, 
+                    -background => $BGCOLOR, 
+                ); 
+                $waitBox -> Show; 
+
+                $graphicsFileList -> delete('entry', $_[0]);
+                $graphicsFileList -> add(
+                    '.',
+                    -text  => $localDir, 
+                    -image => $ActFoldImg,
+                );
+                my $displayName=basename($localDir);
+                showGdsFiles('.', $displayName, $graphicsFileList);
+
+                $waitBox -> unShow; 
+            }
+            chdir $localDir;
+        },
+    );
+    $graphicsFileList -> grid(qw/-sticky nsew/);
+
+    $localDir = cwd();
+    $graphicsFileList -> add(
+        '.',
+        -text  => $localDir, 
+        -image => $FoldImg,
+    );
+
+    $graphicsFileList -> pack(@packList3);
+    ### -- end Graphics listing -- ##
+
+    #### text areaa 
+    $textArea = $MW -> Text( 
+        -bd             => '2', 
+        -font           => '-*-courier-medium-r-normal--*-140-*-*-*-*-*-*', 
+        -height         => 25, 
+        -relief         => 'sunken', 
+        -setgrid        => 'true', 
+        -width          => 93, 
+        -wrap           => 'word', 
+        -background     => $BGCOLOR3, 
+        -foreground     => $FGCOLOR, 
+    ); 
+
+    #### text scrollbar...attached to MW 
+    my $textScroll = $MW -> Scrollbar( 
+        -command    => [$textArea => 'yview'], 
+        -background => $BGCOLOR, 
+    ); 
+    $textArea -> configure( 
+        -yscrollcommand => ['set', $textScroll], 
+    ); 
+
+    #### scrollbar goes on the left side 
+    $textScroll -> pack( 
+        -side => 'left', 
+        -fill => 'y', 
+    ); 
+    #### display 
+    $textArea -> pack( 
+        -expand => 'yes', 
+        -fill => 'both', 
+    ); 
+
+    #### Create Frame for bottom 
+    my $mwBottom = $MW -> Frame(
+        -relief      => 'raised', 
+        -background  => $BGCOLOR,
+        -borderwidth => 2,
+    );  
+    $mwBottom -> pack(@packList1); 
+
+    #### Create 'Dump' Button widget ###### 
+    my $dumpButton  = $mwBottom -> Button( 
+        -font             => '-*-times-bold-r-normal--*-140-*-*-*-*-*-*', 
+        -text             => 'Dump', 
+        -height           => 1, 
+        -width            => 8, 
+        -command          => sub { \&dumpGds($G_GDS2FILE,$compact,$textArea); }, 
+        -background       => $BGCOLOR,
+        -activebackground => $BGCOLOR2, 
+    ); 
+    $dumpButton -> pack(@packList2);
+
+    #### Create 'Clear' Button widget ###### 
+    my $clearButton  = $mwBottom -> Button( 
+        -font             => '-*-times-bold-r-normal--*-140-*-*-*-*-*-*', 
+        -text             => ' Clear ', 
+        -height           => 1, 
+        -width            => 8, 
+        -command          => sub { \&clear($textArea); }, 
+        -background       => $BGCOLOR,
+        -activebackground => $BGCOLOR2, 
+    ); 
+    $clearButton -> pack(@packList2); 
+
+    $progress -> value($G_percentDone);
+    my $fileSize = (stat $fileNameIn)[7];
+
+    MainLoop();
+}
+
+## subroutines...
+################################################################################ 
+sub dumpGds($$;$)
+{
+    my $fileNameIn = shift;
+    my $compact = shift;
+    my $widget = shift;
+    my $fileSize = (stat $fileNameIn)[7];
+    my $statusNum = 0;
+    my $gds2FileIn = new GDS2(-fileName => $fileNameIn);
+    if (defined $widget)
+    {
+        $G_percentDone = 0;
+        $MW -> update;
+    }
+    if ($G_useStatusBar)
+    {
+        $G_statusBar = new Term::StatusBar (
+                        fh         => \*STDERR,
+                        label      => "dumpgds of $fileNameIn",
+                        showTime   => TRUE,
+                        startPos   => 'bottom',
+                        totalItems => 100,
+        );
+        $G_statusBar -> start;
+    }
+
+    my $buffer = '';
+    my $printString = '';
+    my $printIt = TRUE;
+    my $bufferSize = 0;
+    while ($gds2FileIn -> readGds2Record) 
+    {
+        $bufferSize += $gds2FileIn -> recordSize;
+        $printIt = FALSE;
+        my $tmpString = $gds2FileIn -> returnRecordAsString(-compact=>$compact);
+        $printString .= $tmpString;
+        if ($compact)
+        {
+            if ( ##{
+                    ($printString =~ m/}$/)             ||
+                    ($printString =~ m/cell\s*{.*'$/)   || ##}
+                    ($printString =~ m/^gds2\s*{\s*\d/) || ##}
+                    ($printString =~ m/^lib\s+'\S+'\s+\S+\s+\S+/) ||
+                    ($printString =~ m/^[cm]=\d/)
+            )
+            {
+                if ($printString =~ m/^lib\s/)
+                {
+                    $printString .= "\n$G_header";
+                }
+                else
+                {
+                    $printString .= "\n";
+                }
+                $printIt = TRUE;
+            }
+        }
+        else
+        {
+            $printString .= "\n";
+            $printIt = TRUE;
+        }
+        my $filePos = $gds2FileIn -> tellSize;
+        print STDERR "GDSLENGTH==$filePos bufferSize==$bufferSize" if ($DEBUG);
+        if ($printIt)
+        {
+            if ($compact)
+            {
+                $printString =~ s/ m1 cr/ cr/;
+                $printString =~ s/ m1 xy/ xy/;
+                $printString =~ s/ m1 a/ a/;
+                $printString =~ s/ 0 pt/ pt/;
+                $printString =~ s/ 0 xy/ xy/;
+                $printString =~ s/ 0 (f[0-3])/ $1/;
+                $printString =~ s/ pt0 / /;
+                $printString =~ s/ f0 / /;
+                $printString =~ s/ tl / /;
+                $printString =~ s/ w0 / /;
+                $printString =~ s/ cr (\d+) (\d+)/ cr($1 $2)/;
+                $printString =~ s/{ /{/; ##}}
+                $printString =~ s/(\d) (d|t)t0 /$1 /; ##}}
+            }
+            if (defined $widget)
+            {
+                $widget -> insert('end',"$printString");
+                $widget -> update;
+            }
+            if ($G_ECHO)
+            {
+                $buffer .= $printString;
+            }
+            $printString = '';
+            if ($G_ECHO && ($bufferSize > $G_outputBufferSize))
+            {
+                printf $buffer;
+                $buffer = '';
+                $bufferSize = 0;
+            }
+        }
+        $G_percentDone = int($filePos * 100 / $fileSize);
+        if ($G_useStatusBar && ($G_percentDone - $statusNum > 1))
+        {
+            $G_statusBar -> update($G_percentDone - $statusNum);
+            $statusNum = $G_percentDone;
+        }
+    }
+    printf $buffer if ($buffer ne '');
+    $buffer = '';
+    $bufferSize = 0;
+    $G_statusBar -> update(100) if ($G_useStatusBar);
+}
+
+################################################################################ 
+sub setFileName($)
+{ 
+    my $file = $_[0]; 
+    my $returnString=''; 
+ 
+    $file =~ s|\./||; ## for now...
+    chomp $file;
+    if (-f $file)
+    { 
+        $returnString=$file; 
+    } 
+    return $returnString; 
+}
+
+################################################################################ 
+sub showGdsFiles 
+{
+    my($entryPath, $text, $widget) = @_;
+
+    opendir(DIR, $entryPath);
+    my(@dirent_1) = grep ! /^\.\.?$/, sort(readdir DIR);
+    closedir DIR;
+    my(@dirent_2) = grep ! /~$/, @dirent_1;
+    my(@dirent) = grep ! /\.swp$/, @dirent_2;
+
+    if ($entryPath ne '.')
+    {
+        $widget -> add(
+            $entryPath,
+            -text  => $text, 
+            -image => $ActFoldImg,
+        );
+    }
+    my $file;
+    my $cnt=0;
+    while ($file = shift @dirent) 
+    {
+        my $filePath = "$entryPath/$file";
+        if (! -d $filePath) 
+        {
+            if ( ($file =~ /\.gds[2i]*$/i) or ($file =~ /\.sf$/i) )
+            {
+                $cnt++;
+                my $size = -s $filePath;
+                if (-T $file)
+                {
+                    $widget -> add(
+                        $filePath,  
+                        -text  => $file, 
+                        -image => $TextFileImg, 
+                        -data  => $size,
+                    );
+                }
+                else
+                {
+                    $widget -> add(
+                        $filePath,  
+                        -text  => $file, 
+                        -image => $FileImg, 
+                        -data  => $size,
+                    );
+                }
+            }
+        }
+    }
+    if (! $cnt)
+    {
+        print "In order to be seen, graphics files must end in \".gds\", \".gds2\", \".gdsii\", \".sf\" ";
+    }
+} # end showGdsFiles
+################################################################################ 
+
+
+################################################################################ 
+sub clear($;$)
+{
+    my $widget = shift;
+
+    $widget -> delete('0.0', 'end'); 
+    $G_percentDone = 0;
+    $widget -> update;
+}
+
+################################################################################ 
+sub printVersion()
+{
+    print $main::VERSION;
+    exit 0;
+}
+
+################################################################################ 
+sub printUsage(;$)
+{
+    my $widget = shift;
+    my $printMethodFront = 'printf("'; 
+    my $printMethodBack = '\n");'; 
+    if (defined $widget && ($widget ne 'help')) 
+    {
+        $widget -> delete('0.0', 'end'); 
+        $widget -> yview('end'); 
+        $widget -> insert('end', "Calling help ....\n"); 
+        $widget -> update;
+        $printMethodFront = "\$widget -> insert(\'end\', \""; 
+        $printMethodBack = '\n"); $widget -> update;'; 
+    }
+    else
+    {
+        undef $widget;
+    }
+    eval $printMethodFront." ".$printMethodBack; 
+    eval $printMethodFront."  dumpgds rev $main::VERSION".$printMethodBack; 
+    eval $printMethodFront."    ".$printMethodBack; 
+    eval $printMethodFront."Usage:".$printMethodBack; 
+    eval $printMethodFront."  dumpgds [options] gds_file_to_read > outputFile".$printMethodBack; 
+    eval $printMethodFront."      ".$printMethodBack; 
+    eval $printMethodFront."Synopsis:".$printMethodBack; 
+    eval $printMethodFront."  Dumps GDS2 file out in an ascii format that preserves the data contained ".$printMethodBack; 
+    eval $printMethodFront."  therein.".$printMethodBack; 
+    eval $printMethodFront."  ".$printMethodBack; 
+    eval $printMethodFront."Options:".$printMethodBack; 
+    eval $printMethodFront."  -compact".$printMethodBack; 
+    eval $printMethodFront."    or".$printMethodBack; 
+    eval $printMethodFront."  -gdt".$printMethodBack; 
+    eval $printMethodFront."    output compact gdt format".$printMethodBack; 
+    eval $printMethodFront."    ".$printMethodBack; 
+    eval $printMethodFront."  -gui".$printMethodBack; 
+    eval $printMethodFront."    run in GUI mode".$printMethodBack; 
+    eval $printMethodFront."    ".$printMethodBack; 
+    eval $printMethodFront."  -help".$printMethodBack; 
+    eval $printMethodFront."    print help and exit".$printMethodBack; 
+    eval $printMethodFront."    ".$printMethodBack; 
+    eval $printMethodFront."  -outputbuffersize [integer]".$printMethodBack; 
+    eval $printMethodFront."    or".$printMethodBack; 
+    eval $printMethodFront."  -obs [integer] ".$printMethodBack; 
+    eval $printMethodFront."    set output buffer size. Default is $G_outputBufferSize".$printMethodBack; 
+    eval $printMethodFront."  ".$printMethodBack; 
+    eval $printMethodFront."  -progressBar".$printMethodBack; 
+    eval $printMethodFront."    or".$printMethodBack; 
+    eval $printMethodFront."  -pb".$printMethodBack; 
+    eval $printMethodFront."    display progress bar if able".$printMethodBack; 
+    eval $printMethodFront."  ".$printMethodBack; 
+    eval $printMethodFront."  -version".$printMethodBack; 
+    eval $printMethodFront."    print version and exit".$printMethodBack; 
+    eval $printMethodFront."  ".$printMethodBack; 
+    eval $printMethodFront."Examples:".$printMethodBack; 
+    eval $printMethodFront."  dumpgds test.gds > test.gdstxt".$printMethodBack; 
+    eval $printMethodFront."  dumpgds -c test.gds > test.gdt".$printMethodBack; 
+    eval $printMethodFront." ".$printMethodBack; 
+    exit 1 if (! defined $widget);
+}
+################################################################################
+
+__END__
+

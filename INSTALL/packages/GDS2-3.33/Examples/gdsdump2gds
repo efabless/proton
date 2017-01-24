@@ -1,0 +1,548 @@
+#!/usr/bin/perl -w
+#swap line 1 and 3 to use the perl debugger
+#!/usr/bin/perl -d:ptkdb
+use strict;
+use warnings;
+#use diagnostics;
+require 5.006;
+our $VERSION = do { my @r=(q$Revision: 1.9 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r }; 
+use Getopt::Long qw(GetOptions);
+use GDS2;
+$|++;
+$\="\n";
+## No need to edit next line ... modified automatically by RCS
+#'@(#) $RCSfile: gdsdump2gds.pl,v $ $Revision: 1.9 $ $Date: 2003-12-12 14:55:44-06 $';
+
+BEGIN
+{
+    use constant TRUE  => 1;
+    use constant FALSE => 0;
+}
+
+## subs used
+sub printUsage();
+sub printVersion();
+
+## process command line...
+my $DEBUG=FALSE;
+my $verbose=FALSE;
+GetOptions(
+           'debug'      => \$DEBUG,
+           'help'       => \&printUsage,
+           'version'    => \&printVersion,
+           'verbose'    => \$verbose,
+          ) || printUsage();
+          
+my $fileNameIn = '';
+$fileNameIn = shift if ($#ARGV >= 0);
+my $fileNameOut = '';
+$fileNameOut = shift if ($#ARGV >= 0);
+printUsage() if ($#ARGV >= 0);
+
+## take care of things we need from user that were not 
+## supplied on command line
+if ($fileNameIn eq '')
+{
+    my $notDone = 9; #limit for how many times we will ask
+    while ($notDone)
+    {
+        printf("Dump file to read: ");
+        $fileNameIn = <STDIN>;
+        chomp $fileNameIn;
+        $notDone = 0 if ($fileNameIn ne '');
+    }
+    printUsage() if ($fileNameIn eq '');
+}
+if ($fileNameOut eq '')
+{
+    my $notDone = 9; #limit for how many times we will ask
+    while ($notDone)
+    {
+        printf("GDS2 file to create: ");
+        $fileNameOut = <STDIN>;
+        chomp $fileNameOut;
+        $notDone = 0 if ($fileNameOut ne '');
+    }
+    printUsage() if ($fileNameOut eq '');
+}
+if ($fileNameIn eq $fileNameOut)
+{
+    print "ERROR: input and output files can not be the same."; 
+    printUsage();
+}
+
+###############################################################################
+######## OK we are finally ready to go to work... :-)
+open(DUMP,$fileNameIn) or die "Unable to read $fileNameIn because $!";
+my $gds2FileOut = new GDS2(-fileName => ">$fileNameOut");
+my $compactFormat = FALSE;
+my $line;
+my $type;
+my $dataString;
+$line = <DUMP>;
+$compactFormat = TRUE if ($line =~ m/gds2\s*{/); #}
+seek DUMP, 0, 0; ##reset to file beginning
+my $inStr=FALSE;
+if ($compactFormat)
+{
+    while (<DUMP>)
+    {
+        my $dumpLine=$_;
+        $dumpLine=~s|^\s+||; ## make following comparisions easier...
+        next if (m/^#/); ## see # as here-to-line-end comment
+        next if (m/^$/);
+        my $lines = '';
+        if (m/^b\s*\{\s*(\d+)[^x]+xy\s*\(([^)]+)\)\s*\}/)
+        { #b{6 xy(1.1 4.2 1.1 1.15 3.9 1.15 3.9 4.2 1.1 4.2)}
+            my $layer=$1;
+            my $xy=$2;
+            my $dt=0;
+            $xy =~ s/\s+/  /g;
+            $xy =~ s/^\s+//;
+            $xy =~ s/\s+$//;
+            if ($xy =~ m/^([\d\.\-]+)\s+([\d\.\-]+)(.*)/)
+            {
+                my $x = $1;
+                my $y = $2;
+                if ($xy !~ m/\s$x\s+$y$/)
+                {
+                    $xy .= " $x $y"; ## closure
+                }
+            }
+            if (m/\sdt(\d+)\s/)
+            {
+                $dt=$1;
+            }
+            $lines = "  BOUNDARY\n    LAYER  $layer\n    DATATYPE  $dt\n    XY  $xy\n  ENDEL\n";
+        }
+        elsif (m/^p\s*\{\s*(\d+)[^x]+xy\s*\(([^)]+)\)\s*\}/)
+        { #p{16 pt2 xy(-0.425 -0.1 -0.425 -0.425 4.825 -0.425 4.825 0.425 -0.425 0.425 -0.425 0.1)}
+            my $layer=$1;
+            my $xy=$2;
+            my $dt=0;
+            my $pt=0;
+            my $w=0;
+            $xy =~ s/\s+/  /g;
+            if (m/\sdt(\d+)\s/)
+            {
+                $dt=$1;
+            }
+            if (m/\spt(\d)\s/)
+            {
+                $pt=$1
+            }
+            if (m/\sw([\d\.]+)\s/)
+            {
+                $w=$1
+            }
+            $lines = "  PATH\n    LAYER  $layer\n    DATATYPE  $dt\n    PATHTYPE  $pt\n    WIDTH  $w\n    XY  $xy\n  ENDEL\n";
+        }
+        elsif (m/^t\s*\{\s*(\d+)[^x][^y]+\sxy\s*\(([^)]+)\)\s+'([^']+)'\}/)
+        { #t{0 0 mc f0 bl fx m0.1 a270 xy(78.875 38.825) 'MPPD5'}
+            my $layer=$1;
+            my $xy=$2;
+            my $string = $3;
+            my $strans='0000000000000000';
+            $strans='1000000000000000' if (m/\sfx\s/);
+            my $pres = '0000000000';
+            my $havePresentation = FALSE;
+            if (m/\sf1\s/)
+            {
+                $pres .= '01';
+                $havePresentation = TRUE;
+            }
+            elsif (m/\sf2\s/)
+            {
+                $pres .= '10';
+                $havePresentation = TRUE;
+            }
+            elsif (m/\sf3\s/)
+            {
+                $pres .= '11';
+                $havePresentation = TRUE;
+            }
+            else
+            {
+                $pres .= '00';
+                $havePresentation = TRUE if (m/\sf0\s/);
+            }
+            ########################
+            if    (m/\sml\s/)
+            {
+                $pres .= '0100';
+                $havePresentation = TRUE;
+            }
+            elsif (m/\smc\s/)
+            {
+                $pres .= '0101';
+                $havePresentation = TRUE;
+            }
+            elsif (m/\smr\s/)
+            {
+                $pres .= '0110';
+                $havePresentation = TRUE;
+            }
+            elsif (m/\sbl\s/)
+            {
+                $pres .= '1000';
+                $havePresentation = TRUE;
+            }
+            elsif (m/\sbc\s/)
+            {
+                $pres .= '1001';
+                $havePresentation = TRUE;
+            }
+            elsif (m/\sbr\s/)
+            {
+                $pres .= '1010';
+                $havePresentation = TRUE;
+            }
+            elsif (m/\stc\s/)
+            {
+                $pres .= '0001';
+                $havePresentation = TRUE;
+            }
+            elsif (m/\str\s/)
+            {
+                $pres .= '0010';
+                $havePresentation = TRUE;
+            }
+            else
+            {
+                $pres .= '0000';
+                $havePresentation = TRUE if (m/\stl\s/);
+            }
+            my $tt=0; ## text type
+            my $pt=0; ## path type
+            my $dt=0; ## data type
+            my $mag=1;
+            my $angle = 0;
+            if (m/\sa([\d\.]+)\s/)
+            {
+                $angle=$1
+            }
+            $xy =~ s/\s+/  /g;
+            if (m/\stt(\d+)\s/)
+            {
+                $tt=$1
+            }
+            if (m/\spt(\d+)\s/)
+            {
+                $pt=$1
+            }
+            if (m/\sm([\d\.]+)\s/)
+            {
+                $mag=$1
+            }
+            $lines  = "  TEXT\n    LAYER  $layer\n    TEXTTYPE  $tt\n";
+            $lines .= "    PRESENTATION  $pres\n" if ($havePresentation);
+            $lines .= "    PATHTYPE  $pt\n    STRANS  $strans\n    MAG  $mag\n";
+            $lines .= "    ANGLE  $angle\n" if ($angle != 0);
+            $lines .= "    XY  $xy\n    STRING  '$string'\n  ENDEL\n";
+        }
+        elsif (m/^s{'([^']+)'\s.*xy\s*\(([^)]+)\)\s*\}/)
+        { #s{'CC1804CD_1' xy(2.5 37.125)}
+            my $name=$1;
+            my $xy=$2;
+            $xy =~ s/\s+/  /g;
+            my $angle = 0;
+            my $mag = 1;
+            my $strans='0000000000000000';
+            $strans='1000000000000000' if (m/\sfx\s/);
+            if (m/\sm([\d\.]+)\s/)
+            {
+                $mag=$1
+            }
+            if (m/\sa([\d\.]+)\s/)
+            {
+                $angle=$1
+            }
+            $lines = "  SREF\n    SNAME  '$name'\n    STRANS  $strans\n    MAG  $mag\n";
+            $lines .= "    ANGLE  $angle\n" if ($angle != 0);
+            $lines .= "    XY  $xy\n  ENDEL\n";
+        }
+        elsif (m/^a{'([^']+)'[^c]+cr\s*\(([^)]+)\)\s+xy\s*\(([^)]+)\)\s*\}/)
+        { #a{'CC1804CD_1' a270 cr(41 3) xy(119.85 52.225 119.85 11.225 122.85 52.225)}
+            my $name=$1;
+            my $cr=$2;
+            my $xy=$3;
+            $cr =~ s/\s+/  /g;
+            $xy =~ s/\s+/  /g;
+            my $angle = 0;
+            my $mag = 1;
+            my $strans='0000000000000000';
+            $strans='1000000000000000' if (m/\sfx\s/);
+            if (m/\sm([\d\.]+)\s/)
+            {
+                $mag=$1
+            }
+            if (m/\sa([\d\.]+)\s/)
+            {
+                $angle=$1
+            }
+            $lines = "  AREF\n    SNAME  '$name'\n    STRANS  $strans\n    MAG  $mag\n";
+            $lines .= "    ANGLE  $angle\n" if ($angle != 0);
+            $lines .= "    COLROW  $cr\n    XY  $xy\n  ENDEL\n";
+        }
+        elsif (m/^cell\s*\{\s*c=(\d+)\-(\d+)\-(\d+)\s+(\d+):(\d+):(\d+)\s+m=(\d+)\-(\d+)\-(\d+)\s+(\d+):(\d+):(\d+)\s+'([^']+)'/)  ##}
+        { #cell{c=1998-08-17 14:31:10 m=1998-08-17 14:33:47 'CC1804_R1' ##}
+            $lines = sprintf("BGNSTR  %d  %d  %d  %d  %d  %d  %d  %d  %d  %d  %d  %d\n  STRNAME  '%s'\n",
+                    $1 > 1900?($1 - 1900):$1,
+                    $2,$3,$4,$5,$6,
+                    $7 > 1900?($7 - 1900):$7,
+                    $8,$9,$10,$11,$12,
+                    $13,
+                    );
+            $inStr = TRUE;
+        }
+        elsif ($dumpLine =~ m/^}$/)
+        { #
+            if ($inStr)
+            {
+                $lines = "ENDSTR\n";
+            }
+            else
+            {
+                $lines = "ENDLIB\n";
+            }
+            $inStr = FALSE;
+        }
+        elsif (m/^[cm]=(\d+)\-(\d+)\-(\d+)\s+(\d+):(\d+):(\d+)\s+[am]=(\d+)\-(\d+)\-(\d+)\s+(\d+):(\d+):(\d+)/)
+        { #c=1998-08-11 13:09:15 m=1998-09-15 11:34:10
+            $lines = sprintf("BGNLIB  %d  %d  %d  %d  %d  %d  %d  %d  %d  %d  %d  %d\n",
+                    $1 > 1900?($1 - 1900):$1,
+                    $2,$3,$4,$5,$6,
+                    $7 > 1900?($7 - 1900):$7,
+                    $8,$9,$10,$11,$12,
+                    );
+        }
+        elsif (m/^lib\s+'([^']+)'\s+(\S+)\s+(\S+)/)
+        { #lib 'cc1804' 0.001 1e-9
+            $lines = "LIBNAME  '$1'\nUNITS  $2  $3\n";
+        }
+        elsif ($dumpLine =~ m/^gds2\s*\{\s*(\d+)$/) 
+        { #gds2{600  #}
+            $lines = "HEADER  $1\n";
+        }
+        else
+        {
+            print STDERR "ERROR: bad line $_";
+            exit 4;
+        }
+
+        printf STDERR "$lines" if ($verbose);
+        $lines =~ s/\n/ \n/gs;
+        foreach $line (split("\n",$lines))
+        {
+            $line=~s|^\s+||;
+            if ($line =~ m|^([a-z]+) (.*)|i)
+            {
+                $type=$1;
+                $dataString=$2 if (defined $2);
+                $gds2FileOut -> printGds2Record(-type=>$type,-asciiData=>$dataString)
+            }
+            else
+            {
+                print "WARNING: Unable to parse '$line'";
+            }
+        }
+    }
+}
+else
+{
+    while (<DUMP>)
+    {
+        $line=$_;
+        $line=~s|^\s+||; ## make following comparisions easier...
+        next if (m|^#|); ## see # as here-to-line-end comment
+        chomp $line;
+        $line=~s|#.*||;
+        $line=~s|$| |g;  ## for match below
+        $dataString='';
+        if ($line =~ m|^([a-z]+) (.*)|i)
+        {
+            $type=$1;
+            $dataString=$2 if (defined $2);
+            $gds2FileOut -> printGds2Record(-type=>$type,-asciiData=>$dataString)
+        }
+        else
+        {
+            print "WARNING: Unable to parse '$line'";
+        }
+    }
+}
+$gds2FileOut -> close;
+close DUMP;
+exit 0;
+
+## subroutines...
+ 
+################################################################################ 
+sub printVersion()
+{
+    print $VERSION;
+    exit 0;
+}
+
+################################################################################ 
+sub printUsage()
+{
+    print <<EOHELP;
+  gdsdump2gds rev $main::VERSION
+    
+Usage:
+  gdsdump2gds [options] gdsdump_file_to_read gds_file_to_create 
+      
+Synopsis:
+  Creates a GDS2 file from an ASCII dumpgds file. 
+  
+Options:
+  -help
+    print help and exit
+    
+  -version
+    print version and exit
+  
+Example:
+  gdsdump2gds test.gdsdump test.gds
+
+Limitations:
+  Each GDS2 record must be on its own line.
+
+EOHELP
+
+    exit 1;
+}
+
+################################################################################
+
+__END__
+
+=pod
+
+=head1 NAME
+
+gdsdump2gds - creates a GDS2 file from an ASCII dumpgds file. 
+
+
+=head1 USAGE
+
+gdsdump2gds [ options ] [gdsdump_file_to_read] [gds_file_to_create]
+
+
+=head1 OPTIONS
+
+  -help
+    print help and exit
+    
+  -version
+    print version and exit
+
+
+=head1 EXAMPLE
+
+gdsdump2gds test.dumpgds test.gds
+
+
+=head1 LIMITATIONS:
+
+Each GDS2 record must be on its own line.
+
+
+=head1 FILE FORMAT
+
+=head2 Backus-naur representation of GDS2 stream syntax:
+
+ ################################################################################
+ #  <STREAM FORMAT>::= HEADER BGNLIB [LIBDIRSIZE] [SRFNAME] [LIBSECR]           #
+ #                     LIBNAME [REFLIBS] [FONTS] [ATTRTABLE] [GENERATIONS]      #
+ #                     [<FormatType>] UNITS {<structure>}* ENDLIB               #
+ #                                                                              #
+ #  <FormatType>::=    FORMAT | FORMAT {MASK}+ ENDMASKS                         #
+ #                                                                              #
+ #  <structure>::=     BGNSTR STRNAME [STRCLASS] {<element>}* ENDSTR            #
+ #                                                                              #
+ #  <element>::=       {<boundary> | <path> | <SREF> | <AREF> | <text> |        #
+ #                      <node> | <box} {<property>}* ENDEL                      #
+ #                                                                              #
+ #  <boundary>::=      BOUNDARY [ELFLAGS] [PLEX] LAYER DATATYPE XY              #
+ #                                                                              #
+ #  <path>::=          PATH [ELFLAGS] [PLEX] LAYER DATATYPE [PATHTYPE]          #
+ #                     [WIDTH] XY                                               #
+ #                                                                              #
+ #  <SREF>::=          SREF [ELFLAGS] [PLEX] SNAME [<strans>] XY                #
+ #                                                                              #
+ #  <AREF>::=          AREF [ELFLAGS] [PLEX] SNAME [<strans>] COLROW XY         #
+ #                                                                              #
+ #  <text>::=          TEXT [ELFLAGS] [PLEX] LAYER <textbody>                   #
+ #                                                                              #
+ #  <textbody>::=      TEXTTYPE [PRESENTATION] [PATHTYPE] [WIDTH] [<strans>] XY #
+ #                     STRING                                                   #
+ #                                                                              #
+ #  <strans>::=        STRANS [MAG] [ANGLE]                                     #
+ #                                                                              #
+ #  <node>::=          NODE [ELFLAGS] [PLEX] LAYER NODETYPE XY                  #
+ #                                                                              #
+ #  <box>::=           BOX [ELFLAGS] [PLEX] LAYER BOXTYPE XY                    #
+ #                                                                              #
+ #  <property>::=      PROPATTR PROPVALUE                                       #
+ ################################################################################
+
+=head2 example file
+
+ HEADER 3
+ BGNLIB 99 8 4 20 36 16  100 4 18 17 14 16
+ LIBNAME  'and2b'
+ UNITS  0.001 1e-09
+ BGNSTR  96 1 16 12 47 41  96 1 16 12 47 41
+   STRNAME  'AND2B'
+   BOUNDARY
+     LAYER  10
+     DATATYPE  0
+     XY  8.2 -2.1  8.2 9.1  -2.1 9.1  -2.1 -2.1  8.2 -2.1
+   ENDEL
+   SREF
+     SNAME  'FMARK'
+     XY  0  0
+   ENDEL
+   TEXT
+     LAYER  59
+     TEXTTYPE  0
+     PRESENTATION  0000000000001000
+     PATHTYPE  0
+     STRANS  0000000000000000
+     MAG  0.1
+     XY  2.05  1.4
+     STRING  'VDD'
+   ENDEL
+   ENDSTR
+ BGNSTR  96 1 16 12 47 41  96 1 16 12 47 41
+   STRNAME  'FMARK'
+   PATH
+     LAYER  0
+     DATATYPE  0
+     PATHTYPE  0
+     WIDTH  0
+     XY  -0.7 -0.7  1.4 1.4  2.8 1.4
+   ENDEL
+   PATH
+     LAYER  0
+     DATATYPE  0
+     PATHTYPE  0
+     WIDTH  0
+     XY  -0.7 0.7  0.7 -0.7
+   ENDEL
+   PATH
+     LAYER  0
+     DATATYPE  0
+     PATHTYPE  0
+     WIDTH  0
+     XY  0.7 0.7  1.75 0.7
+   ENDEL
+ ENDSTR
+ ENDLIB
+
+
+
+=cut
+

@@ -1,0 +1,144 @@
+#!/usr/bin/perl
+
+eval 'exec /usr/bin/perl  -S $0 ${1+"$@"}'
+    if 0; # not running under some shell
+
+# ss2tk: show SpreadSheet file in Tk::TableMatrix::Spreadsheet (*)
+#	  (m)'07 [26-06-2007] Copyright H.M.Brand 2005-2015
+
+use strict;
+use warnings;
+
+our $VERSION = "2.1";
+
+sub usage
+{
+    my $err = shift and select STDERR;
+    print
+	"usage: ss2tk [-w <width>] [X11 options] file.xls [<pattern>]\n",
+	"       -w <width> use <width> as default column width (4)\n";
+    exit $err;
+    } # usage
+
+use Getopt::Long qw(:config bundling nopermute passthrough);
+my $wdt = 4;	# Default minimal column width
+my $unq = 0;	# Uniq columns only
+
+GetOptions (
+    "help|?"	=> sub { usage (0); },
+    "w=i"	=> \$wdt,
+    "u"		=> \$unq,
+    ) or usage (1);
+
+use Tk;
+use Tk::NoteBook;
+use Tk::TableMatrix::Spreadsheet;
+
+# This will allow ~/.Xdefaults to have lines like
+#ss2tk*font:	-misc-fixed-medium-r-semicondensed--12-110-75-75-c-60-iso10646-1
+Tk::CmdLine->LoadResources ();
+# This will allow calls like # ss2tk -fg Blue4 blah.csv
+Tk::CmdLine->SetArguments ();
+
+@ARGV && -f $ARGV[0] or usage (1);
+my $title = $ARGV[0];
+my %unq;
+
+use Spreadsheet::Read;
+my $ref = ReadData (shift)	or die "Cannot read $title\n";
+$ref->[0]{sheets}		or die "No sheets in $title\n";
+
+my $mw = MainWindow->new (-title => $title);
+my $nb = $mw->NoteBook ()->pack (qw(-side top -expand 1 -fill both ));
+my @nb;
+foreach my $sht (1 .. $ref->[0]{sheets}) {
+    my $s = $ref->[$sht];
+    $title .= " [ " . $s->{label} . " ]";
+
+    my $pat = @ARGV ? qr/$ARGV[0]/i : undef;
+
+    my ($data, @data);
+    my @c = (1, $s->{maxcol});
+    my ($h, $w, @w) = (0, 1, 0, (0) x $c[1]); # data height, -width, and default column widths
+    foreach my $r (1 .. $s->{maxrow}) {
+	my @row = map {
+	    defined $s->{cell}[$_][$r] ? $s->{cell}[$_][$r] : "";
+	    } 1 .. $s->{maxcol};
+	$pat and "@row" =~ $pat || next;
+	foreach my $c (0 .. $#row) {
+	    $row[$c] or next;
+	    $c >= $w and $w = $c + 1;
+	    $data->{"$h,$c"} = $row[$c];
+	    push @data, "$h,$c";
+	    my $l = length $row[$c];
+	    $l > $w[$c] and $w[$c] = $l;
+	    }
+	++$h % 100 or printf STDERR "%6d x %6d\r", $w, $h;
+	}
+    printf STDERR "%6d x %6d\n", $w, $h;
+
+    $nb[$sht] = $nb->add ($sht,
+	-label	=> $s->{label},
+	-state	=> "normal",
+	-anchor	=> "nw");
+    my $ss = $nb[$sht]->Scrolled ('Spreadsheet',
+	-rows		=> $h,	-cols		=> $w,
+	-width		=> 10,	-height		=> 20,
+	-titlerows	=>  1,	-titlecols	=>  0,
+
+	-selectmode	=> "extended",
+	-resizeborders	=> "both",
+
+	-justify	=> "left",
+	-anchor		=> "w",
+
+	-variable		=> $data,
+	)->pack (-expand => 1, -fill => "both", -side => "top", -anchor => "nw");
+    $ss->Subwidget ("${_}scrollbar")->configure (-width => 6) for qw( x y );
+    $ss->tagConfigure ("title",  -bg => "#ffffe0", -justify => "left");
+    $ss->tagConfigure ("active", -bg => "#ffff40", -justify => "left");
+    $ss->tagConfigure ("sel",    -bg => "gray95",  -justify => "left");
+
+    my ($pv, $sv, $si) = ("", "", 0);
+    sub search
+    {
+	$sv or return;
+	$sv eq $pv && !$_[0] and return;
+	$ss->selectionClear ("all");
+	foreach my $i ($_[0] .. $#data, 0 .. ($_[0] - 1)) {
+	    $data->{$data[$i]} =~ m/$sv/i or next;
+	    $si = $i;
+	    $ss->activate     ($data[$si = $i]);
+	    $ss->selectionSet ($data[$si]);
+	    $ss->see          ($data[$si]);
+	    $pv = $sv;
+	    last;
+	    }
+	} # search
+
+    # Search frame
+    my $sf = $nb[$sht]->Frame ()->pack (-side => "left", -expand => 1, -fill => "both");
+    my $sl = $sf->Label (
+	-text     => "Search",
+	)->pack (-side => "left", -anchor => "sw");
+    my $sb = $sf->Entry (
+	-textvariable => \$sv,
+	)->pack (-side => "left", -anchor => "sw");
+    $sb->bind ("<Return>" => sub { search ($si = 0); });
+    my $sn = $sf->Button (
+	-text     => "Next",
+	-command  => sub { search (++$si) },
+	)->pack (-side => "left", -anchor => "sw");
+
+    # Control frame
+    my $cf = $nb[$sht]->Frame ()->pack (-side => "right", -expand => 1, -fill => "both");
+    my $ce = $cf->Button (
+	-text     => "Exit",
+	-command  => \&exit,
+	)->pack (-side => "right", -anchor => "se");
+
+    # autosize columns on data (not on headers)
+    $ss->colWidth (map { $_ => $w[$_] } 0 .. $#w);
+    }
+
+MainLoop;
