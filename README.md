@@ -1,7 +1,7 @@
       /--------------------------------------------------------------------------------\
       |	                                                                               |
       |     Proton is a full feature hierarchical ASIC place and route system          |
-      |            Copyright (C) 2014 - 2018  efabless corporation                     |
+      |            Copyright (C) 2014 - 2018  efabless corporation			|
       |	                                                                               |
       |      This program is free software: you can redistribute it and/or modify      |
       |          it under the terms of the GNU Affero General Public License           |
@@ -26,14 +26,6 @@ Proton : ASIC Place and Route Suite
 This is a framework for ASIC Place and Route. It uses other open source tools like Iverilog, Yosys, Gray Wolf and Qrouter as engines.
 Proton provides a platform to import and export chip data in standard formats ( LEF / DEF/ Verilog / GDS2 ). 
 Proton is written in perl and uses many of the packages available on CPAN. The GUI is written in Perl-TK. 
-
-
-Web Site
-========
-
-More information can be found on the efabless web site:
-
-	http://www.efabless.com/opensource/proton
 
 
 Getting Started
