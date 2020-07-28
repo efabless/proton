@@ -1,3 +1,5 @@
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fefabless%2Fproton.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fefabless%2Fproton?ref=badge_shield)
+
       /--------------------------------------------------------------------------------------\
       |	                                                                               	|
       |     Proton is a full feature hierarchical ASIC place and route system          	|
@@ -89,3 +91,6 @@ Pure Digital and Mixed Signal designs are handled well in proton. It is not gear
 
 Contact GitHub API Training Shop Blog About
 © 2016 GitHub, Inc. Terms Privacy Security Status Help
+
+
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fefabless%2Fproton.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Fefabless%2Fproton?ref=badge_large)
